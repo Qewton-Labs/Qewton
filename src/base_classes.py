@@ -20,15 +20,26 @@ class TechnicalConstraint():
     def __init__(self):
         pass
 
+class Variable():
+    """
+    represents a variable in the problem, e.g. input, output, parameter etc...
+    """
+    def __init__(self, name, datatype_config):
+        self.name = name
+        self.datatype_config = datatype_config
+
 
 class DatatypeConfiguration():
     """
     sets the basic type (numpy array, torch tensor etc) and shape of the data, and also collections of these
     will be used to check compatibility of the algorithms
+    also include variables and their names?
     
     -> later implement several configuration conversion methods (and visualization), it should be possible to this during
     the execution of an algorithm as well as offline
     ->  also suggest automatic conversion methods between compatible configurations
+    
+    dimemsions like (None, 3, None)
     """
     def __init__(self):
         pass
@@ -40,6 +51,11 @@ class Algorithm():
     def fulfills(self, constraint, data=None):
         # return True or an empirical measure on how well a constraint is fulfilled (if data is available)?
         raise NotImplementedError("Fulfills method not implemented.")
+    
+    @property
+    def state(self):
+        # whether the algorithm is trained, initialized, optimized etc... 
+        pass
     
     @property
     def input_config(self):
@@ -55,6 +71,13 @@ class Algorithm():
 class DeepLearningModel(Algorithm):
     def __init__(self):
         super().__init__()
-        # the model that is applied is the minimizer of a loss function, minimized before
+        # this is just the forward model
+        
+class Optimization():
+    def __init__(self):
+        super().__init__()
+        # this should be visualized seperately from the solution approach (''algorithm''),
+        # and only change the state of the solution approach once the optimization is done
+        
 
 # add option to run algorithms partially, e.g. only train
