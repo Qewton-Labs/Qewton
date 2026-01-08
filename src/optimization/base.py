@@ -14,3 +14,15 @@ class Optimization():
     
     def get_hyperparameters(self):
         return ...
+
+class SingleOptimization(Optimization):
+    def __init__(self):
+        super().__init__()
+        # optimization with a single set of hparameters
+
+class GridSearchOptimization(Optimization):
+    def __init__(self):
+        super().__init__()
+        # optimization over a grid of hparameters
+        for param in self.get_hyperparameters():
+            pass
