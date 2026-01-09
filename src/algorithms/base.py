@@ -27,8 +27,41 @@ class Algorithm(torch.nn.Module):
     def get_hyperparameters(self):
         return ...
 
+class SequentialAlgorithm(Algorithm):
+    def __init__(self, algorithms):
+        super().__init__()
+        self.algorithms = torch.nn.ModuleList(algorithms)
+    
+    @property
+    def input_config(self):
+        return self.algorithms[0].input_config
+    
+    @property
+    def output_config(self):
+        return self.algorithms[-1].output_config
+    
+    def forward(self, input_data):
+        data = input_data
+        for alg in self.algorithms:
+            data = alg(data)
+        return data
+
+class IterativeAlgorithm(Algorithm):
+    def __init__(self, algorithm, n_iterations):
+        super().__init__()
+        ...
+
+class ObjectiveFunction():
+    def __init__(self):
+        super().__init__()
+        # this is not an algorithm itself, but used to train algorithms
+    
+    def from_constraint(constraint):
+        return constraint.to_objective_function()
+
 class DeepLearningModel(Algorithm):
     def __init__(self):
         super().__init__()
         # this is just the forward model
+        self.objective_function = ...
         

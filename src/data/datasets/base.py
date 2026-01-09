@@ -1,3 +1,4 @@
+from ...optimization.base import HyperParameter
 
 class DataSet():
     def __init__(self, data_config, data=None):
@@ -8,6 +9,7 @@ class DataSet():
         return DataSet(data_config=data_config, data=data)
     
     def compute_pca(self, n_components):
+        self.n_components = HyperParameter(dtype=int, state=n_components)
         self.pca = ...
     
     def pca(self, n_components=None):

@@ -1,12 +1,26 @@
 
 class HyperParameter():
-    def __init__(self, state, dtype, range=None):
+    def __init__(self, dtype, state=None, range=None):
+        """
+        Docstring for __init__
+        
+        :param self: Description
+        :param dtype: Description
+        :param state: If both state and range are defined, the state is used for 
+        all constraint evaluation purposes first, but the range is used for optimization
+        :param range: Description
+        """
         self.state = state
         self.dtype = dtype
         self.range = range
 
+class ContinuousHyperparameter(HyperParameter):
+    def __init__(self, state=None, range=None):
+        super().__init__(dtype=float, state=state, range=range)
+
 
 class Optimization():
+    """Should we use pytorch lightning here?"""
     def __init__(self):
         super().__init__()
         # this should be visualized seperately from the solution approach (''algorithm''),

@@ -15,7 +15,7 @@ class ProblemConstraint(Constraint):
     problem constraints, e.g. data, PDE, symmetries etc...
     """
     def __init__(self):
-        pass
+        state = ... #could be 'objective function', 'hard constraint' or 'tracking only'
     
     @property
     def input_config(self):
