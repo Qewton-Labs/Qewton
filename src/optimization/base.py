@@ -25,6 +25,7 @@ class Optimization():
         super().__init__()
         # this should be visualized seperately from the solution approach (''algorithm''),
         # and only change the state of the solution approach once the optimization is done
+        self.constraints = ... # state of constraints decides whether its an objective function or only tracked..
     
     def get_hyperparameters(self):
         return ...

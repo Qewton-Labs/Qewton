@@ -51,17 +51,7 @@ class IterativeAlgorithm(Algorithm):
         super().__init__()
         ...
 
-class ObjectiveFunction():
-    def __init__(self):
-        super().__init__()
-        # this is not an algorithm itself, but used to train algorithms
-    
-    def from_constraint(constraint):
-        return constraint.to_objective_function()
-
 class DeepLearningModel(Algorithm):
     def __init__(self):
         super().__init__()
-        # this is just the forward model
-        self.objective_function = ...
-        
+        # this is just the forward model        
