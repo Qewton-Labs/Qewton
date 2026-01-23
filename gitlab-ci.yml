@@ -1,0 +1,33 @@
+stages:
+  - test
+  - ai_check
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  COVERAGE_THRESHOLD: "80"
+
+run_tests:
+  stage: test
+  image: python:3.10
+  script:
+    - python -m pip install --upgrade pip
+    - pip install pytest coverage pydocstyle
+    - coverage run -m pytest
+    - coverage report -m
+    - coverage xml -o coverage.xml
+  artifacts:
+    paths:
+      - coverage.xml
+
+ai_quality_gate:
+  stage: ai_check
+  image: python:3.10
+  dependencies:
+    - run_tests
+  script:
+    - python -m pip install --upgrade pip
+    - pip install openai gitpython
+    - python .gitlab/ai/quality_gate.py
+  variables:
+    OPENAI_API_KEY: $OPENAI_API_KEY
+    GITLAB_TOKEN: $GITLAB_TOKEN  # Required for creating merge request
