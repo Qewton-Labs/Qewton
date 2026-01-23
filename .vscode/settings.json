@@ -1,0 +1,10 @@
+{
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "pylint.args": [
+        "--rcfile=pyproject.toml",
+        "--disable=too-few-public-methods,missing-function-docstring"
+    ]
+}

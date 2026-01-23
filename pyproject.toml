@@ -1,0 +1,45 @@
+[tool.black]
+line-length = 90
+skip-string-normalization = false
+target-version = ["py310"]
+
+[tool.pylint.main]
+py-version = "3.10"
+ignore = [
+  "venv",
+  ".venv",
+  "__pycache__",
+]
+
+[tool.pylint.messages_control]
+disable = [
+  "missing-module-docstring",
+  "missing-class-docstring",
+  "missing-function-docstring",
+  "duplicate-code",
+  "fixme",
+  "too-few-public-methods",
+  "E0402"
+]
+
+[tool.pylint.format]
+max-line-length = 90
+indent-string = "    "
+
+[tool.pylint.naming]
+function-naming-style = "snake_case"
+method-naming-style = "snake_case"
+variable-naming-style = "snake_case"
+class-naming-style = "PascalCase"
+const-naming-style = "UPPER_CASE"
+
+[tool.pylint.design]
+max-args = 10
+max-locals = 15
+max-branches = 12
+max-statements = 50
+max-returns = 5
+
+[tool.pylint.reports]
+reports = false
+score = true
