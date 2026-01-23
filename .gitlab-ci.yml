@@ -13,7 +13,7 @@ run_tests:
     - python -m pip install --upgrade pip
     - pip install pytest coverage pydocstyle
     - pip install pytest pytest-cov coverage openai gitpython
-    # Run tests with coverage for source files in src/
+    - export PYTHONPATH=$PYTHONPATH:$(pwd)/src
     - pytest --cov=src --cov-report=term --cov-report=xml
   artifacts:
     paths:
