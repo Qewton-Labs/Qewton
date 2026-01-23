@@ -12,12 +12,14 @@ run_tests:
   script:
     - python -m pip install --upgrade pip
     - pip install pytest coverage pydocstyle
-    - coverage run --source=src -m pytest
-    - coverage report -m
-    - coverage xml -o coverage.xml
+    - pip install pytest pytest-cov coverage openai gitpython
+    # Run tests with coverage for source files in src/
+    - pytest --cov=src --cov-report=term --cov-report=xml
   artifacts:
     paths:
       - coverage.xml
+      - .pytest_cache/
+    expire_in: 1 hour
 
 ai_quality_gate:
   stage: ai_check
@@ -26,7 +28,7 @@ ai_quality_gate:
     - run_tests
   script:
     - python -m pip install --upgrade pip
-    - pip install openai gitpython
+    - pip install openai gitpython requests
     - python .gitlab/ai/quality_gate.py
   variables:
     OPENAI_API_KEY: $OPENAI_API_KEY
