@@ -1,3 +1,28 @@
+###########################################################
+# Project setup:
+###########################################################
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pioneer"
+version = "0.1"
+description = "Deep Learning Framework for Application Problems"
+authors = [{ name = "Your Name" }]
+requires-python = ">=3.10"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+
+###########################################################
+# Formatting setup:
+###########################################################
 [tool.black]
 line-length = 90
 skip-string-normalization = false
@@ -19,7 +44,8 @@ disable = [
   "duplicate-code",
   "fixme",
   "too-few-public-methods",
-  "E0402"
+  "E0402",
+  "R0902"
 ]
 
 [tool.pylint.format]
@@ -39,6 +65,7 @@ max-locals = 15
 max-branches = 12
 max-statements = 50
 max-returns = 5
+max-positional-arguments = 8
 
 [tool.pylint.reports]
 reports = false
