@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: pioneer
+Version: 0.1
+Summary: Deep Learning Framework for Application Problems
+Author: Your Name
+Requires-Python: >=3.10

@@ -5,13 +5,21 @@ from ..configurations.configuration_base import DataConfiguration
 from ...optimization.hyperparameter.base import HyperParameter, ContinuousHyperparameter
 from ..configurations.variables import Variable
 from ..configurations.axis import SpatialAxis, BatchAxis, FeatureAxis
-from ...pipeline.nodes.base import Node
+from ...pipeline.nodes.base import Node, Port, PortDictionary
 
 # TODO: For now just a simple dataset where the data is provided
 # How do we handle splitting the data for training, testing, validation?
+# Currently everything is done here, but maybe split this further?
+#
 # We need DataSets that can:
 # - load data on the fly from a file/source
 # - run other methods/software to create data
+
+
+class DataSetOutputPortDictionary(PortDictionary):
+    train_data: Port
+    validation_data: Port
+    test_data: Port
 
 
 class DataSet(Node):
@@ -28,13 +36,15 @@ class DataSet(Node):
         assert (
             sum(splitting_ratio) <= 1
         ), "Sum of ratio for data splitting should not be greater 1!"
-        # TODO: Can we do here any test to check, if the data fits the configuration
-        # Depends on the type of data (numpy, pandas, etc.), what can we check...
+        # TODO: Can we do here any test to check, if the data fits the configuration.
+        # But depends on the type of data (numpy, pandas, etc.)...
         self.data_config = data_config
         self.batch_size: HyperParameter = HyperParameter.from_value(
             batch_size, name="Batch Size"
         )
         self.splitting_ratio = splitting_ratio
+        # TODO: Can the ratios be Hyperparameters, we could allow for a
+        # CategorialHyperparameter consisting of lists with 3 values?
 
     @classmethod
     def from_data(
@@ -73,16 +83,17 @@ class DataSet(Node):
         )
 
     @property
-    def input_ports(self) -> dict[str, tuple[DataConfiguration, bool]]:
+    def input_ports(self) -> dict[str, Port]:
         return {}
 
     @property
-    def output_ports(self) -> dict[str, DataConfiguration]:
+    def output_ports(self) -> DataSetOutputPortDictionary:
         # TODO: Add mean, std and pca to output ports
+        _port = Port(self.data_config, self)
         return {
-            "train_data": self.data_config,
-            "validation_data": self.data_config,
-            "test_data": self.data_config,
+            "train_data": _port,
+            "validation_data": _port,
+            "test_data": _port,
         }
 
     @property
@@ -95,14 +106,20 @@ class DataSet(Node):
 
     def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
         _ = inputs
-        return {"data": self.data}
+        # TODO: Add batching and splitting of data, currently
+        # just a dummy to get a working example
+        return {
+            "train_data": self.data,
+            "validation_data": None,
+            "test_data": None,
+        }
 
     ### TODO: Implement the following code, while solving:
     ###     - Do we always add all the information to the output?
-    ###     - If yes: We have to automatically compute the configurations
-    ###       for stuff like pca, mean... -> User needs to specify over which
-    ###       axis these computations are applied?
-    ###     - If no: How is the information passed to another node?
+    ###          - If yes: We have to automatically compute the configurations
+    ###            for stuff like pca, mean... -> User needs to specify over which
+    ###            axis these computations are applied?
+    ###          - If no: How is the information passed to another node?
     ###     - Check in run if stuff like the PCA is computed, if not -> do ti
 
     # def compute_pca(self, n_components):

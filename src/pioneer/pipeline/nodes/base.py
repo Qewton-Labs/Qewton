@@ -1,15 +1,55 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, TypedDict, TypeVar, Generic
+
 
 from ...data.configurations.configuration_base import DataConfiguration
 from ...optimization.hyperparameter.base import HyperParameter
 
 
-class Node(ABC):
+class Port:
+    """A class denoting the expected data shape to reach a given node."""
+
+    def __init__(
+        self,
+        data_configuration: DataConfiguration,
+        owner: Node,
+        is_required: bool = False,
+    ) -> None:
+        self.data_configuration = data_configuration
+        self.node = owner
+        self.required = is_required
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Port):
+            return False
+        return (
+            self.data_configuration == value.data_configuration
+            and self.node == value.node
+        )
+
+
+InputPorts = TypeVar("InputPorts", bound=dict[str, Port])
+OutputPorts = TypeVar("OutputPorts", bound=dict[str, Port])
+
+
+class PortDictionary(TypedDict):
+    pass
+
+
+class InputPortDictionary(PortDictionary):
+    input: Port
+
+
+class OutputPortDictionary(PortDictionary):
+    output: Port
+
+
+class Node(ABC, Generic[InputPorts, OutputPorts]):
     """Base class for all nodes to create a pipeline.
 
     TODO: Do we need a reset method or a validate method here?
+    TODO: How about save and load methods?
     """
 
     def __init__(self, name: str = "Node") -> None:
@@ -18,7 +58,7 @@ class Node(ABC):
 
     @property
     def ports(self) -> None:
-        print("--- Port Information ---")
+        print(f"--- Port Information of Node {self.name}---")
         print("Input ports:")
         for key in self.input_ports.keys():
             print(key)
@@ -28,16 +68,16 @@ class Node(ABC):
 
     @property
     @abstractmethod
-    def input_ports(self) -> dict[str, tuple[DataConfiguration, bool]]:
+    def input_ports(self) -> InputPorts:
         """Defines the input ports of the node.
-        str -> expected data shape + boolean to know if the input is optional
+        str -> expected data shape + boolean to know if the input is required
 
         TODO: Do we need a special object for port definitions?
         """
 
     @property
     @abstractmethod
-    def output_ports(self) -> dict[str, DataConfiguration]:
+    def output_ports(self) -> OutputPorts:
         pass
 
     @abstractmethod
@@ -48,7 +88,7 @@ class Node(ABC):
         inputs = self._bind_inputs(*arg, **kwds)
         return self.run(inputs).values()
 
-    def _bind_inputs(self, args, kwargs):
+    def _bind_inputs(self, *args, **kwargs):
         port_names = list(self.input_ports.keys())
 
         inputs = {}
@@ -62,7 +102,7 @@ class Node(ABC):
 
         # Check if all required inputs are provided
         for name, port_info in self.input_ports.items():
-            if port_info[1] and name not in inputs:
+            if port_info.required and name not in inputs:
                 raise ValueError(f"Missing input: {name}")
 
         return inputs
@@ -97,7 +137,7 @@ class _NodeRuntime:
 
     def is_ready(self) -> bool:
         for name, port_info in self.node.input_ports.items():
-            if port_info[1] and name not in self.received_inputs:
+            if port_info.required and name not in self.received_inputs:
                 return False
         return not self.has_run
 

@@ -29,7 +29,7 @@ class DataConfiguration:
         connection_to_axes: dict[Variable, list[Axis]] | None = None,
     ):
         assert feature_axis in axes, "Feature axis must be one of the axes."
-        self.dtype = dtype
+        self.dtype = dtype  # TODO: Currently None if type does not matter?
         self.axes = axes
         self.feature_axis = feature_axis
         self.connection_to_axes = (
@@ -53,7 +53,6 @@ class DataConfiguration:
         where some ellipsis are replaced by concrete axes or where the variables
         in the feature axis have been reduced.
 
-        TODO: allow renaming of axes?
         TODO: How is the default config in algo defined? Do we just have
         [Batch, ..., Feature] for example, but what is the feature axis, like where
         is it defined exactly? How do we compare it with the feature axis of the data?
@@ -145,8 +144,11 @@ class DataConfiguration:
     def __eq__(self, other_config: object) -> bool:
         if not isinstance(other_config, DataConfiguration):
             return False
-        if len(other_config.axes) != len(self.axes) or self.dtype != other_config.dtype:
+        if len(other_config.axes) != len(self.axes):
             return False
+        if self.dtype != other_config.dtype:
+            if self.dtype is not None and other_config.dtype is not None:
+                return False
         for i, other_axis in enumerate(other_config.axes):
             if not other_axis == self.axes[i]:
                 return False

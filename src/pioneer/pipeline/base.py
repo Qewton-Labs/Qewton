@@ -1,7 +1,7 @@
 from __future__ import annotations
 import warnings
 
-from .nodes.base import Node, _NodeRuntime
+from .nodes.base import Node, Port, _NodeRuntime
 from .edges.base import Edge
 
 
@@ -41,42 +41,30 @@ class Pipeline:
 
     def connect(
         self,
-        from_node: Node,
-        to_node: Node,
-        from_port: str | None = None,
-        to_port: str | None = None,
+        from_port: Port,
+        to_port: Port,
     ) -> None:
         # Nodes must be in graph
+        from_node = from_port.node
+        to_node = to_port.node
+
         self.add_node(from_node)
         self.add_node(to_node)
 
-        # Ports must exist
-        if from_port is not None and from_port not in from_node.output_ports:
-            raise ValueError(
-                f"{from_node} has no output port '{from_port}', \
-                there are only the ports {from_node.output_ports.keys()}"
-            )
-
-        if to_port is not None and to_port not in to_node.input_ports:
-            raise ValueError(
-                f"{to_node} has no input port '{to_port}', \
-                there are only the ports {to_node.input_ports.keys()}"
-            )
-        # If no port is given, use the first one as a default
-        if from_port is None:
-            from_port = next(iter(from_node.output_ports.keys()))
-        if to_port is None:
-            to_port = next(iter(to_node.input_ports.keys()))
-
         # Configurations should match
-        out_config = from_node.output_ports[from_port]
-        in_config = to_node.input_ports[to_port][0]
+        out_config = from_port.data_configuration
+        in_config = to_port.data_configuration
 
-        if out_config.fits(in_config):
+        if not out_config.fits(in_config):
             raise ValueError("Incompatible input and output data configurations!")
 
         # Create edge
-        edge = Edge(from_node, from_port, to_node, to_port)
+        print(from_node.output_ports.items(), from_port)
+        from_port_name = next(
+            (k for k, v in from_node.output_ports.items() if v == from_port)
+        )
+        to_port_name = next((k for k, v in to_node.input_ports.items() if v == to_port))
+        edge = Edge(from_node, from_port_name, to_node, to_port_name)
         self.edges.append(edge)
 
     def disconnect(self, edge: Edge) -> None:
@@ -87,6 +75,24 @@ class Pipeline:
 
     def incoming_edges(self, node) -> list[Edge]:
         return [e for e in self.edges if e.to_node is node]
+
+    def validate(self) -> None:
+        """Validate that all required input ports of each node are connected."""
+        for node in self.nodes:
+            for port_name, port_config in node.input_ports.items():
+                if port_config.required:  # Check if Input is needed
+                    # Check if this port has at least one incoming edge
+                    incoming_edges = [
+                        e
+                        for e in self.edges
+                        if e.to_node is node and e.to_port == port_name
+                    ]
+
+                    if len(incoming_edges) == 0:
+                        raise ValueError(
+                            f"Node '{node.name}' has required input port '{port_name}' "
+                            f"that is not connected!"
+                        )
 
     def create_runtime(self) -> PipelineRuntime:
         return PipelineRuntime(self)
@@ -99,13 +105,13 @@ class PipelineRuntime:
 
     def __init__(self, graph: Pipeline):
         self.graph = graph
-        self.node_runtimes: dict[Node, _NodeRuntime] = {
+        self.runtime_nodes: dict[Node, _NodeRuntime] = {
             node: node.create_runtime() for node in graph.nodes
         }
 
     def run(self):
         ready_nodes: set[_NodeRuntime] = set()  # Nodes that are ready to run
-        for runtime_node in self.node_runtimes.values():
+        for runtime_node in self.runtime_nodes.values():
             runtime_node.has_run = False
             # Find all nodes we can start with:
             if runtime_node.is_ready():
@@ -119,7 +125,7 @@ class PipelineRuntime:
                 # Next pass data to all connected nodes
                 for edge in self.graph.outgoing_edges(runtime_node.node):
                     value = outputs[edge.from_port]
-                    target_rt = self.node_runtimes[edge.to_node]
+                    target_rt = self.runtime_nodes[edge.to_node]
                     target_rt.receive(edge.to_port, value)
                     # Check if node is now ready to run
                     if target_rt.is_ready():

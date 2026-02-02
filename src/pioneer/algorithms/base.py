@@ -1,57 +1,70 @@
-import torch
+import warnings
+from abc import abstractmethod
+from enum import Enum
 
-class Algorithm(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-    
+
+from ..data.configurations.configuration_base import DataConfiguration
+from ..data.configurations.variables import Variable
+from ..data.configurations.axis import FeatureAxis
+from ..pipeline.nodes.base import Node, Port, InputPortDictionary, OutputPortDictionary
+
+
+class AlgorithmState(Enum):
+    FIXED = 1
+    UNINITIALIZED = 2
+    READY = 3
+    TRAINED = 4
+
+
+class AlgorithmNode(Node):
+
+    def __init__(
+        self,
+        input_variable: Variable,
+        output_variable: Variable,
+        name: str = "AlgorithmNode",
+    ) -> None:
+        super().__init__(name=name)
+        self.input_variable = input_variable
+        self.output_variable = output_variable
+        self._state: AlgorithmState = AlgorithmState.UNINITIALIZED
+
     def fulfills(self, constraint, data=None):
-        # return True or an empirical measure on how well a constraint is fulfilled (if data is available)?
+        # return True or an empirical measure on how well a constraint is
+        # fulfilled (if data is available)?
         raise NotImplementedError("Fulfills method not implemented.")
-    
+
+    @abstractmethod
+    def setup(self) -> None:
+        """Creates the underlying algorithm instance (e.g. creates the
+        neural network)
+        """
+
     @property
     def state(self):
-        # whether the algorithm is trained, initialized, optimized etc... 
-        pass
-    
-    @property
-    def input_config(self):
-        raise NotImplementedError("Input configuration not implemented.")
-    
-    @property
-    def output_config(self):
-        raise NotImplementedError("Output configuration not implemented.")
-    
-    def forward(self, input_data):
-        raise NotImplementedError("Forward method not implemented.")
-    
-    def get_hyperparameters(self):
-        return ...
+        return self._state
 
-class SequentialAlgorithm(Algorithm):
-    def __init__(self, algorithms):
-        super().__init__()
-        self.algorithms = torch.nn.ModuleList(algorithms)
-    
-    @property
-    def input_config(self):
-        return self.algorithms[0].input_config
-    
-    @property
-    def output_config(self):
-        return self.algorithms[-1].output_config
-    
-    def forward(self, input_data):
-        data = input_data
-        for alg in self.algorithms:
-            data = alg(data)
-        return data
+    def fix_algorithm_state(self):
+        """Fix all properties of the algorithm so it will not be
+        trained or recreated!
+        """
+        if self.state == AlgorithmState.UNINITIALIZED:
+            warnings.warn(
+                "This Algorithm is not initialized, fixing it now may lead \
+                    to unexpected behavior. Maybe call .setup() first?",
+                UserWarning,
+            )
+            return
+        self._state = AlgorithmState.FIXED
 
-class IterativeAlgorithm(Algorithm):
-    def __init__(self, algorithm, n_iterations):
-        super().__init__()
-        ...
+    @property
+    def input_ports(self) -> InputPortDictionary:
+        data_axis = FeatureAxis(variables=self.input_variable)
+        data_config = DataConfiguration(None, [..., data_axis], feature_axis=data_axis)
+        return {"input": Port(data_config, self, True)}
 
-class DeepLearningModel(Algorithm):
-    def __init__(self):
-        super().__init__()
-        # this is just the forward model        
+    @property
+    def output_ports(self) -> OutputPortDictionary:
+        data_axis = FeatureAxis(variables=self.output_variable)
+        data_config = DataConfiguration(None, [..., data_axis], feature_axis=data_axis)
+        return {"output": Port(data_config, self)}

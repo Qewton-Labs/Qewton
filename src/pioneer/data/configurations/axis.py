@@ -26,7 +26,7 @@ class Axis:
         return (
             self.size == other_axes.size
             and isinstance(self, type(other_axes))
-            and self.name == other_axes.name
+            # and self.name == other_axes.name
             and self.variables == other_axes.variables
         )
 
