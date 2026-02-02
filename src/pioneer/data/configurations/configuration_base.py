@@ -83,7 +83,9 @@ class DataConfiguration:
                 idx_other += 1
 
         # Consume remaining ellipsis in self.axes
-        while idx_self < len(self.axes) and self.axes[idx_self] is ...:
+        while idx_self < len(self.axes) and (
+            self.axes[idx_self] is ... or idx_self == len(self.axes) - 1
+        ):
             idx_self += 1
 
         if not (idx_self == len(self.axes) and idx_other == len(other_config.axes)):

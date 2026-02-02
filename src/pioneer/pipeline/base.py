@@ -48,18 +48,17 @@ class Pipeline:
         from_node = from_port.node
         to_node = to_port.node
 
-        self.add_node(from_node)
-        self.add_node(to_node)
+        self.nodes.add(from_node)
+        self.nodes.add(to_node)
 
         # Configurations should match
         out_config = from_port.data_configuration
         in_config = to_port.data_configuration
 
-        if not out_config.fits(in_config):
+        if not in_config.fits(out_config):
             raise ValueError("Incompatible input and output data configurations!")
 
         # Create edge
-        print(from_node.output_ports.items(), from_port)
         from_port_name = next(
             (k for k, v in from_node.output_ports.items() if v == from_port)
         )
