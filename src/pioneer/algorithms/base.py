@@ -3,10 +3,10 @@ from abc import abstractmethod
 from enum import Enum
 
 
-from ..data.configurations.configuration_base import DataConfiguration
-from ..data.configurations.variables import Variable
-from ..data.configurations.axis import FeatureAxis
-from ..pipeline.nodes.base import Node, Port, InputPortDictionary, OutputPortDictionary
+from ..configurations.configuration_base import DataConfiguration
+from ..configurations.variables import Variable
+from ..configurations.axis import FeatureAxis
+from ..nodes.base import Node, Port
 
 
 class AlgorithmState(Enum):
@@ -29,7 +29,7 @@ class AlgorithmNode(Node):
         self.output_variable = output_variable
         self._state: AlgorithmState = AlgorithmState.UNINITIALIZED
 
-    def fulfills(self, constraint, data=None):
+    def fulfills(self, constraint, data=None) -> bool:
         # return True or an empirical measure on how well a constraint is
         # fulfilled (if data is available)?
         raise NotImplementedError("Fulfills method not implemented.")
@@ -41,10 +41,10 @@ class AlgorithmNode(Node):
         """
 
     @property
-    def state(self):
+    def state(self) -> AlgorithmState:
         return self._state
 
-    def fix_algorithm_state(self):
+    def fix_algorithm_state(self) -> None:
         """Fix all properties of the algorithm so it will not be
         trained or recreated!
         """
@@ -58,13 +58,13 @@ class AlgorithmNode(Node):
         self._state = AlgorithmState.FIXED
 
     @property
-    def input_ports(self) -> InputPortDictionary:
+    def input_ports(self) -> dict[str, Port]:
         data_axis = FeatureAxis(variables=self.input_variable)
         data_config = DataConfiguration(None, [..., data_axis], feature_axis=data_axis)
-        return {"input": Port(data_config, self, True)}
+        return {self.InputKeys.INPUT: Port(data_config, self, "in_port", True)}
 
     @property
-    def output_ports(self) -> OutputPortDictionary:
+    def output_ports(self) -> dict[str, Port]:
         data_axis = FeatureAxis(variables=self.output_variable)
         data_config = DataConfiguration(None, [..., data_axis], feature_axis=data_axis)
-        return {"output": Port(data_config, self)}
+        return {self.OutputKeys.OUTPUT: Port(data_config, self, "out_port")}

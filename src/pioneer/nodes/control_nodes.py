@@ -1,7 +1,7 @@
 from typing import Any
 
-from .base import Node, Port, InputPortDictionary, OutputPortDictionary
-from ...data.configurations.configuration_base import DataConfiguration
+from .base import Node, Port
+from ..configurations.configuration_base import DataConfiguration
 
 
 class ControlNode(Node):
@@ -14,18 +14,18 @@ class ControlNode(Node):
         self.data_config = data_config
         self.stored_data = None
 
-        self._port = Port(self.data_config, self, True)
+        self._port = Port(self.data_config, self, "port", True)
 
     @property
-    def input_ports(self) -> InputPortDictionary:
-        return {"input": self._port}
+    def input_ports(self) -> dict[str, Port]:
+        return {self.InputKeys.INPUT: self._port}
 
     @property
-    def output_ports(self) -> OutputPortDictionary:
-        return {"output": self._port}
+    def output_ports(self) -> dict[str, Port]:
+        return {self.OutputKeys.OUTPUT: self._port}
 
     def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
         if inputs is None:
             raise ValueError("Input can not be None!")
-        self.stored_data = inputs["input"]
-        return {"output": self.stored_data}
+        self.stored_data = inputs[self.InputKeys.INPUT]
+        return {self.OutputKeys.OUTPUT: self.stored_data}

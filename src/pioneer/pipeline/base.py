@@ -1,8 +1,11 @@
 from __future__ import annotations
 import warnings
 
-from .nodes.base import Node, Port, _NodeRuntime
+from ..nodes.base import Node, Port, _NodeRuntime
 from .edges.base import Edge
+from ..optimization.base import EvaluationMode
+from ..algorithms.base import AlgorithmNode
+from ..constraints.base import Constraint
 
 
 # TODO: Branching graphs are supported. What about cycles?
@@ -13,7 +16,9 @@ from .edges.base import Edge
 class Pipeline:
 
     def __init__(self):
-        self.nodes: set[Node] = set()
+        self.nodes: set[Node] = set[Node]()
+        self.constrain_nodes: set[Constraint] = set[Constraint]()
+        self.algorithm_nodes: set[AlgorithmNode] = set[AlgorithmNode]()
         self.edges: list[Edge] = []
 
     def copy(self) -> Pipeline:
@@ -29,9 +34,17 @@ class Pipeline:
                     f"Node with name '{node.name}' already in graph!", UserWarning
                 )
         self.nodes.add(node)
+        if isinstance(node, Constraint):
+            self.constrain_nodes.add(node)
+        if isinstance(node, AlgorithmNode):
+            self.algorithm_nodes.add(node)
 
     def remove_node(self, node: Node) -> None:
         self.nodes.remove(node)
+        if isinstance(node, Constraint):
+            self.constrain_nodes.remove(node)
+        if isinstance(node, AlgorithmNode):
+            self.algorithm_nodes.remove(node)
         # Remove all edges connected to this node
         self.edges = [
             edge
@@ -95,6 +108,14 @@ class Pipeline:
 
     def create_runtime(self) -> PipelineRuntime:
         return PipelineRuntime(self)
+
+    def set_mode(self, new_mode: EvaluationMode):
+        for node in self.nodes:
+            node.set_mode(new_mode)
+
+    def setup(self):
+        for node in self.algorithm_nodes:
+            node.setup()
 
 
 class PipelineRuntime:

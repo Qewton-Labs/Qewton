@@ -1,11 +1,11 @@
 from typing import Any
 import warnings
 
-from ..configurations.configuration_base import DataConfiguration
+from ...configurations import DataConfiguration
 from ...optimization.hyperparameter.base import HyperParameter, ContinuousHyperparameter
-from ..configurations.variables import Variable
-from ..configurations.axis import SpatialAxis, BatchAxis, FeatureAxis
-from ...pipeline.nodes.base import Node, Port, PortDictionary
+from ...configurations.variables import Variable
+from ...configurations.axis import SpatialAxis, BatchAxis, FeatureAxis
+from ...nodes.base import Node, Port
 
 # TODO: For now just a simple dataset where the data is provided
 # How do we handle splitting the data for training, testing, validation?
@@ -16,13 +16,8 @@ from ...pipeline.nodes.base import Node, Port, PortDictionary
 # - run other methods/software to create data
 
 
-class DataSetOutputPortDictionary(PortDictionary):
-    train_data: Port
-    validation_data: Port
-    test_data: Port
-
-
 class DataSet(Node):
+
     def __init__(
         self,
         data_config: DataConfiguration,
@@ -87,14 +82,9 @@ class DataSet(Node):
         return {}
 
     @property
-    def output_ports(self) -> DataSetOutputPortDictionary:
+    def output_ports(self) -> dict[str, Port]:
         # TODO: Add mean, std and pca to output ports
-        _port = Port(self.data_config, self)
-        return {
-            "train_data": _port,
-            "validation_data": _port,
-            "test_data": _port,
-        }
+        return {self.OutputKeys.OUTPUT: Port(self.data_config, self, "data_port")}
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -108,11 +98,10 @@ class DataSet(Node):
         _ = inputs
         # TODO: Add batching and splitting of data, currently
         # just a dummy to get a working example
-        return {
-            "train_data": self.data,
-            "validation_data": None,
-            "test_data": None,
-        }
+        return {self.OutputKeys.OUTPUT: self.data}
+
+    def set_mode(self, new_mode):
+        self.mode = new_mode
 
     ### TODO: Implement the following code, while solving:
     ###     - Do we always add all the information to the output?

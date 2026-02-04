@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from ..nodes.base import Node
+from ...nodes.base import Node
 
 
 @dataclass(frozen=True)

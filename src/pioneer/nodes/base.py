@@ -1,10 +1,11 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Any, TypedDict, TypeVar, Generic
+from typing import Any
+from enum import Enum
 
-
-from ...data.configurations.configuration_base import DataConfiguration
-from ...optimization.hyperparameter.base import HyperParameter
+from ..configurations.configuration_base import DataConfiguration
+from ..optimization.hyperparameter.base import HyperParameter
+from ..optimization.base import EvaluationMode
 
 
 class Port:
@@ -14,11 +15,13 @@ class Port:
         self,
         data_configuration: DataConfiguration,
         owner: Node,
+        name: str,
         is_required: bool = False,
     ) -> None:
         self.data_configuration = data_configuration
         self.node = owner
         self.required = is_required
+        self.name = name
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Port):
@@ -26,67 +29,47 @@ class Port:
         return (
             self.data_configuration == value.data_configuration
             and self.node == value.node
+            and self.name == value.name
         )
 
 
-InputPorts = TypeVar("InputPorts", bound=dict[str, Port])
-OutputPorts = TypeVar("OutputPorts", bound=dict[str, Port])
-
-
-class PortDictionary(TypedDict):
-    pass
-
-
-class InputPortDictionary(PortDictionary):
-    input: Port
-
-
-class OutputPortDictionary(PortDictionary):
-    output: Port
-
-
-class Node(ABC, Generic[InputPorts, OutputPorts]):
+class Node(ABC):
     """Base class for all nodes to create a pipeline.
 
     TODO: Do we need a reset method or a validate method here?
     TODO: How about save and load methods?
     """
 
+    class InputKeys(str, Enum):
+        INPUT = "input"
+
+    class OutputKeys(str, Enum):
+        OUTPUT = "output"
+
     def __init__(self, name: str = "Node") -> None:
         super().__init__()
         self.name = name  # TODO: make name read-only?
-
-    @property
-    def ports(self) -> None:
-        print(f"--- Port Information of Node {self.name}---")
-        print("Input ports:")
-        for key in self.input_ports.keys():
-            print(key)
-        print("Output ports:")
-        for key in self.output_ports.keys():
-            print(key)
+        self.mode: EvaluationMode = EvaluationMode.ALWAYS
 
     @property
     @abstractmethod
-    def input_ports(self) -> InputPorts:
-        """Defines the input ports of the node.
-        str -> expected data shape + boolean to know if the input is required
-
-        TODO: Do we need a special object for port definitions?
-        """
+    def input_ports(self) -> dict[str, Port]:
+        pass
 
     @property
     @abstractmethod
-    def output_ports(self) -> OutputPorts:
+    def output_ports(self) -> dict[str, Port]:
         pass
 
     @abstractmethod
+    # TODO: Can we make input better than a dictionary?
     def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
         pass
 
     def __call__(self, *arg, **kwds):
         inputs = self._bind_inputs(*arg, **kwds)
-        return self.run(inputs).values()
+        values = tuple(self.run(inputs).values())
+        return values[0] if len(values) == 1 else values
 
     def _bind_inputs(self, *args, **kwargs):
         port_names = list(self.input_ports.keys())
@@ -114,8 +97,24 @@ class Node(ABC, Generic[InputPorts, OutputPorts]):
     def hyperparameters(self) -> list[HyperParameter]:
         return []
 
+    @property
+    def trainable_parameters(self):
+        return None
+
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
+
+    def __getitem__(self, port_name: str) -> Port:
+        input_ports = self.input_ports
+        if port_name in input_ports.keys():
+            return input_ports[port_name]
+        output_ports = self.output_ports
+        if port_name in output_ports.keys():
+            return output_ports[port_name]
+        raise ValueError(f"Port {port_name} does not exist")
+
+    def set_mode(self, new_mode: EvaluationMode):
+        pass
 
 
 class _NodeRuntime:
