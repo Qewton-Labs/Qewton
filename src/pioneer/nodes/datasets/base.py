@@ -103,6 +103,10 @@ class DataSet(Node):
     def set_mode(self, new_mode):
         self.mode = new_mode
 
+    def to(self, device):
+        # TODO: Check here what type we are
+        self.data = self.data.to(device)
+
     ### TODO: Implement the following code, while solving:
     ###     - Do we always add all the information to the output?
     ###          - If yes: We have to automatically compute the configurations

@@ -69,7 +69,7 @@ class Trainer:
         for node in self.all_nodes:
             node_params = node.trainable_parameters
             if node_params is not None:
-                trainable_parameters.append(node_params)
+                trainable_parameters.append({"params": node_params})
         return trainable_parameters
 
     def _move_to_device(self):
@@ -87,7 +87,7 @@ class Trainer:
         trainable_parameters = self._get_trainable_parameters()
         self.backend.setup(trainable_parameters)
         # Start training loop
-        for step in self.max_iterations.current_value:
+        for step in range(self.max_iterations.current_value):
 
             total_loss = 0.0
             # Run all pipelines that contain training constraints

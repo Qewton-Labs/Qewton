@@ -5,3 +5,4 @@ from .nodes import *
 from .pipeline import *
 from .optimization import *
 from .constraints import *
+from .optimization.trainer import *

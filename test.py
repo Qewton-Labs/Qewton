@@ -1,46 +1,38 @@
 import numpy as np
+import torch
 import pioneer
 
 
-data = np.random.random((10, 3, 3, 6))
+x_data = np.linspace(0, 1, 1000).reshape(-1, 1)
+u_data = x_data**2 + np.sin(6.0 * x_data)
+data = torch.tensor(np.column_stack((x_data, u_data)), dtype=torch.float32)
 
-X = pioneer.configurations.Variable("x", 2)
+X = pioneer.configurations.Variable("x", 1)
 U = pioneer.configurations.Variable("u", 1)
-T = pioneer.configurations.Variable("t", 3)
-dataset = pioneer.nodes.DataSet.from_data(data, X * U * T, batch_size=100)
+dataset = pioneer.nodes.DataSet.from_data(data, X * U, batch_size=1000)
 
 slice_node = pioneer.nodes.SliceNode(dataset.data_config)
 
-data_out = dataset()
+model = pioneer.algorithms.TorchFCN(X, U, 2, 8)
 
+constrain = pioneer.constraints.MSEConstraint(
+    model[model.OutputKeys.OUTPUT].data_configuration,
+    pioneer.optimization.EvaluationMode.TRAIN,
+)
 
-# class CustomAlgo(pioneer.AlgorithmNode):
-#     def run(self, inputs=None) -> dict[str, np.ndarray]:
-#         if inputs is None:
-#             return {}
-#         x = inputs[self.InputKeys.INPUT]
-#         return {self.OutputKeys.OUTPUT: x**2}
+pipeline = pioneer.pipeline.Pipeline()
 
-#     def setup(self) -> None:
-#         return
+pipeline.connect(dataset[dataset.OutputKeys.OUTPUT], slice_node[dataset.InputKeys.INPUT])
+pipeline.connect(slice_node["x"], model[dataset.InputKeys.INPUT])
+pipeline.connect(slice_node["u"], constrain[constrain.InputKeys.INPUT1])
+pipeline.connect(model[model.OutputKeys.OUTPUT], constrain[constrain.InputKeys.INPUT2])
 
-
-# algo = CustomAlgo(X, X)
-# control_node2 = pioneer.pipeline.ControlNode(
-#     algo["output"].data_configuration, "SaveNode2"
-# )
-# pipeline = pioneer.pipeline.Pipeline()
-
-# pipeline.connect(
-#     dataset[dataset.OutputKeys.OUTPUT], control_node[control_node.InputKeys.INPUT]
-# )
-# pipeline.connect(control_node[control_node.OutputKeys.OUTPUT], algo["input"])
-# pipeline.connect(algo["output"], control_node2["input"])
-
-# pipeline.validate()
-
+pipeline.validate()
 # runtime = pipeline.create_runtime()
 # runtime.run()
 
-# print(control_node.stored_data, control_node2.stored_data)
-# train_data, vali_data, test_data = dataset()
+optimizer = pioneer.optimization.trainer.TorchBackend(torch.optim.Adam, lr=0.001)
+trainer = pioneer.optimization.trainer.Trainer(
+    optimizer, [pipeline], max_iterations=5000, device="cpu"
+)
+trainer.run()

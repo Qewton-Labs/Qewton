@@ -6,3 +6,5 @@ from .hyperparameter.base import (
     ContinuousHyperparameter,
     CategoricalHyperparameter,
 )
+
+from .base import EvaluationMode

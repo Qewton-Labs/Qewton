@@ -28,8 +28,8 @@ class MSEConstraint(Constraint):
     @property
     def input_ports(self) -> dict[str, Port]:
         return {
-            self.InputKeys.INPUT1: Port(self.input_config, self, "port_1"),
-            self.InputKeys.INPUT2: Port(self.input_config, self, "port_2"),
+            self.InputKeys.INPUT1: Port(self.input_config, self, "port_1", True),
+            self.InputKeys.INPUT2: Port(self.input_config, self, "port_2", True),
         }
 
     def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -38,6 +38,6 @@ class MSEConstraint(Constraint):
         x = inputs[self.InputKeys.INPUT1]
         y = inputs[self.InputKeys.INPUT2]
         if hasattr(x, "mean") or hasattr(y, "mean"):
-            self.loss = (x**2 - y**2).mean()
+            self.loss = ((x - y) ** 2).mean()
             return {}
         raise ValueError("The MSE can not be computed for this input")

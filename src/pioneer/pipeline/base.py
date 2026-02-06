@@ -1,9 +1,8 @@
 from __future__ import annotations
 import warnings
 
-from ..nodes.base import Node, Port, _NodeRuntime
+from ..nodes.base import Node, Port, _NodeRuntime, EvaluationMode
 from .edges.base import Edge
-from ..optimization.base import EvaluationMode
 from ..algorithms.base import AlgorithmNode
 from ..constraints.base import Constraint
 
@@ -27,12 +26,13 @@ class Pipeline:
         new_pipeline.edges = self.edges.copy()
         return new_pipeline
 
-    def add_node(self, node: Node) -> None:
-        for known_node in self.nodes:
-            if known_node.name == node.name:
-                warnings.warn(
-                    f"Node with name '{node.name}' already in graph!", UserWarning
-                )
+    def add_node(self, node: Node, check_warning=True) -> None:
+        if check_warning:
+            for known_node in self.nodes:
+                if known_node.name == node.name:
+                    warnings.warn(
+                        f"Node with name '{node.name}' already in graph!", UserWarning
+                    )
         self.nodes.add(node)
         if isinstance(node, Constraint):
             self.constrain_nodes.add(node)
@@ -61,8 +61,8 @@ class Pipeline:
         from_node = from_port.node
         to_node = to_port.node
 
-        self.nodes.add(from_node)
-        self.nodes.add(to_node)
+        self.add_node(from_node, check_warning=False)
+        self.add_node(to_node, check_warning=False)
 
         # Configurations should match
         out_config = from_port.data_configuration

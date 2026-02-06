@@ -99,7 +99,7 @@ class Node(ABC):
 
     @property
     def trainable_parameters(self):
-        return None
+        pass
 
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
