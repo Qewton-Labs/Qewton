@@ -3,9 +3,9 @@ from abc import ABC, abstractmethod
 from typing import Any
 from enum import Enum
 
-from ..configurations.configuration_base import DataConfiguration
-from ..optimization.hyperparameter.base import HyperParameter
-from ..optimization.base import EvaluationMode
+from ..config.configuration_base import DataConfiguration
+from ..optim.hyperparameter.base import HyperParameter
+from ..optim.base import EvaluationMode
 
 
 class Port:

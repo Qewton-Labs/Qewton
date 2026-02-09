@@ -3,9 +3,9 @@ from abc import abstractmethod
 from enum import Enum
 
 
-from ..configurations.configuration_base import DataConfiguration
-from ..configurations.variables import Variable
-from ..configurations.axis import FeatureAxis
+from ..config.configuration_base import DataConfiguration
+from ..config.variables import Variable
+from ..config.axis import FeatureAxis
 from ..nodes.base import Node, Port
 
 

@@ -2,8 +2,8 @@ from typing import Any
 import copy
 
 from .base import Node, Port
-from ..configurations.variables import Variable
-from ..configurations.configuration_base import DataConfiguration
+from ..config.variables import Variable
+from ..config.configuration_base import DataConfiguration
 
 
 class SliceNode(Node):

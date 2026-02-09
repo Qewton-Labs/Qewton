@@ -1,10 +1,10 @@
 import numpy as np
-import torch
+import tensorflow as tf
 import pioneer
 
 x_data = np.linspace(0, 1, 1000).reshape(-1, 1)
 u_data = x_data**2 + np.sin(6.0 * x_data)
-data = torch.tensor(np.column_stack((x_data, u_data)), dtype=torch.float32)
+data = tf.convert_to_tensor(np.column_stack((x_data, u_data)), dtype=tf.float32)
 
 X = pioneer.config.Variable("x", 1)
 U = pioneer.config.Variable("u", 1)
@@ -12,7 +12,7 @@ dataset = pioneer.nodes.DataSet.from_data(data, X * U, batch_size=1000)
 
 slice_node = pioneer.nodes.SliceNode(dataset.data_config)
 
-model = pioneer.algorithms.TorchFCN(X, U, 2, 8)
+model = pioneer.algorithms.TFFCN(X, U, hidden_layers=2, hidden_neurons=8)
 
 constrain = pioneer.constraints.MSEConstraint(
     model[model.OutputKeys.OUTPUT].data_configuration,
@@ -30,10 +30,12 @@ pipeline.validate()
 # runtime = pipeline.create_runtime()
 # runtime.run()
 
-trainer = pioneer.optim.trainer.PyTorchTrainer(
-    [pipeline], torch.optim.Adam, max_iterations=5000, learning_rate=0.001, device="cuda:0"
+trainer = pioneer.optim.trainer.TensorFlowTrainer(
+    [pipeline],
+    optimizer_cls=tf.keras.optimizers.Adam,  # type: ignore
+    max_iterations=5000,
+    learning_rate=0.001,
+    device="/CPU:0",
 )
-#trainer.run()
 
-import copy
-trainer2 = copy.deepcopy(trainer)
+trainer.run()

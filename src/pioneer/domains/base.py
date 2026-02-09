@@ -1,4 +1,4 @@
-from ..configurations.variables import Variable
+from ..config.variables import Variable
 
 
 # TODO: General domain classes to define underlying geometry, maybe later include again

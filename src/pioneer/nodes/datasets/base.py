@@ -1,10 +1,10 @@
 from typing import Any
 import warnings
 
-from ...configurations import DataConfiguration
-from ...optimization.hyperparameter.base import HyperParameter, ContinuousHyperparameter
-from ...configurations.variables import Variable
-from ...configurations.axis import SpatialAxis, BatchAxis, FeatureAxis
+from ...config import DataConfiguration
+from ...optim.hyperparameter.base import HyperParameter, ContinuousHyperparameter
+from ...config.variables import Variable
+from ...config.axis import SpatialAxis, BatchAxis, FeatureAxis
 from ...nodes.base import Node, Port
 
 # TODO: For now just a simple dataset where the data is provided
@@ -83,7 +83,8 @@ class DataSet(Node):
 
     @property
     def output_ports(self) -> dict[str, Port]:
-        # TODO: Add mean, std and pca to output ports
+        # TODO: Add mean, std and pca to output ports? Or just 
+        # pass this dataset to the PCA-net?
         return {self.OutputKeys.OUTPUT: Port(self.data_config, self, "data_port")}
 
     @property

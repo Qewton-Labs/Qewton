@@ -1,5 +1,5 @@
-from ..optimization.base import EvaluationMode
-from ..optimization.hyperparameter.base import HyperParameter, ContinuousHyperparameter
+from ..optim.base import EvaluationMode
+from ..optim.hyperparameter.base import HyperParameter, ContinuousHyperparameter
 from ..nodes.base import Node, Port
 
 # class Constraint:

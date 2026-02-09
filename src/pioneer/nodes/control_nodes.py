@@ -1,7 +1,7 @@
 from typing import Any
 
 from .base import Node, Port
-from ..configurations.configuration_base import DataConfiguration
+from ..config.configuration_base import DataConfiguration
 
 
 class ControlNode(Node):

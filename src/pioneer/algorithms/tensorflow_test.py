@@ -1,4 +1,4 @@
-import torch
+import tensorflow as tf
 
 from .base import AlgorithmNode, AlgorithmState
 from ..config.variables import Variable
@@ -9,21 +9,20 @@ from ..optim.hyperparameter.base import (
 )
 
 
-class TorchFCN(AlgorithmNode):
-
+class TFFCN(AlgorithmNode):
     def __init__(
         self,
         input_variable: Variable,
         output_variable: Variable,
         hidden_layers: int | DiscreteHyperparameter,
         hidden_neurons: int | DiscreteHyperparameter,
-        activation_fn: torch.nn.Module | CategoricalHyperparameter = torch.nn.Tanh(),
-        name: str = "TorchFCNNode",
+        activation_fn: str | CategoricalHyperparameter = "tanh",
+        name: str = "TFFCNNode",
     ) -> None:
         super().__init__(
             input_variable=input_variable, output_variable=output_variable, name=name
         )
-        self.model: torch.nn.Module
+        self.model: tf.keras.Model = None
         self.hidden_layer = HyperParameter.from_value(hidden_layers, "Hidden Layers")
         self.hidden_neurons = HyperParameter.from_value(hidden_neurons, "Hidden Neurons")
         self.activation_fn = HyperParameter.from_value(
@@ -31,43 +30,46 @@ class TorchFCN(AlgorithmNode):
         )
 
     def setup(self) -> None:
-        """Creates the underlying algorithm instance (e.g. creates the
-        neural network)
-        """
+        """Creates the underlying Keras model"""
         layers = []
+
         if self.hidden_layer.current_value > 0:
+            # First hidden layer
             layers.append(
-                torch.nn.Linear(
-                    self.input_variable.dim, self.hidden_neurons.current_value
+                tf.keras.layers.Dense(
+                    self.hidden_neurons.current_value,
+                    activation=self.activation_fn.current_value,
+                    input_shape=(self.input_variable.dim,),
+                    dtype=tf.float32,
                 )
             )
-            layers.append(self.activation_fn.current_value)
-
+            # Additional hidden layers
             for _ in range(self.hidden_layer.current_value - 1):
                 layers.append(
-                    torch.nn.Linear(
+                    tf.keras.layers.Dense(
                         self.hidden_neurons.current_value,
-                        self.hidden_neurons.current_value,
+                        activation=self.activation_fn.current_value,
+                        dtype=tf.float32,
                     )
                 )
-                layers.append(self.activation_fn.current_value)
-
+            # Output layer
             layers.append(
-                torch.nn.Linear(
-                    self.hidden_neurons.current_value, self.output_variable.dim
-                )
+                tf.keras.layers.Dense(self.output_variable.dim, dtype=tf.float32)
             )
         else:
+            # No hidden layer
             layers.append(
-                torch.nn.Linear(self.input_variable.dim, self.output_variable.dim)
+                tf.keras.layers.Dense(
+                    self.output_variable.dim,
+                    input_shape=(self.input_variable.dim,),
+                    dtype=tf.float32,
+                )
             )
 
-        self.model = torch.nn.Sequential(*layers)
+        self.model = tf.keras.Sequential(layers)
         self._state = AlgorithmState.READY
 
-    def run(
-        self, inputs: dict[str, torch.Tensor] | None = None
-    ) -> dict[str, torch.Tensor]:
+    def run(self, inputs: dict[str, tf.Tensor] | None = None) -> dict[str, tf.Tensor]:
         if self.state == AlgorithmState.UNINITIALIZED:
             self.setup()
         data = inputs[self.InputKeys.INPUT]  # type: ignore
@@ -75,9 +77,5 @@ class TorchFCN(AlgorithmNode):
         return {self.OutputKeys.OUTPUT: outdata}
 
     @property
-    def trainable_parameters(self):  # type: ignore
-        return self.model.parameters()
-
-    def to(self, device):
-        """Move data stored in this node to a different device (GPU, CPU)"""
-        self.model = self.model.to(device=device)
+    def trainable_parameters(self):
+        return self.model.trainable_variables

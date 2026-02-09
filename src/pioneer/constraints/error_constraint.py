@@ -1,9 +1,9 @@
 from enum import Enum
 from typing import Any
 
-from ..configurations.configuration_base import DataConfiguration
-from ..optimization.base import EvaluationMode
-from ..optimization.hyperparameter.base import ContinuousHyperparameter
+from ..config.configuration_base import DataConfiguration
+from ..optim.base import EvaluationMode
+from ..optim.hyperparameter.base import ContinuousHyperparameter
 from ..nodes.base import Port
 from .base import Constraint
 
@@ -37,7 +37,12 @@ class MSEConstraint(Constraint):
             raise ValueError("Inputs can not be None")
         x = inputs[self.InputKeys.INPUT1]
         y = inputs[self.InputKeys.INPUT2]
-        if hasattr(x, "mean") or hasattr(y, "mean"):
-            self.loss = ((x - y) ** 2).mean()
+        diff = x - y
+        if hasattr(diff, "mean"):
+            self.loss = (diff ** 2).mean()
+            return {}
+        if "tensorflow" in str(type(diff)):
+            import tensorflow as tf # TODO: Not so nice, better to move this into a child class
+            self.loss = tf.reduce_mean(tf.square(diff))
             return {}
         raise ValueError("The MSE can not be computed for this input")
