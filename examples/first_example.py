@@ -22,8 +22,8 @@ constrain = pioneer.constraints.MSEConstraint(
 pipeline = pioneer.pipeline.Pipeline()
 
 pipeline.connect(dataset[dataset.OutputKeys.OUTPUT], slice_node[dataset.InputKeys.INPUT])
-pipeline.connect(slice_node["x"], model[dataset.InputKeys.INPUT])
-pipeline.connect(slice_node["u"], constrain[constrain.InputKeys.INPUT1])
+pipeline.connect(slice_node[X], model[dataset.InputKeys.INPUT])
+pipeline.connect(slice_node[U], constrain[constrain.InputKeys.INPUT1])
 pipeline.connect(model[model.OutputKeys.OUTPUT], constrain[constrain.InputKeys.INPUT2])
 
 pipeline.validate()
@@ -34,8 +34,3 @@ trainer = pioneer.optim.trainer.PyTorchTrainer(
     [pipeline], torch.optim.Adam, max_iterations=5000, learning_rate=0.001, device="cpu"
 )
 trainer.run()
-
-import copy
-
-trainer.reset()
-trainer2 = copy.deepcopy(trainer)

@@ -4,6 +4,7 @@ from typing import Any
 from enum import Enum
 
 from ..config.configuration_base import DataConfiguration
+from ..config.variables import Variable
 from ..optim.hyperparameter.base import HyperParameter
 from ..optim.base import EvaluationMode
 
@@ -104,7 +105,12 @@ class Node(ABC):
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
 
-    def __getitem__(self, port_name: str) -> Port:
+    def __getitem__(self, port_name: str | Variable) -> Port:
+        if isinstance(port_name, Variable):
+            assert len(port_name) == 1, "Can only slice with one single variable"
+            var_name: str = next(iter(port_name))
+            return self[var_name]
+
         input_ports = self.input_ports
         if port_name in input_ports.keys():
             return input_ports[port_name]

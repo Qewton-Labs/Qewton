@@ -8,6 +8,7 @@ class HyperParameterState(Enum):
 
 
 class HyperParameterScale(Enum):
+    # TODO: Is not used in the parameter itself
     LINEAR = "linear"
     LOG = "log"
 
