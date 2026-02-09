@@ -36,7 +36,7 @@ class Port:
 class Node(ABC):
     """Base class for all nodes to create a pipeline.
 
-    TODO: Do we need a reset method or a validate method here?
+    TODO: Do we need a validate method here?
     TODO: How about save and load methods?
     """
 
@@ -114,6 +114,9 @@ class Node(ABC):
         raise ValueError(f"Port {port_name} does not exist")
 
     def set_mode(self, new_mode: EvaluationMode):
+        pass
+
+    def reset(self):
         pass
 
 

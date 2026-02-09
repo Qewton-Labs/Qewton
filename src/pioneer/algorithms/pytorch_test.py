@@ -81,3 +81,12 @@ class TorchFCN(AlgorithmNode):
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
         self.model = self.model.to(device=device)
+
+    def reset(self):
+        if not self.state == AlgorithmState.FIXED:
+            self.model: torch.nn.Module = torch.nn.Module()
+            self._state = AlgorithmState.UNINITIALIZED
+
+    @property
+    def hyperparameters(self) -> list[HyperParameter]:
+        return [self.hidden_layer, self.hidden_neurons, self.activation_fn]

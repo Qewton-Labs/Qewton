@@ -6,3 +6,4 @@ from .pipeline import *
 from .optim import *
 from .constraints import *
 from .optim.trainer import *
+from .optim.tuner import *

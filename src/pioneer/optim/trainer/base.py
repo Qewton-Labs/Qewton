@@ -1,3 +1,5 @@
+from typing import Any
+
 from ..base import EvaluationMode
 from ..hyperparameter.base import HyperParameter, DiscreteHyperparameter
 from ...pipeline.base import Pipeline
@@ -8,14 +10,15 @@ from ...constraints.base import Constraint
 ###############################
 # TODO: This trainer is just some first idea.
 # I think for more general optimizers this does not work (e.g. LBFGS)
-
+#
 # TODO: What when the user does not want to work with the pipelines in the
 # backend?
-
+#
 # TODO: Add parallelization?
-
-
-# TODO: Also add stuff callbacks
+#
+# TODO: Add stuff callbacks
+#
+# TODO: What should the trainer return in run?
 ###############################
 class Trainer:
     def __init__(
@@ -25,7 +28,7 @@ class Trainer:
         max_iterations: int | DiscreteHyperparameter,
         device="cpu",
         validation_check: int = 100,
-        save_path: str = "results",
+        save_path: str = "train_results",
     ):
 
         self.optimizer_cls = optimizer_cls
@@ -71,8 +74,8 @@ class Trainer:
     def _move_to_device(self):
         pass
 
-    def run(self):
-        pass
+    def run(self) -> dict[str, dict[str, float]]:
+        return {}
 
     def set_device(self, device: str):
         self.device = device
@@ -81,12 +84,13 @@ class Trainer:
         self.save_path = path
         # TODO: Set this path also for all callbacks and models
 
-    def _run_pipeline(self, pipeline: Pipeline, mode: EvaluationMode) -> float:
+    def _run_pipeline(
+        self, pipeline: Pipeline, mode: EvaluationMode
+    ) -> tuple[float, dict[str, float]]:
         pipeline.set_mode(mode)
         run_time = pipeline.create_runtime()
         run_time.run()
-        pipeline_loss = 0.0
-        # TODO: Not helpful if we want to track each loss independently.
+        pipeline_loss_dict: dict[str, float] = {}
         for constrain_node in pipeline.constrain_nodes:
             if (
                 constrain_node.mode == mode
@@ -94,8 +98,9 @@ class Trainer:
                 or (constrain_node.mode == EvaluationMode.TEST_AND_VALIDATION)
                 and (mode == EvaluationMode.TEST or mode == EvaluationMode.VALIDATION)
             ):
-                pipeline_loss += constrain_node.get_loss()
-        return pipeline_loss
+                pipeline_loss_dict[constrain_node.name] = constrain_node.get_loss()
+        pipeline_loss = sum(pipeline_loss_dict.values())
+        return pipeline_loss, pipeline_loss_dict
 
     def get_hyperparameter(self) -> dict[str, list[HyperParameter]]:
         hyperparameter_dict: dict[str, list[HyperParameter]] = {}
@@ -104,7 +109,24 @@ class Trainer:
             if len(node_params) > 0:
                 hyperparameter_dict[node.name] = node.hyperparameters
         # TODO: Not completely correct, since maybe we want to try different
-        # Optimizers, saved as Hyperparameters?! E.g. Adam, LBFGS or a combination of them...
+        # Optimizers, saved as Hyperparameters?! E.g. Adam, LBFGS or a combination
+        # of them...
         # This then also needs to change the iterations accordingly
         hyperparameter_dict["trainer"] = [self.max_iterations]
         return hyperparameter_dict
+
+    def set_hyperparameter(self, param_dict: dict[str, dict[str, Any]]):
+        # TODO: Here also update the stuff for the trainer
+        if "trainer" in param_dict:
+            self.max_iterations.set_value(param_dict["trainer"][self.max_iterations.name])
+
+        for node in self.all_nodes:
+            if node.name in param_dict:
+                node_hyperparameters = node.hyperparameters
+                for param in node_hyperparameters:
+                    if param.name in param_dict[node.name]:
+                        param.set_value(param_dict[node.name][param.name])
+
+    def reset(self):
+        for node in self.all_nodes:
+            node.reset()

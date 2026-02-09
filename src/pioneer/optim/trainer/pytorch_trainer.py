@@ -43,7 +43,7 @@ class PyTorchTrainer(Trainer):
         for node in self.all_nodes:
             node.to(self.device)
 
-    def run(self):
+    def run(self) -> dict[str, dict[str, float]]:
         # Setup all data inside the problem and create models
         all_pipelines = self.train_pipelines.union(self.validation_pipelines)
         all_pipelines = all_pipelines.union(self.test_pipelines)
@@ -61,7 +61,7 @@ class PyTorchTrainer(Trainer):
             total_loss = 0.0
             # Run all pipelines that contain training constraints
             for pipeline in self.train_pipelines:
-                total_loss += self._run_pipeline(pipeline, EvaluationMode.TRAIN)
+                total_loss += self._run_pipeline(pipeline, EvaluationMode.TRAIN)[0]
 
             # Update parameters
             total_loss.backward()  # type: ignore
@@ -74,18 +74,21 @@ class PyTorchTrainer(Trainer):
                 for pipeline in self.validation_pipelines:
                     validation_loss += self._run_pipeline(
                         pipeline, EvaluationMode.VALIDATION
-                    )
-                print(
-                    f"Training loss at {step}/{self.max_iterations.current_value}: \
-                      {total_loss}"
-                )
-                print(
-                    f"Validation loss at {step}/{self.max_iterations.current_value}: \
-                    {validation_loss}"
-                )
+                    )[0]
+                # print(
+                #     f"Training loss at {step}/{self.max_iterations.current_value}: \
+                #       {total_loss}"
+                # )
+                # print(
+                #     f"Validation loss at {step}/{self.max_iterations.current_value}: \
+                #     {validation_loss}"
+                # )
 
         # Run test at the end
-        test_loss = 0.0
+        test_losses = {}
         for pipeline in self.test_pipelines:
-            test_loss += self._run_pipeline(pipeline, EvaluationMode.TEST)
-        print("Final testing loss is", test_loss)
+            _, test_results = self._run_pipeline(pipeline, EvaluationMode.TEST)
+            test_losses[pipeline.name] = {}
+            for key, value in test_results.items():
+                test_losses[pipeline.name][key] = value.detach().item()  # type: ignore
+        return test_losses

@@ -29,3 +29,6 @@ class ControlNode(Node):
             raise ValueError("Input can not be None!")
         self.stored_data = inputs[self.InputKeys.INPUT]
         return {self.OutputKeys.OUTPUT: self.stored_data}
+
+    def reset(self):
+        self.stored_data = None

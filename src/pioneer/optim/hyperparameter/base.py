@@ -18,9 +18,9 @@ class HyperParameter:
     # different algorithms with different hyperparameters each.
     def __init__(
         self,
-        state: HyperParameterState,
         parameter_range: tuple | list,
         initial_value,
+        state: HyperParameterState = HyperParameterState.OPTIMIZE,
         name: str = "HyperParameter",
     ):
         self.state = state
@@ -38,14 +38,15 @@ class HyperParameter:
         assert name is not None, "Name must be provided to create a HyperParameter."
         if isinstance(x, int):
             return DiscreteHyperparameter(
-                HyperParameterState.FIXED, (x, x), initial_value=x, name=name
+                (x, x), initial_value=x, state=HyperParameterState.FIXED, name=name
             )
         if isinstance(x, float):
             return ContinuousHyperparameter(
-                HyperParameterState.FIXED, (x, x), initial_value=x, name=name
+                (x, x), initial_value=x, state=HyperParameterState.FIXED, name=name
             )
+        # TODO: This is not save for any values!
         return CategoricalHyperparameter(
-            HyperParameterState.FIXED, categories=[x], initial_value=x, name=name
+            categories=[x], state=HyperParameterState.FIXED, initial_value=x, name=name
         )
 
     @property
@@ -66,9 +67,9 @@ class HyperParameter:
 class ContinuousHyperparameter(HyperParameter):
     def __init__(
         self,
-        state: HyperParameterState,
         parameter_range: tuple | list,
         initial_value: float | None = None,
+        state: HyperParameterState = HyperParameterState.OPTIMIZE,
         name: str = "ContinuousHyperparameter",
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
     ):
@@ -85,15 +86,15 @@ class ContinuousHyperparameter(HyperParameter):
         self.scale = scale
 
     def sample_parameter_random(self):
-        self.set_value(random.uniform(self.parameter_range[0], self.parameter_range[1]))
+        return random.uniform(self.parameter_range[0], self.parameter_range[1])
 
 
 class DiscreteHyperparameter(ContinuousHyperparameter):
     def __init__(
         self,
-        state: HyperParameterState,
         parameter_range: tuple | list,
         initial_value: int | None = None,
+        state: HyperParameterState = HyperParameterState.OPTIMIZE,
         name: str = "DiscreteHyperparameter",
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
     ):
@@ -114,14 +115,14 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
         self.current_value = int(new_value)
 
     def sample_parameter_random(self):
-        self.set_value(random.randint(self.parameter_range[0], self.parameter_range[1]))
+        return random.randint(self.parameter_range[0], self.parameter_range[1])
 
 
 class CategoricalHyperparameter(HyperParameter):
     def __init__(
         self,
-        state: HyperParameterState,
         categories: tuple | list,
+        state: HyperParameterState = HyperParameterState.OPTIMIZE,
         name: str = "CategoricalHyperparameter",
         initial_value=None,
     ):
@@ -136,4 +137,4 @@ class CategoricalHyperparameter(HyperParameter):
         )
 
     def sample_parameter_random(self):
-        self.set_value(random.choice(self.parameter_range[0]))
+        return random.choice(self.parameter_range)

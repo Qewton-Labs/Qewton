@@ -1,15 +1,20 @@
 import tensorflow as tf
 
 from ..base import EvaluationMode
-from ..hyperparameter.base import HyperParameter, DiscreteHyperparameter, ContinuousHyperparameter
+from ..hyperparameter.base import (
+    HyperParameter,
+    DiscreteHyperparameter,
+    ContinuousHyperparameter,
+)
 from ...pipeline.base import Pipeline
 from .base import Trainer
+
 
 class TensorFlowTrainer(Trainer):
     def __init__(
         self,
         pipelines: list[Pipeline],
-        optimizer_cls: type[tf.keras.optimizers.Optimizer], # type: ignore
+        optimizer_cls: type[tf.keras.optimizers.Optimizer],  # type: ignore
         max_iterations: int | DiscreteHyperparameter,
         learning_rate: float | ContinuousHyperparameter,
         device="/CPU:0",
@@ -20,15 +25,15 @@ class TensorFlowTrainer(Trainer):
             optimizer_cls=optimizer_cls,
             max_iterations=max_iterations,
             device=device,
-            validation_check=validation_check
+            validation_check=validation_check,
         )
         self.lr = HyperParameter.from_value(learning_rate, "Learning Rate")
-        self.optimizer: tf.keras.optimizers.Optimizer # type: ignore
+        self.optimizer: tf.keras.optimizers.Optimizer  # type: ignore
 
     def _get_trainable_parameters(self):
         trainable_parameters = []
         for node in self.all_nodes:
-            node_params = node.trainable_parameters 
+            node_params = node.trainable_parameters
             if node_params is not None:
                 trainable_parameters.extend(node_params)
         return trainable_parameters
@@ -37,7 +42,7 @@ class TensorFlowTrainer(Trainer):
         # TensorFlow automatically handles devices,
         pass
 
-    def run(self):
+    def run(self) -> dict[str, dict[str, float]]:
         with tf.device(self.device):
             all_pipelines = self.train_pipelines.union(self.validation_pipelines)
             all_pipelines = all_pipelines.union(self.test_pipelines)
@@ -54,10 +59,12 @@ class TensorFlowTrainer(Trainer):
                 with tf.GradientTape() as tape:
                     for pipeline in self.train_pipelines:
                         # Assume _run_pipeline returns a scalar loss
-                        total_loss += self._run_pipeline(pipeline, EvaluationMode.TRAIN)
+                        total_loss += self._run_pipeline(pipeline, EvaluationMode.TRAIN)[
+                            0
+                        ]
 
                 gradients = tape.gradient(total_loss, trainable_parameters)
-                self.optimizer.apply_gradients(zip(gradients, trainable_parameters)) # type: ignore
+                self.optimizer.apply_gradients(zip(gradients, trainable_parameters))  # type: ignore
 
                 # Validation
                 if step % self.validation_check == 0:
@@ -65,7 +72,7 @@ class TensorFlowTrainer(Trainer):
                     for pipeline in self.validation_pipelines:
                         validation_loss += self._run_pipeline(
                             pipeline, EvaluationMode.VALIDATION
-                        )
+                        )[0]
                     print(
                         f"Training loss at {step}/{self.max_iterations.current_value}: {total_loss}"
                     )
@@ -73,7 +80,10 @@ class TensorFlowTrainer(Trainer):
                         f"Validation loss at {step}/{self.max_iterations.current_value}: {validation_loss}"
                     )
 
-            test_loss = 0.0
+            # Run test at the end
+            test_losses = {}
             for pipeline in self.test_pipelines:
-                test_loss += self._run_pipeline(pipeline, EvaluationMode.TEST)
-            print("Final testing loss is", test_loss)
+                test_losses[pipeline.name] = self._run_pipeline(
+                    pipeline, EvaluationMode.TEST
+                )[1]
+            return test_losses

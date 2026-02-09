@@ -47,3 +47,10 @@ class Constraint(Node):
 
     def get_loss(self, add_weight: bool = True):
         return self.loss * (self.weight.current_value if add_weight else 1)
+
+    def reset(self):
+        self.loss = 0.0
+
+    @property
+    def hyperparameters(self) -> list[HyperParameter]:
+        return [self.weight]

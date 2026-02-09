@@ -14,11 +14,12 @@ from ..constraints.base import Constraint
 
 class Pipeline:
 
-    def __init__(self):
+    def __init__(self, name="pipeline"):
         self.nodes: set[Node] = set[Node]()
         self.constrain_nodes: set[Constraint] = set[Constraint]()
         self.algorithm_nodes: set[AlgorithmNode] = set[AlgorithmNode]()
         self.edges: list[Edge] = []
+        self.name = name
 
     def copy(self) -> Pipeline:
         new_pipeline = Pipeline()

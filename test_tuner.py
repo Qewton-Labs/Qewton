@@ -12,7 +12,15 @@ dataset = pioneer.nodes.DataSet.from_data(data, X * U, batch_size=1000)
 
 slice_node = pioneer.nodes.SliceNode(dataset.data_config)
 
-model = pioneer.algorithms.TorchFCN(X, U, 2, 8)
+model = pioneer.algorithms.TorchFCN(
+    X,
+    U,
+    hidden_layers=pioneer.optim.DiscreteHyperparameter((1, 3)),
+    hidden_neurons=pioneer.optim.DiscreteHyperparameter((1, 16)),
+    activation_fn=pioneer.optim.CategoricalHyperparameter(
+        [torch.nn.Tanh(), torch.nn.ReLU()]
+    ),
+)
 
 constrain = pioneer.constraints.MSEConstraint(
     model[model.OutputKeys.OUTPUT].data_configuration,
@@ -33,9 +41,6 @@ pipeline.validate()
 trainer = pioneer.optim.trainer.PyTorchTrainer(
     [pipeline], torch.optim.Adam, max_iterations=5000, learning_rate=0.001, device="cpu"
 )
-trainer.run()
 
-import copy
-
-trainer.reset()
-trainer2 = copy.deepcopy(trainer)
+tuner = pioneer.optim.tuner.Tuner(trainer, 5, 2)
+tuner.run()
