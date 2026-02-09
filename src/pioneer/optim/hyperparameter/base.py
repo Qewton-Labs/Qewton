@@ -21,7 +21,7 @@ class HyperParameter:
         parameter_range: tuple | list,
         initial_value,
         state: HyperParameterState = HyperParameterState.OPTIMIZE,
-        name: str = "HyperParameter",
+        name: str | None = None,
     ):
         self.state = state
         self.parameter_range = parameter_range
@@ -31,7 +31,7 @@ class HyperParameter:
     @classmethod
     def from_value(cls, x, name: str | None = None):
         if isinstance(x, HyperParameter):
-            if name is not None:
+            if name is not None and x.name is None:
                 x.name = name
             return x
 
@@ -70,7 +70,7 @@ class ContinuousHyperparameter(HyperParameter):
         parameter_range: tuple | list,
         initial_value: float | None = None,
         state: HyperParameterState = HyperParameterState.OPTIMIZE,
-        name: str = "ContinuousHyperparameter",
+        name: str | None = None,
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
     ):
         assert len(parameter_range) == 2, "Range must be a tuple or list of length 2."
@@ -95,7 +95,7 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
         parameter_range: tuple | list,
         initial_value: int | None = None,
         state: HyperParameterState = HyperParameterState.OPTIMIZE,
-        name: str = "DiscreteHyperparameter",
+        name: str | None = None,
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
     ):
         assert len(parameter_range) == 2, "Range must be a tuple or list of length 2."
@@ -123,7 +123,7 @@ class CategoricalHyperparameter(HyperParameter):
         self,
         categories: tuple | list,
         state: HyperParameterState = HyperParameterState.OPTIMIZE,
-        name: str = "CategoricalHyperparameter",
+        name: str | None = None,
         initial_value=None,
     ):
         if initial_value is None:

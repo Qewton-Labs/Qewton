@@ -39,8 +39,12 @@ pipeline.validate()
 # runtime.run()
 
 trainer = pioneer.optim.trainer.PyTorchTrainer(
-    [pipeline], torch.optim.Adam, max_iterations=5000, learning_rate=0.001, device="cpu"
+    [pipeline],
+    torch.optim.Adam,
+    max_iterations=pioneer.optim.DiscreteHyperparameter((100, 5000)),
+    learning_rate=0.001,
+    device="cuda:0",
 )
 
-tuner = pioneer.optim.tuner.Tuner(trainer, 5, 2)
+tuner = pioneer.optim.tuner.Tuner(trainer, 25, 4)
 tuner.run()

@@ -35,6 +35,8 @@ def worker_eval(params):
 # TODO: Add different tuning strategies
 #
 # TODO: Move data to different devices (i think best if this happens in the trainer!)
+#
+# TODO: Enable to restart tuning from a given point
 class Tuner:
 
     def __init__(
@@ -82,7 +84,7 @@ class Tuner:
         for key, param_list in self.tunable_parameters.items():
             sampled_parameters[key] = {}
             for param in param_list:
-                sampled_parameters[key][param.name] = param.sample_parameter_random()
+                sampled_parameters[key][param.name] = param.sample_parameter_random()  # type: ignore
         return sampled_parameters
 
     def run(self):
