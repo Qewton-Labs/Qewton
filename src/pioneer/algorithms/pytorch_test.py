@@ -35,27 +35,23 @@ class TorchFCN(AlgorithmNode):
         neural network)
         """
         layers = []
-        if self.hidden_layer.current_value > 0:
+        if self.hidden_layer.value > 0:
             layers.append(
-                torch.nn.Linear(
-                    self.input_variable.dim, self.hidden_neurons.current_value
-                )
+                torch.nn.Linear(self.input_variable.dim, self.hidden_neurons.value)
             )
-            layers.append(self.activation_fn.current_value)
+            layers.append(self.activation_fn.value)
 
-            for _ in range(self.hidden_layer.current_value - 1):
+            for _ in range(self.hidden_layer.value - 1):
                 layers.append(
                     torch.nn.Linear(
-                        self.hidden_neurons.current_value,
-                        self.hidden_neurons.current_value,
+                        self.hidden_neurons.value,
+                        self.hidden_neurons.value,
                     )
                 )
-                layers.append(self.activation_fn.current_value)
+                layers.append(self.activation_fn.value)
 
             layers.append(
-                torch.nn.Linear(
-                    self.hidden_neurons.current_value, self.output_variable.dim
-                )
+                torch.nn.Linear(self.hidden_neurons.value, self.output_variable.dim)
             )
         else:
             layers.append(

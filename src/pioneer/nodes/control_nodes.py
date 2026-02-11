@@ -5,8 +5,8 @@ from ..config.configuration_base import DataConfiguration
 
 
 class ControlNode(Node):
-    """Base class for control nodes that save the data flowing through this node,
-    to use it later in different constraints.
+    """A node that save the data flowing through this node, that
+    data can be used/evaluated later.
     """
 
     def __init__(self, data_config: DataConfiguration, name: str = "ControlNode") -> None:

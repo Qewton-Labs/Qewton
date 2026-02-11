@@ -33,22 +33,22 @@ class TFFCN(AlgorithmNode):
         """Creates the underlying Keras model"""
         layers = []
 
-        if self.hidden_layer.current_value > 0:
+        if self.hidden_layer.value > 0:
             # First hidden layer
             layers.append(
                 tf.keras.layers.Dense(
-                    self.hidden_neurons.current_value,
-                    activation=self.activation_fn.current_value,
+                    self.hidden_neurons.value,
+                    activation=self.activation_fn.value,
                     input_shape=(self.input_variable.dim,),
                     dtype=tf.float32,
                 )
             )
             # Additional hidden layers
-            for _ in range(self.hidden_layer.current_value - 1):
+            for _ in range(self.hidden_layer.value - 1):
                 layers.append(
                     tf.keras.layers.Dense(
-                        self.hidden_neurons.current_value,
-                        activation=self.activation_fn.current_value,
+                        self.hidden_neurons.value,
+                        activation=self.activation_fn.value,
                         dtype=tf.float32,
                     )
                 )

@@ -5,11 +5,16 @@ from ..config.configuration_base import DataConfiguration
 
 
 class GradientTrackingNode(Node):
-    """Enables gradient tracking of the data flowing through this node"""
+    """Enables gradient tracking of the data flowing through this node."""
 
     def __init__(
         self, data_config: DataConfiguration, name: str = "TrackingNode"
     ) -> None:
+        """
+        Args:
+            data_config (DataConfiguration): The expected data shape.
+            name (str, optional): The name of this node. Defaults to "TrackingNode".
+        """
         super().__init__(name=name)
         self.data_config = data_config
         self._port = Port(self.data_config, self, "port", True)

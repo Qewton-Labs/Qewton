@@ -32,7 +32,6 @@ tracking_node = pioneer.nodes.GradientTrackingNode(
 ode_constraint = pioneer.constraints.ResidualConstraint(
     model[model.InputKeys.INPUT].data_configuration,
     model[model.OutputKeys.OUTPUT].data_configuration,
-    pioneer.optim.EvaluationMode.TRAIN,
     residual_fn=ode_residual,
     name="ODE",
 )
@@ -59,18 +58,17 @@ ode_pipeline.connect(
 )
 
 # Testing can go into the same pipeline
-test_constrain = pioneer.constraints.MSEConstraint(
+test_constraint = pioneer.constraints.MSEConstraint(
     model[model.OutputKeys.OUTPUT].data_configuration,
-    pioneer.optim.EvaluationMode.TEST,
 )
 
 ode_pipeline.connect(
     slice_node[U],
-    test_constrain[test_constrain.InputKeys.INPUT1],
+    test_constraint[test_constraint.InputKeys.INPUT1],
 )
 ode_pipeline.connect(
     model[model.OutputKeys.OUTPUT],
-    test_constrain[test_constrain.InputKeys.INPUT2],
+    test_constraint[test_constraint.InputKeys.INPUT2],
 )
 
 
@@ -85,7 +83,6 @@ def initial_residual(_x, u):
 initial_constraint = pioneer.constraints.ResidualConstraint(
     model[model.InputKeys.INPUT].data_configuration,
     model[model.OutputKeys.OUTPUT].data_configuration,
-    pioneer.optim.EvaluationMode.TRAIN,
     residual_fn=initial_residual,
     name="Initial",
 )
@@ -111,9 +108,11 @@ initial_pipeline.validate()
 # Start training:
 trainer = pioneer.optim.trainer.PyTorchTrainer(
     [ode_pipeline, initial_pipeline],
-    torch.optim.Adam,
+    training_constraints=[initial_constraint, ode_constraint],
+    optimizer=torch.optim.Adam,
     max_iterations=5000,
     learning_rate=0.001,
     device="cpu",
+    validation_constraints=[test_constraint],
 )
-print(trainer.run())
+trainer.run()

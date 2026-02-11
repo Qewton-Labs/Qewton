@@ -16,6 +16,15 @@ class SliceNode(Node):
     def __init__(
         self, input_data_config: DataConfiguration, name: str = "SliceNode"
     ) -> None:
+        """
+        Args:
+            data_config (DataConfiguration): The expected data shape.
+            name (str, optional): The name of this node. Defaults to "SliceNode".
+
+        Raises:
+            ValueError: If the provided DataConfiguration does not contain
+                any variables, we can not slice along the variables.
+        """
         super().__init__(name=name)
         self.input_data_config = input_data_config
         self._in_port = Port(self.input_data_config, self, "port", True)

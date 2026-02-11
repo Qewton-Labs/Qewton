@@ -10,6 +10,7 @@ from ..nodes.base import Node, Port
 
 
 class AlgorithmState(Enum):
+    # TODO: Is this needed?
     FIXED = 1
     UNINITIALIZED = 2
     READY = 3
@@ -17,6 +18,9 @@ class AlgorithmState(Enum):
 
 
 class AlgorithmNode(Node):
+    """General node representing an algorithm that should solve a given problem
+    or a part of it.
+    """
 
     def __init__(
         self,
@@ -24,6 +28,12 @@ class AlgorithmNode(Node):
         output_variable: Variable,
         name: str = "AlgorithmNode",
     ) -> None:
+        """
+        Args:
+            input_variable (Variable): The input variables of the algorithm.
+            output_variable (Variable): The output variables of the algorithm.
+            name (str, optional): The name of the node. Defaults to "AlgorithmNode".
+        """
         super().__init__(name=name)
         self.input_variable = input_variable
         self.output_variable = output_variable
@@ -38,6 +48,10 @@ class AlgorithmNode(Node):
     def setup(self) -> None:
         """Creates the underlying algorithm instance (e.g. creates the
         neural network)
+
+        This should not happen in the __init__ call, given that in the
+        HyperParameter tuning we need to recreated the underlying algorithm
+        instance, but dont want to create a new node inside our graph.
         """
 
     @property

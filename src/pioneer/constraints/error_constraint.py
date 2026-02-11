@@ -2,7 +2,6 @@ from enum import Enum
 from typing import Any
 
 from ..config.configuration_base import DataConfiguration
-from ..optim.base import EvaluationMode
 from ..optim.hyperparameter.base import ContinuousHyperparameter
 from ..nodes.base import Port
 from .base import Constraint
@@ -17,11 +16,10 @@ class MSEConstraint(Constraint):
     def __init__(
         self,
         input_config: DataConfiguration,
-        evaluation_mode: EvaluationMode,
         name="MSEConstraint",
         weight: float | ContinuousHyperparameter = 1,
     ):
-        super().__init__(evaluation_mode, name, weight)
+        super().__init__(name, weight)
         self.input_config = input_config
         self.loss = 0.0
 
@@ -59,14 +57,12 @@ class ResidualConstraint(MSEConstraint):
         self,
         input_config_1: DataConfiguration,
         input_config_2: DataConfiguration,
-        evaluation_mode: EvaluationMode,
         residual_fn,
         name="ResidualConstraint",
         weight: float | ContinuousHyperparameter = 1,
     ):
         super().__init__(
             input_config=input_config_1,
-            evaluation_mode=evaluation_mode,
             name=name,
             weight=weight,
         )

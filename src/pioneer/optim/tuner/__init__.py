@@ -1,1 +1,1 @@
-from .base import Tuner
+from .base import Tuner, TuningStrategy

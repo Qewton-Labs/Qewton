@@ -16,7 +16,6 @@ model = pioneer.algorithms.TFFCN(X, U, hidden_layers=2, hidden_neurons=8)
 
 constrain = pioneer.constraints.MSEConstraint(
     model[model.OutputKeys.OUTPUT].data_configuration,
-    pioneer.optim.EvaluationMode.ALWAYS,
 )
 
 pipeline = pioneer.pipeline.Pipeline()
@@ -32,6 +31,7 @@ pipeline.validate()
 
 trainer = pioneer.optim.trainer.TensorFlowTrainer(
     [pipeline],
+    training_constraints=[constrain],
     optimizer_cls=tf.keras.optimizers.Adam,  # type: ignore
     max_iterations=5000,
     learning_rate=0.001,

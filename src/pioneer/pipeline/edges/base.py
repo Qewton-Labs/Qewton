@@ -7,6 +7,9 @@ from ...nodes.base import Node
 class Edge:
     """Class representing a connection between two nodes in a pipeline.
     Is frozen, such that edges are immutable after creation.
+
+    The information about connections is only saved insides edges,
+    such that nodes could be used in different pipelines.
     """
 
     from_node: Node

@@ -2,7 +2,11 @@ from typing import Any
 import warnings
 
 from ...config import DataConfiguration
-from ...optim.hyperparameter.base import HyperParameter, ContinuousHyperparameter
+from ...optim.hyperparameter.base import (
+    HyperParameter,
+    DiscreteHyperparameter,
+    CategoricalHyperparameter,
+)
 from ...config.variables import Variable
 from ...config.axis import SpatialAxis, BatchAxis, FeatureAxis
 from ...nodes.base import Node, Port
@@ -22,7 +26,7 @@ class DataSet(Node):
         self,
         data_config: DataConfiguration,
         data,
-        batch_size: int | ContinuousHyperparameter,
+        batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
         splitting_ratio: tuple[float, float, float] = (0.8, 0.1, 0.1),
         name: str = "DataSetNode",
     ):
@@ -46,7 +50,7 @@ class DataSet(Node):
         cls,
         data,
         variable: Variable,
-        batch_size: int | ContinuousHyperparameter,
+        batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
         splitting_ratio: tuple[float, float, float] = (0.8, 0.1, 0.1),
         name: str = "DataSetNode",
     ):
@@ -83,7 +87,7 @@ class DataSet(Node):
 
     @property
     def output_ports(self) -> dict[str, Port]:
-        # TODO: Add mean, std and pca to output ports? Or just 
+        # TODO: Add mean, std and pca to output ports? Or just
         # pass this dataset to the PCA-net?
         return {self.OutputKeys.OUTPUT: Port(self.data_config, self, "data_port")}
 

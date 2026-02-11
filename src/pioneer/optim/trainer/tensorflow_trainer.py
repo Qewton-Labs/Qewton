@@ -7,6 +7,7 @@ from ..hyperparameter.base import (
     ContinuousHyperparameter,
 )
 from ...pipeline.base import Pipeline
+from ...constraints.base import Constraint
 from .base import Trainer
 
 
@@ -14,14 +15,18 @@ class TensorFlowTrainer(Trainer):
     def __init__(
         self,
         pipelines: list[Pipeline],
+        training_constraints: list[Constraint],
         optimizer_cls: type[tf.keras.optimizers.Optimizer],  # type: ignore
         max_iterations: int | DiscreteHyperparameter,
         learning_rate: float | ContinuousHyperparameter,
         device="/CPU:0",
+        validation_constraints: list[Constraint] = [],
         validation_check: int = 100,
     ):
         super().__init__(
             pipelines=pipelines,
+            training_constraints=training_constraints,
+            validation_constraints=validation_constraints,
             optimizer_cls=optimizer_cls,
             max_iterations=max_iterations,
             device=device,
@@ -42,48 +47,46 @@ class TensorFlowTrainer(Trainer):
         # TensorFlow automatically handles devices,
         pass
 
-    def run(self) -> dict[str, dict[str, float]]:
+    def run(self, show_progress: bool = True):
         with tf.device(self.device):
             all_pipelines = self.train_pipelines.union(self.validation_pipelines)
-            all_pipelines = all_pipelines.union(self.test_pipelines)
             for pipeline in all_pipelines:
                 pipeline.setup()
 
             # Register trainable parameters
             trainable_parameters = self._get_trainable_parameters()
-            self.optimizer = self.optimizer_cls(learning_rate=self.lr.current_value)
+            self.optimizer = self.optimizer_cls(learning_rate=self.lr.value)
 
-            for step in range(self.max_iterations.current_value):
+            for step in range(self.max_iterations.value):
                 total_loss = 0.0
                 # Run training pipelines inside GradientTape
                 with tf.GradientTape() as tape:
                     for pipeline in self.train_pipelines:
                         # Assume _run_pipeline returns a scalar loss
-                        total_loss += self._run_pipeline(pipeline, EvaluationMode.TRAIN)[
-                            0
-                        ]
+                        self._run_pipeline(pipeline, EvaluationMode.TRAIN)
+
+                    for train_constraint in self.training_constraints:
+                        total_loss += train_constraint.get_loss()
 
                 gradients = tape.gradient(total_loss, trainable_parameters)
-                self.optimizer.apply_gradients(zip(gradients, trainable_parameters))  # type: ignore
+                self.optimizer.apply_gradients(zip(gradients, trainable_parameters))
+                # type: ignore
 
-                # Validation
+                # Check validation data
                 if step % self.validation_check == 0:
-                    validation_loss = 0.0
                     for pipeline in self.validation_pipelines:
-                        validation_loss += self._run_pipeline(
-                            pipeline, EvaluationMode.VALIDATION
-                        )[0]
-                    print(
-                        f"Training loss at {step}/{self.max_iterations.current_value}: {total_loss}"
-                    )
-                    print(
-                        f"Validation loss at {step}/{self.max_iterations.current_value}: {validation_loss}"
-                    )
+                        self._run_pipeline(pipeline, EvaluationMode.VALIDATION)
 
-            # Run test at the end
-            test_losses = {}
-            for pipeline in self.test_pipelines:
-                test_losses[pipeline.name] = self._run_pipeline(
-                    pipeline, EvaluationMode.TEST
-                )[1]
-            return test_losses
+                    validation_loss = 0.0
+                    for validation_constraint in self.validation_constraints:
+                        validation_loss += validation_constraint.get_loss()
+
+                    if show_progress:
+                        print(
+                            f"Training loss at {step}/{self.max_iterations.value}: \
+                            {total_loss}"
+                        )
+                        print(
+                            f"Validation loss at {step}/{self.max_iterations.value}:\
+                            {validation_loss}"
+                        )

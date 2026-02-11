@@ -14,23 +14,27 @@ slice_node = pioneer.nodes.SliceNode(dataset.data_config)
 
 model = pioneer.algorithms.TorchFCN(X, U, 2, 8)
 
-constrain = pioneer.constraints.MSEConstraint(
+constraint = pioneer.constraints.MSEConstraint(
     model[model.OutputKeys.OUTPUT].data_configuration,
-    pioneer.optim.EvaluationMode.ALWAYS,
 )
 
 pipeline = pioneer.pipeline.Pipeline()
 
 pipeline.connect(dataset[dataset.OutputKeys.OUTPUT], slice_node[dataset.InputKeys.INPUT])
 pipeline.connect(slice_node[X], model[dataset.InputKeys.INPUT])
-pipeline.connect(slice_node[U], constrain[constrain.InputKeys.INPUT1])
-pipeline.connect(model[model.OutputKeys.OUTPUT], constrain[constrain.InputKeys.INPUT2])
+pipeline.connect(slice_node[U], constraint[constraint.InputKeys.INPUT1])
+pipeline.connect(model[model.OutputKeys.OUTPUT], constraint[constraint.InputKeys.INPUT2])
 
 pipeline.validate()
 # runtime = pipeline.create_runtime()
 # runtime.run()
 
 trainer = pioneer.optim.trainer.PyTorchTrainer(
-    [pipeline], torch.optim.Adam, max_iterations=5000, learning_rate=0.001, device="cpu"
+    [pipeline],
+    training_constraints=[constraint],
+    optimizer=torch.optim.Adam,
+    max_iterations=5000,
+    learning_rate=0.001,
+    device="cpu",
 )
 trainer.run()

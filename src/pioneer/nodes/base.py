@@ -10,7 +10,7 @@ from ..optim.base import EvaluationMode
 
 
 class Port:
-    """A class denoting the expected data shape to reach a given node."""
+    """Denotes the expected data shape of a node."""
 
     def __init__(
         self,
@@ -19,6 +19,15 @@ class Port:
         name: str,
         is_required: bool = False,
     ) -> None:
+        """
+        Args:
+            data_configuration (DataConfiguration): The configuration denoting the
+                expected shape of the data
+            owner (Node): The parent node.
+            name (str): A name for this port.
+            is_required (bool, optional): If the evaluation of the parent node
+                requires data from this port. Defaults to False.
+        """
         self.data_configuration = data_configuration
         self.node = owner
         self.required = is_required
@@ -42,25 +51,49 @@ class Node(ABC):
     """
 
     class InputKeys(str, Enum):
+        """Denotes the names for the input ports of this node.
+
+        Subclasses may override this enum to define additional
+        input ports."""
+
         INPUT = "input"
 
     class OutputKeys(str, Enum):
+        """Denotes the names for the output ports of this node.
+
+        Subclasses may override this enum to define additional
+        output ports."""
+
         OUTPUT = "output"
 
     def __init__(self, name: str = "Node") -> None:
+        """
+        Args:
+            name (str, optional): The name of this node. Defaults to "Node".
+        """
         super().__init__()
-        self.name = name  # TODO: make name read-only?
+        self.name = name
         self.mode: EvaluationMode = EvaluationMode.ALWAYS
 
     @property
     @abstractmethod
     def input_ports(self) -> dict[str, Port]:
-        pass
+        """Returns all of the input ports of this node.
+
+        Returns:
+            dict[str, Port]: A dictionary of input ports, the keys
+            correspond to the names given by InputKeys.
+        """
 
     @property
     @abstractmethod
     def output_ports(self) -> dict[str, Port]:
-        pass
+        """Returns all of the output ports of this node.
+
+        Returns:
+            dict[str, Port]: A dictionary of input ports, the keys
+            correspond to the names given by OutputKeys.
+        """
 
     @abstractmethod
     # TODO: Can we make input better than a dictionary?
@@ -96,16 +129,29 @@ class Node(ABC):
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
+        """Returns tunable parameters of this node."""
         return []
 
     @property
     def trainable_parameters(self):
-        pass
+        """Returns trainable parameters of this node."""
 
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
 
     def __getitem__(self, port_name: str | Variable) -> Port:
+        """Allow index of the node with respect to the port keys, names or 
+        variables to allow faster access to the ports.
+
+        Args:
+            port_name (str | Variable): The name of the port we want to access.
+
+        Raises:
+            ValueError: If an unknown port name is provided.
+
+        Returns:
+            Port: The port belonging to the input name.
+        """ """"""
         if isinstance(port_name, Variable):
             assert len(port_name) == 1, "Can only slice with one single variable"
             var_name: str = next(iter(port_name))
@@ -120,10 +166,15 @@ class Node(ABC):
         raise ValueError(f"Port {port_name} does not exist")
 
     def set_mode(self, new_mode: EvaluationMode):
-        pass
+        """Set the when this node should be evaluated, in the training
+        process.
+
+        Args:
+            new_mode (EvaluationMode): The new evaluation mode.
+        """
 
     def reset(self):
-        pass
+        """Reset the state of the node."""
 
 
 class _NodeRuntime:
@@ -138,18 +189,36 @@ class _NodeRuntime:
     def __init__(self, node: Node):
         self.node = node
         self.received_inputs = {}
-        self.has_run = False  # optional
+        self.has_run = False
 
     def receive(self, port_name: str, value):
+        """Add an input the to the received inputs
+
+        Args:
+            port_name (str): The port this input belongs to.
+            value (_type_): The input values.
+        """
         self.received_inputs[port_name] = value
 
     def is_ready(self) -> bool:
+        """
+        Returns:
+            bool: Check if all required inputs have been provided.
+        """
         for name, port_info in self.node.input_ports.items():
             if port_info.required and name not in self.received_inputs:
                 return False
         return not self.has_run
 
     def run(self) -> dict[str, Any]:
+        """Evaluate the node.
+
+        Raises:
+            RuntimeError: If not all required inputs are available.
+
+        Returns:
+            dict[str, Any]: The output of the underlying node.
+        """
         if not self.is_ready():
             raise RuntimeError("Node is not ready")
 

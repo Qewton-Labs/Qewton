@@ -65,7 +65,7 @@ max-locals = 15
 max-branches = 12
 max-statements = 50
 max-returns = 5
-max-positional-arguments = 8
+max-positional-arguments = 12
 
 [tool.pylint.reports]
 reports = false

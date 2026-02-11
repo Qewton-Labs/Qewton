@@ -23,30 +23,26 @@ class Constraint(Node):
     TODO: Can this be the main Constraint-class
     (what inputs do the ResourceConstraint need, should they live outside the graph?)
 
-    TODO: Can we stop the user from overwriting the set_mode method? Could be dangerous
-    since the mode is meant to specific when this constrain is evaluated
-
     TODO: Maybe the loss should be moved to a special runtime constraint
     such that it gets not problematic in parallel processes?
     """
 
     def __init__(
         self,
-        evaluation_mode: EvaluationMode,
         name="Constraint",
         weight: float | ContinuousHyperparameter = 1.0,
     ):
         super().__init__(name=name)
-        self.mode = evaluation_mode
         self.weight: HyperParameter = HyperParameter.from_value(weight, "Weight")
         self.loss = 0.0
+        self.mode = EvaluationMode.ALWAYS
 
     @property
     def output_ports(self) -> dict[str, Port]:
         return {}
 
     def get_loss(self, add_weight: bool = True):
-        return self.loss * (self.weight.current_value if add_weight else 1)
+        return self.loss * (self.weight.value if add_weight else 1)
 
     def reset(self):
         self.loss = 0.0
@@ -54,3 +50,6 @@ class Constraint(Node):
     @property
     def hyperparameters(self) -> list[HyperParameter]:
         return [self.weight]
+
+    def set_mode(self, new_mode: EvaluationMode):
+        self.mode = new_mode

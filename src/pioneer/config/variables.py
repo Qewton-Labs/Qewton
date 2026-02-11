@@ -3,7 +3,19 @@ from collections import OrderedDict
 
 
 class Variable(OrderedDict):
+    """Creates a variable of the given problem. Helps for a natural
+    implementation of the problem and internal tracking.
+    """
+
     def __init__(self, name: str | None = None, dim: int | None = None):
+        """
+        Args:
+            name (str | None, optional): The name of the variable. Defaults to None.
+            dim (int | None, optional): The dimension of the variable. Defaults to None.
+
+        Raises:
+            ValueError: _description_
+        """
         super().__init__()
         if name is not None:
             if dim is None:
@@ -12,13 +24,32 @@ class Variable(OrderedDict):
             self[name] = dim
 
     @classmethod
-    def from_dict(cls, var_dict: dict[str, int]):
+    def from_dict(cls, var_dict: dict[str, int]) -> Variable:
+        """Construct a variable from a given dictionary.
+
+        Args:
+            var_dict (dict[str, int]): The dictionary containing the variable
+                information. The keys of the dictionary are used as the
+                variable names and the values should denote the dimension.
+
+        Returns:
+            Variable: The variable object.
+        """
         v = cls()
         for name, dim in var_dict.items():
             v[name] = dim
         return v
 
     def __mul__(self, other: Variable) -> Variable:
+        """Combines two variables to a single object.
+
+        Args:
+            other (Variable): The other variable.
+
+        Returns:
+            Variable: The combined variable containing the information from
+                both original variables (Cross-product)
+        """
         result = Variable.from_dict(self)
         for k, v in other.items():
             result[k] = result.get(k, 0) + v
