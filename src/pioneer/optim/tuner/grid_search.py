@@ -16,8 +16,9 @@ class GridSearchTuner(Tuner):
         self,
         trainer: Trainer,
         tuning_constraints: list[Constraint],
-        devices: int | list[str] = 1,
         trial_number: int = 1,
+        devices: str | list[str] = "cpu",
+        processes_per_device: int = 1,
         save_path: str = "tuner_results",
     ) -> None:
         super().__init__(
@@ -25,6 +26,7 @@ class GridSearchTuner(Tuner):
             tuning_constraints,
             trial_number,
             devices=devices,
+            processes_per_device=processes_per_device,
             save_path=save_path,
         )
         self.grid_params = self._build_parameter_grid()
