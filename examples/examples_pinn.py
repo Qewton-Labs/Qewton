@@ -33,7 +33,7 @@ ode_constraint = pioneer.constraints.ResidualConstraint(
     model[model.InputKeys.INPUT].data_configuration,
     model[model.OutputKeys.OUTPUT].data_configuration,
     residual_fn=ode_residual,
-    name="ODE",
+    name="ODE_Constraint",
 )
 
 ode_pipeline = pioneer.pipeline.Pipeline(name="ode_pipeline")
@@ -59,7 +59,7 @@ ode_pipeline.connect(
 
 # Testing can go into the same pipeline
 test_constraint = pioneer.constraints.MSEConstraint(
-    model[model.OutputKeys.OUTPUT].data_configuration,
+    model[model.OutputKeys.OUTPUT].data_configuration, name="Validation Constraint"
 )
 
 ode_pipeline.connect(
@@ -73,6 +73,7 @@ ode_pipeline.connect(
 
 
 ode_pipeline.validate()
+ode_pipeline.visualize()
 
 
 # Initial condition

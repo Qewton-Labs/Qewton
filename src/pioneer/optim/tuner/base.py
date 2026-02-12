@@ -4,18 +4,11 @@ import math
 from multiprocessing import Pool
 from copy import deepcopy
 from typing import Any
-from enum import Enum
-from itertools import product
 
 
 from ..trainer.base import Trainer
 from ...constraints.base import Constraint
-from ..hyperparameter.base import HyperParameter, CategoricalHyperparameter
-
-
-class TuningStrategy(Enum):
-    RANDOM = "random"
-    GRID = "grid"
+from ..hyperparameter.base import HyperParameter
 
 
 # Helper methods for parallel execution
@@ -28,8 +21,11 @@ def _init_worker(trainer):
     _WorkerState.trainer = trainer
 
 
-def worker_eval(params):
+def worker_eval(jobs):
     local_trainer: Trainer = deepcopy(_WorkerState.trainer)  # type: ignore
+    params, device = jobs
+    if isinstance(device, str):
+        local_trainer.set_device(device)
     local_trainer.set_hyperparameter(params)
     local_trainer.run(show_progress=False)
     results = local_trainer.get_tuning_results()
@@ -46,11 +42,13 @@ def worker_eval(params):
 # TODO: Add different tuning strategies (also make the currently implemented one more
 #       general, e.g. conditional parameters are currently not handled)
 #
-# TODO: Move data to different devices (i think best if this happens in the trainer!)
-#
 # TODO: Enable to restart tuning from a given point
 #
 # TODO: Is passing the data via dictionaries the best way?
+#
+# TODO: In "devices" also allow for something like "auto" or "all" to automatically
+#       use all available CPUs/GPUs? Currently passing in an int just copies
+#       the trainer to the device given by the trainer!
 class Tuner:
 
     def __init__(
@@ -58,16 +56,19 @@ class Tuner:
         trainer: Trainer,
         tuning_constraints: list[Constraint],
         trial_number: int = 10,
-        process_number: int = 1,
-        tuning_strategy: TuningStrategy = TuningStrategy.RANDOM,
+        devices: int | list[str] = 1,
         save_path: str = "tuner_results",
     ) -> None:
         self.trainer_object = trainer
-        self.process_number = process_number
         self.trial_number = trial_number
-        self.tuning_strategy = tuning_strategy
         self.tuning_constraints = tuning_constraints
         self.trainer_object.set_tuning_constraints(self.tuning_constraints)
+
+        if isinstance(devices, int):
+            self.devices = [devices] * devices
+        else:
+            self.devices = devices
+        self.process_number = len(self.devices)
 
         # Build saving path
         self.save_path = save_path
@@ -103,24 +104,11 @@ class Tuner:
 
         trials = math.ceil(self.trial_number / self.process_number)
 
-        if self.tuning_strategy == TuningStrategy.GRID:
-            grid_params = self._build_parameter_grid()
-
         print("--- Start Tuning ---")
         for i in range(trials):
             current_n = self.process_number * i
             print(f"Running trials {current_n} to {self.process_number + current_n}")
-            current_params = []
-
-            if self.tuning_strategy == TuningStrategy.RANDOM:
-                for _k in range(self.process_number):
-                    current_params.append(self._sample_parameters_random())
-            elif self.tuning_strategy == TuningStrategy.GRID:
-                for k in range(self.process_number):
-                    current_params.append(
-                        self._sample_parameters_grid(grid_params, current_n + k)  # type: ignore
-                    )
-
+            current_params = self._get_trial_parameters(current_n)
             results = self._run_generation(current_params)
             print("Saving current results")
             self._write_to_csv(results)
@@ -133,7 +121,8 @@ class Tuner:
             initializer=_init_worker,
             initargs=(self.trainer_object,),
         ) as pool:
-            results = list(pool.imap_unordered(worker_eval, params))
+            jobs = list(zip(params, self.devices))
+            results = list(pool.imap_unordered(worker_eval, jobs))
         return results
 
     def _write_to_csv(self, results):
@@ -162,52 +151,10 @@ class Tuner:
 
         return flat_dict
 
-    def _sample_parameters_random(self) -> dict[str, dict[str, Any]]:
-        sampled_parameters: dict[str, dict[str, Any]] = {}
-        for key, param_list in self.tunable_parameters.items():
-            sampled_parameters[key] = {}
-            for param in param_list:
-                sampled_parameters[key][param.name] = param.sample_parameter_random()
-        return sampled_parameters
-
-    def _build_parameter_grid(self):
-        # First find out how many intervals and categorical parameters there are
-        n_intervals = 0
-        n_categorical = 0
-        # TODO: How do we handle the size of the intervals? Should we even
-        # keep this in mind or just sample independent of it (as currently is)?
-        for param_list in self.tunable_parameters.values():
-            for param in param_list:
-                if isinstance(param, CategoricalHyperparameter):
-                    n_categorical += len(param.parameter_range)
-                else:
-                    n_intervals += 1
-        # Divide total trials over all parameters (wanting to use all categorical ones)
-        n_per_dim = int(
-            math.ceil((self.trial_number / n_categorical) ** (1 / n_intervals))
+    def _get_trial_parameters(
+        self, current_trials: int
+    ) -> list[dict[str, dict[str, Any]]]:
+        raise NotImplementedError(
+            "The base Tuner does not implement a search strategy, \
+                use one of the child classes."
         )
-
-        # Create the point grid
-        grid_axis = []
-        for param_list in self.tunable_parameters.values():
-            for param in param_list:
-                grid_axis.append(param.sample_parameter_grid(n_per_dim))
-
-        grid = list(product(*grid_axis))
-
-        # Resample the grid if the above division yielded to many points
-        size = len(grid)
-        if size <= self.trial_number:
-            return grid
-        return [grid[i * size // self.trial_number] for i in range(self.trial_number)]
-
-    def _sample_parameters_grid(self, grid, index: int) -> dict[str, dict[str, Any]]:
-        sampled_parameters: dict[str, dict[str, Any]] = {}
-        param_counter: int = 0
-        index = min(index, self.trial_number - 1)
-        for key, param_list in self.tunable_parameters.items():
-            sampled_parameters[key] = {}
-            for param in param_list:
-                sampled_parameters[key][param.name] = grid[index][param_counter]
-                param_counter += 1
-        return sampled_parameters

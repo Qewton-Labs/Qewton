@@ -44,7 +44,5 @@ trainer = pioneer.optim.trainer.PyTorchTrainer(
     device="cpu",
 )
 
-tuner = pioneer.optim.tuner.Tuner(
-    trainer, [constrain], 40, 4, tuning_strategy=pioneer.optim.tuner.TuningStrategy.GRID
-)
+tuner = pioneer.optim.tuner.RandomSearchTuner(trainer, [constrain], 40, 4)
 tuner.run()

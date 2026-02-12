@@ -1,6 +1,9 @@
 from __future__ import annotations
 import warnings
 
+import networkx as nx
+import matplotlib.pyplot as plt
+
 from ..nodes.base import Node, Port, _NodeRuntime, EvaluationMode
 from .edges.base import Edge
 from ..algorithms.base import AlgorithmNode
@@ -183,6 +186,44 @@ class Pipeline:
         """Setup all nodes for evaluation."""
         for node in self.algorithm_nodes:
             node.setup()
+
+    def visualize(self):
+        # TODO: Just some quick way to visualize a graph, nothing final
+        graph_visual = nx.DiGraph()
+        nodes_list = [node.name for node in self.nodes]
+        edges_list = [(edge.from_node.name, edge.to_node.name) for edge in self.edges]
+
+        graph_visual.add_nodes_from(nodes_list)
+        graph_visual.add_edges_from(edges_list)
+
+        # Automatically compute node positions
+        pos = nx.planar_layout(graph_visual)  # nice spacing with reproducibility
+
+        # Draw nodes
+        node_sizes = [
+            len(n) * 200 for n in graph_visual.nodes()
+        ]  # scale size with label length
+        nx.draw_networkx_nodes(
+            graph_visual, pos, node_size=node_sizes, node_color="skyblue", alpha=0.9
+        )
+
+        # Draw edges with arrows for direction
+        nx.draw_networkx_edges(
+            graph_visual,
+            pos,
+            arrowstyle="->",
+            arrowsize=20,
+            edge_color="gray",
+            width=5,
+        )
+
+        # Draw labels
+        nx.draw_networkx_labels(graph_visual, pos, font_size=10, font_color="black")
+
+        # Remove axes for cleaner look
+        plt.axis("off")
+        plt.tight_layout()
+        plt.show()
 
 
 class PipelineRuntime:

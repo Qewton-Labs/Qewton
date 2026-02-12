@@ -26,6 +26,7 @@ pipeline.connect(slice_node[U], constraint[constraint.InputKeys.INPUT1])
 pipeline.connect(model[model.OutputKeys.OUTPUT], constraint[constraint.InputKeys.INPUT2])
 
 pipeline.validate()
+pipeline.visualize()
 # runtime = pipeline.create_runtime()
 # runtime.run()
 
