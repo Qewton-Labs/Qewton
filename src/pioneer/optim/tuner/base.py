@@ -57,7 +57,7 @@ class Tuner:
         tuning_constraints: list[Constraint],
         trial_number: int = 10,
         devices: str | list[str] = "cpu",
-        processes_per_device: int = 1,
+        trials_per_device: int = 1,
         save_path: str = "tuner_results",
     ) -> None:
         self.trainer_object = trainer
@@ -67,7 +67,7 @@ class Tuner:
 
         if isinstance(devices, str):
             devices = [devices]
-        self.devices = [device for device in devices for _ in range(processes_per_device)]
+        self.devices = [device for device in devices for _ in range(trials_per_device)]
         self.process_number = len(self.devices)
 
         # Build saving path
