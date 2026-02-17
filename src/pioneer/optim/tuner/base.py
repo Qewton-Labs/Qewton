@@ -1,34 +1,48 @@
 import csv
 import os
 import math
-from multiprocessing import Pool
-from copy import deepcopy
-from typing import Any
-
+import multiprocessing as mp
+from typing import Any, Callable
 
 from ..trainer.base import Trainer
-from ...constraints.base import Constraint
 from ..hyperparameter.base import HyperParameter
 
 
-# Helper methods for parallel execution
-# TODO: Maybe move into class with @static (could break when two tuners are run?)
-class _WorkerState:
-    trainer = None
+# TODO: We could also use the code below to just initiated a worker
+# and construct the trainer once, however then we need to always clean up
+# everything!
 
+# class _WorkerState:
+#     trainer: Trainer
 
-def _init_worker(trainer):
-    _WorkerState.trainer = trainer
+# def _init_worker(trainer_factory: Callable[[], Trainer]):
+#     _WorkerState.trainer = trainer_factory()
+
+# def worker_eval(jobs):
+#     # Need to always clean up everything from previous runs
+#     # TODO: It is safer to just call trainer_factory() again here, but maybe
+#     # a bit slower?
+#     _WorkerState.trainer.reset()
+#     params, device = jobs
+#     if isinstance(device, str):
+#         _WorkerState.trainer.set_device(device)
+#     _WorkerState.trainer.set_hyperparameter(params)
+#     _WorkerState.trainer.run(show_progress=False)
+#     results = _WorkerState.trainer.get_tuning_results()
+#     return [{"params": params}, results]
 
 
 def worker_eval(jobs):
-    local_trainer: Trainer = deepcopy(_WorkerState.trainer)  # type: ignore
-    params, device = jobs
+    trainer_factory, params, device = jobs
+    local_trainer: Trainer = trainer_factory()
     if isinstance(device, str):
         local_trainer.set_device(device)
     local_trainer.set_hyperparameter(params)
     local_trainer.run(show_progress=False)
     results = local_trainer.get_tuning_results()
+
+    # Cleanup
+    del local_trainer  # remove references
     return [{"params": params}, results]
 
 
@@ -49,31 +63,35 @@ def worker_eval(jobs):
 # TODO: In "devices" also allow for something like "auto" or "all" to automatically
 #       use all available CPUs/GPUs? Currently passing in an int just copies
 #       the trainer to the device given by the trainer!
+#       And maybe better switch to os["set_visible_devices"]?
 class Tuner:
 
     def __init__(
         self,
-        trainer: Trainer,
-        tuning_constraints: list[Constraint],
+        trainer_factory: Callable[[], Trainer],
         trial_number: int = 10,
         devices: str | list[str] = "cpu",
         trials_per_device: int = 1,
         save_path: str = "tuner_results",
     ) -> None:
-        self.trainer_object = trainer
+        self.trainer_factory = trainer_factory
         self.trial_number = trial_number
-        self.tuning_constraints = tuning_constraints
-        self.trainer_object.set_tuning_constraints(self.tuning_constraints)
 
         if isinstance(devices, str):
             devices = [devices]
         self.devices = [device for device in devices for _ in range(trials_per_device)]
         self.process_number = len(self.devices)
 
+        # check trainer factory
+        trainer_dummy = self.trainer_factory()
+        assert (
+            len(trainer_dummy.tuning_constraints) > 0
+        ), "The trainer object does not contain any constraints for tuning. \
+            Set them via trainer.set_tuning_constraints(...)."
         # Build saving path
         self.save_path = save_path
         # TODO: does this work for all systems? Windows and Mac?
-        csv_path = self.save_path + "/" + self.trainer_object.save_path
+        csv_path = self.save_path + "/" + trainer_dummy.save_path
         counter = 0
         csv_path_extension = csv_path + str(counter) + ".csv"
         while os.path.exists(csv_path_extension):
@@ -84,13 +102,16 @@ class Tuner:
 
         # Find what parameters can be tuned
         self.tunable_parameters: dict[str, list[HyperParameter]] = {}
-        self._get_tuneable_parameters()
+        self._get_tuneable_parameters(trainer_dummy)
 
-    def _get_tuneable_parameters(self):
-        hyperparameter_dict = self.trainer_object.get_hyperparameter()
+    def _get_tuneable_parameters(self, trainer: Trainer):
+        hyperparameter_dict = trainer.get_hyperparameter()
+        param_set = set[HyperParameter]()  # to check if some parameters are shared
+        # between different nodes (they should not be counted multiple times!)
         for node_name, param_list in hyperparameter_dict.items():
             for param in param_list:
-                if not param.is_fixed:
+                if not param.is_fixed and not param in param_set:
+                    param_set.add(param)
                     if node_name in self.tunable_parameters:
                         self.tunable_parameters[node_name].append(param)
                     else:
@@ -100,10 +121,7 @@ class Tuner:
             raise ValueError("Can not tune a problem without tunable parameters.")
 
     def run(self):
-        self.trainer_object.reset()  # clean up trainer to allow copying
-
         trials = math.ceil(self.trial_number / self.process_number)
-
         print("--- Start Tuning ---")
         for i in range(trials):
             current_n = self.process_number * i
@@ -114,15 +132,15 @@ class Tuner:
             self._write_to_csv(results)
 
     def _run_generation(self, params):
-        # TODO: Can maybe be made a bit smarter at the end to not start additional tries
-        # when we already reached the final number of runs
-        with Pool(
+        # Using the same pools and not recreating everything would have been nice, but:
+        # - Data stays on the GPUs and can only be cleared by backend dependent calls
+        with mp.Pool(
             processes=self.process_number,
-            initializer=_init_worker,
-            initargs=(self.trainer_object,),
+            # initializer=_init_worker,
+            # initargs=(self.trainer_object,),
         ) as pool:
-            jobs = list(zip(params, self.devices))
-            results = list(pool.imap_unordered(worker_eval, jobs))
+            jobs = [(self.trainer_factory, p, d) for p, d in zip(params, self.devices)]
+            results = list(pool.imap(worker_eval, jobs))
         return results
 
     def _write_to_csv(self, results):
