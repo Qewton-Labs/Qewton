@@ -1,5 +1,6 @@
 from __future__ import annotations
 from types import EllipsisType
+import copy
 
 from .axis import Axis, FeatureAxis, BatchAxis
 from .variables import Variable
@@ -35,17 +36,29 @@ class DataConfiguration:
         self.connection_to_axes = (
             connection_to_axes if connection_to_axes is not None else {}
         )
-        self.batch_axis_idx: int | None = None
+
+        self._batch_axis_idx: int | None = None
+        self._feature_axis_idx: int | None = None
 
     @property
-    def batch_axis(self) -> int:
-        if self.batch_axis_idx is not None:
-            return self.batch_axis_idx
+    def batch_axis_idx(self) -> int:
+        if self._batch_axis_idx is not None:
+            return self._batch_axis_idx
         for i, axis in enumerate(self.axes):
             if isinstance(axis, BatchAxis):
-                self.batch_axis_idx = i
-                return self.batch_axis_idx
+                self._batch_axis_idx = i
+                return self._batch_axis_idx
         raise ValueError("Data configuration has no batch axis.")
+
+    @property
+    def feature_axis_idx(self) -> int:
+        if self._feature_axis_idx is not None:
+            return self._feature_axis_idx
+        for i, axis in enumerate(self.axes):
+            if isinstance(axis, FeatureAxis):
+                self._feature_axis_idx = i
+                return self._feature_axis_idx
+        raise ValueError("Data configuration has no feature axis.")
 
     def fits(self, other_config: DataConfiguration) -> bool:
         """Checks if another data configuration is compatible with this one.
@@ -116,8 +129,10 @@ class DataConfiguration:
             ), "Variable slice must be a subset of the feature axis variables"
             # Create new axis with reduced variables
             new_feature_axis = FeatureAxis(size=key.dim, variables=key)
+            new_axes = copy.deepcopy(self.axes)
+            new_axes[self.feature_axis_idx] = new_feature_axis
             return type(self)(
-                self.dtype, self.axes, new_feature_axis, self.connection_to_axes
+                self.dtype, new_axes, new_feature_axis, self.connection_to_axes
             )
 
         if isinstance(key, (int, slice)):
@@ -142,6 +157,9 @@ class DataConfiguration:
             )
 
         raise TypeError(f"Unsupported slicing type: {type(key)}")
+
+    def __len__(self) -> int:
+        return len(self.axes)
 
     def __eq__(self, other_config: object) -> bool:
         if not isinstance(other_config, DataConfiguration):
@@ -169,3 +187,20 @@ class DataConfiguration:
         for axis in axes:
             assert axis in self.axes, "All axes must be part of the configuration."
         self.connection_to_axes[var] = axes
+
+    def get_axis_indices_of_variables(self, var: Variable) -> list[int]:
+        if self.feature_axis is ... or self.feature_axis.variables is None:
+            return []
+        index_list: list[int] = []
+        counter: int = 0
+        for key, dim in self.feature_axis.variables.items():
+            if key in var:
+                for i in range(dim):
+                    index_list.append(counter + i)
+            counter += dim
+        return index_list
+
+    def slice_axis(self, axis_idx: int, slice_values):
+        slices = [slice(None)] * len(self)
+        slices[axis_idx] = slice_values
+        return tuple(slices)

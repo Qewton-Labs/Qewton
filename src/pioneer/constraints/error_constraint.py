@@ -8,7 +8,7 @@ from .base import Constraint
 
 
 class MSEConstraint(Constraint):
-
+    # TODO: Add relative constraints and also different kind of norms, etc.
     class InputKeys(str, Enum):  # type: ignore[override]
         INPUT1 = "input_1"
         INPUT2 = "input_2"

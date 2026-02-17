@@ -130,10 +130,13 @@ class Node(ABC):
     @property
     def hyperparameters(self) -> list[HyperParameter]:
         """Returns tunable parameters of this node."""
-        return []
+        # This checks all self. objects, which makes it save for any subclass
+        # but it is still more efficient to just overwrite this in the subclass
+        # and directly define the list of all HyperParameter
+        return [v for v in vars(self).values() if isinstance(v, HyperParameter)]
 
     @property
-    def trainable_parameters(self):
+    def trainable_parameters(self) -> Any:
         """Returns trainable parameters of this node."""
 
     def to(self, device):

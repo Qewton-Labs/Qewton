@@ -87,20 +87,26 @@ class Pipeline:
 
     def connect(
         self,
-        from_port: Port,
-        to_port: Port,
+        from_: Node | Port,
+        to_: Node | Port,
     ) -> None:
-        """Connect to nodes (which are automatically added to the pipeline, if they
+        """Connect two nodes (which are automatically added to the pipeline, if they
         are not part of it) via an edge. When evaluating the pipeline data will be
         exchanged between connected nodes.
 
         Args:
-            from_port (Port): The output port of a node, yielding the data.
-            to_port (Port): The input port of a node, expecting the data.
+            from_ (Node, Port): The output port of a node, yielding the data. If the
+                node is passed in directly, it should only have one output port. Else
+                the desired port should be passed in via node[node.OutputKeys.].
+            to_ (Node, Port): The input port of a node, expecting the data. The
+                same node logic as for the first input holds.
 
         Raises:
             ValueError: The ports of both nodes are not compatible.
         """
+        from_port = self._check_connect(from_, check_input=False)
+        to_port = self._check_connect(to_, check_input=True)
+
         from_node = from_port.node
         to_node = to_port.node
         # Nodes must be added to the graph
@@ -121,6 +127,17 @@ class Pipeline:
         to_port_name = next((k for k, v in to_node.input_ports.items() if v == to_port))
         edge = Edge(from_node, from_port_name, to_node, to_port_name)
         self.edges.append(edge)
+
+    def _check_connect(self, user_input: Port | Node, check_input: bool = True) -> Port:
+        if isinstance(user_input, Port):
+            return user_input
+        ports = user_input.input_ports if check_input else user_input.output_ports
+        if len(ports) != 1:
+            raise ValueError(
+                f"Node '{user_input.name}' has multiple output ports. "
+                "Specify the port explicitly."
+            )
+        return next(iter(ports.values()))
 
     def disconnect(self, edge: Edge) -> None:
         """Remove an edge from this pipeline"""

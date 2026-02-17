@@ -2,7 +2,7 @@ from .algorithms import *
 from .config import *
 from .domains import *
 from .nodes import *
-from .pipeline import *
+from .pipelines import *
 from .optim import *
 from .constraints import *
 from .optim.trainer import *

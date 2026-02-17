@@ -6,7 +6,7 @@ from ..hyperparameter.base import (
     DiscreteHyperparameter,
     ContinuousHyperparameter,
 )
-from ...pipeline.base import Pipeline
+from ...pipelines.base import Pipeline
 from ...constraints.base import Constraint
 from .base import Trainer
 

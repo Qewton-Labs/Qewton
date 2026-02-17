@@ -1,7 +1,7 @@
 import torch
 
-from .base import Node, Port
-from ..config.configuration_base import DataConfiguration
+from ..base import Node, Port
+from ...config.configuration_base import DataConfiguration
 
 
 class GradientTrackingNode(Node):

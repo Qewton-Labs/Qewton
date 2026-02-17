@@ -7,7 +7,7 @@ from ..hyperparameter.base import (
     DiscreteHyperparameter,
     CategoricalHyperparameter,
 )
-from ...pipeline.base import Pipeline
+from ...pipelines.base import Pipeline
 from ...nodes.base import Node
 from ...constraints.base import Constraint
 
@@ -15,6 +15,12 @@ from ...constraints.base import Constraint
 ###############################
 # TODO: This trainer is just some first idea.
 # I think for more general optimizers this does not work (e.g. LBFGS)
+#
+# TODO: Do we use max_iterations similar to TorchPhysics or a epochs more natural?
+# If we want to switch to epochs a pipeline would need to know how often it needs to
+# be called until the epoch is done! Then we would also need to see how we compare
+# different data sizes between different pipelines? Run we each pipeline once, then
+# add the loss -> what when one pipeline is done for this epoch, but another one not?
 #
 # TODO: What when the user does not want to work with the pipelines in the
 # backend?

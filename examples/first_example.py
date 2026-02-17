@@ -10,7 +10,7 @@ X = pioneer.config.Variable("x", 1)
 U = pioneer.config.Variable("u", 1)
 dataset = pioneer.nodes.DataSet.from_data(data, X * U, batch_size=1000)
 
-slice_node = pioneer.nodes.SliceNode(dataset.data_config)
+slice_node = pioneer.nodes.SplitNode(dataset.data_config)
 
 model = pioneer.algorithms.TorchFCN(X, U, 2, 8)
 
@@ -18,12 +18,12 @@ constraint = pioneer.constraints.MSEConstraint(
     model[model.OutputKeys.OUTPUT].data_configuration,
 )
 
-pipeline = pioneer.pipeline.Pipeline()
+pipeline = pioneer.pipelines.Pipeline()
 
-pipeline.connect(dataset[dataset.OutputKeys.OUTPUT], slice_node[dataset.InputKeys.INPUT])
-pipeline.connect(slice_node[X], model[dataset.InputKeys.INPUT])
+pipeline.connect(dataset, slice_node)
+pipeline.connect(slice_node[X], model)
 pipeline.connect(slice_node[U], constraint[constraint.InputKeys.INPUT1])
-pipeline.connect(model[model.OutputKeys.OUTPUT], constraint[constraint.InputKeys.INPUT2])
+pipeline.connect(model, constraint[constraint.InputKeys.INPUT2])
 
 pipeline.validate()
 pipeline.visualize()

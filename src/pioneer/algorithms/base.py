@@ -1,6 +1,6 @@
 import warnings
 from abc import abstractmethod
-from enum import Enum
+from enum import Enum, auto
 
 
 from ..config.configuration_base import DataConfiguration
@@ -17,10 +17,28 @@ class AlgorithmState(Enum):
     TRAINED = 4
 
 
+class AlgorithmAttributes(Enum):
+    SYMMETRIC = auto()  # if a "flipped" input yields the same output
+    TRANSLATION_INVARIANT = auto()
+    ROTATION_INVARIANT = auto()
+    LINEAR = auto()
+    DIFFERENTIABLE = auto()  # the output is differentiable in regards to the input
+    INVERTIBLE = auto()
+    NORMALIZES_DATA = auto()
+    DETERMINISTIC = auto()  # the run call (diffusion models for example not)
+    TRAINABLE = auto()  # TODO:Is this needed?
+    OUTPUTS_PROBABILITIES = auto()  # useful for classifiers?
+    GPU_ACCELERATED = auto()
+    MUTATES_INPUT = auto()  # if input is changed in-place
+    SUPPORTS_MISSING_VALUES = auto()  # if values like NaN are handled
+
+
 class AlgorithmNode(Node):
     """General node representing an algorithm that should solve a given problem
     or a part of it.
     """
+
+    attributes: set[AlgorithmAttributes] = set()  # base class static-default
 
     def __init__(
         self,

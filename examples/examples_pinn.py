@@ -23,7 +23,7 @@ def ode_residual(x, u):
     return u_x - 2 * x
 
 
-slice_node = pioneer.nodes.SliceNode(dataset_ode.data_config)
+slice_node = pioneer.nodes.SplitNode(dataset_ode.data_config)
 
 tracking_node = pioneer.nodes.GradientTrackingNode(
     model[model.InputKeys.INPUT].data_configuration
@@ -36,7 +36,7 @@ ode_constraint = pioneer.constraints.ResidualConstraint(
     name="ODE_Constraint",
 )
 
-ode_pipeline = pioneer.pipeline.Pipeline(name="ode_pipeline")
+ode_pipeline = pioneer.pipelines.Pipeline(name="ode_pipeline")
 
 ode_pipeline.connect(
     dataset_ode[dataset_ode.OutputKeys.OUTPUT], slice_node[dataset_ode.InputKeys.INPUT]
@@ -88,7 +88,7 @@ initial_constraint = pioneer.constraints.ResidualConstraint(
     name="Initial",
 )
 
-initial_pipeline = pioneer.pipeline.Pipeline(name="initial_pipeline")
+initial_pipeline = pioneer.pipelines.Pipeline(name="initial_pipeline")
 
 initial_pipeline.connect(
     dataset_initial[dataset_ode.OutputKeys.OUTPUT],

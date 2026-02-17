@@ -10,7 +10,7 @@ X = pioneer.config.Variable("x", 1)
 U = pioneer.config.Variable("u", 1)
 dataset = pioneer.nodes.DataSet.from_data(data, X * U, batch_size=1000)
 
-slice_node = pioneer.nodes.SliceNode(dataset.data_config)
+slice_node = pioneer.nodes.SplitNode(dataset.data_config)
 
 model = pioneer.algorithms.TFFCN(X, U, hidden_layers=2, hidden_neurons=8)
 
@@ -18,7 +18,7 @@ constrain = pioneer.constraints.MSEConstraint(
     model[model.OutputKeys.OUTPUT].data_configuration,
 )
 
-pipeline = pioneer.pipeline.Pipeline()
+pipeline = pioneer.pipelines.Pipeline()
 
 pipeline.connect(dataset[dataset.OutputKeys.OUTPUT], slice_node[dataset.InputKeys.INPUT])
 pipeline.connect(slice_node["x"], model[dataset.InputKeys.INPUT])

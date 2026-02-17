@@ -1,8 +1,7 @@
-from typing import Any
+from typing import Any, Callable
 from itertools import product
 import math
 
-from pioneer.constraints.base import Constraint
 from pioneer.optim.trainer.base import Trainer
 
 
@@ -14,16 +13,14 @@ class GridSearchTuner(Tuner):
 
     def __init__(
         self,
-        trainer: Trainer,
-        tuning_constraints: list[Constraint],
+        trainer_factory: Callable[[], Trainer],
         trial_number: int = 1,
         devices: str | list[str] = "cpu",
         trials_per_device: int = 1,
         save_path: str = "tuner_results",
     ) -> None:
         super().__init__(
-            trainer,
-            tuning_constraints,
+            trainer_factory,
             trial_number,
             devices=devices,
             trials_per_device=trials_per_device,
