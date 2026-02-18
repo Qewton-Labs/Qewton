@@ -39,13 +39,6 @@ def _construct_fc_layers(
 
 class TorchFCN(AlgorithmNode):
 
-    attributes = {
-        AlgorithmAttributes.TRAINABLE,
-        AlgorithmAttributes.DIFFERENTIABLE,
-        AlgorithmAttributes.DETERMINISTIC,
-        AlgorithmAttributes.GPU_ACCELERATED,
-    }
-
     def __init__(
         self,
         input_variable: Variable,
@@ -88,11 +81,14 @@ class TorchFCN(AlgorithmNode):
 
     @property
     def trainable_parameters(self):
-        return self.model.parameters()
+        if self.model is not None:
+            return self.model.parameters()
+        return None
 
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
-        self.model = self.model.to(device=device)
+        if self.model is not None:
+            self.model = self.model.to(device=device)
 
     def reset(self):
         if not self.state == AlgorithmState.FIXED:
@@ -102,3 +98,12 @@ class TorchFCN(AlgorithmNode):
     @property
     def hyperparameters(self) -> list[HyperParameter]:
         return [self.hidden_layer, self.hidden_neurons, self.activation_fn]
+
+    @property
+    def attributes(self) -> set[AlgorithmAttributes]:
+        return {
+            AlgorithmAttributes.TRAINABLE,
+            AlgorithmAttributes.DIFFERENTIABLE,
+            AlgorithmAttributes.DETERMINISTIC,
+            AlgorithmAttributes.GPU_ACCELERATED,
+        }

@@ -14,13 +14,6 @@ from ...optim.hyperparameter.base import (
 
 # TODO: Just some test version!
 class TorchPCANN(AlgorithmNode):
-    attributes = {
-        AlgorithmAttributes.TRAINABLE,
-        AlgorithmAttributes.NORMALIZES_DATA,
-        AlgorithmAttributes.DETERMINISTIC,
-        AlgorithmAttributes.GPU_ACCELERATED,
-    }
-
     def __init__(
         self,
         input_variable: Variable,
@@ -163,3 +156,12 @@ class TorchPCANN(AlgorithmNode):
     @property
     def output_ports(self) -> dict[str, Port]:
         return {self.OutputKeys.OUTPUT: self.out_port}
+
+    @property
+    def attributes(self) -> set[AlgorithmAttributes]:
+        return {
+            AlgorithmAttributes.TRAINABLE,
+            AlgorithmAttributes.NORMALIZES_DATA,
+            AlgorithmAttributes.DETERMINISTIC,
+            AlgorithmAttributes.GPU_ACCELERATED,
+        }

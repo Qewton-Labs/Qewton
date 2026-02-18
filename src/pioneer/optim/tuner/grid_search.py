@@ -51,6 +51,8 @@ class GridSearchTuner(Tuner):
                 else:
                     n_intervals += 1
         # Divide total trials over all parameters (wanting to use all categorical ones)
+        n_categorical = max(1, n_categorical)
+        n_intervals = max(1, n_intervals)
         n_per_dim = int(
             math.ceil((self.trial_number / n_categorical) ** (1 / n_intervals))
         )

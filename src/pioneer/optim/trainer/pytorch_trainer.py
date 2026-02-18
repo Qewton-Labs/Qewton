@@ -19,7 +19,7 @@ class PyTorchTrainer(Trainer):
         training_constraints: list[Constraint],
         optimizer,
         max_iterations: int | DiscreteHyperparameter | CategoricalHyperparameter,
-        learning_rate: float | ContinuousHyperparameter,
+        learning_rate: float | ContinuousHyperparameter | CategoricalHyperparameter,
         device="cpu",
         validation_constraints: list[Constraint] = [],
         validation_check: int = 100,

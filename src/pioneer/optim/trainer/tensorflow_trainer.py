@@ -5,6 +5,7 @@ from ..hyperparameter.base import (
     HyperParameter,
     DiscreteHyperparameter,
     ContinuousHyperparameter,
+    CategoricalHyperparameter,
 )
 from ...pipelines.base import Pipeline
 from ...constraints.base import Constraint
@@ -17,8 +18,8 @@ class TensorFlowTrainer(Trainer):
         pipelines: list[Pipeline],
         training_constraints: list[Constraint],
         optimizer_cls: type[tf.keras.optimizers.Optimizer],  # type: ignore
-        max_iterations: int | DiscreteHyperparameter,
-        learning_rate: float | ContinuousHyperparameter,
+        max_iterations: int | DiscreteHyperparameter | CategoricalHyperparameter,
+        learning_rate: float | ContinuousHyperparameter | CategoricalHyperparameter,
         device="/CPU:0",
         validation_constraints: list[Constraint] = [],
         validation_check: int = 100,

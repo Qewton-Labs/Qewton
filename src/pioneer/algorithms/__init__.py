@@ -6,6 +6,7 @@ from .base import AlgorithmNode, AlgorithmState
 if importlib.util.find_spec("torch") is not None:
     from .pytorch_algorithms.pytorch_test import TorchFCN
     from .pytorch_algorithms.pcann_test import TorchPCANN
+    from .pytorch_algorithms.wrapper import PyTorchWrapper
 
 # Tensorflow classes
 if importlib.util.find_spec("tensorflow") is not None:

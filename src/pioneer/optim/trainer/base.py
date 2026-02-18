@@ -159,13 +159,20 @@ class Trainer:
         # Optimizers, saved as Hyperparameters?! E.g. Adam, LBFGS or a combination
         # of them...
         # This then also needs to change the iterations accordingly
-        hyperparameter_dict["trainer"] = [self.max_iterations]
+        own_hyperparameters = [
+            v for v in vars(self).values() if isinstance(v, HyperParameter)
+        ]
+        hyperparameter_dict["trainer"] = own_hyperparameters
         return hyperparameter_dict
 
     def set_hyperparameter(self, param_dict: dict[str, dict[str, Any]]):
-        # TODO: Here also update the stuff for the trainer
+        own_hyperparameters = [
+            v for v in vars(self).values() if isinstance(v, HyperParameter)
+        ]
         if "trainer" in param_dict:
-            self.max_iterations.set_value(param_dict["trainer"][self.max_iterations.name])
+            for param in own_hyperparameters:
+                if param.name in param_dict["trainer"]:
+                    param.set_value(param_dict["trainer"][param.name])
 
         for node in self.all_nodes:
             if node.name in param_dict:

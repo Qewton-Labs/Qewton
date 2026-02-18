@@ -38,8 +38,6 @@ class AlgorithmNode(Node):
     or a part of it.
     """
 
-    attributes: set[AlgorithmAttributes] = set()  # base class static-default
-
     def __init__(
         self,
         input_variable: Variable,
@@ -75,6 +73,10 @@ class AlgorithmNode(Node):
     @property
     def state(self) -> AlgorithmState:
         return self._state
+
+    @property
+    def attributes(self) -> set[AlgorithmAttributes]:
+        return []
 
     def fix_algorithm_state(self) -> None:
         """Fix all properties of the algorithm so it will not be
