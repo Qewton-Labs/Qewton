@@ -1,6 +1,7 @@
 from __future__ import annotations
 from enum import Enum
 import random
+import math
 
 
 class HyperParameterState(Enum):
@@ -18,9 +19,21 @@ class HyperParameterState(Enum):
 
 
 class HyperParameterScale(Enum):
-    # TODO: Is not used in the parameter itself
+    """Influence the sampling of HyperParameters.
+
+    LINEAR
+        A uniform sampling in the given parameter range.
+    LOG
+        A uniform logarithmic sampling in the given parameter range.
+    POWER
+        Sampling via a power law x**power, where power can be set in the
+        HyperParameter class. power > 1 leads to a bias toward lower values,
+        p < 1 leads to a bias toward higher values.
+    """
+
     LINEAR = "linear"
     LOG = "log"
+    POWER = "power"
 
 
 class HyperParameter:
@@ -80,7 +93,7 @@ class HyperParameter:
             return BooleanHyperparameter(
                 initial_value=x, state=HyperParameterState.FIXED, name=name
             )
-        # TODO: This is not save for any values!
+        # TODO: This is not save for any values?
         return CategoricalHyperparameter(
             categories=[x], state=HyperParameterState.FIXED, initial_value=x, name=name
         )
@@ -125,8 +138,11 @@ class ContinuousHyperparameter(HyperParameter):
         state: HyperParameterState = HyperParameterState.OPTIMIZE,
         name: str = "",
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
+        power: float = 2.0,  # only used for POWER scale
     ):
         assert len(parameter_range) == 2, "Range must be a tuple or list of length 2."
+        if scale == HyperParameterScale.LOG and parameter_range[0] <= 0.0:
+            raise ValueError("Logarithmic scaling in a negativ range not supported!")
         if initial_value is None:
             initial_value = (parameter_range[0] + parameter_range[1]) / 2
 
@@ -137,9 +153,37 @@ class ContinuousHyperparameter(HyperParameter):
             initial_value=initial_value,
         )
         self.scale = scale
+        self.power = power
 
     def sample_parameter_random(self):
-        return random.uniform(self.parameter_range[0], self.parameter_range[1])
+        lo, hi = self.parameter_range
+        if self.scale == HyperParameterScale.LINEAR:
+            return random.uniform(lo, hi)
+        if self.scale == HyperParameterScale.LOG:
+            sample_log = math.exp(random.uniform(math.log(lo), math.log(hi)))
+            return sample_log
+        # self.scale == HyperParameterScale.POWER:
+        transformed_lo = lo ** (1 / self.power)
+        transformed_hi = hi ** (1 / self.power)
+        sample = random.uniform(transformed_lo, transformed_hi)
+        return sample**self.power
+
+    def sample_parameter_grid(self, n: int) -> list:
+        lo, hi = self.parameter_range
+        if self.scale == HyperParameterScale.LINEAR:
+            return super().sample_parameter_grid(n)
+        if self.scale == HyperParameterScale.LOG:
+            log_lo = math.log(lo)
+            log_hi = math.log(hi)
+            if n == 1:
+                return [(log_lo + log_hi) / 2]
+            step = (log_hi - log_lo) / (n - 1)
+            return [math.exp(log_lo + i * step) for i in range(n)]
+        # self.scale == HyperParameterScale.POWER:
+        transformed_lo = lo ** (1 / self.power)
+        transformed_hi = hi ** (1 / self.power)
+        step = (transformed_hi - transformed_lo) / (n - 1)
+        return [(transformed_lo + i * step) ** self.power for i in range(n)]
 
 
 class DiscreteHyperparameter(ContinuousHyperparameter):
@@ -151,7 +195,6 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
         name: str = "",
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
     ):
-        assert len(parameter_range) == 2, "Range must be a tuple or list of length 2."
         assert all(
             isinstance(x, int) for x in parameter_range
         ), "Range values must be integers."
@@ -168,15 +211,13 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
         self.current_value = int(new_value)
 
     def sample_parameter_random(self):
-        return random.randint(self.parameter_range[0], self.parameter_range[1])
+        if self.scale == HyperParameterScale.LINEAR:
+            return random.randint(self.parameter_range[0], self.parameter_range[1])
+        return int(round(super().sample_parameter_random()))
 
     def sample_parameter_grid(self, n: int) -> list:
-        lo = self.parameter_range[0]
-        hi = self.parameter_range[1]
-        if n == 1:
-            return [(lo + hi) / 2]
-        step = (hi - lo) / (n - 1)
-        return [int(lo + i * step) for i in range(n)]
+        continous_grid = super().sample_parameter_grid(n)
+        return [int(value) for value in continous_grid]
 
 
 class CategoricalHyperparameter(HyperParameter):
@@ -203,6 +244,7 @@ class CategoricalHyperparameter(HyperParameter):
     def sample_parameter_grid(self, n: int) -> list:
         if isinstance(self.parameter_range, list):
             return self.parameter_range
+        # TODO: For now just everything, should be subsampled?
         return list(self.parameter_range)
 
 
