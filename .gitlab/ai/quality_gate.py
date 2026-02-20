@@ -78,11 +78,15 @@ ai_branch = f"ai/auto-tests-docs-{int(time.time())}"
 repo.git.checkout("HEAD", b=ai_branch)
 
 # --- AI Processing ---
+repo = git.Repo(".")
+repo_root = Path(repo.working_tree_dir)  # absolute path to repo root
+
 for f in files_to_process:
-    print(f, Path(f).exists())
-    if not Path(f).exists() or not f.endswith(".py"):
+    f_path = repo_root / f
+    print(f_path, Path(f_path).exists())
+    if not Path(f_path).exists() or not f.endswith(".py"):
         continue
-    with open(f) as src_file:
+    with open(f_path) as src_file:
         code = src_file.read()
     print("here")
     # --- Test generation for low-coverage files ---
