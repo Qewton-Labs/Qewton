@@ -82,7 +82,8 @@ repo = git.Repo(".")
 repo_root = Path(repo.working_tree_dir)  # absolute path to repo root
 print("Current working directory:", Path.cwd())
 print("Repo root:", repo_root)
-
+print("Files in repo_root/pioneer/pipelines:")
+print(os.listdir(repo_root / "pioneer" / "pipelines"))
 for f in files_to_process:
     f_path = repo_root / f
     print(f_path, Path(f_path).exists())
