@@ -68,6 +68,7 @@ class Trainer:
         self.tune_pipelines = set[Pipeline]()
         self.train_pipelines = self._register_pipelines(self.training_constraints)
         self.validation_pipelines = self._register_pipelines(self.validation_constraints)
+        self.set_tuning_constraints(self.validation_constraints)
 
     def _register_pipelines(self, constraints: list[Constraint]) -> set[Pipeline]:
         found_constraints = set()

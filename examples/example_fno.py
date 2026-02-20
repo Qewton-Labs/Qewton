@@ -10,19 +10,17 @@ def build_problem():
     C = pioneer.config.Variable("chi", 1)
     U = pioneer.config.Variable("u", 2)
 
-    dataset = pioneer.nodes.DataSet.from_data(data, C * U, batch_size=5000)
-    model = pioneer.algorithms.TorchPCANN(
+    dataset = pioneer.nodes.DataSet.from_data(data, C * U, batch_size=2000)
+    model = pioneer.algorithms.TorchPhysicsFNO(
         C,
         U,
-        dataset,
-        dataset,
-        input_pca_components=pioneer.optim.DiscreteHyperparameter((8, 100)),
-        output_pca_components=pioneer.optim.DiscreteHyperparameter((8, 100)),
-        hidden_layers=pioneer.optim.DiscreteHyperparameter((1, 4)),
-        hidden_neurons=pioneer.optim.DiscreteHyperparameter((16, 100)),
-        activation_fn=pioneer.optim.CategoricalHyperparameter(
-            [torch.nn.Tanh(), torch.nn.ReLU()]
-        ),
+        spatial_dimension=2,
+        fourier_layers=2,
+        hidden_channels=1,
+        fourier_modes=(12, 12),
+        skip_connections=True,
+        linear_connections=True,
+        positional_embedding=False,
     )
 
     mse_constraint = pioneer.constraints.MSEConstraint(
@@ -39,19 +37,21 @@ def build_problem():
         torch.optim.Adam,
         max_iterations=10000,
         learning_rate=0.001,
+        device="cuda:0",
     )
     trainer.set_tuning_constraints([pipeline.mse_constraint])
     return trainer
 
 
-# trainer.run()
-if __name__ == "__main__":
-    mp.set_start_method("spawn")
-    tuner = pioneer.optim.tuner.GridSearchTuner(
-        build_problem,
-        trial_number=80,
-        devices=["cuda:0", "cuda:1", "cuda:2", "cuda:3"],
-        trials_per_device=2,
-        save_path="examples/pca_tuner_stokes_domain",
-    )
-    tuner.run()
+problem_trainer = build_problem()
+problem_trainer.run()
+# if __name__ == "__main__":
+#     mp.set_start_method("spawn")
+#     tuner = pioneer.optim.tuner.GridSearchTuner(
+#         build_problem,
+#         trial_number=80,
+#         devices=["cuda:0", "cuda:1", "cuda:2", "cuda:3"],
+#         trials_per_device=2,
+#         save_path="examples/pca_tuner_stokes_domain",
+#     )
+#     tuner.run()

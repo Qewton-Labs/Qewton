@@ -1,6 +1,6 @@
 import torch
 
-from .pytorch_test import _construct_fc_layers
+from .fcn import _construct_fc_layers
 from ..base import AlgorithmNode, AlgorithmState, AlgorithmAttributes
 from ...nodes.base import Port
 from ...nodes.datasets.base import DataSet

@@ -1,2 +1,2 @@
 from .base import Constraint
-from .error_constraint import MSEConstraint, ResidualConstraint
+from .metric_constraint import MetricConstraint, MSEConstraint, ResidualConstraint

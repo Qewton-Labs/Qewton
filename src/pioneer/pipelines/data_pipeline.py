@@ -1,6 +1,6 @@
 from .base import Pipeline
 from ..algorithms.base import AlgorithmNode, AlgorithmAttributes
-from ..constraints.error_constraint import MSEConstraint
+from ..constraints.metric_constraint import MetricConstraint, MSEConstraint
 from ..nodes.datasets.base import DataSet
 from ..nodes.operations.slice_nodes import SliceNode
 from ..nodes.operations.normalization import NormalizationNode, InverseNormalizationNode
@@ -8,22 +8,22 @@ from ..optim.hyperparameter.base import BooleanHyperparameter
 
 
 class MSEDataPipeline(Pipeline):
-    """A pipeline that implements a data fitting pipeline.
-    TODO: Allow for other constraint types? Maybe even allow the user
-    to pass the constraint by itself?
-    """
+    """A pipeline that implements a data fitting pipeline."""
 
     def __init__(
         self,
         dataset: DataSet,
         algorithm: AlgorithmNode,
+        constraint: MetricConstraint | None = None,
         apply_normalization: bool = True,
         name="MSEDataPipeline",
     ):
         """
         Args:
             dataset (DataSet): The dataset, providing the data for the training.
-            algorithm (AlgorithmNode): the algorithm that should be tested or trained.
+            algorithm (AlgorithmNode): The algorithm that should be tested or trained.
+            constraint (MetricConstraint): The constraint that should be
+                applied/fulfilled.
             apply_normalization (bool, optional): If the input and output of the
                 algorithm should be normalized. If algorithm.attributes
                 includes AlgorithmAttributes.NORMALIZES_DATA this
@@ -42,9 +42,13 @@ class MSEDataPipeline(Pipeline):
         slice_node_output = SliceNode(
             dataset.data_config, algorithm.output_variable, name="SliceOutput"
         )
-        self.mse_constraint = MSEConstraint(
-            algorithm[algorithm.OutputKeys.OUTPUT].data_configuration,
-        )
+        if constraint is None:
+            self.mse_constraint = MSEConstraint(
+                algorithm[algorithm.OutputKeys.OUTPUT].data_configuration,
+            )
+        else:
+            self.mse_constraint = constraint
+
         if apply_normalization:
             normalize_param = BooleanHyperparameter(True)
             self.normalize_node = NormalizationNode(
@@ -53,7 +57,7 @@ class MSEDataPipeline(Pipeline):
                 active=normalize_param,
             )
             self.invert_normalize_node = InverseNormalizationNode(
-                data_config=algorithm[algorithm.OutputKeys.OUTPUT].data_configuration,
+                data_config=dataset.data_config[algorithm.output_variable],
                 dataset_node=dataset,
                 active=normalize_param,
                 name="InverseNormalization",

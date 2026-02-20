@@ -35,15 +35,15 @@ class PyTorchWrapper(AlgorithmNode):
                 models that are wrapped.
             model_cls (type[torch.nn.Module]): The class object that is a subclass
                 of torch.nn.Module.
-            name (str, optional): The name of thise node.
+            name (str, optional): The name of this node.
                 Defaults to "PyTorchAlgorithm".
             **kwargs (Any): The input arguments of the class provided in *model_cls*.
                 Can either be the values needed to construct an object from the
                 class or corresponding HyperParameters for tuning.
         """
-        input_variable = input_config.feature_axis.variables
-        output_variable = output_config.feature_axis.variables
-        super().__init__(input_variable, output_variable, name)
+        input_variable = input_config.feature_axis.variables  # type: ignore
+        output_variable = output_config.feature_axis.variables  # type: ignore
+        super().__init__(input_variable, output_variable, name)  # type: ignore
 
         self.input_port = Port(input_config, self, "InputPort", True)
         self.output_port = Port(output_config, self, "OutputPort")
@@ -52,7 +52,7 @@ class PyTorchWrapper(AlgorithmNode):
         self.model_cls = model_cls
         self.kwargs: dict[str, HyperParameter] = {}
         self._check_input_args(**kwargs)
-        self._attributes = set[HyperParameter]()
+        self._attributes = set[AlgorithmAttributes]()
 
     def _check_input_args(self, **kwargs):
         """Checks if the provided kwargs with the expected input of self.model_cls.
@@ -146,5 +146,5 @@ class PyTorchWrapper(AlgorithmNode):
         return self._attributes
 
     def set_attributes(self, *attributes: AlgorithmAttributes):
-        for atri in attributes:
-            self._attributes.add(atri)
+        for attribute in attributes:
+            self._attributes.add(attribute)

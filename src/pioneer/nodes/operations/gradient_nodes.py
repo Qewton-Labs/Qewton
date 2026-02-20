@@ -5,7 +5,10 @@ from ...config.configuration_base import DataConfiguration
 
 
 class GradientTrackingNode(Node):
-    """Enables gradient tracking of the data flowing through this node."""
+    """Enables gradient tracking of the data flowing through this node.
+
+    TODO: Currently only in PyTorch okay!!!
+    """
 
     def __init__(
         self, data_config: DataConfiguration, name: str = "TrackingNode"
