@@ -1,0 +1,12 @@
+[run]
+source = src
+branch = True
+omit =
+    tests/*
+
+[report]
+show_missing = True
+skip_covered = False
+
+[html]
+directory = htmlcov

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from types import EllipsisType
+from typing import Mapping, Sequence
 import copy
 
 from .axis import Axis, FeatureAxis, BatchAxis
@@ -27,14 +28,16 @@ class DataConfiguration:
         dtype,
         axes: list[Axis | EllipsisType],
         feature_axis: FeatureAxis | EllipsisType,
-        connection_to_axes: dict[Variable, list[Axis]] | None = None,
+        connection_to_axes: Mapping[Variable, Sequence[Axis]] | None = None,
     ):
-        assert feature_axis in axes, "Feature axis must be one of the axes."
+        assert (
+            feature_axis is ... or feature_axis in axes
+        ), "Feature axis must be one of the axes."
         self.dtype = dtype  # TODO: Currently None if type does not matter?
         self.axes = axes
         self.feature_axis = feature_axis
         self.connection_to_axes = (
-            connection_to_axes if connection_to_axes is not None else {}
+            dict(connection_to_axes) if connection_to_axes is not None else {}
         )
 
         self._batch_axis_idx: int | None = None
@@ -45,6 +48,10 @@ class DataConfiguration:
         if self._batch_axis_idx is not None:
             return self._batch_axis_idx
         for i, axis in enumerate(self.axes):
+            if isinstance(axis, EllipsisType):
+                raise RuntimeError(
+                    "Can not find index for configurations containing ellipsis!"
+                )
             if isinstance(axis, BatchAxis):
                 self._batch_axis_idx = i
                 return self._batch_axis_idx
@@ -55,6 +62,10 @@ class DataConfiguration:
         if self._feature_axis_idx is not None:
             return self._feature_axis_idx
         for i, axis in enumerate(self.axes):
+            if isinstance(axis, EllipsisType):
+                raise RuntimeError(
+                    "Can not find index for configurations containing ellipsis!"
+                )
             if isinstance(axis, FeatureAxis):
                 self._feature_axis_idx = i
                 return self._feature_axis_idx
@@ -74,13 +85,14 @@ class DataConfiguration:
         """
         idx_self = 0
         idx_other = 0
-
+        ellipsis_at_end = False
         while idx_self < len(self.axes) and idx_other < len(other_config.axes):
             if self.axes[idx_self] is ...:
                 # Skip ellipsis
                 idx_self += 1
                 if idx_self == len(self.axes):
                     # Trailing ellipsis matches everything remaining
+                    ellipsis_at_end = True
                     break
 
                 # Advance other_config.axes until we find the next self.axes element
@@ -96,13 +108,14 @@ class DataConfiguration:
                 idx_other += 1
 
         # Consume remaining ellipsis in self.axes
-        while idx_self < len(self.axes) and (
-            self.axes[idx_self] is ... or idx_self == len(self.axes) - 1
-        ):
-            idx_self += 1
+        if not ellipsis_at_end:
+            while idx_self < len(self.axes) and (
+                self.axes[idx_self] is ... or idx_self == len(self.axes) - 1
+            ):
+                idx_self += 1
 
-        if not (idx_self == len(self.axes) and idx_other == len(other_config.axes)):
-            return False
+            if not (idx_self == len(self.axes) and idx_other == len(other_config.axes)):
+                return False
 
         # Check if variables in feature axis are compatible (or subset)
         if (
@@ -175,7 +188,7 @@ class DataConfiguration:
         return True
 
     def axes_of(self, var: Variable) -> list[Axis]:
-        return self.connection_to_axes.get(var, [])
+        return list(self.connection_to_axes.get(var, []))
 
     def variables_on_axis(self, axis: Axis) -> Variable | None:
         for v, axes in self.connection_to_axes.items():

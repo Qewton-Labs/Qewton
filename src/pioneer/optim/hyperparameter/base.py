@@ -81,6 +81,10 @@ class HyperParameter:
             return x
 
         assert name is not None, "Name must be provided to create a HyperParameter."
+        if isinstance(x, bool):
+            return BooleanHyperparameter(
+                initial_value=x, state=HyperParameterState.FIXED, name=name
+            )
         if isinstance(x, int):
             return DiscreteHyperparameter(
                 (x, x), initial_value=x, state=HyperParameterState.FIXED, name=name
@@ -88,10 +92,6 @@ class HyperParameter:
         if isinstance(x, float):
             return ContinuousHyperparameter(
                 (x, x), initial_value=x, state=HyperParameterState.FIXED, name=name
-            )
-        if isinstance(x, bool):
-            return BooleanHyperparameter(
-                initial_value=x, state=HyperParameterState.FIXED, name=name
             )
         # TODO: This is not save for any values?
         return CategoricalHyperparameter(
@@ -142,7 +142,7 @@ class ContinuousHyperparameter(HyperParameter):
     ):
         assert len(parameter_range) == 2, "Range must be a tuple or list of length 2."
         if scale == HyperParameterScale.LOG and parameter_range[0] <= 0.0:
-            raise ValueError("Logarithmic scaling in a negativ range not supported!")
+            raise ValueError("Logarithmic scaling in a negative range not supported!")
         if initial_value is None:
             initial_value = (parameter_range[0] + parameter_range[1]) / 2
 
@@ -176,12 +176,14 @@ class ContinuousHyperparameter(HyperParameter):
             log_lo = math.log(lo)
             log_hi = math.log(hi)
             if n == 1:
-                return [(log_lo + log_hi) / 2]
+                return [math.exp((log_lo + log_hi) / 2)]
             step = (log_hi - log_lo) / (n - 1)
             return [math.exp(log_lo + i * step) for i in range(n)]
         # self.scale == HyperParameterScale.POWER:
         transformed_lo = lo ** (1 / self.power)
         transformed_hi = hi ** (1 / self.power)
+        if n == 1:
+            return [((transformed_lo + transformed_hi) / 2) ** self.power]
         step = (transformed_hi - transformed_lo) / (n - 1)
         return [(transformed_lo + i * step) ** self.power for i in range(n)]
 
@@ -194,6 +196,7 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
         state: HyperParameterState = HyperParameterState.OPTIMIZE,
         name: str = "",
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
+        power: float = 2.0,  # only used for POWER scale
     ):
         assert all(
             isinstance(x, int) for x in parameter_range
@@ -204,6 +207,7 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
             initial_value=initial_value,
             name=name,
             scale=scale,
+            power=power,
         )
         self.current_value = int(self.current_value)
 

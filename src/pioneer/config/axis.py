@@ -24,7 +24,7 @@ class Axis:
         if not isinstance(other_axes, Axis):
             return False
         return (
-            self.size == other_axes.size
+            (self.size == other_axes.size or None in [self.size, other_axes.size])
             and isinstance(self, type(other_axes))
             # and self.name == other_axes.name
             and self.variables == other_axes.variables

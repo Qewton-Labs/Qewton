@@ -58,6 +58,12 @@ class Variable(OrderedDict):
     def __add__(self, other: Variable) -> Variable:
         return self * other
 
+    def __hash__(self):
+        hash_name = ""
+        for key, value in self.items():
+            hash_name += key + str(value) + "_"
+        return hash(hash_name)
+
     @property
     def dim(self):
         return sum(self.values())
