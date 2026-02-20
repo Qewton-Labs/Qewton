@@ -1,35 +1,35 @@
-# stages:
-#   - test
-#   - ai_check
+stages:
+  - test
+  - ai_check
 
-# variables:
-#   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-#   COVERAGE_THRESHOLD: "80"
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  COVERAGE_THRESHOLD: "80"
 
-# run_tests:
-#   stage: test
-#   image: python:3.10
-#   script:
-#     - python -m pip install --upgrade pip
-#     - pip install pytest coverage pydocstyle
-#     - pip install pytest pytest-cov coverage openai gitpython
-#     - export PYTHONPATH=$PYTHONPATH:$(pwd)/src
-#     - pytest --cov=src --cov-report=term --cov-report=xml
-#   artifacts:
-#     paths:
-#       - coverage.xml
-#       - .pytest_cache/
-#     expire_in: 1 hour
+run_tests:
+  stage: test
+  image: python:3.10
+  script:
+    - python -m pip install --upgrade pip
+    - pip install pytest coverage pydocstyle
+    - pip install pytest pytest-cov coverage openai gitpython
+    - export PYTHONPATH=$PYTHONPATH:$(pwd)/src
+    - pytest --cov=src --cov-report=term --cov-report=xml
+  artifacts:
+    paths:
+      - coverage.xml
+      - .pytest_cache/
+    expire_in: 1 hour
 
-# ai_quality_gate:
-#   stage: ai_check
-#   image: python:3.10
-#   dependencies:
-#     - run_tests
-#   script:
-#     - python -m pip install --upgrade pip
-#     - pip install openai gitpython requests
-#     - python .gitlab/ai/quality_gate.py
-#   variables:
-#     OPENAI_API_KEY: $OPENAI_API_KEY
-#     GITLAB_TOKEN: $GITLAB_TOKEN  # Required for creating merge request
+ai_quality_gate:
+  stage: ai_check
+  image: python:3.10
+  dependencies:
+    - run_tests
+  script:
+    - python -m pip install --upgrade pip
+    - pip install openai gitpython requests
+    - python .gitlab/ai/quality_gate.py
+  variables:
+    OPENAI_API_KEY: $OPENAI_API_KEY
+    GITLAB_TOKEN: $GITLAB_TOKEN  # Required for creating merge request
