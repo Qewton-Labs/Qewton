@@ -59,7 +59,9 @@ low_coverage_paths = [filename for filename, _ in low_coverage_files]
 
 all_files_to_process = set(low_coverage_paths + changed_files)
 
-files_to_process = set(file for file in all_files_to_process if file != "__init__.py")
+files_to_process = set(
+    file for file in all_files_to_process if not file.endswith("__init__.py")
+)
 
 if not files_to_process:
     print("No files to process, exiting")
@@ -77,7 +79,7 @@ repo.git.checkout("HEAD", b=ai_branch)
 
 # --- AI Processing ---
 for f in files_to_process:
-    print(f)
+    print(f, Path(f).exists())
     if not Path(f).exists() or not f.endswith(".py"):
         continue
     with open(f) as src_file:
