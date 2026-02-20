@@ -34,12 +34,12 @@ tree = ET.parse(cov_file)
 root = tree.getroot()
 
 low_coverage_files = []
-for package in root.findall(".//package"):
-    for class_el in package.findall("class"):
-        filename = class_el.get("filename")
-        line_rate = float(class_el.get("line-rate", 0)) * 100
-        if line_rate < COVERAGE_THRESHOLD:
-            low_coverage_files.append(filename)
+for class_el in root.findall(".//class"):
+    filename = class_el.get("filename")
+    line_rate = float(class_el.get("line-rate", 0)) * 100
+
+    if line_rate < COVERAGE_THRESHOLD:
+        low_coverage_files.append((filename, line_rate))
 
 if low_coverage_files:
     print("Files below coverage threshold:", low_coverage_files)
@@ -80,7 +80,7 @@ for f in files_to_process:
         resp = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt_tests}],
-            api_key=api_key
+            api_key=api_key,
         )
         test_code = resp.choices[0].message.content
         test_file = Path("tests") / f"test_{Path(f).stem}.py"
@@ -94,7 +94,7 @@ for f in files_to_process:
         resp = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt_docs}],
-            api_key=api_key
+            api_key=api_key,
         )
         improved_code = resp.choices[0].message.content
         Path(f).write_text(improved_code)
@@ -124,8 +124,8 @@ resp = requests.post(
         "target_branch": "main",
         "title": mr_title,
         "description": mr_desc,
-        "remove_source_branch": True
-    }
+        "remove_source_branch": True,
+    },
 )
 
 if resp.status_code == 201:
