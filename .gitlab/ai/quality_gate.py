@@ -80,10 +80,15 @@ repo.git.checkout("HEAD", b=ai_branch)
 # --- AI Processing ---
 repo = git.Repo(".")
 repo_root = Path(repo.working_tree_dir)  # absolute path to repo root
-print("Current working directory:", Path.cwd())
 print("Repo root:", repo_root)
-print("Files in repo_root/pioneer/pipelines:")
-print(os.listdir(repo_root / "pioneer" / "pipelines"))
+import os
+
+repo_root = "/builds/pioneer/pioneer-backend"
+
+for dirpath, dirnames, filenames in os.walk(repo_root):
+    for fn in filenames:
+        print(os.path.relpath(os.path.join(dirpath, fn), repo_root))
+
 for f in files_to_process:
     f_path = repo_root / f
     print(f_path, Path(f_path).exists())
