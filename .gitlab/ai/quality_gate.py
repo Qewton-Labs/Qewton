@@ -77,11 +77,12 @@ repo.git.checkout("HEAD", b=ai_branch)
 
 # --- AI Processing ---
 for f in files_to_process:
+    print(f)
     if not Path(f).exists() or not f.endswith(".py"):
         continue
     with open(f) as src_file:
         code = src_file.read()
-
+    print("here")
     # --- Test generation for low-coverage files ---
     if f in low_coverage_paths:
         prompt_tests = f"{TEST_GENERATION_PROMPT}\n{code}"
