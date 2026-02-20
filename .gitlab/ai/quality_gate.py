@@ -80,6 +80,8 @@ repo.git.checkout("HEAD", b=ai_branch)
 # --- AI Processing ---
 repo = git.Repo(".")
 repo_root = Path(repo.working_tree_dir)  # absolute path to repo root
+print("Current working directory:", Path.cwd())
+print("Repo root:", repo_root)
 
 for f in files_to_process:
     f_path = repo_root / f
