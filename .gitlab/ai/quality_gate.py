@@ -3,6 +3,8 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import git
+import time
+import requests
 import openai
 
 COVERAGE_THRESHOLD = float(os.environ.get("COVERAGE_THRESHOLD", 80))
@@ -52,7 +54,13 @@ changed_files = [item.a_path for item in repo.index.diff(None)]
 print("Changed files:", changed_files)
 
 # --- Combine files to check ---
-files_to_process = set(low_coverage_files + changed_files)
+# Extract only filenames from low_coverage_files tuples
+low_coverage_paths = [filename for filename, _ in low_coverage_files]
+
+all_files_to_process = set(low_coverage_paths + changed_files)
+
+files_to_process = set(file for file in all_files_to_process if file != "__init__.py")
+
 if not files_to_process:
     print("No files to process, exiting")
     sys.exit(0)
@@ -64,7 +72,7 @@ if not api_key:
     sys.exit(0)
 
 # --- Prepare branch for AI changes ---
-ai_branch = "ai/auto-tests-docs"
+ai_branch = f"ai/auto-tests-docs-{int(time.time())}"
 repo.git.checkout("HEAD", b=ai_branch)
 
 # --- AI Processing ---
@@ -101,34 +109,61 @@ for f in files_to_process:
         repo.index.add([f])
         print(f"Improved docstring for {f}")
 
-# --- Commit and push branch ---
-repo.index.commit("AI: auto-generated tests and improved docstring")
+# ----------------- Commit and push branch -----------------
+commit_message = "AI: auto-generated tests and improved docstrings"
+repo.index.commit(commit_message)
 origin = repo.remote(name="origin")
-origin.push(refspec=f"{ai_branch}:{ai_branch}")
 
-# --- Create merge request ---
+try:
+    push_info = origin.push(refspec=f"{ai_branch}:{ai_branch}")
+    if any(pi.flags & pi.ERROR for pi in push_info):
+        print("Error pushing branch:", push_info)
+        sys.exit(1)
+except Exception as e:
+    print("Failed to push branch:", e)
+    sys.exit(1)
+
+# ----------------- Create merge request -----------------
 project_id = os.environ.get("CI_PROJECT_ID")
 gl_token = os.environ.get("GITLAB_TOKEN")
-mr_title = "AI: Auto-generated tests and docstring improvements"
-mr_desc = "This MR contains AI-generated tests for low-coverage files and improved docstring for changed files."
+if not project_id or not gl_token:
+    print("CI_PROJECT_ID or GITLAB_TOKEN not set — cannot create MR")
+    sys.exit(0)
 
-import requests
+mr_title = "AI: Auto-generated tests and docstring improvements"
+mr_desc = (
+    "This MR contains AI-generated tests for low-coverage files "
+    "and improved docstrings for changed files."
+)
 
 headers = {"PRIVATE-TOKEN": gl_token}
 mr_url = f"https://gitlab.com/api/v4/projects/{project_id}/merge_requests"
-resp = requests.post(
+
+# Check if MR already exists
+existing_mrs = requests.get(
     mr_url,
     headers=headers,
-    data={
-        "source_branch": ai_branch,
-        "target_branch": "main",
-        "title": mr_title,
-        "description": mr_desc,
-        "remove_source_branch": True,
-    },
-)
+    params={"source_branch": ai_branch, "target_branch": "main", "state": "opened"},
+    timeout=200,
+).json()
 
-if resp.status_code == 201:
-    print("Merge request created:", resp.json().get("web_url"))
+if existing_mrs:
+    print("Merge request already exists:", existing_mrs[0]["web_url"])
 else:
-    print("Failed to create merge request:", resp.text)
+    resp = requests.post(
+        mr_url,
+        headers=headers,
+        data={
+            "source_branch": ai_branch,
+            "target_branch": "main",
+            "title": mr_title,
+            "description": mr_desc,
+            "remove_source_branch": True,
+        },
+        timeout=200,
+    )
+    if resp.status_code == 201:
+        print("Merge request created:", resp.json().get("web_url"))
+    else:
+        print("Failed to create merge request:", resp.text)
+        sys.exit(1)
