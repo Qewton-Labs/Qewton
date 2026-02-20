@@ -5,7 +5,7 @@ from pathlib import Path
 import git
 import time
 import requests
-import openai
+from openai import OpenAI
 
 COVERAGE_THRESHOLD = float(os.environ.get("COVERAGE_THRESHOLD", 80))
 
@@ -72,6 +72,7 @@ api_key = os.environ.get("OPENAI_API_KEY")
 if not api_key:
     print("OPENAI_API_KEY not set — AI checks skipped")
     sys.exit(0)
+client = OpenAI(api_key=api_key)
 
 # --- Prepare branch for AI changes ---
 ai_branch = f"ai/auto-tests-docs-{int(time.time())}"
@@ -83,19 +84,18 @@ repo_root = Path(repo.working_tree_dir)  # absolute path to repo root
 
 for f in files_to_process:
     f_path = repo_root / ("src/" + f)
-    print(f_path, Path(f_path).exists())
+
     if not Path(f_path).exists() or not f.endswith(".py"):
         continue
     with open(f_path) as src_file:
         code = src_file.read()
-    print("here")
+
     # --- Test generation for low-coverage files ---
     if f in low_coverage_paths:
         prompt_tests = f"{TEST_GENERATION_PROMPT}\n{code}"
-        resp = openai.ChatCompletion.create(
+        resp = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt_tests}],
-            api_key=api_key,
         )
         test_code = resp.choices[0].message.content
         test_file = Path("tests") / f"test_{Path(f).stem}.py"
