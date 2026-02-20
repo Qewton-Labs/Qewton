@@ -83,7 +83,7 @@ for f in files_to_process:
         code = src_file.read()
 
     # --- Test generation for low-coverage files ---
-    if f in low_coverage_files:
+    if f in low_coverage_paths:
         prompt_tests = f"{TEST_GENERATION_PROMPT}\n{code}"
         resp = openai.ChatCompletion.create(
             model="gpt-4",
