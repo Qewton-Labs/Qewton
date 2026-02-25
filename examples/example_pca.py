@@ -9,10 +9,10 @@ def build_problem():
     F = pioneer.config.Variable("f", 2)
     U = pioneer.config.Variable("u", 2)
 
-    dataset_in = pioneer.nodes.DataSet.from_data(
+    dataset_in = pioneer.data.DataSet.from_data(
         in_data, F, batch_size=5000, name="Input Data", shuffle_data=False
     )
-    dataset_out = pioneer.nodes.DataSet.from_data(
+    dataset_out = pioneer.data.DataSet.from_data(
         out_data, U, batch_size=5000, name="Output Data", shuffle_data=False
     )
 

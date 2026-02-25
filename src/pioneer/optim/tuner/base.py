@@ -8,30 +8,6 @@ from ..trainer.base import Trainer
 from ..hyperparameter.base import HyperParameter
 
 
-# TODO: We could also use the code below to just initiated a worker
-# and construct the trainer once, however then we need to always clean up
-# everything!
-
-# class _WorkerState:
-#     trainer: Trainer
-
-# def _init_worker(trainer_factory: Callable[[], Trainer]):
-#     _WorkerState.trainer = trainer_factory()
-
-# def worker_eval(jobs):
-#     # Need to always clean up everything from previous runs
-#     # TODO: It is safer to just call trainer_factory() again here, but maybe
-#     # a bit slower?
-#     _WorkerState.trainer.reset()
-#     params, device = jobs
-#     if isinstance(device, str):
-#         _WorkerState.trainer.set_device(device)
-#     _WorkerState.trainer.set_hyperparameter(params)
-#     _WorkerState.trainer.run(show_progress=False)
-#     results = _WorkerState.trainer.get_tuning_results()
-#     return [{"params": params}, results]
-
-
 def worker_eval(jobs):
     trainer_factory, params, device = jobs
     local_trainer: Trainer = trainer_factory()
@@ -143,7 +119,7 @@ class Tuner:
             results = list(pool.imap(worker_eval, jobs))
         return results
 
-    def _write_to_csv(self, results):
+    def _write_to_csv(self, results, trial: Any | None = None):
         flat_results = [self._flatten_result_data(r) for r in results]
         write_header = not os.path.exists(self.csv_path)
 

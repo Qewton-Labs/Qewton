@@ -10,8 +10,8 @@ data_initial = torch.tensor(x_data[:1], dtype=torch.float32)
 X = pioneer.config.Variable("x", 1)
 U = pioneer.config.Variable("u", 1)
 
-dataset_ode = pioneer.nodes.DataSet.from_data(data_ode, X * U, batch_size=1000)
-dataset_initial = pioneer.nodes.DataSet.from_data(data_initial, X, batch_size=1000)
+dataset_ode = pioneer.data.DataSet.from_data(data_ode, X * U, batch_size=1000)
+dataset_initial = pioneer.data.DataSet.from_data(data_initial, X, batch_size=1000)
 
 model = pioneer.algorithms.TorchFCN(X, U, 2, 8)
 

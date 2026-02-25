@@ -1,7 +1,7 @@
 from typing import Any
 
 from ..base import Node, Port
-from ..datasets.base import DataSet
+from ...data.datasets.base import DataSet
 from ...config.configuration_base import DataConfiguration
 from ...optim.hyperparameter.base import BooleanHyperparameter, HyperParameter
 

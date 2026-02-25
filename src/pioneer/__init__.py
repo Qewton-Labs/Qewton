@@ -1,5 +1,6 @@
 from .algorithms import *
 from .config import *
+from .data import *
 from .domains import *
 from .nodes import *
 from .pipelines import *

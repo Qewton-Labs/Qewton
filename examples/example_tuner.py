@@ -11,7 +11,7 @@ def build_problem():
     X = pioneer.config.Variable("x", 1)
     U = pioneer.config.Variable("u", 1)
 
-    dataset = pioneer.nodes.DataSet.from_data(
+    dataset = pioneer.data.DataSet.from_data(
         data, X * U, batch_size=800, shuffle_data=True
     )
 

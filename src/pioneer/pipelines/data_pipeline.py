@@ -1,7 +1,7 @@
 from .base import Pipeline
 from ..algorithms.base import AlgorithmNode, AlgorithmAttributes
 from ..constraints.metric_constraint import MetricConstraint, MSEConstraint
-from ..nodes.datasets.base import DataSet
+from ..data.datasets.base import DataSet
 from ..nodes.operations.slice_nodes import SliceNode
 from ..nodes.operations.normalization import NormalizationNode, InverseNormalizationNode
 from ..optim.hyperparameter.base import BooleanHyperparameter
@@ -57,7 +57,7 @@ class MSEDataPipeline(Pipeline):
                 active=normalize_param,
             )
             self.invert_normalize_node = InverseNormalizationNode(
-                data_config=dataset.data_config[algorithm.output_variable],
+                data_config=algorithm[algorithm.OutputKeys.OUTPUT].data_configuration,
                 dataset_node=dataset,
                 active=normalize_param,
                 name="InverseNormalization",

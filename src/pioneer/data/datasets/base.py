@@ -1,6 +1,5 @@
 from typing import Any, Callable
 from abc import abstractmethod
-import warnings
 
 from ...config import DataConfiguration
 from ...optim.hyperparameter.base import (

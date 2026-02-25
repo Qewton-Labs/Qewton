@@ -10,7 +10,7 @@ def build_problem():
     C = pioneer.config.Variable("chi", 1)
     U = pioneer.config.Variable("u", 2)
 
-    dataset = pioneer.nodes.DataSet.from_data(data, C * U, batch_size=5000)
+    dataset = pioneer.data.DataSet.from_data(data, C * U, batch_size=5000)
     model = pioneer.algorithms.TorchPCANN(
         C,
         U,

@@ -47,29 +47,34 @@ class DataConfiguration:
     def batch_axis_idx(self) -> int:
         if self._batch_axis_idx is not None:
             return self._batch_axis_idx
-        for i, axis in enumerate(self.axes):
-            if isinstance(axis, EllipsisType):
-                raise RuntimeError(
-                    "Can not find index for configurations containing ellipsis!"
-                )
-            if isinstance(axis, BatchAxis):
-                self._batch_axis_idx = i
-                return self._batch_axis_idx
-        raise ValueError("Data configuration has no batch axis.")
+        self._batch_axis_idx = self._search_axis(BatchAxis)
+        return self._batch_axis_idx
 
     @property
     def feature_axis_idx(self) -> int:
         if self._feature_axis_idx is not None:
             return self._feature_axis_idx
+        self._feature_axis_idx = self._search_axis(FeatureAxis)
+        return self._feature_axis_idx
+
+    def _search_axis(self, axis_type):
+        ellipsis_seen = False
         for i, axis in enumerate(self.axes):
             if isinstance(axis, EllipsisType):
-                raise RuntimeError(
-                    "Can not find index for configurations containing ellipsis!"
-                )
-            if isinstance(axis, FeatureAxis):
-                self._feature_axis_idx = i
-                return self._feature_axis_idx
-        raise ValueError("Data configuration has no feature axis.")
+                ellipsis_seen = True
+                break
+            if isinstance(axis, axis_type):
+                return i
+        # check if we find axis backwards:
+        for i, axis in enumerate(reversed(self.axes)):
+            if isinstance(axis, axis_type):
+                return -(i + 1)
+
+        if ellipsis_seen:
+            raise RuntimeError(
+                "Can not find index for configurations containing ellipsis!"
+            )
+        raise ValueError(f"Data configuration has no {axis_type}.")
 
     def fits(self, other_config: DataConfiguration) -> bool:
         """Checks if another data configuration is compatible with this one.

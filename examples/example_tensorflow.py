@@ -8,7 +8,7 @@ data = tf.convert_to_tensor(np.column_stack((x_data, u_data)), dtype=tf.float32)
 
 X = pioneer.config.Variable("x", 1)
 U = pioneer.config.Variable("u", 1)
-dataset = pioneer.nodes.DataSet.from_data(data, X * U, batch_size=1000)
+dataset = pioneer.data.DataSet.from_data(data, X * U, batch_size=1000)
 
 slice_node = pioneer.nodes.SplitNode(dataset.data_config)
 

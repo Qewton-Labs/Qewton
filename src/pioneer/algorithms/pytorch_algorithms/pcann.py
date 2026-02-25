@@ -3,7 +3,7 @@ import torch
 from .fcn import _construct_fc_layers
 from ..base import AlgorithmNode, AlgorithmState, AlgorithmAttributes
 from ...nodes.base import Port
-from ...nodes.datasets.base import DataSet
+from ...data.datasets.base import DataSet
 from ...config.variables import Variable
 from ...optim.hyperparameter.base import (
     HyperParameter,

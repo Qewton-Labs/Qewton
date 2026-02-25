@@ -1,5 +1,6 @@
 from __future__ import annotations
 from enum import Enum
+from typing import Any
 import random
 import math
 
@@ -220,8 +221,8 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
         return int(round(super().sample_parameter_random()))
 
     def sample_parameter_grid(self, n: int) -> list:
-        continous_grid = super().sample_parameter_grid(n)
-        return [int(value) for value in continous_grid]
+        continuous_grid = super().sample_parameter_grid(n)
+        return [int(value) for value in continuous_grid]
 
 
 class CategoricalHyperparameter(HyperParameter):
@@ -241,6 +242,32 @@ class CategoricalHyperparameter(HyperParameter):
             name=name,
             initial_value=initial_value,
         )
+        # For tuning, some backends want objects to be serializable.
+        # Hence we create here a string mapping:
+        self._registry = {}
+        for choice in self.parameter_range:
+            if isinstance(choice, (int, float, str, bool, type(None))):
+                key = choice
+            else:
+                # create string identifier
+                key = self._make_key(choice)
+
+            self._registry[key] = choice
+
+    def _make_key(self, obj):
+        if isinstance(obj, type):
+            return obj.__name__
+        return f"{obj.__class__.__name__}"
+
+    @property
+    def categories(self):
+        return list(self._registry.keys())
+
+    def set_value(self, new_value):
+        if new_value in self.parameter_range:
+            self.current_value = new_value
+        else:
+            self.current_value = self._registry[new_value]
 
     def sample_parameter_random(self):
         return random.choice(self.parameter_range)
@@ -265,3 +292,23 @@ class BooleanHyperparameter(CategoricalHyperparameter):
             name=name,
             initial_value=initial_value,
         )
+
+
+class ConditionalHyperparameter(CategoricalHyperparameter):
+
+    def __init__(
+        self,
+        categories: tuple | list,
+        state: HyperParameterState = HyperParameterState.OPTIMIZE,
+        name: str = "",
+        initial_value=None,
+    ):
+        super().__init__(categories, state, name, initial_value)
+
+        self.registry_param_map: dict[Any, list[HyperParameter]] = {}
+        for i, key in enumerate(self._registry):
+            self.registry_param_map[key] = categories[i].hyperparameter
+
+    def sample_parameter_random(self):
+        """Samples a random value from the given parameter range."""
+        return None
