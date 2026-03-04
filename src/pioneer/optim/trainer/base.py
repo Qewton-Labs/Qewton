@@ -68,6 +68,7 @@ class Trainer:
         self.tune_pipelines = set[Pipeline]()
         self.train_pipelines = self._register_pipelines(self.training_constraints)
         self.validation_pipelines = self._register_pipelines(self.validation_constraints)
+        # by default tuning = validation
         self.set_tuning_constraints(self.validation_constraints)
 
     def _register_pipelines(self, constraints: list[Constraint]) -> set[Pipeline]:
@@ -111,7 +112,7 @@ class Trainer:
         # TODO: Set this path also for all callbacks and models
 
     def _run_pipeline(self, pipeline: Pipeline, mode: EvaluationMode):
-        pipeline.set_mode(mode)
+        pipeline.set_mode(mode, include_constraints=False)
         run_time = pipeline.create_runtime()
         run_time.run()
 

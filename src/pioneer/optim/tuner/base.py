@@ -1,11 +1,28 @@
 import csv
 import os
 import math
+import json
+import platform
 import multiprocessing as mp
 from typing import Any, Callable
+from enum import Enum
+from datetime import datetime
+import psutil
 
+
+from ...constraints.base import Constraint
 from ..trainer.base import Trainer
 from ..hyperparameter.base import HyperParameter
+
+
+class TunerLoggingKeys(Enum):
+    FIXEDPARAMS = "Fixed Hyperparameters"
+    TUNABLEPARAMS = "Tunable Hyperparameters"
+    TUNEMETRICS = "Tuning Metrics"
+    TRAINMETRICS = "Train Metrics"
+    # TODO: Maybe also add a section to point to the logs of loss curves.
+    #       Here, maybe just point to the general save location and in the
+    #       csv-file save the correct loss curve locations?
 
 
 def worker_eval(jobs):
@@ -67,23 +84,46 @@ class Tuner:
         # Build saving path
         self.save_path = save_path
         # TODO: does this work for all systems? Windows and Mac?
-        csv_path = self.save_path + "/" + trainer_dummy.save_path
+        file_path_extension = self.save_path + "/" + trainer_dummy.save_path + "/"
         counter = 0
-        csv_path_extension = csv_path + str(counter) + ".csv"
-        while os.path.exists(csv_path_extension):
+        while os.path.exists(file_path_extension):
             counter += 1
-            csv_path_extension = csv_path + str(counter) + ".csv"
-        self.csv_path = csv_path_extension
-        os.makedirs(os.path.dirname(self.csv_path), exist_ok=True)
+            file_path_extension = (
+                self.save_path + "/" + trainer_dummy.save_path + str(counter) + "/"
+            )
+        self.file_path = file_path_extension
+        self.csv_path = f"{self.file_path}/tuning_results.csv"
+        os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
 
         # Find what parameters can be tuned
         self.tunable_parameters: dict[str, list[HyperParameter]] = {}
-        self._get_tuneable_parameters(trainer_dummy)
+        param_log = self._get_tuneable_parameters(trainer_dummy)
+        self.write_constrain_info(
+            param_log,
+            trainer_dummy.tuning_constraints,
+            TunerLoggingKeys.TUNEMETRICS,
+        )
+        self.write_constrain_info(
+            param_log,
+            trainer_dummy.training_constraints,
+            TunerLoggingKeys.TRAINMETRICS,
+        )
+
+        with open(f"{self.file_path}/tuning_setup.json", "w", encoding="utf-8") as f:
+            json.dump(param_log, f, indent=4)
+
+        self.write_system_info()
 
     def _get_tuneable_parameters(self, trainer: Trainer):
         hyperparameter_dict = trainer.get_hyperparameter()
         param_set = set[HyperParameter]()  # to check if some parameters are shared
         # between different nodes (they should not be counted multiple times!)
+
+        # Save all parameters also to a file:
+        param_log = {
+            TunerLoggingKeys.FIXEDPARAMS.value: {},
+            TunerLoggingKeys.TUNABLEPARAMS.value: {},
+        }
         for node_name, param_list in hyperparameter_dict.items():
             for param in param_list:
                 if not param.is_fixed and not param in param_set:
@@ -92,32 +132,39 @@ class Tuner:
                         self.tunable_parameters[node_name].append(param)
                     else:
                         self.tunable_parameters[node_name] = [param]
+                    param_log[TunerLoggingKeys.TUNABLEPARAMS.value][
+                        node_name + "_" + param.name
+                    ] = type(param).__name__
+                else:
+                    param_log[TunerLoggingKeys.FIXEDPARAMS.value][
+                        node_name + "_" + param.name
+                    ] = param.current_value
 
         if len(self.tunable_parameters) == 0:
             raise ValueError("Can not tune a problem without tunable parameters.")
 
+        return param_log
+
     def run(self):
         trials = math.ceil(self.trial_number / self.process_number)
         print("--- Start Tuning ---")
-        for i in range(trials):
-            current_n = self.process_number * i
-            print(f"Running trials {current_n} to {self.process_number + current_n}")
-            current_params = self._get_trial_parameters(current_n)
-            results = self._run_generation(current_params)
-            print("Saving current results")
-            self._write_to_csv(results)
-
-    def _run_generation(self, params):
-        # Using the same pools and not recreating everything would have been nice, but:
-        # - Data stays on the GPUs and can only be cleared by backend dependent calls
         with mp.Pool(
             processes=self.process_number,
             # initializer=_init_worker,
             # initargs=(self.trainer_object,),
         ) as pool:
-            jobs = [(self.trainer_factory, p, d) for p, d in zip(params, self.devices)]
-            results = list(pool.imap(worker_eval, jobs))
-        return results
+            for i in range(trials):
+                current_n = self.process_number * i
+                print(f"Running trials {current_n} to {self.process_number + current_n}")
+                current_params = self._get_trial_parameters(current_n)
+                jobs = [
+                    (self.trainer_factory, p, d)
+                    for p, d in zip(current_params, self.devices)
+                ]
+                results = list(pool.imap(worker_eval, jobs))
+
+                print("Saving current results")
+                self._write_to_csv(results)
 
     def _write_to_csv(self, results, trial: Any | None = None):
         flat_results = [self._flatten_result_data(r) for r in results]
@@ -152,3 +199,34 @@ class Tuner:
             "The base Tuner does not implement a search strategy, \
                 use one of the child classes."
         )
+
+    def write_system_info(self):
+        system_specs = {
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "os": platform.system(),
+            "os_version": platform.version(),
+            "architecture": platform.machine(),
+            "processor": platform.processor(),
+            "cpu_count": psutil.cpu_count(logical=True),
+            "ram_gb": round(psutil.virtual_memory().total / (1024**3), 2),
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+        }
+        system_specs["used_devices"] = self.devices
+
+        with open(f"{self.file_path}/system_specs.json", "w", encoding="utf-8") as f:
+            json.dump(system_specs, f, indent=4)
+
+    def write_constrain_info(
+        self, param_log, constraints: list[Constraint], key: TunerLoggingKeys
+    ):
+        param_log[key.value] = {}
+        for constraint in constraints:
+            constraint_dic = {"objective": constraint.objective}
+            if hasattr(constraint, "relative"):
+                rel_value = constraint.relative  # type: ignore
+                if isinstance(rel_value, HyperParameter):
+                    constraint_dic["relative"] = type(rel_value).__name__
+                else:
+                    constraint_dic["relative"] = rel_value
+
+            param_log[key.value][constraint.name] = constraint_dic

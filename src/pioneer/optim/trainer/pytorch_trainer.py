@@ -23,6 +23,7 @@ class PyTorchTrainer(Trainer):
         device="cpu",
         validation_constraints: list[Constraint] = [],
         validation_check: int = 100,
+        save_path="pytorch_trainer",
     ):
 
         super().__init__(
@@ -33,6 +34,7 @@ class PyTorchTrainer(Trainer):
             max_iterations=max_iterations,
             device=device,
             validation_check=validation_check,
+            save_path=save_path,
         )
         self.optimizer: torch.optim.Optimizer
         self.lr = HyperParameter.from_value(learning_rate, "Learning Rate")

@@ -189,14 +189,17 @@ class Pipeline:
         """
         return PipelineRuntime(self)
 
-    def set_mode(self, new_mode: EvaluationMode):
+    def set_mode(self, new_mode: EvaluationMode, include_constraints: bool = True):
         """Set the process mode for the given training phase.
 
         Args:
             new_mode (EvaluationMode): The new evaluation mode.
         """
         self.mode = new_mode
-        for node in self.nodes:
+        nodes_to_set = (
+            self.nodes if include_constraints else self.nodes - self.constrain_nodes
+        )
+        for node in nodes_to_set:
             node.set_mode(new_mode)
 
     def setup(self):
@@ -253,7 +256,7 @@ class PipelineRuntime:
         self.runtime_nodes: dict[Node, _NodeRuntime] = {}
         for node in graph.nodes:
             if isinstance(node, Constraint):
-                if EvaluationMode.ALWAYS in (node.mode, graph.mode):
+                if EvaluationMode.ALWAYS == node.mode:
                     pass
                 elif node.mode != graph.mode:
                     continue

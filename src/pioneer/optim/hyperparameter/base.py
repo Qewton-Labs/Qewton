@@ -264,10 +264,10 @@ class CategoricalHyperparameter(HyperParameter):
         return list(self._registry.keys())
 
     def set_value(self, new_value):
-        if new_value in self.parameter_range:
-            self.current_value = new_value
-        else:
+        if new_value in self._registry:
             self.current_value = self._registry[new_value]
+        else:
+            self.current_value = new_value
 
     def sample_parameter_random(self):
         return random.choice(self.parameter_range)
