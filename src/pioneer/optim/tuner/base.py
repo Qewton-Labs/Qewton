@@ -9,7 +9,6 @@ from enum import Enum
 from datetime import datetime
 import psutil
 
-
 from ...constraints.base import Constraint
 from ..trainer.base import Trainer
 from ..hyperparameter.base import HyperParameter
@@ -36,6 +35,7 @@ def worker_eval(jobs):
 
     # Cleanup
     del local_trainer  # remove references
+
     return [{"params": params}, results]
 
 
@@ -148,23 +148,25 @@ class Tuner:
     def run(self):
         trials = math.ceil(self.trial_number / self.process_number)
         print("--- Start Tuning ---")
+        for i in range(trials):
+            current_n = self.process_number * i
+            print(f"Running trials {current_n} to {self.process_number + current_n}")
+            current_params = self._get_trial_parameters(current_n)
+            results = self._run_generation(current_params)
+            print("Saving current results")
+            self._write_to_csv(results)
+
+    def _run_generation(self, params):
+        # TODO: Using the same pools and not recreating everything would be nice, but:
+        # - Data stays on the GPUs and can only be cleared by backend dependent calls
         with mp.Pool(
             processes=self.process_number,
             # initializer=_init_worker,
             # initargs=(self.trainer_object,),
         ) as pool:
-            for i in range(trials):
-                current_n = self.process_number * i
-                print(f"Running trials {current_n} to {self.process_number + current_n}")
-                current_params = self._get_trial_parameters(current_n)
-                jobs = [
-                    (self.trainer_factory, p, d)
-                    for p, d in zip(current_params, self.devices)
-                ]
-                results = list(pool.imap(worker_eval, jobs))
-
-                print("Saving current results")
-                self._write_to_csv(results)
+            jobs = [(self.trainer_factory, p, d) for p, d in zip(params, self.devices)]
+            results = list(pool.imap(worker_eval, jobs))
+        return results
 
     def _write_to_csv(self, results, trial: Any | None = None):
         flat_results = [self._flatten_result_data(r) for r in results]
