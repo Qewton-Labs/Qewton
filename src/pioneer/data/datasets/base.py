@@ -142,7 +142,7 @@ class DataSet(Node):
         batch_idx = self.data_config.batch_axis_idx
         return self.data.shape[batch_idx]
 
-    def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         _ = inputs
         # TODO: Add batching and splitting of data, currently
         # just a dummy to get a working example. Can this be done in the parent or

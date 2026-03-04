@@ -57,9 +57,7 @@ class NormalizationNode(Node):
     def output_ports(self) -> dict[str, Port]:
         return {self.OutputKeys.OUTPUT: self.port}
 
-    def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        if inputs is None:
-            raise ValueError("Input can not be None!")
+    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         data = inputs[self.InputKeys.INPUT]
         if self.is_active.value:
             data_mean, data_std = self._extract_mean_and_std()
@@ -88,7 +86,7 @@ class InverseNormalizationNode(NormalizationNode):
     derivation and adding the mean value given in the dataset.
     """
 
-    def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         if inputs is None:
             raise ValueError("Input can not be None!")
         data = inputs[self.InputKeys.INPUT]

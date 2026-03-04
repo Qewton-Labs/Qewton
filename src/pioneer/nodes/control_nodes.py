@@ -24,9 +24,7 @@ class ControlNode(Node):
     def output_ports(self) -> dict[str, Port]:
         return {self.OutputKeys.OUTPUT: self._port}
 
-    def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        if inputs is None:
-            raise ValueError("Input can not be None!")
+    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         self.stored_data = inputs[self.InputKeys.INPUT]
         return {self.OutputKeys.OUTPUT: self.stored_data}
 

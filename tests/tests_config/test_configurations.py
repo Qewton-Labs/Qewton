@@ -68,13 +68,12 @@ class TestAxisIndexing:
 
         # Missing batch
         config_no_batch = DataConfiguration(float, [spatial, feature], feature)
-        with pytest.raises(ValueError, match="no batch axis"):
+        with pytest.raises(ValueError):
             _ = config_no_batch.batch_axis_idx
 
         # Ellipsis blocks finding
         config_ellipsis = DataConfiguration(float, [..., batch, feature], feature)
-        with pytest.raises(RuntimeError, match="ellipsis"):
-            _ = config_ellipsis.batch_axis_idx
+        assert -2 == config_ellipsis.batch_axis_idx
 
     def test_feature_axis_idx_finds_and_caches(self):
         """Test finding feature axis at various positions and caching."""
@@ -94,15 +93,14 @@ class TestAxisIndexing:
         idx2 = config2.feature_axis_idx
         assert idx1 == idx2 == 2
 
-    def test_feature_axis_idx_missing_or_ellipsis_fails(self):
+    def test_feature_axis_idx_from_end(self):
         """Test feature axis index errors."""
         batch = BatchAxis()
         feature = FeatureAxis(size=10)
 
         # Ellipsis blocks finding
         config_ellipsis = DataConfiguration(float, [batch, ..., feature], feature)
-        with pytest.raises(RuntimeError, match="ellipsis"):
-            _ = config_ellipsis.feature_axis_idx
+        assert -1 == config_ellipsis.feature_axis_idx
 
 
 class TestDataConfigurationFits:

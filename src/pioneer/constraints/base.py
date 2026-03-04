@@ -1,3 +1,5 @@
+from typing import Literal
+
 from ..optim.base import EvaluationMode
 from ..optim.hyperparameter.base import HyperParameter, ContinuousHyperparameter
 from ..nodes.base import Node, Port
@@ -31,9 +33,15 @@ class Constraint(Node):
         self,
         name="Constraint",
         weight: float | ContinuousHyperparameter = 1.0,
+        objective: Literal["minimize", "maximize"] = "minimize",
     ):
+        if objective not in ("minimize", "maximize"):
+            raise ValueError(
+                f"objective must be 'minimize' or 'maximize', got '{objective}'"
+            )
         super().__init__(name=name)
         self.weight: HyperParameter = HyperParameter.from_value(weight, "Weight")
+        self.objective: str = objective
         self.loss = 0.0
         self.mode = EvaluationMode.ALWAYS
 

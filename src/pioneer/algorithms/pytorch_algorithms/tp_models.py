@@ -41,11 +41,9 @@ class TorchPhysicsFNO(PyTorchWrapper):
             AlgorithmAttributes.DIFFERENTIABLE, AlgorithmAttributes.TRAINABLE
         )
 
-    def run(
-        self, inputs: dict[str, torch.Tensor] | None = None
-    ) -> dict[str, torch.Tensor]:
+    def _run(self, inputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         if self.state == AlgorithmState.UNINITIALIZED:
             self.setup()
-        data = inputs[self.InputKeys.INPUT]  # type: ignore
+        data = inputs[self.InputKeys.INPUT]
         outdata = self.model(tp.spaces.Points(data, self.input_space))
         return {self.OutputKeys.OUTPUT: outdata.as_tensor}

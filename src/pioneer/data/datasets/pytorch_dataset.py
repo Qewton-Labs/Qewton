@@ -102,7 +102,7 @@ class TorchDataSet(DataSet):
     def compute_pca(
         self, n_components: int, variable: Variable
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        normalized_data = (self.data - self.mean) / self.std
+        normalized_data = (self.data - self.mean) / (self.std + self.std_eps)
         variable_idx = self.data_config.get_axis_indices_of_variables(variable)
         index_slice = self.data_config.slice_axis(
             self.data_config.feature_axis_idx, variable_idx

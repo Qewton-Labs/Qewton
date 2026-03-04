@@ -55,9 +55,7 @@ class SliceNode(Node):
     def output_ports(self) -> dict[str, Port]:
         return {self.OutputKeys.OUTPUT: self._out_port}
 
-    def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        if inputs is None:
-            raise ValueError("Input can not be None!")
+    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         data = inputs[self.InputKeys.INPUT]
         slices = [slice(None)] * len(self.input_data_config)
         slices[self.input_data_config.feature_axis_idx] = self.axis_index  # type: ignore
@@ -104,9 +102,7 @@ class SplitNode(Node):
     def output_ports(self) -> dict[str, Port]:
         return self._out_ports
 
-    def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        if inputs is None:
-            raise ValueError("Input can not be None!")
+    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         data = inputs[self.InputKeys.INPUT]
         output_dict = {}
         start_dim = 0

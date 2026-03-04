@@ -38,7 +38,7 @@ class MetricConstraint(Constraint):
 
 
 class MSEConstraint(MetricConstraint):
-    # TODO: Add relative constraints and also different kind of norms, etc.
+    # TODO: Add different kind of norms
 
     def __init__(
         self,
@@ -50,9 +50,7 @@ class MSEConstraint(MetricConstraint):
     ):
         super().__init__(input_config, name, relative, weight, epsilon=epsilon)
 
-    def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        if inputs is None:
-            raise ValueError("Inputs can not be None")
+    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         x = inputs[self.InputKeys.INPUT1]
         y = inputs[self.InputKeys.INPUT2]
         return self._compute_mean(x, y)
@@ -105,9 +103,7 @@ class ResidualConstraint(MSEConstraint):
             self.InputKeys.INPUT2: Port(self.input_config_2, self, "port_2", True),
         }
 
-    def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        if inputs is None:
-            raise ValueError("Inputs can not be None")
+    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         x = inputs[self.InputKeys.INPUT1]
         y = inputs[self.InputKeys.INPUT2]
         residual = self.residual_fn(x, y)

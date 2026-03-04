@@ -31,6 +31,7 @@ class AlgorithmAttributes(Enum):
     GPU_ACCELERATED = auto()
     MUTATES_INPUT = auto()  # if input is changed in-place
     SUPPORTS_MISSING_VALUES = auto()  # if values like NaN are handled
+    INCLUDES_IMAGINARY_VALUES = auto()  # Some optimizers do not work then
 
 
 class AlgorithmNode(Node):
@@ -76,7 +77,7 @@ class AlgorithmNode(Node):
 
     @property
     def attributes(self) -> set[AlgorithmAttributes]:
-        return []
+        return set()
 
     def fix_algorithm_state(self) -> None:
         """Fix all properties of the algorithm so it will not be

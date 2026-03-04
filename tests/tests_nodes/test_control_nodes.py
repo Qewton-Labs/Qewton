@@ -70,7 +70,7 @@ class TestControlNodeRun:
             float, [BatchAxis(), FeatureAxis(size=10)], FeatureAxis(size=10)
         )
         node = ControlNode(config)
-        with pytest.raises(ValueError, match="Input can not be None"):
+        with pytest.raises(RuntimeError):
             node.run(None)
 
     def test_run_overwrites_previous_data(self):

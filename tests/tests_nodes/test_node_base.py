@@ -134,9 +134,7 @@ class ConcreteNode(Node):
             )
         }
 
-    def run(self, inputs: dict | None = None) -> dict:
-        if inputs is None:
-            inputs = {}
+    def _run(self, inputs: dict) -> dict:
         return {self.OutputKeys.OUTPUT: inputs.get(self.InputKeys.INPUT, [])}
 
 
@@ -260,12 +258,6 @@ class TestNodeRun:
         node = ConcreteNode()
         outputs = node.run({Node.InputKeys.INPUT: [1, 2, 3]})
         assert outputs[Node.OutputKeys.OUTPUT] == [1, 2, 3]
-
-    def test_run_with_none_inputs(self):
-        """Test running node with None inputs."""
-        node = ConcreteNode()
-        outputs = node.run(None)
-        assert outputs[Node.OutputKeys.OUTPUT] == []
 
 
 class TestNodeGetitem:

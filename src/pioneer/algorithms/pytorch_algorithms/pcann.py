@@ -97,16 +97,14 @@ class TorchPCANN(AlgorithmNode):
             dataset.data_config.feature_axis_idx, indices
         )
         data_mean = dataset.mean
-        data_std = dataset.std
+        data_std = dataset.std + dataset.std_eps
         self.model.register_buffer(mean_str, data_mean[index_slice])
         self.model.register_buffer(std_str, data_std[index_slice])
 
-    def run(
-        self, inputs: dict[str, torch.Tensor] | None = None
-    ) -> dict[str, torch.Tensor]:
+    def _run(self, inputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         if self.state == AlgorithmState.UNINITIALIZED:
             self.setup()
-        data = inputs[self.InputKeys.INPUT]  # type: ignore
+        data = inputs[self.InputKeys.INPUT]
         # normalize inputs
         points = (data - self.model.mean_in) / self.model.std_in  # type: ignore
         # apply pca

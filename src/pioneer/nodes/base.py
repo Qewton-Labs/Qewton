@@ -95,9 +95,19 @@ class Node(ABC):
             correspond to the names given by OutputKeys.
         """
 
-    @abstractmethod
     # TODO: Can we make input better than a dictionary?
     def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
+        if inputs is None:
+            if len(self.input_ports.keys()) > 0:
+                raise RuntimeError(
+                    f"Node needs inputs {list(self.input_ports.keys())}, \
+                        but received None."
+                )
+            inputs = {}
+        return self._run(inputs)
+
+    @abstractmethod
+    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
         pass
 
     def __call__(self, *arg, **kwds):

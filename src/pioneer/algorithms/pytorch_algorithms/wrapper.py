@@ -108,9 +108,7 @@ class PyTorchWrapper(AlgorithmNode):
         self.model = self.model_cls(**current_kwargs)
         self._state = AlgorithmState.READY
 
-    def run(
-        self, inputs: dict[str, torch.Tensor] | None = None
-    ) -> dict[str, torch.Tensor]:
+    def _run(self, inputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         if self.state == AlgorithmState.UNINITIALIZED:
             self.setup()
         data = inputs[self.InputKeys.INPUT]  # type: ignore

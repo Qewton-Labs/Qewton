@@ -69,10 +69,10 @@ class TFFCN(AlgorithmNode):
         self.model = tf.keras.Sequential(layers)
         self._state = AlgorithmState.READY
 
-    def run(self, inputs: dict[str, tf.Tensor] | None = None) -> dict[str, tf.Tensor]:
+    def _run(self, inputs: dict[str, tf.Tensor]) -> dict[str, tf.Tensor]:
         if self.state == AlgorithmState.UNINITIALIZED:
             self.setup()
-        data = inputs[self.InputKeys.INPUT]  # type: ignore
+        data = inputs[self.InputKeys.INPUT]
         outdata = self.model(data)
         return {self.OutputKeys.OUTPUT: outdata}
 
