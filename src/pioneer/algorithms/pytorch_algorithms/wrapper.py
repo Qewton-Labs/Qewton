@@ -5,12 +5,14 @@ import torch
 from ...config.configuration_base import DataConfiguration
 from ..base import AlgorithmNode, AlgorithmState, AlgorithmAttributes
 from ...nodes.base import Port
-from ...optim.hyperparameter.base import (
+from ...optim.hyperparameter.number_hyperparameter import (
     HyperParameter,
     DiscreteHyperparameter,
     ContinuousHyperparameter,
-    BooleanHyperparameter,
+)
+from ...optim.hyperparameter.categorical_hyperparameter import (
     CategoricalHyperparameter,
+    BooleanHyperparameter,
 )
 
 

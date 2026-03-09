@@ -34,6 +34,7 @@ def worker_eval(jobs):
     results = local_trainer.get_tuning_results()
 
     # Cleanup
+    # TODO: Add clean up in trainer, so it can be backend dependent
     del local_trainer  # remove references
 
     return [{"params": params}, results]

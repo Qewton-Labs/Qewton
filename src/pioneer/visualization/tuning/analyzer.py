@@ -27,6 +27,7 @@ class TuningAnalyzer:
 
     #######################################################
     ### Loading
+    # TODO: Better format for saving results?
     #######################################################
     def _scan_folder(self):
         """Find all JSON and CSV files in the folder."""
@@ -79,6 +80,7 @@ class TuningAnalyzer:
 
     #######################################################
     ### Statistics
+    # TODO: More statistical analysis possible?
     #######################################################
     def summary_statistics(self):
         if self.df.empty:

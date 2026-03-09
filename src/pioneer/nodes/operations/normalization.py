@@ -3,7 +3,8 @@ from typing import Any
 from ..base import Node, Port
 from ...data.datasets.base import DataSet
 from ...config.configuration_base import DataConfiguration
-from ...optim.hyperparameter.base import BooleanHyperparameter, HyperParameter
+from ...optim.hyperparameter.base import HyperParameter
+from ...optim.hyperparameter.categorical_hyperparameter import BooleanHyperparameter
 
 
 class NormalizationNode(Node):

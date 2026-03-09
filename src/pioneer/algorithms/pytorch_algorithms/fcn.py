@@ -2,11 +2,11 @@ import torch
 
 from ..base import AlgorithmNode, AlgorithmState, AlgorithmAttributes
 from ...config.variables import Variable
-from ...optim.hyperparameter.base import (
+from ...optim.hyperparameter.number_hyperparameter import (
     HyperParameter,
     DiscreteHyperparameter,
-    CategoricalHyperparameter,
 )
+from ...optim.hyperparameter.categorical_hyperparameter import CategoricalHyperparameter
 
 
 def _construct_fc_layers(

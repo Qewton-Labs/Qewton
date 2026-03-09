@@ -81,12 +81,6 @@ class DataConfiguration:
         Meaning that the other configuration could be a specialization of this one,
         where some ellipsis are replaced by concrete axes or where the variables
         in the feature axis have been reduced.
-
-        TODO: How is the default config in algo defined? Do we just have
-        [Batch, ..., Feature] for example, but what is the feature axis, like where
-        is it defined exactly? How do we compare it with the feature axis of the data?
-        Because the algorithm can not know what axis the user names "features"? Or
-        do we make this Feature axis always part of the configuration?
         """
         idx_self = 0
         idx_other = 0

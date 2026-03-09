@@ -2,11 +2,11 @@ from enum import Enum
 from typing import Any
 
 from ..config.configuration_base import DataConfiguration
-from ..optim.hyperparameter.base import (
+from ..optim.hyperparameter.categorical_hyperparameter import (
     HyperParameter,
-    ContinuousHyperparameter,
     BooleanHyperparameter,
 )
+from ..optim.hyperparameter.number_hyperparameter import ContinuousHyperparameter
 from ..nodes.base import Port
 from .base import Constraint
 

@@ -41,7 +41,7 @@ class AlgorithmNode(Node):
 
     def __init__(
         self,
-        input_variable: Variable,
+        input_variable: Variable,  # TODO: Needed?
         output_variable: Variable,
         name: str = "AlgorithmNode",
     ) -> None:

@@ -1,11 +1,11 @@
 import tensorflow as tf
 
 from ..base import EvaluationMode
-from ..hyperparameter.base import (
-    HyperParameter,
+from ..hyperparameter.base import HyperParameter
+from ..hyperparameter.categorical_hyperparameter import CategoricalHyperparameter
+from ..hyperparameter.number_hyperparameter import (
     DiscreteHyperparameter,
     ContinuousHyperparameter,
-    CategoricalHyperparameter,
 )
 from ...pipelines.base import Pipeline
 from ...constraints.base import Constraint

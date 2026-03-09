@@ -1,7 +1,8 @@
 from typing import Literal
 
 from ..optim.base import EvaluationMode
-from ..optim.hyperparameter.base import HyperParameter, ContinuousHyperparameter
+from ..optim.hyperparameter.base import HyperParameter
+from ..optim.hyperparameter.number_hyperparameter import ContinuousHyperparameter
 from ..nodes.base import Node, Port
 
 # class Constraint:
@@ -24,9 +25,6 @@ class Constraint(Node):
 
     TODO: Can this be the main Constraint-class
     (what inputs do the ResourceConstraint need, should they live outside the graph?)
-
-    TODO: Maybe the loss should be moved to a special runtime constraint
-    such that it gets not problematic in parallel processes?
     """
 
     def __init__(

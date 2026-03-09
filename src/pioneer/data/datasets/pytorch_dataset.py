@@ -2,9 +2,11 @@ from __future__ import annotations
 import torch
 
 from pioneer.config.configuration_base import DataConfiguration
-from pioneer.optim.hyperparameter.base import (
-    CategoricalHyperparameter,
+from ...optim.hyperparameter.number_hyperparameter import (
     DiscreteHyperparameter,
+)
+from ...optim.hyperparameter.categorical_hyperparameter import (
+    CategoricalHyperparameter,
 )
 from ...optim.base import EvaluationMode
 from ...config.variables import Variable

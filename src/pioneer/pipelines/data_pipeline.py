@@ -4,7 +4,7 @@ from ..constraints.metric_constraint import MetricConstraint, MSEConstraint
 from ..data.datasets.base import DataSet
 from ..nodes.operations.slice_nodes import SliceNode
 from ..nodes.operations.normalization import NormalizationNode, InverseNormalizationNode
-from ..optim.hyperparameter.base import BooleanHyperparameter
+from ..optim.hyperparameter.categorical_hyperparameter import BooleanHyperparameter
 
 
 class MSEDataPipeline(Pipeline):

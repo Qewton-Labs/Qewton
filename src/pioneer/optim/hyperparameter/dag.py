@@ -1,0 +1,167 @@
+from collections import defaultdict, deque
+from typing import Any
+from itertools import product
+import math
+
+import numpy as np
+from scipy.stats.qmc import Sobol
+
+from .base import HyperParameter
+from .categorical_hyperparameter import CategoricalHyperparameter
+
+
+class HyperParameterDAG:
+    """A directed acyclic graph (DAG) representing HyperParameter dependencies."""
+
+    def __init__(self, hyperparameters: set[HyperParameter]):
+        name_list = []
+        for hp in hyperparameters:
+            if hp.name in name_list:
+                raise ValueError(
+                    f"Found at least two HyperParameters with the name '{hp.name}'.\
+                        Can not uniquely carry out the tuning process."
+                )
+            name_list.append(hp.name)
+
+        self.graph = self.build_graph(hyperparameters)
+        self.sort()
+
+    def build_graph(self, hyperparameters: set[HyperParameter]):
+        graph = defaultdict(set)
+        for hp in hyperparameters:
+            for dep in hp.dependencies:
+                # Edge from parameter to parameters that depend on it
+                graph[dep].add(hp)
+            if hp not in graph:
+                graph[hp] = set()
+        return graph
+
+    def sort(self):
+        in_degree = {node: 0 for node in self.graph}
+        for deps in self.graph.values():
+            for dep in deps:
+                in_degree[dep] += 1
+
+        queue = deque(node for node, deg in in_degree.items() if deg == 0)
+        self.sorted_nodes: list[HyperParameter] = []
+
+        while queue:
+            node = queue.popleft()
+            self.sorted_nodes.append(node)
+            for dep in self.graph[node]:
+                in_degree[dep] -= 1
+                if in_degree[dep] == 0:
+                    queue.append(dep)
+
+        # If two nodes depend on each other, they can never be added to the
+        # queue, hence we can compare the length to check for cycles:
+        if len(self.sorted_nodes) != len(self.graph):
+            raise ValueError("Cycle detected in hyperparameter dependencies!")
+
+    def create_random_samples(self, n_samples: int) -> list[dict[str, Any]]:
+        random_samples = []
+        for _ in range(n_samples):
+            random_sample = {}
+            for node in self.sorted_nodes:
+                if node.is_active(random_sample):
+                    random_sample[node.name] = node.sample_parameter_random()
+            random_samples.append(random_sample)
+        return random_samples
+
+    def create_grid_samples(self, n_samples: int) -> list[dict[str, Any]]:
+        # If there are any dependencies creating a "perfect" grid is
+        # difficult, since we dont know the concrete dependencies
+        for deps in self.graph.values():
+            if len(deps) > 0:
+                return self._dynamic_grid(n_samples)
+        return self._uniform_grid(n_samples)
+
+    def _dynamic_grid(self, n_samples: int) -> list[dict[str, Any]]:
+        """Generates a *dynamic* coverage of the DAG trying to explore
+        all branches."""
+        # Identify non categorical parameters
+        cont_nodes = [
+            node
+            for node in self.sorted_nodes
+            if not isinstance(node, CategoricalHyperparameter)
+        ]
+        # Generate Sobol points for non categorical parameters
+        # TODO: Is this okay?
+        if len(cont_nodes) > 0:
+            sobol_seq = Sobol(d=len(cont_nodes), scramble=True).random(n_samples)
+        else:
+            sobol_seq = np.zeros((n_samples, 0))
+
+        cat_nodes = [
+            node
+            for node in self.sorted_nodes
+            if isinstance(node, CategoricalHyperparameter)
+        ]
+        cat_sequences = {}
+        for node in cat_nodes:
+            values = node.parameter_range
+            reps = (n_samples + len(values) - 1) // len(values)
+            seq = values * reps
+            cat_sequences[node.name] = seq[:n_samples]
+
+        samples = []
+        for i in range(n_samples):
+            sample = {}
+            sobol_idx = 0
+
+            for node in self.sorted_nodes:
+                if not node.is_active(sample):
+                    continue
+
+                if isinstance(node, CategoricalHyperparameter):
+                    sample[node.name] = cat_sequences[node.name][i]
+                else:
+                    u = sobol_seq[i, sobol_idx]
+                    sample[node.name] = node.sample_from_unit(u)
+                    sobol_idx += 1
+
+            samples.append(sample)
+
+        return samples
+
+    def _uniform_grid(self, n_samples: int) -> list[dict[str, Any]]:
+        """Generates a *uniform* grid when all hyperparameters are independent
+        of each other."""
+        # First find out how many intervals and categorical parameters there are
+        n_intervals = 0
+        n_categorical = 0
+
+        for param in self.sorted_nodes:
+            if isinstance(param, CategoricalHyperparameter):
+                n_categorical += len(param.parameter_range)
+            else:
+                n_intervals += 1
+        # Divide total trials over all parameters (wanting to use all categorical ones)
+        n_categorical = max(1, n_categorical)
+        n_intervals = max(1, n_intervals)
+        n_per_dim = int(math.ceil((n_samples / n_categorical) ** (1 / n_intervals)))
+
+        # Create the point grid
+        grid_axis = []
+        for param in self.sorted_nodes:
+            if isinstance(param, CategoricalHyperparameter):
+                grid_axis.append(param.sample_parameter_grid(len(param.parameter_range)))
+            else:
+                grid_axis.append(param.sample_parameter_grid(n_per_dim))
+
+        grid = list(product(*grid_axis))
+        # Resample the grid if the above division yielded to many points.
+        # This of course will lead to some "holes" in the grid.
+        if len(grid) > n_samples:
+            grid = [grid[i * len(grid) // n_samples] for i in range(n_samples)]
+
+        grid_samples = []
+        for i in range(n_samples):
+            sample = {}
+            counter = 0
+            for node in self.sorted_nodes:
+                sample[node.name] = grid[i][counter]
+                counter += 1
+            grid_samples.append(sample)
+
+        return grid_samples

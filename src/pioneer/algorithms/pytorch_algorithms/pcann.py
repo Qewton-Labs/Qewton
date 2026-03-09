@@ -5,11 +5,11 @@ from ..base import AlgorithmNode, AlgorithmState, AlgorithmAttributes
 from ...nodes.base import Port
 from ...data.datasets.base import DataSet
 from ...config.variables import Variable
-from ...optim.hyperparameter.base import (
+from ...optim.hyperparameter.number_hyperparameter import (
     HyperParameter,
     DiscreteHyperparameter,
-    CategoricalHyperparameter,
 )
+from ...optim.hyperparameter.categorical_hyperparameter import CategoricalHyperparameter
 
 
 # TODO: Just some test version!
