@@ -7,6 +7,7 @@ from ..config.configuration_base import DataConfiguration
 from ..config.variables import Variable
 from ..config.axis import FeatureAxis
 from ..nodes.base import Node, Port
+from ..pipelines.base import Graph
 
 
 class AlgorithmState(Enum):
@@ -41,8 +42,6 @@ class AlgorithmNode(Node):
 
     def __init__(
         self,
-        input_variable: Variable,  # TODO: Needed?
-        output_variable: Variable,
         name: str = "AlgorithmNode",
     ) -> None:
         """
@@ -52,14 +51,7 @@ class AlgorithmNode(Node):
             name (str, optional): The name of the node. Defaults to "AlgorithmNode".
         """
         super().__init__(name=name)
-        self.input_variable = input_variable
-        self.output_variable = output_variable
         self._state: AlgorithmState = AlgorithmState.UNINITIALIZED
-
-    def fulfills(self, constraint, data=None) -> bool:
-        # return True or an empirical measure on how well a constraint is
-        # fulfilled (if data is available)?
-        raise NotImplementedError("Fulfills method not implemented.")
 
     @abstractmethod
     def setup(self) -> None:
@@ -92,14 +84,60 @@ class AlgorithmNode(Node):
             return
         self._state = AlgorithmState.FIXED
 
+class GraphNode(Node):
+    def __init__(self, graph: Graph, input_ports: list[Port], output_ports: list[Port], name: str = "GraphNode") -> None:
+        super().__init__(name=name)
+        self.graph = graph
+        self.graph_input_ports = input_ports
+        self.graph_output_ports = output_ports
+    
     @property
-    def input_ports(self) -> dict[str, Port]:
-        data_axis = FeatureAxis(variables=self.input_variable)
-        data_config = DataConfiguration(None, [..., data_axis], feature_axis=data_axis)
-        return {self.InputKeys.INPUT: Port(data_config, self, "in_port", True)}
+    def input_ports(self) -> list[Port]:
+        return [Port(data_configuration=port.data_configuration,
+                     owner=self,
+                     key=port.key,
+                     is_required=port.required) for port in self.graph_input_ports]
+    
+    @property
+    def output_ports(self) -> list[Port]:
+        return [Port(data_configuration=port.data_configuration,
+                     owner=self,
+                     key=port.key,
+                     is_required=port.required) for port in self.graph_output_ports]
+    
+    def _run(self, inputs: dict[str, any]) -> dict[str, any]:
+        graph_runtime = self.graph.create_runtime()
+        for port in self.graph_input_ports:
+            graph_runtime.runtime_nodes[port.owner].receive(port.key, inputs[port.key])
+        return graph_runtime.run(return_results=self.graph_output_ports)
+
+class ActivationFunction(AlgorithmNode):
+    """A node representing an activation function, which is a special type of
+    algorithm that is applied element-wise to the input data.
+    """
+
+class DifferentiableNode(Node):
+    """..."""
+
+class TorchNode(DifferentiableNode):
+    """A node representing a PyTorch module, which is a special type of
+    algorithm that can be trained and run on a GPU.
+    """
+    def __init__()
+        
+    def setup(self) -> None:
+        """Creates the underlying PyTorch module instance."""
+        self._torch_module = self.create_torch_module()
 
     @property
-    def output_ports(self) -> dict[str, Port]:
-        data_axis = FeatureAxis(variables=self.output_variable)
-        data_config = DataConfiguration(None, [..., data_axis], feature_axis=data_axis)
-        return {self.OutputKeys.OUTPUT: Port(data_config, self, "out_port")}
+    def torch_module(self):
+        return self._torch_module
+    
+    def get_trainable_parameters(self) -> dict[str, any]:
+        """Returns the trainable parameters of this node, which can be used for
+        training the underlying algorithm (e.g. a neural network).
+
+        Returns:
+            dict[str, any]: A dictionary of trainable parameters.
+        """
+        return self.torch_module.parameters()

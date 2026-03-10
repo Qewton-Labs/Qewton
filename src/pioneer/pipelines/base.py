@@ -14,45 +14,29 @@ from ..constraints.base import Constraint
 # Cycles may be better included inside a node itself (e.g. a WhileNode has a
 # "sub-pipeline" that runs a time-stepping scheme?).
 
-
-class Pipeline:
-    """A pipeline represents a workflow of data getting transformed
-    through multiple computation steps and algorithms. Along this
-    workflow one can set different constraints which can be used
-    to train/validate/test the algorithm properties.
-    """
-
-    def __init__(self, name="pipeline"):
-        """
-        Args:
-            name (str, optional): The internal name of this pipeline.
-                Defaults to "pipeline".
-        """
+class Graph:
+    def __init__(self):
         self.nodes: set[Node] = set[Node]()
-        self.constrain_nodes: set[Constraint] = set[Constraint]()
-        self.algorithm_nodes: set[AlgorithmNode] = set[AlgorithmNode]()
         self.edges: list[Edge] = []
-        self.name = name
-        self.mode = EvaluationMode.ALWAYS
-
-    def copy(self) -> Pipeline:
-        """Creates a (not deep) copy of this pipeline.
+    
+    def copy(self) -> Graph:
+        """Creates a (not deep) copy of this graph.
 
         Returns:
-            Pipeline: The copied pipeline.
+            Graph: The copied graph.
         """
-        new_pipeline = Pipeline()
-        new_pipeline.nodes = self.nodes.copy()
-        new_pipeline.edges = self.edges.copy()
-        return new_pipeline
+        new_graph = Graph()
+        new_graph.nodes = self.nodes.copy()
+        new_graph.edges = self.edges.copy()
+        return new_graph
 
     def add_node(self, node: Node, check_warning=True) -> None:
-        """Adds a node to this pipeline.
+        """Adds a node to this graph.
 
         Args:
             node (Node): The node that is added.
             check_warning (bool, optional): Whether it is checked, that
-                a node with the same name already exists in this pipeline.
+                a node with the same name already exists in this graph.
                 Defaults to True.
         """
         if check_warning:
@@ -62,22 +46,15 @@ class Pipeline:
                         f"Node with name '{node.name}' already in graph!", UserWarning
                     )
         self.nodes.add(node)
-        if isinstance(node, Constraint):
-            self.constrain_nodes.add(node)
-        if isinstance(node, AlgorithmNode):
-            self.algorithm_nodes.add(node)
-
+    
     def remove_node(self, node: Node) -> None:
-        """Deletes a given node from this pipeline.
+        """Deletes a given node from this graph.
 
         Args:
             node (Node): The node that should be deleted.
         """
         self.nodes.remove(node)
-        if isinstance(node, Constraint):
-            self.constrain_nodes.remove(node)
-        if isinstance(node, AlgorithmNode):
-            self.algorithm_nodes.remove(node)
+
         # Remove all edges connected to this node
         self.edges = [
             edge
@@ -183,29 +160,11 @@ class Pipeline:
                             f"that is not connected!"
                         )
 
-    def create_runtime(self) -> PipelineRuntime:
+    def create_runtime(self) -> GraphRuntime:
         """Creates a runtime object of this pipeline, such that multiple pipelines
         can be evaluated independently.
         """
-        return PipelineRuntime(self)
-
-    def set_mode(self, new_mode: EvaluationMode, include_constraints: bool = True):
-        """Set the process mode for the given training phase.
-
-        Args:
-            new_mode (EvaluationMode): The new evaluation mode.
-        """
-        self.mode = new_mode
-        nodes_to_set = (
-            self.nodes if include_constraints else self.nodes - self.constrain_nodes
-        )
-        for node in nodes_to_set:
-            node.set_mode(new_mode)
-
-    def setup(self):
-        """Setup all nodes for evaluation."""
-        for node in self.algorithm_nodes:
-            node.setup()
+        return GraphRuntime(self)
 
     def visualize(self):
         # TODO: Just some quick way to visualize a graph, nothing final
@@ -245,24 +204,90 @@ class Pipeline:
         plt.tight_layout()
         plt.show()
 
+class Pipeline(Graph):
+    """A pipeline represents a workflow of data getting transformed
+    through multiple computation steps and algorithms. Along this
+    workflow one can set different constraints which can be used
+    to train/validate/test the algorithm properties.
+    """
 
-class PipelineRuntime:
+    def __init__(self, name="pipeline"):
+        """
+        Args:
+            name (str, optional): The internal name of this pipeline.
+                Defaults to "pipeline".
+        """
+        self.nodes: set[Node] = set[Node]()
+        self.constrain_nodes: set[Constraint] = set[Constraint]()
+        self.algorithm_nodes: set[AlgorithmNode] = set[AlgorithmNode]()
+        self.edges: list[Edge] = []
+        self.name = name
+        self.mode = EvaluationMode.ALWAYS
+
+    def add_node(self, node: Node, check_warning=True) -> None:
+        """Adds a node to this pipeline.
+
+        Args:
+            node (Node): The node that is added.
+            check_warning (bool, optional): Whether it is checked, that
+                a node with the same name already exists in this pipeline.
+                Defaults to True.
+        """
+        super().add_node(node, check_warning=check_warning)
+        if isinstance(node, Constraint):
+            self.constrain_nodes.add(node)
+        if isinstance(node, AlgorithmNode):
+            self.algorithm_nodes.add(node)
+
+    def remove_node(self, node: Node) -> None:
+        """Deletes a given node from this pipeline.
+
+        Args:
+            node (Node): The node that should be deleted.
+        """
+        self.nodes.remove(node)
+        if isinstance(node, Constraint):
+            self.constrain_nodes.remove(node)
+        if isinstance(node, AlgorithmNode):
+            self.algorithm_nodes.remove(node)
+
+    def set_mode(self, new_mode: EvaluationMode, include_constraints: bool = True):
+        """Set the process mode for the given training phase.
+
+        Args:
+            new_mode (EvaluationMode): The new evaluation mode.
+        """
+        self.mode = new_mode
+        nodes_to_set = (
+            self.nodes if include_constraints else self.nodes - self.constrain_nodes
+        )
+        for node in nodes_to_set:
+            node.set_mode(new_mode)
+
+    def setup(self):
+        """Setup all nodes for evaluation."""
+        for node in self.algorithm_nodes:
+            node.setup()
+    
+    def create_runtime(self) -> PipelineRuntime:
+        """Creates a runtime object of this pipeline, such that multiple pipelines
+        can be evaluated independently.
+        """
+        return PipelineRuntime(self)
+
+
+class GraphRuntime:
     """Again the runtime is split form the definition, for easier
     management of multiple runs?
     """
 
-    def __init__(self, graph: Pipeline):
+    def __init__(self, graph: Graph):
         self.graph = graph
         self.runtime_nodes: dict[Node, _NodeRuntime] = {}
         for node in graph.nodes:
-            if isinstance(node, Constraint):
-                if EvaluationMode.ALWAYS == node.mode:
-                    pass
-                elif node.mode != graph.mode:
-                    continue
             self.runtime_nodes[node] = node.create_runtime()
 
-    def run(self):
+    def run(self, return_results: list[Port] | None = None):
         ready_nodes: set[_NodeRuntime] = set()  # Nodes that are ready to run
         for runtime_node in self.runtime_nodes.values():
             runtime_node.has_run = False
@@ -272,11 +297,17 @@ class PipelineRuntime:
 
         # This already allows for branching, since we just run all nodes
         # that can run. All other nodes just wait.
+        results = {}
         while len(ready_nodes) > 0:
             next_ready_nodes: set[_NodeRuntime] = set()
 
             for runtime_node in ready_nodes:
                 outputs = runtime_node.run()
+                if return_results is not None:
+                    for port in return_results: # TODO: move this into the construction to do it only once
+                        if port.node is runtime_node.node:
+                            results[port.key] = outputs[port.key]
+                
                 # Next pass data to all connected nodes
                 for edge in self.graph.outgoing_edges(runtime_node.node):
                     value = outputs[edge.from_port]
@@ -287,3 +318,19 @@ class PipelineRuntime:
                         next_ready_nodes.add(target_rt)
 
             ready_nodes = next_ready_nodes.copy()
+        return results
+
+class PipelineRuntime(GraphRuntime):
+    """The runtime of a pipeline, which manages the execution of the pipeline
+    and the data flow between nodes.
+    """
+    def __init__(self, graph: Pipeline):
+        self.graph = graph
+        self.runtime_nodes: dict[Node, _NodeRuntime] = {}
+        for node in graph.nodes:
+            if isinstance(node, Constraint):
+                if EvaluationMode.ALWAYS == node.mode:
+                    pass
+                elif node.mode != graph.mode:
+                    continue
+            self.runtime_nodes[node] = node.create_runtime()

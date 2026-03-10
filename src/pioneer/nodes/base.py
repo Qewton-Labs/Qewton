@@ -16,7 +16,7 @@ class Port:
         self,
         data_configuration: DataConfiguration,
         owner: Node,
-        name: str,
+        key: str,
         is_required: bool = False,
     ) -> None:
         """
@@ -30,8 +30,8 @@ class Port:
         """
         self.data_configuration = data_configuration
         self.node = owner
+        self.key = key
         self.required = is_required
-        self.name = name
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Port):
@@ -39,7 +39,6 @@ class Port:
         return (
             self.data_configuration == value.data_configuration
             and self.node == value.node
-            and self.name == value.name
         )
 
 
@@ -77,22 +76,20 @@ class Node(ABC):
 
     @property
     @abstractmethod
-    def input_ports(self) -> dict[str, Port]:
+    def input_ports(self) -> list[Port]:
         """Returns all of the input ports of this node.
 
         Returns:
-            dict[str, Port]: A dictionary of input ports, the keys
-            correspond to the names given by InputKeys.
+            list[Port]: A list of input ports.
         """
 
     @property
     @abstractmethod
-    def output_ports(self) -> dict[str, Port]:
+    def output_ports(self) -> list[Port]:
         """Returns all of the output ports of this node.
 
         Returns:
-            dict[str, Port]: A dictionary of input ports, the keys
-            correspond to the names given by OutputKeys.
+            list[Port]: A list of output ports.
         """
 
     # TODO: Can we make input better than a dictionary?
