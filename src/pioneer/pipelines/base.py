@@ -1,12 +1,9 @@
 from __future__ import annotations
 import warnings
+from collections import deque
 
-import networkx as nx
-import matplotlib.pyplot as plt
-
-from ..nodes.base import Node, Port, _NodeRuntime, EvaluationMode
-from .edges.base import Edge
-from ..algorithms.base import AlgorithmNode
+from ..nodes.base import InputPort, Node, Port, EvaluationMode
+from ..algorithms.base import GraphNode
 from ..constraints.base import Constraint
 
 
@@ -15,10 +12,13 @@ from ..constraints.base import Constraint
 # "sub-pipeline" that runs a time-stepping scheme?).
 
 class Graph:
+    _graph_id_counter = 0
+    
     def __init__(self):
         self.nodes: set[Node] = set[Node]()
-        self.edges: list[Edge] = []
-    
+        self.id = Graph._graph_id_counter
+        Graph._graph_id_counter += 1
+
     def copy(self) -> Graph:
         """Creates a (not deep) copy of this graph.
 
@@ -27,7 +27,6 @@ class Graph:
         """
         new_graph = Graph()
         new_graph.nodes = self.nodes.copy()
-        new_graph.edges = self.edges.copy()
         return new_graph
 
     def add_node(self, node: Node, check_warning=True) -> None:
@@ -55,12 +54,31 @@ class Graph:
         """
         self.nodes.remove(node)
 
-        # Remove all edges connected to this node
-        self.edges = [
-            edge
-            for edge in self.edges
-            if edge.from_node is not node and edge.to_node is not node
-        ]
+    
+    def sort(self):
+        in_degree = {node: 0 for node in self.nodes}
+        outgoing_edges = {node: [] for node in self.nodes}
+        for node in self.nodes:
+            for in_port in node.input_ports:
+                if in_port.connected_ports[self.id] is not None:
+                    in_degree[node] += 1
+                    outgoing_edges[in_port.connected_ports[self.id].node].append(node)
+
+        queue = deque(node for node, deg in in_degree.items() if deg == 0)
+        self.sorted_nodes: list[Node] = []
+
+        while queue:
+            node = queue.popleft()
+            self.sorted_nodes.append(node)
+            for edge in outgoing_edges[node]:
+                in_degree[edge] -= 1
+                if in_degree[edge] == 0:
+                    queue.append(edge)
+
+        # If two nodes depend on each other, they can never be added to the
+        # queue, hence we can compare the length to check for cycles:
+        if len(self.sorted_nodes) != len(self.nodes):
+            raise ValueError("Cycle detected in computation graph!")
 
     def connect(
         self,
@@ -68,7 +86,7 @@ class Graph:
         to_: Node | Port,
     ) -> None:
         """Connect two nodes (which are automatically added to the pipeline, if they
-        are not part of it) via an edge. When evaluating the pipeline data will be
+        are not part of it). When evaluating the pipeline data will be
         exchanged between connected nodes.
 
         Args:
@@ -80,7 +98,7 @@ class Graph:
 
         Raises:
             ValueError: The ports of both nodes are not compatible.
-        """
+        """        
         from_port = self._check_connect(from_, check_input=False)
         to_port = self._check_connect(to_, check_input=True)
 
@@ -97,13 +115,12 @@ class Graph:
         if not in_config.fits(out_config):
             raise ValueError("Incompatible input and output data configurations!")
 
-        # Create edge
-        from_port_name = next(
-            (k for k, v in from_node.output_ports.items() if v == from_port)
-        )
-        to_port_name = next((k for k, v in to_node.input_ports.items() if v == to_port))
-        edge = Edge(from_node, from_port_name, to_node, to_port_name)
-        self.edges.append(edge)
+        to_port.set_connected_port(from_port, self.id)
+        
+        if isinstance(from_node, GraphNode):
+            from_node.copy_connections(from_port, self.id) #TODO
+        if isinstance(to_node, GraphNode):
+            to_node.copy_connections(to_port, self.id)
 
     def _check_connect(self, user_input: Port | Node, check_input: bool = True) -> Port:
         if isinstance(user_input, Port):
@@ -116,93 +133,41 @@ class Graph:
             )
         return next(iter(ports.values()))
 
-    def disconnect(self, edge: Edge) -> None:
+    def disconnect(self, port: InputPort) -> None:
         """Remove an edge from this pipeline"""
-        self.edges.remove(edge)
-
-    def outgoing_edges(self, node) -> list[Edge]:
-        """Obtain all edges outgoing from a node.
-
-        Args:
-            node (_type_): The node we want to check.
-
-        Returns:
-            list[Edge]: A list of outgoing edges.
-        """
-        return [e for e in self.edges if e.from_node is node]
-
-    def incoming_edges(self, node) -> list[Edge]:
-        """Obtain all edges incoming to a node.
-
-        Args:
-            node (_type_): The node we want to check.
-
-        Returns:
-            list[Edge]: A list of incoming edges.
-        """
-        return [e for e in self.edges if e.to_node is node]
+        port.set_connected_port(None, self.id)
 
     def validate(self) -> None:
         """Validate that all required input ports of each node are connected."""
+        throw_err = False
         for node in self.nodes:
-            for port_name, port_config in node.input_ports.items():
-                if port_config.required:  # Check if Input is needed
-                    # Check if this port has at least one incoming edge
-                    incoming_edges = [
-                        e
-                        for e in self.edges
-                        if e.to_node is node and e.to_port == port_name
-                    ]
-
-                    if len(incoming_edges) == 0:
+            for port in node.input_ports:
+                if port.is_required:  # Check if Input is needed
+                    try:
+                        in_port = port.connected_ports[self.id]
+                    except IndexError:
+                        throw_err = True
+                        
+                    if throw_err or in_port is None:
                         raise ValueError(
-                            f"Node '{node.name}' has required input port '{port_name}' "
+                            f"Node '{node.name}' has required input port '{port.name}' "
                             f"that is not connected!"
                         )
 
-    def create_runtime(self) -> GraphRuntime:
-        """Creates a runtime object of this pipeline, such that multiple pipelines
-        can be evaluated independently.
+    def setup(self):
+        """Setup all nodes for evaluation."""
+        for node in self.nodes:
+            node.setup()
+        self.sort()
+    
+    def run(self):
+        """Run the pipeline. The data will be passed through the graph according to
+        the connections and the computations of the nodes will be executed.
         """
-        return GraphRuntime(self)
+        for node in self.sorted_nodes:
+            node.set_pipeline_id(self.id)
+            node.run()
 
-    def visualize(self):
-        # TODO: Just some quick way to visualize a graph, nothing final
-        graph_visual = nx.DiGraph()
-        nodes_list = [node.name for node in self.nodes]
-        edges_list = [(edge.from_node.name, edge.to_node.name) for edge in self.edges]
-
-        graph_visual.add_nodes_from(nodes_list)
-        graph_visual.add_edges_from(edges_list)
-
-        # Automatically compute node positions
-        pos = nx.planar_layout(graph_visual)  # nice spacing with reproducibility
-
-        # Draw nodes
-        node_sizes = [
-            len(n) * 200 for n in graph_visual.nodes()
-        ]  # scale size with label length
-        nx.draw_networkx_nodes(
-            graph_visual, pos, node_size=node_sizes, node_color="skyblue", alpha=0.9
-        )
-
-        # Draw edges with arrows for direction
-        nx.draw_networkx_edges(
-            graph_visual,
-            pos,
-            arrowstyle="->",
-            arrowsize=20,
-            edge_color="gray",
-            width=5,
-        )
-
-        # Draw labels
-        nx.draw_networkx_labels(graph_visual, pos, font_size=10, font_color="black")
-
-        # Remove axes for cleaner look
-        plt.axis("off")
-        plt.tight_layout()
-        plt.show()
 
 class Pipeline(Graph):
     """A pipeline represents a workflow of data getting transformed
@@ -217,10 +182,8 @@ class Pipeline(Graph):
             name (str, optional): The internal name of this pipeline.
                 Defaults to "pipeline".
         """
-        self.nodes: set[Node] = set[Node]()
+        super().__init__()
         self.constrain_nodes: set[Constraint] = set[Constraint]()
-        self.algorithm_nodes: set[AlgorithmNode] = set[AlgorithmNode]()
-        self.edges: list[Edge] = []
         self.name = name
         self.mode = EvaluationMode.ALWAYS
 
@@ -236,8 +199,6 @@ class Pipeline(Graph):
         super().add_node(node, check_warning=check_warning)
         if isinstance(node, Constraint):
             self.constrain_nodes.add(node)
-        if isinstance(node, AlgorithmNode):
-            self.algorithm_nodes.add(node)
 
     def remove_node(self, node: Node) -> None:
         """Deletes a given node from this pipeline.
@@ -248,8 +209,6 @@ class Pipeline(Graph):
         self.nodes.remove(node)
         if isinstance(node, Constraint):
             self.constrain_nodes.remove(node)
-        if isinstance(node, AlgorithmNode):
-            self.algorithm_nodes.remove(node)
 
     def set_mode(self, new_mode: EvaluationMode, include_constraints: bool = True):
         """Set the process mode for the given training phase.
@@ -263,74 +222,3 @@ class Pipeline(Graph):
         )
         for node in nodes_to_set:
             node.set_mode(new_mode)
-
-    def setup(self):
-        """Setup all nodes for evaluation."""
-        for node in self.algorithm_nodes:
-            node.setup()
-    
-    def create_runtime(self) -> PipelineRuntime:
-        """Creates a runtime object of this pipeline, such that multiple pipelines
-        can be evaluated independently.
-        """
-        return PipelineRuntime(self)
-
-
-class GraphRuntime:
-    """Again the runtime is split form the definition, for easier
-    management of multiple runs?
-    """
-
-    def __init__(self, graph: Graph):
-        self.graph = graph
-        self.runtime_nodes: dict[Node, _NodeRuntime] = {}
-        for node in graph.nodes:
-            self.runtime_nodes[node] = node.create_runtime()
-
-    def run(self, return_results: list[Port] | None = None):
-        ready_nodes: set[_NodeRuntime] = set()  # Nodes that are ready to run
-        for runtime_node in self.runtime_nodes.values():
-            runtime_node.has_run = False
-            # Find all nodes we can start with:
-            if runtime_node.is_ready():
-                ready_nodes.add(runtime_node)
-
-        # This already allows for branching, since we just run all nodes
-        # that can run. All other nodes just wait.
-        results = {}
-        while len(ready_nodes) > 0:
-            next_ready_nodes: set[_NodeRuntime] = set()
-
-            for runtime_node in ready_nodes:
-                outputs = runtime_node.run()
-                if return_results is not None:
-                    for port in return_results: # TODO: move this into the construction to do it only once
-                        if port.node is runtime_node.node:
-                            results[port.key] = outputs[port.key]
-                
-                # Next pass data to all connected nodes
-                for edge in self.graph.outgoing_edges(runtime_node.node):
-                    value = outputs[edge.from_port]
-                    target_rt = self.runtime_nodes[edge.to_node]
-                    target_rt.receive(edge.to_port, value)
-                    # Check if node is now ready to run
-                    if target_rt.is_ready():
-                        next_ready_nodes.add(target_rt)
-
-            ready_nodes = next_ready_nodes.copy()
-        return results
-
-class PipelineRuntime(GraphRuntime):
-    """The runtime of a pipeline, which manages the execution of the pipeline
-    and the data flow between nodes.
-    """
-    def __init__(self, graph: Pipeline):
-        self.graph = graph
-        self.runtime_nodes: dict[Node, _NodeRuntime] = {}
-        for node in graph.nodes:
-            if isinstance(node, Constraint):
-                if EvaluationMode.ALWAYS == node.mode:
-                    pass
-                elif node.mode != graph.mode:
-                    continue
-            self.runtime_nodes[node] = node.create_runtime()

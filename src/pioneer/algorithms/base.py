@@ -53,16 +53,6 @@ class AlgorithmNode(Node):
         super().__init__(name=name)
         self._state: AlgorithmState = AlgorithmState.UNINITIALIZED
 
-    @abstractmethod
-    def setup(self) -> None:
-        """Creates the underlying algorithm instance (e.g. creates the
-        neural network)
-
-        This should not happen in the __init__ call, given that in the
-        HyperParameter tuning we need to recreated the underlying algorithm
-        instance, but dont want to create a new node inside our graph.
-        """
-
     @property
     def state(self) -> AlgorithmState:
         return self._state
@@ -97,6 +87,9 @@ class GraphNode(Node):
                      owner=self,
                      key=port.key,
                      is_required=port.required) for port in self.graph_input_ports]
+    
+    def setup(self) -> None:
+        self.graph.setup()
     
     @property
     def output_ports(self) -> list[Port]:
@@ -141,3 +134,14 @@ class TorchNode(DifferentiableNode):
             dict[str, any]: A dictionary of trainable parameters.
         """
         return self.torch_module.parameters()
+
+class ReLU(ActivationFunction):
+    """..."""
+
+class TorchReLU(ReLU, TorchNode):
+    """..."""
+    @property
+    def input_ports(self):
+        return super().input_ports
+    def _run(self, x, y, z=None):
+        

@@ -8,6 +8,9 @@ from ..config.variables import Variable
 from ..optim.hyperparameter.base import HyperParameter
 from ..optim.base import EvaluationMode
 
+class NO_DEFAULT:
+    """Sentinel value to denote that no default value is provided for a parameter."""
+    pass
 
 class Port:
     """Denotes the expected data shape of a node."""
@@ -15,9 +18,8 @@ class Port:
     def __init__(
         self,
         data_configuration: DataConfiguration,
-        owner: Node,
-        key: str,
-        is_required: bool = False,
+        node: Node,
+        name: str,
     ) -> None:
         """
         Args:
@@ -25,13 +27,10 @@ class Port:
                 expected shape of the data
             owner (Node): The parent node.
             name (str): A name for this port.
-            is_required (bool, optional): If the evaluation of the parent node
-                requires data from this port. Defaults to False.
         """
         self.data_configuration = data_configuration
-        self.node = owner
-        self.key = key
-        self.required = is_required
+        self.node = node
+        self.name = name
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Port):
@@ -41,6 +40,58 @@ class Port:
             and self.node == value.node
         )
 
+# Probleme: nodes könnten mehrfach in einer pipeline auftauchen
+
+class InputPort(Port):
+    """Denotes an input port of a node."""
+    def __init__(self,
+                 data_configuration: DataConfiguration,
+                 node: Node,
+                 name: str,
+                 default: Any = NO_DEFAULT()):
+        super().__init__(data_configuration, node, name)
+        self.default = default
+        self.connected_ports = []
+    
+    @property
+    def is_required(self):
+        return isinstance(self.default, NO_DEFAULT)
+    
+    def set_connected_port(self, port: OutputPort, pipeline_id: int):
+        if len(self.connected_ports) <= pipeline_id:
+            self.connected_ports.extend([None] * (pipeline_id - len(self.connected_ports) + 1))
+        self.connected_ports[pipeline_id] = port
+    
+    @property
+    def value(self):
+        if self.connected_ports[self.node.pipeline_id] is not None:
+            return self.connected_ports[self.node.pipeline_id].value
+        if not self.is_required:
+            return self.default
+        raise ValueError(f"Input port {self.name} is required but no value is provided.")
+
+class OutputPort(Port):
+    """Denotes an output port of a node."""
+    def __init__(self, data_configuration: DataConfiguration, node: Node, name: str):
+        super().__init__(data_configuration, node, name)
+        self._value = None
+        self._current_data_config = [] # the updated data config for each pipeline
+    
+    @property
+    def current_data_config(self):
+        return self._current_data_config[self.node.pipeline_id]
+    
+    def set_current_data_config(self, data_config: DataConfiguration, pipeline_id: int):
+        if len(self._current_data_config) <= pipeline_id:
+            self._current_data_config.extend([None] * (pipeline_id - len(self._current_data_config) + 1))
+        self._current_data_config[pipeline_id] = data_config
+    
+    def set_value(self, value):
+        self._value = value
+
+    @property
+    def value(self):
+        return self._value
 
 class Node(ABC):
     """Base class for all nodes to create a pipeline.
@@ -48,22 +99,6 @@ class Node(ABC):
     TODO: Do we need a validate method here?
     TODO: How about save and load methods?
     """
-
-    class InputKeys(str, Enum):
-        """Denotes the names for the input ports of this node.
-
-        Subclasses may override this enum to define additional
-        input ports."""
-
-        INPUT = "input"
-
-    class OutputKeys(str, Enum):
-        """Denotes the names for the output ports of this node.
-
-        Subclasses may override this enum to define additional
-        output ports."""
-
-        OUTPUT = "output"
 
     def __init__(self, name: str = "Node") -> None:
         """
@@ -73,66 +108,58 @@ class Node(ABC):
         super().__init__()
         self.name = name
         self.mode: EvaluationMode = EvaluationMode.ALWAYS
+        self.pipeline_id: int | None = None
+        
+        self._input_ports: list[InputPort] = None
+        self._output_ports: list[OutputPort] = None
+
+    def setup(self) -> None:
+        """Creates the underlying algorithm instance (e.g. creates the
+        neural network)
+
+        This should not happen in the __init__ call, given that in the
+        HyperParameter tuning we need to recreated the underlying algorithm
+        instance, but dont want to create a new node inside our graph.
+        """
+        pass
 
     @property
-    @abstractmethod
-    def input_ports(self) -> list[Port]:
+    def input_ports(self) -> list[InputPort]:
         """Returns all of the input ports of this node.
 
         Returns:
-            list[Port]: A list of input ports.
+            list[InputPort]: A list of input ports.
         """
+        if self._input_ports is None:
+            self._input_ports = [v for v in vars(self).values() if isinstance(v, InputPort)]
+        return self._input_ports
 
     @property
-    @abstractmethod
-    def output_ports(self) -> list[Port]:
+    def output_ports(self) -> list[OutputPort]:
         """Returns all of the output ports of this node.
 
         Returns:
-            list[Port]: A list of output ports.
+            list[OutputPort]: A list of output ports.
         """
+        if self._output_ports is None:
+            self._output_ports = [v for v in vars(self).values() if isinstance(v, OutputPort)]
+        return self._output_ports
 
-    # TODO: Can we make input better than a dictionary?
-    def run(self, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
-        if inputs is None:
-            if len(self.input_ports.keys()) > 0:
-                raise RuntimeError(
-                    f"Node needs inputs {list(self.input_ports.keys())}, \
-                        but received None."
-                )
-            inputs = {}
-        return self._run(inputs)
+    def run(self) -> None:
+        raise NotImplementedError("The run method must be implemented by subclasses of Node.")
 
-    @abstractmethod
-    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        pass
-
-    def __call__(self, *arg, **kwds):
-        inputs = self._bind_inputs(*arg, **kwds)
-        values = tuple(self.run(inputs).values())
-        return values[0] if len(values) == 1 else values
-
-    def _bind_inputs(self, *args, **kwargs):
-        port_names = list(self.input_ports.keys())
-
-        inputs = {}
-
-        # Assume general args are in order of port names
-        for name, value in zip(port_names, args):
-            inputs[name] = value
-
-        # Afterwards we add the keyword arguments
-        inputs.update(kwargs)
-
-        # Check if all required inputs are provided
-        for name, port_info in self.input_ports.items():
-            if port_info.required and name not in inputs:
-                raise ValueError(f"Missing input: {name}")
-
-        return inputs
-
-    def create_runtime(self) -> _NodeRuntime:
-        return _NodeRuntime(self)
+    def __call__(self, **kwargs):
+        for port in self.input_ports:
+            if port.name not in kwargs and port.is_required:
+                raise ValueError(f"Missing required input: {port.name}")
+            port.set_value(kwargs[port.name])
+        self.run()
+        out_dict = {}
+        for port in self.output_ports:
+            out_dict[port.name] = port.value
+        if len(out_dict) == 1:
+            return out_dict.values()[0]
+        return out_dict
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -149,32 +176,6 @@ class Node(ABC):
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
 
-    def __getitem__(self, port_name: str | Variable) -> Port:
-        """Allow index of the node with respect to the port keys, names or 
-        variables to allow faster access to the ports.
-
-        Args:
-            port_name (str | Variable): The name of the port we want to access.
-
-        Raises:
-            ValueError: If an unknown port name is provided.
-
-        Returns:
-            Port: The port belonging to the input name.
-        """ """"""
-        if isinstance(port_name, Variable):
-            assert len(port_name) == 1, "Can only slice with one single variable"
-            var_name: str = next(iter(port_name))
-            return self[var_name]
-
-        input_ports = self.input_ports
-        if port_name in input_ports.keys():
-            return input_ports[port_name]
-        output_ports = self.output_ports
-        if port_name in output_ports.keys():
-            return output_ports[port_name]
-        raise ValueError(f"Port {port_name} does not exist")
-
     def set_mode(self, new_mode: EvaluationMode):
         """Set the when this node should be evaluated, in the training
         process.
@@ -185,54 +186,3 @@ class Node(ABC):
 
     def reset(self):
         """Reset the state of the node."""
-
-
-class _NodeRuntime:
-    """Class to manage the runtime state of a node in a pipeline.
-    This includes tracking received inputs and whether the node has run.
-
-    TODO: Is this really needed or should the pipeline manage this?
-    Advantage of having it here is that each node can manage its own state and one could
-    maybe start multiple nodes in parallel more easily?
-    """
-
-    def __init__(self, node: Node):
-        self.node = node
-        self.received_inputs = {}
-        self.has_run = False
-
-    def receive(self, port_name: str, value):
-        """Add an input the to the received inputs
-
-        Args:
-            port_name (str): The port this input belongs to.
-            value (_type_): The input values.
-        """
-        self.received_inputs[port_name] = value
-
-    def is_ready(self) -> bool:
-        """
-        Returns:
-            bool: Check if all required inputs have been provided.
-        """
-        for name, port_info in self.node.input_ports.items():
-            if port_info.required and name not in self.received_inputs:
-                return False
-        return not self.has_run
-
-    def run(self) -> dict[str, Any]:
-        """Evaluate the node.
-
-        Raises:
-            RuntimeError: If not all required inputs are available.
-
-        Returns:
-            dict[str, Any]: The output of the underlying node.
-        """
-        if not self.is_ready():
-            raise RuntimeError("Node is not ready")
-
-        outputs = self.node.run(self.received_inputs)
-        self.received_inputs.clear()
-        self.has_run = True
-        return outputs
