@@ -11,9 +11,10 @@ from ..constraints.base import Constraint
 # Cycles may be better included inside a node itself (e.g. a WhileNode has a
 # "sub-pipeline" that runs a time-stepping scheme?).
 
+
 class Graph:
     _graph_id_counter = 0
-    
+
     def __init__(self):
         self.nodes: set[Node] = set[Node]()
         self.id = Graph._graph_id_counter
@@ -45,7 +46,7 @@ class Graph:
                         f"Node with name '{node.name}' already in graph!", UserWarning
                     )
         self.nodes.add(node)
-    
+
     def remove_node(self, node: Node) -> None:
         """Deletes a given node from this graph.
 
@@ -54,7 +55,6 @@ class Graph:
         """
         self.nodes.remove(node)
 
-    
     def sort(self):
         in_degree = {node: 0 for node in self.nodes}
         outgoing_edges = {node: [] for node in self.nodes}
@@ -98,7 +98,7 @@ class Graph:
 
         Raises:
             ValueError: The ports of both nodes are not compatible.
-        """        
+        """
         from_port = self._check_connect(from_, check_input=False)
         to_port = self._check_connect(to_, check_input=True)
 
@@ -116,9 +116,9 @@ class Graph:
             raise ValueError("Incompatible input and output data configurations!")
 
         to_port.set_connected_port(from_port, self.id)
-        
+
         if isinstance(from_node, GraphNode):
-            from_node.copy_connections(from_port, self.id) #TODO
+            from_node.copy_connections(from_port, self.id)  # TODO
         if isinstance(to_node, GraphNode):
             to_node.copy_connections(to_port, self.id)
 
@@ -147,7 +147,7 @@ class Graph:
                         in_port = port.connected_ports[self.id]
                     except IndexError:
                         throw_err = True
-                        
+
                     if throw_err or in_port is None:
                         raise ValueError(
                             f"Node '{node.name}' has required input port '{port.name}' "
@@ -159,7 +159,7 @@ class Graph:
         for node in self.nodes:
             node.setup()
         self.sort()
-    
+
     def run(self):
         """Run the pipeline. The data will be passed through the graph according to
         the connections and the computations of the nodes will be executed.
@@ -167,6 +167,15 @@ class Graph:
         for node in self.sorted_nodes:
             node.set_pipeline_id(self.id)
             node.run()
+
+    def collect_trainable_parameters(self):
+        """Collect all trainable parameters from the nodes in this pipeline."""
+        params = {}
+        for node in self.nodes:
+            p = node.trainable_parameters
+            if p is not None:
+                params[p.name] = p
+        return params
 
 
 class Pipeline(Graph):
