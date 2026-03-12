@@ -1,9 +1,8 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Any
 
 from ..config.configuration_base import DataConfiguration
-from ..config.variables import Variable
 from ..optim.hyperparameter.base import HyperParameter
 from ..optim.base import EvaluationMode
 from ..optim.trainer.trainable_parameters import TrainableParameters
@@ -11,8 +10,6 @@ from ..optim.trainer.trainable_parameters import TrainableParameters
 
 class NO_DEFAULT:
     """Sentinel value to denote that no default value is provided for a parameter."""
-
-    pass
 
 
 class Port:
@@ -72,7 +69,7 @@ class InputPort(Port):
     def is_required(self):
         return isinstance(self.default, NO_DEFAULT)
 
-    def set_connected_port(self, port: OutputPort, pipeline_id: int):
+    def set_connected_port(self, port: OutputPort | None, pipeline_id: int):
         if len(self.connected_ports) <= pipeline_id:
             self.connected_ports.extend(
                 [None] * (pipeline_id - len(self.connected_ports) + 1)
@@ -138,10 +135,10 @@ class Node(ABC):
         super().__init__()
         self.name = name
         self.mode: EvaluationMode = EvaluationMode.ALWAYS
-        self.pipeline_id: int | None = None
+        self.pipeline_id: int = 0
 
-        self._input_ports: list[InputPort] = None
-        self._output_ports: list[OutputPort] = None
+        self._input_ports: list[InputPort] = []
+        self._output_ports: list[OutputPort] = []
 
     def setup(self) -> None:
         """Creates the underlying algorithm instance (e.g. creates the
@@ -200,7 +197,7 @@ class Node(ABC):
         for port in self.output_ports:
             out_dict[port.name] = port.value
         if len(out_dict) == 1:
-            return out_dict.values()[0]
+            return next(iter(out_dict.values()))
         return out_dict
 
     @property
@@ -214,6 +211,7 @@ class Node(ABC):
     @property
     def trainable_parameters(self) -> TrainableParameters:
         """Returns trainable parameters of this node."""
+        return TrainableParameters.create_empty()
 
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
@@ -228,3 +226,6 @@ class Node(ABC):
 
     def reset(self):
         """Reset the state of the node."""
+
+    def set_pipeline_id(self, pipeline_id: int):
+        self.pipeline_id = pipeline_id

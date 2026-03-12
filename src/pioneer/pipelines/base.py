@@ -2,7 +2,7 @@ from __future__ import annotations
 import warnings
 from collections import deque
 
-from ..nodes.base import InputPort, Node, Port, EvaluationMode
+from ..nodes.base import InputPort, Node, EvaluationMode, OutputPort
 from ..algorithms.base import GraphNode
 from ..constraints.base import Constraint
 
@@ -19,6 +19,7 @@ class Graph:
         self.nodes: set[Node] = set[Node]()
         self.id = Graph._graph_id_counter
         Graph._graph_id_counter += 1
+        self.sorted_nodes: list[Node] = []
 
     def copy(self) -> Graph:
         """Creates a (not deep) copy of this graph.
@@ -82,8 +83,8 @@ class Graph:
 
     def connect(
         self,
-        from_: Node | Port,
-        to_: Node | Port,
+        from_: Node | OutputPort,
+        to_: Node | InputPort,
     ) -> None:
         """Connect two nodes (which are automatically added to the pipeline, if they
         are not part of it). When evaluating the pipeline data will be
@@ -115,15 +116,17 @@ class Graph:
         if not in_config.fits(out_config):
             raise ValueError("Incompatible input and output data configurations!")
 
-        to_port.set_connected_port(from_port, self.id)
+        to_port.set_connected_port(from_port, self.id)  # type: ignore
 
         if isinstance(from_node, GraphNode):
-            from_node.copy_connections(from_port, self.id)  # TODO
+            from_node.copy_connections(self.id)
         if isinstance(to_node, GraphNode):
-            to_node.copy_connections(to_port, self.id)
+            to_node.copy_connections(self.id)
 
-    def _check_connect(self, user_input: Port | Node, check_input: bool = True) -> Port:
-        if isinstance(user_input, Port):
+    def _check_connect(
+        self, user_input: InputPort | OutputPort | Node, check_input: bool = True
+    ) -> InputPort | OutputPort:
+        if isinstance(user_input, (InputPort, OutputPort)):
             return user_input
         ports = user_input.input_ports if check_input else user_input.output_ports
         if len(ports) != 1:
@@ -131,7 +134,7 @@ class Graph:
                 f"Node '{user_input.name}' has multiple output ports. "
                 "Specify the port explicitly."
             )
-        return next(iter(ports.values()))
+        return ports[0]
 
     def disconnect(self, port: InputPort) -> None:
         """Remove an edge from this pipeline"""
@@ -143,6 +146,7 @@ class Graph:
         for node in self.nodes:
             for port in node.input_ports:
                 if port.is_required:  # Check if Input is needed
+                    in_port = None
                     try:
                         in_port = port.connected_ports[self.id]
                     except IndexError:
@@ -173,7 +177,7 @@ class Graph:
         params = {}
         for node in self.nodes:
             p = node.trainable_parameters
-            if p is not None:
+            if not p.empty:
                 params[p.name] = p
         return params
 

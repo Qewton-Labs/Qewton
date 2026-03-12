@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 class TrainableParameters:
     """A class to represent trainable parameters of a node."""
 
@@ -5,6 +8,14 @@ class TrainableParameters:
         self._name = name
         self._parameters = parameters
         self._options = kwargs
+
+    @classmethod
+    def create_empty(cls) -> TrainableParameters:
+        return cls("", None)
+
+    @property
+    def empty(self):
+        return self._parameters is None
 
     @property
     def name(self):

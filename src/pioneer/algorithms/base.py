@@ -1,13 +1,11 @@
 import warnings
-from abc import abstractmethod
 from enum import Enum, auto
+from typing import Any
 
 
-from ..config.configuration_base import DataConfiguration
-from ..config.variables import Variable
-from ..config.axis import FeatureAxis
-from ..nodes.base import Node, Port
+from ..nodes.base import Node, InputPort, OutputPort
 from ..pipelines.base import Graph
+from ..optim.hyperparameter.base import HyperParameter
 
 
 class AlgorithmState(Enum):
@@ -74,74 +72,111 @@ class AlgorithmNode(Node):
             return
         self._state = AlgorithmState.FIXED
 
+
 class GraphNode(Node):
-    def __init__(self, graph: Graph, input_ports: list[Port], output_ports: list[Port], name: str = "GraphNode") -> None:
+    def __init__(
+        self,
+        graph: Graph,
+        input_ports: list[InputPort],
+        output_ports: list[OutputPort],
+        name: str = "GraphNode",
+    ) -> None:
         super().__init__(name=name)
         self.graph = graph
-        self.graph_input_ports = input_ports
-        self.graph_output_ports = output_ports
-    
+
+        self._inner_input_ports = input_ports
+        self._inner_output_ports = output_ports
+
+        self.graph_input_ports = [
+            InputPort(
+                data_configuration=port.data_configuration,
+                node=self,
+                name=port.name,
+                default=port.default,
+            )
+            for port in self.graph_input_ports
+        ]
+        self.graph_output_ports = [
+            OutputPort(
+                data_configuration=port.data_configuration,
+                node=self,
+                name=port.name,
+            )
+            for port in self.graph_output_ports
+        ]
+
     @property
-    def input_ports(self) -> list[Port]:
-        return [Port(data_configuration=port.data_configuration,
-                     owner=self,
-                     key=port.key,
-                     is_required=port.required) for port in self.graph_input_ports]
-    
+    def input_ports(self) -> list[InputPort]:
+        return self.graph_input_ports
+
+    @property
+    def output_ports(self) -> list[OutputPort]:
+        return self.graph_output_ports
+
+    @property
+    def hyperparameters(self) -> list[HyperParameter]:
+        hp_list = []
+        for node in self.graph.nodes:
+            hp_list.extend(node.hyperparameters)
+        return hp_list
+
     def setup(self) -> None:
         self.graph.setup()
-    
-    @property
-    def output_ports(self) -> list[Port]:
-        return [Port(data_configuration=port.data_configuration,
-                     owner=self,
-                     key=port.key,
-                     is_required=port.required) for port in self.graph_output_ports]
-    
-    def _run(self, inputs: dict[str, any]) -> dict[str, any]:
-        graph_runtime = self.graph.create_runtime()
-        for port in self.graph_input_ports:
-            graph_runtime.runtime_nodes[port.owner].receive(port.key, inputs[port.key])
-        return graph_runtime.run(return_results=self.graph_output_ports)
+
+    def run(self):
+        self.graph.run()
+        # Write the inner information into the own output ports
+        for i, out_port in enumerate(self._inner_output_ports):
+            self.graph_output_ports[i].set_value(out_port.value)
+
+    def copy_connections(self, pipeline_id):
+        for port in self._inner_input_ports:
+            port.set_connected_port(port.connected_ports[self.graph.id], pipeline_id)
+
 
 class ActivationFunction(AlgorithmNode):
     """A node representing an activation function, which is a special type of
     algorithm that is applied element-wise to the input data.
     """
 
+
 class DifferentiableNode(Node):
     """..."""
+
 
 class TorchNode(DifferentiableNode):
     """A node representing a PyTorch module, which is a special type of
     algorithm that can be trained and run on a GPU.
     """
-    def __init__()
-        
-    def setup(self) -> None:
+
+    def __init__(self) -> None:
         """Creates the underlying PyTorch module instance."""
-        self._torch_module = self.create_torch_module()
+        self._torch_module = None  # self.create_torch_module()
 
     @property
     def torch_module(self):
         return self._torch_module
-    
-    def get_trainable_parameters(self) -> dict[str, any]:
+
+    def get_trainable_parameters(self) -> dict[str, Any]:
         """Returns the trainable parameters of this node, which can be used for
         training the underlying algorithm (e.g. a neural network).
 
         Returns:
             dict[str, any]: A dictionary of trainable parameters.
         """
-        return self.torch_module.parameters()
+        return {}  # self.torch_module.parameters()
+
 
 class ReLU(ActivationFunction):
     """..."""
 
+
 class TorchReLU(ReLU, TorchNode):
     """..."""
+
     @property
     def input_ports(self):
         return super().input_ports
-    def _run(self, x, y, z=None):
-        
+
+    def run(self):
+        pass
