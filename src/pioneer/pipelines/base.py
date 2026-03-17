@@ -100,23 +100,36 @@ class Graph:
         Raises:
             ValueError: The ports of both nodes are not compatible.
         """
-        from_port = self._check_connect(from_, check_input=False)
-        to_port = self._check_connect(to_, check_input=True)
+        ports_to_connect = []
+        for inp in from_, to_:
+            if isinstance(inp, Node):
+                ports_to_connect.append(
+                    inp.output_ports if inp is from_ else inp.input_ports
+                )
+            else:
+                ports_to_connect.append([inp])
+        from_ports, to_ports = ports_to_connect
+        if len(from_ports) != len(to_ports):
+            raise ValueError(
+                "When connecting two nodes directly, they should have the same number \
+                    of output and input ports!"
+            )
 
-        from_node = from_port.node
-        to_node = to_port.node
+        from_node = from_ports[0].node
+        to_node = to_ports[0].node
         # Nodes must be added to the graph
         self.add_node(from_node, check_warning=False)
         self.add_node(to_node, check_warning=False)
 
         # Configurations should match
-        out_config = from_port.data_configuration
-        in_config = to_port.data_configuration
+        for from_port, to_port in zip(from_ports, to_ports):
+            out_config = from_port.data_configuration
+            in_config = to_port.data_configuration
 
-        if not in_config.fits(out_config):
-            raise ValueError("Incompatible input and output data configurations!")
+            if not in_config.fits(out_config):
+                raise ValueError("Incompatible input and output data configurations!")
 
-        to_port.set_connected_port(from_port, self.id)  # type: ignore
+            to_port.set_connected_port(from_port, self.id)  # type: ignore
 
         if isinstance(from_node, GraphNode):
             from_node.copy_connections(self.id)
@@ -180,6 +193,18 @@ class Graph:
             if not p.empty:
                 params[p.name] = p
         return params
+
+
+class SequentialGraph(Graph):
+    """
+    A graph that is initialized as a sequence of nodes.
+    """
+
+    def __init__(self, *nodes: Node):
+        super().__init__()
+        for i in range(len(nodes) - 1):
+            self.connect(nodes[i], nodes[i + 1])
+        self.sorted_nodes = list(nodes)
 
 
 class Pipeline(Graph):
