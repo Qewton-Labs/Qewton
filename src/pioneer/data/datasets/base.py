@@ -11,7 +11,7 @@ from ...optim.hyperparameter.categorical_hyperparameter import (
 )
 from ...config.variables import Variable
 from ...config.axis import SpatialAxis, BatchAxis, FeatureAxis
-from ...nodes.base import Node, Port
+from ...nodes.base import Node, OutputPort, InputPort
 
 # TODO: For now just a simple dataset where the data is provided
 # How do we handle splitting the data for training, testing, validation?
@@ -66,6 +66,7 @@ class DataSet(Node):
         self._mean = None
         self._std = None
         self.std_eps = 1.0e-5  # small tolerance to add when std is equal 0
+        self.out_port = OutputPort(self.data_config, self)
 
     @classmethod
     def from_data(
@@ -129,12 +130,8 @@ class DataSet(Node):
         )
 
     @property
-    def input_ports(self) -> dict[str, Port]:
-        return {}
-
-    @property
-    def output_ports(self) -> dict[str, Port]:
-        return {self.OutputKeys.OUTPUT: Port(self.data_config, self, "data_port")}
+    def input_ports(self) -> list[InputPort]:
+        return []
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -144,12 +141,11 @@ class DataSet(Node):
         batch_idx = self.data_config.batch_axis_idx
         return self.data.shape[batch_idx]
 
-    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        _ = inputs
+    def run(self):
         # TODO: Add batching and splitting of data, currently
         # just a dummy to get a working example. Can this be done in the parent or
         # is this backend dependent? See TorchDataSet
-        return {self.OutputKeys.OUTPUT: self.data}
+        self.out_port.set_value(self.data)
 
     def set_mode(self, new_mode):
         if new_mode != self.mode:

@@ -2,6 +2,8 @@ import warnings
 from enum import Enum, auto
 from typing import Any
 
+from pioneer.optim.trainer.trainable_parameters import _TrainableParameterBase
+
 
 from ..nodes.base import Node, InputPort, OutputPort
 from ..pipelines.base import Graph
@@ -94,7 +96,7 @@ class GraphNode(Node):
                 name=port.name,
                 default=port.default,
             )
-            for port in self.graph_input_ports
+            for port in self._inner_input_ports
         ]
         self.graph_output_ports = [
             OutputPort(
@@ -102,7 +104,7 @@ class GraphNode(Node):
                 node=self,
                 name=port.name,
             )
-            for port in self.graph_output_ports
+            for port in self._inner_output_ports
         ]
 
     @property
@@ -120,11 +122,15 @@ class GraphNode(Node):
             hp_list.extend(node.hyperparameters)
         return hp_list
 
+    @property
+    def trainable_parameters(self) -> _TrainableParameterBase:
+        return self.graph.collect_trainable_parameters()
+
     def setup(self) -> None:
         self.graph.setup()
 
     def run(self):
-        self.graph.run()
+        self.graph.run(self.mode)
         # Write the inner information into the own output ports
         for i, out_port in enumerate(self._inner_output_ports):
             self.graph_output_ports[i].set_value(out_port.value)

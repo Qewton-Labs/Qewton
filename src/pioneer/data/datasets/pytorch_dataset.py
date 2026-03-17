@@ -8,7 +8,7 @@ from ...optim.hyperparameter.number_hyperparameter import (
 from ...optim.hyperparameter.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
-from ...optim.base import EvaluationMode
+from ...optim.base import EvaluationPhase
 from ...config.variables import Variable
 from .base import DataSet, register_dataset
 
@@ -52,13 +52,14 @@ class TorchDataSet(DataSet):
         train_end = int(train_r * n_samples)
         val_end = train_end + int(val_r * n_samples)
         self._splits = {
-            EvaluationMode.TRAIN: (0, train_end),
-            EvaluationMode.VALIDATION: (train_end, val_end),
-            EvaluationMode.TUNE: (
+            EvaluationPhase.TRAIN: (0, train_end),
+            EvaluationPhase.VALIDATION: (train_end, val_end),
+            EvaluationPhase.TUNE: (
                 train_end,
                 val_end,
             ),  # TODO: Tuning checks on the validation data???
-            EvaluationMode.TEST: (val_end, n_samples),
+            EvaluationPhase.TEST: (val_end, n_samples),
+            EvaluationPhase.ALWAYS: (0, n_samples),
         }
 
     def to(self, device):
@@ -74,14 +75,7 @@ class TorchDataSet(DataSet):
     def _compute_std(self):
         self._std = self.data.std(dim=self.data_config.batch_axis_idx, keepdim=True)
 
-    def run(
-        self, inputs: dict[str, torch.Tensor] | None = None
-    ) -> dict[str, torch.Tensor]:
-        _ = inputs
-
-        if self.mode == EvaluationMode.ALWAYS:
-            return {self.OutputKeys.OUTPUT: self.data}
-
+    def run(self):
         start_split, end_split = self._splits[self.mode]
 
         start = start_split + self._batch_progress
@@ -99,7 +93,7 @@ class TorchDataSet(DataSet):
         if end >= end_split:
             self._batch_progress = 0
 
-        return {self.OutputKeys.OUTPUT: batch}
+        self.out_port.set_value(batch)
 
     def compute_pca(
         self, n_components: int, variable: Variable

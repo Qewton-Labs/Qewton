@@ -1,6 +1,6 @@
 import torch
 
-from ..base import EvaluationMode
+from ..base import EvaluationPhase
 from ..hyperparameter.base import HyperParameter
 from ..hyperparameter.categorical_hyperparameter import CategoricalHyperparameter
 from ..hyperparameter.number_hyperparameter import (
@@ -67,7 +67,7 @@ class PyTorchTrainer(Trainer):
 
             # Run all pipelines and compute the training loss
             total_loss = self._compute_loss(
-                self.train_pipelines, EvaluationMode.TRAIN, self.training_constraints
+                self.train_pipelines, EvaluationPhase.TRAIN, self.training_constraints
             )
 
             # Update parameters
@@ -79,7 +79,7 @@ class PyTorchTrainer(Trainer):
             if step % self.validation_check == 0:
                 validation_loss = self._compute_loss(
                     self.validation_pipelines,
-                    EvaluationMode.VALIDATION,
+                    EvaluationPhase.VALIDATION,
                     self.validation_constraints,
                 )
 

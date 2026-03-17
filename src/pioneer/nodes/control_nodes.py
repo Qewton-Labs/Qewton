@@ -1,6 +1,4 @@
-from typing import Any
-
-from .base import Node, Port
+from .base import Node, InputPort, OutputPort
 from ..config.configuration_base import DataConfiguration
 
 
@@ -14,19 +12,12 @@ class ControlNode(Node):
         self.data_config = data_config
         self.stored_data = None
 
-        self._port = Port(self.data_config, self, "port", True)
+        self.in_port = InputPort(self.data_config, self, "in_port")
+        self.out_port = OutputPort(self.data_config, self, "out_port")
 
-    @property
-    def input_ports(self) -> dict[str, Port]:
-        return {self.InputKeys.INPUT: self._port}
-
-    @property
-    def output_ports(self) -> dict[str, Port]:
-        return {self.OutputKeys.OUTPUT: self._port}
-
-    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        self.stored_data = inputs[self.InputKeys.INPUT]
-        return {self.OutputKeys.OUTPUT: self.stored_data}
+    def run(self):
+        self.stored_data = self.in_port.value
+        self.out_port.set_value(self.stored_data)
 
     def reset(self):
         self.stored_data = None

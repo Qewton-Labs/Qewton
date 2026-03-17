@@ -1,6 +1,4 @@
-import torch
-
-from ..base import Node, Port
+from ..base import Node, InputPort, OutputPort
 from ...config.configuration_base import DataConfiguration
 
 
@@ -20,21 +18,10 @@ class GradientTrackingNode(Node):
         """
         super().__init__(name=name)
         self.data_config = data_config
-        self._port = Port(self.data_config, self, "port", True)
+        self.in_port = InputPort(self.data_config, self)
+        self.output_port = OutputPort(self.data_config, self)
 
-    @property
-    def input_ports(self) -> dict[str, Port]:
-        return {self.InputKeys.INPUT: self._port}
-
-    @property
-    def output_ports(self) -> dict[str, Port]:
-        return {self.OutputKeys.OUTPUT: self._port}
-
-    def run(
-        self, inputs: dict[str, torch.Tensor] | None = None
-    ) -> dict[str, torch.Tensor]:
-        if inputs is None:
-            raise ValueError("Input can not be None!")
-        data = inputs[self.InputKeys.INPUT]
+    def run(self):
+        data = self.in_port.value
         data.requires_grad = True
-        return {self.OutputKeys.OUTPUT: data}
+        self.output_port.set_value(data)

@@ -36,16 +36,20 @@ class MSEDataPipeline(Pipeline):
             and not AlgorithmAttributes.NORMALIZES_DATA in algorithm.attributes
         )
         # Build the nodes of the pipeline:
+        algo_config_in = algorithm.input_ports[0].data_configuration
         slice_node_input = SliceNode(
-            dataset.data_config, algorithm.input_variable, name="SliceInput"
+            dataset.data_config,
+            algo_config_in.feature_axis.variables,  # type: ignore
+            name="SliceInput",
         )
+        algo_config_out = algorithm.input_ports[0].data_configuration
         slice_node_output = SliceNode(
-            dataset.data_config, algorithm.output_variable, name="SliceOutput"
+            dataset.data_config,
+            algo_config_out.feature_axis.variables,  # type: ignore
+            name="SliceOutput",
         )
         if constraint is None:
-            self.mse_constraint = MSEConstraint(
-                algorithm[algorithm.OutputKeys.OUTPUT].data_configuration,
-            )
+            self.mse_constraint = MSEConstraint(algo_config_out)
         else:
             self.mse_constraint = constraint
 

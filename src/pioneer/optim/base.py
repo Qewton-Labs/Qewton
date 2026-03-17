@@ -1,7 +1,7 @@
 from enum import Enum
 
 
-class EvaluationMode(Enum):
+class EvaluationPhase(Enum):
     """A marker to distinguish between different behaviors in the training
     process.
 

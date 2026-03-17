@@ -1,6 +1,4 @@
-from typing import Any
-
-from ..base import Node, Port
+from ..base import Node, InputPort, OutputPort
 from ...config.variables import Variable
 from ...config.configuration_base import DataConfiguration
 
@@ -29,7 +27,7 @@ class SliceNode(Node):
         """
         super().__init__(name=name)
         self.input_data_config = input_data_config
-        self._in_port = Port(self.input_data_config, self, "port", True)
+        self.in_port = InputPort(self.input_data_config, self)
         if (
             input_data_config.feature_axis is ...
             or input_data_config.feature_axis.variables is None
@@ -41,26 +39,17 @@ class SliceNode(Node):
             self.variables in input_data_config.feature_axis.variables
         ), f"{self.variables} are not inside the input data configuration."
 
-        self._out_port = Port(input_data_config[self.variables], self, "port", True)
+        self.out_port = OutputPort(input_data_config[self.variables], self)
 
         self.axis_index = self.input_data_config.get_axis_indices_of_variables(
             self.variables
         )
 
-    @property
-    def input_ports(self) -> dict[str, Port]:
-        return {self.InputKeys.INPUT: self._in_port}
-
-    @property
-    def output_ports(self) -> dict[str, Port]:
-        return {self.OutputKeys.OUTPUT: self._out_port}
-
-    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        data = inputs[self.InputKeys.INPUT]
+    def run(self):
+        data = self.in_port.value
         slices = [slice(None)] * len(self.input_data_config)
         slices[self.input_data_config.feature_axis_idx] = self.axis_index  # type: ignore
-        sliced_data = data[tuple(slices)]
-        return {self.OutputKeys.OUTPUT: sliced_data}
+        self.out_port.set_value(data[tuple(slices)])
 
 
 class SplitNode(Node):
@@ -81,7 +70,7 @@ class SplitNode(Node):
         """
         super().__init__(name=name)
         self.input_data_config = input_data_config
-        self._in_port = Port(self.input_data_config, self, "port", True)
+        self.in_port = InputPort(self.input_data_config, self)
         if (
             input_data_config.feature_axis is ...
             or input_data_config.feature_axis.variables is None
@@ -90,27 +79,23 @@ class SplitNode(Node):
 
         self.variables: Variable = input_data_config.feature_axis.variables
         # Save the output ports and the dimension we have to slice
-        self._out_ports: dict[str, Port] = {}
+        self._output_ports = []
         for key, dim in self.variables.items():
-            self._out_ports[key] = Port(input_data_config[Variable(key, dim)], self, key)
+            self._output_ports.append(
+                OutputPort(
+                    input_data_config[Variable(key, dim)], self, name=f"OutputPort_{key}"
+                )
+            )
 
-    @property
-    def input_ports(self) -> dict[str, Port]:
-        return {self.InputKeys.INPUT: self._in_port}
-
-    @property
-    def output_ports(self) -> dict[str, Port]:
-        return self._out_ports
-
-    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        data = inputs[self.InputKeys.INPUT]
-        output_dict = {}
+    def _run(self):
+        data = self.in_port.value
+        counter = 0
         start_dim = 0
-        for key, dim in self.variables.items():
+        for dim in self.variables.values():
             slices = [slice(None)] * len(self.input_data_config)
             slices[self.input_data_config.feature_axis_idx] = slice(
                 start_dim, start_dim + dim
             )
-            output_dict[key] = data[tuple(slices)]
+            self._output_ports[counter].set_value(data[tuple(slices)])  # type: ignore
             start_dim += dim
-        return output_dict
+            counter += 1
