@@ -2,10 +2,11 @@ import warnings
 from enum import Enum, auto
 from typing import Any
 
-from pioneer.config.backend import DEFAULT_DL_BACKEND, TorchBackend
+from pioneer.config.backend import DEFAULT_DL_BACKEND, TorchBackend, Backend
 from pioneer.config.configuration_base import DataConfiguration
 from pioneer.optim.trainer.trainable_parameters import (
     _TrainableParameterBase,
+    TrainableParameters,
 )
 
 
@@ -99,7 +100,8 @@ class GraphNode(Node):
 
 class LayerNode(Node):
     """A node representing a unary operation, which is an algorithm that takes
-    one input and produces one output.
+    one input and produces one output. Uses a specific implementation of the
+    algorithm by calling the respective backend.
     """
 
     existing_implementations = None  # type: dict[BackendType, Implementation]
@@ -107,7 +109,7 @@ class LayerNode(Node):
     def __init__(
         self,
         name: str = "LayerNode",
-        backend=DEFAULT_DL_BACKEND,
+        backend: Backend = DEFAULT_DL_BACKEND,
         state: NodeState = NodeState.FIXED,
     ):
         """Initializes the unary node with a single input and output port.
@@ -129,15 +131,15 @@ class LayerNode(Node):
     def run(self):
         self._output_ports[0].set_value(self.implementation(self._input_ports[0].value))
 
-    def get_implementation(self):
+    def set_implementation(self):
         if type(self).existing_implementations is None:
             raise NotImplementedError(f"No implementations defined for {self.name}.")
         if self.backend not in type(self).existing_implementations:
             raise NotImplementedError(
                 f"Backend {self.backend} is not supported for {self.name}."
             )
-        return type(self).existing_implementations[self.backend]
+        return type(self).existing_implementations[self.backend]()
 
     @property
     def trainable_parameters(self):
-        return self.implementation.trainable_parameters
+        return TrainableParameters(self.name, self.implementation.trainable_parameters)

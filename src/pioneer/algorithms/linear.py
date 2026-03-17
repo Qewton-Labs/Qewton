@@ -4,18 +4,24 @@ from .implementation import TorchImplementation
 from ..nodes.base import NodeState
 
 
-class ActivationFunction(LayerNode):
+class Linear(LayerNode):
     """A node representing an activation function, which is a special type of
     algorithm that is applied element-wise to the input data.
     """
+    existing_implementations = {TorchBackend: TorchLinear}
+    def __init__(
+        self,
+        in_neurons,
+        out_neurons,
+        bias=True,
+        name="linear", backend=DEFAULT_DL_BACKEND, **kwargs
+    ):
 
-    def __init__(self, name, backend=DEFAULT_DL_BACKEND):
-        super(ActivationFunction, self).__init__(
-            name=name, backend=backend, state=NodeState.FIXED
-        )
+        super(Linear, self).__init__(name=name, backend=backend, state=NodeState.FIXED)
         self._input_ports[0].data_config.specify_backend(backend)
         self._output_ports[0].data_config.specify_backend(backend)
-        self.implementation_instance = self.implementation()
+    
+    def setup()
 
 
 class TorchReLU(TorchImplementation):
@@ -34,21 +40,3 @@ class ReLU(ActivationFunction):
 
     def __init__(self, name="ReLU", backend=DEFAULT_DL_BACKEND):
         super(ReLU, self).__init__(name=name, backend=backend)
-
-
-class TorchTanh(TorchImplementation):
-    """Implementation of Tanh Activation in PyTorch backend."""
-
-    def __init__(self):
-        from torch.nn import Tanh as TTanh
-
-        super().__init__(TTanh)
-
-
-class Tanh(ActivationFunction):
-    """General Tanh Class."""
-
-    existing_implementations = {TorchBackend: TorchTanh}
-
-    def __init__(self, name="Tanh", backend=DEFAULT_DL_BACKEND):
-        super(Tanh, self).__init__(name=name, backend=backend)
