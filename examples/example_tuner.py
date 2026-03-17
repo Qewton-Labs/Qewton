@@ -15,11 +15,15 @@ def build_problem():
         data, X * U, batch_size=800, shuffle_data=True
     )
 
+    hp_layers = pioneer.optim.DiscreteHyperparameter((1, 3), name="Hidden Layer")
+
     model = pioneer.algorithms.TorchFCN(
         X,
         U,
-        hidden_layers=pioneer.optim.DiscreteHyperparameter((1, 3)),
-        hidden_neurons=pioneer.optim.DiscreteHyperparameter((1, 16)),
+        hidden_layers=hp_layers,
+        hidden_neurons=pioneer.optim.DiscreteHyperparameter(
+            (1, 16), active_when=(hp_layers >= 2)
+        ),
         activation_fn=pioneer.optim.CategoricalHyperparameter(
             [torch.nn.Tanh(), torch.nn.ReLU()]
         ),
@@ -41,10 +45,10 @@ def build_problem():
 
 
 # trainer.run()
-tuner = pioneer.optim.tuner.GridSearchTuner(
+tuner = pioneer.optim.tuner.RandomSearchTuner(
     build_problem,
-    trial_number=30,
-    devices=["cuda:1", "cuda:2", "cuda:3"],
+    trial_number=16,
+    devices=["cpu"],
     trials_per_device=2,
 )
 tuner.run()

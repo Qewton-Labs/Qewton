@@ -1,7 +1,5 @@
 import multiprocessing as mp
 import optuna
-from optuna.storages import JournalStorage
-from optuna.storages.journal import JournalFileBackend
 import numpy as np
 import torch
 
@@ -59,8 +57,8 @@ if __name__ == "__main__":
     tuner = pioneer.optim.tuner.OptunaTuner(
         build_problem,
         optuna_study=study,
-        trial_number=40,
-        devices=["cuda:0", "cuda:1", "cuda:2", "cuda:3"],
+        trial_number=3,
+        devices=["cpu"],
         trials_per_device=1,
         save_path="examples/test_optuna",
     )

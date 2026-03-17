@@ -12,6 +12,7 @@ import psutil
 from ...constraints.base import Constraint
 from ..trainer.base import Trainer
 from ..hyperparameter.base import HyperParameter
+from ..hyperparameter.dag import HyperParameterDAG
 
 
 class TunerLoggingKeys(Enum):
@@ -97,7 +98,6 @@ class Tuner:
         os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
 
         # Find what parameters can be tuned
-        self.tunable_parameters: dict[str, list[HyperParameter]] = {}
         param_log = self._get_tuneable_parameters(trainer_dummy)
         self.write_constrain_info(
             param_log,
@@ -116,34 +116,26 @@ class Tuner:
         self.write_system_info()
 
     def _get_tuneable_parameters(self, trainer: Trainer):
-        hyperparameter_dict = trainer.get_hyperparameter()
-        param_set = set[HyperParameter]()  # to check if some parameters are shared
-        # between different nodes (they should not be counted multiple times!)
-
+        hyperparameter_set = trainer.hyperparameters
+        tunable_parameters = set[HyperParameter]()
         # Save all parameters also to a file:
         param_log = {
             TunerLoggingKeys.FIXEDPARAMS.value: {},
             TunerLoggingKeys.TUNABLEPARAMS.value: {},
         }
-        for node_name, param_list in hyperparameter_dict.items():
-            for param in param_list:
-                if not param.is_fixed and not param in param_set:
-                    param_set.add(param)
-                    if node_name in self.tunable_parameters:
-                        self.tunable_parameters[node_name].append(param)
-                    else:
-                        self.tunable_parameters[node_name] = [param]
-                    param_log[TunerLoggingKeys.TUNABLEPARAMS.value][
-                        node_name + "_" + param.name
-                    ] = type(param).__name__
-                else:
-                    param_log[TunerLoggingKeys.FIXEDPARAMS.value][
-                        node_name + "_" + param.name
-                    ] = param.current_value
+        for hp in hyperparameter_set:
+            if not hp.is_fixed:
+                tunable_parameters.add(hp)
+                param_log[TunerLoggingKeys.TUNABLEPARAMS.value][hp.name] = type(
+                    hp
+                ).__name__
+            else:
+                param_log[TunerLoggingKeys.FIXEDPARAMS.value][hp.name] = hp.current_value
 
-        if len(self.tunable_parameters) == 0:
+        if len(tunable_parameters) == 0:
             raise ValueError("Can not tune a problem without tunable parameters.")
 
+        self.hp_dag = HyperParameterDAG(tunable_parameters)
         return param_log
 
     def run(self):
@@ -169,7 +161,9 @@ class Tuner:
             results = list(pool.imap(worker_eval, jobs))
         return results
 
-    def _write_to_csv(self, results, trial: Any | None = None):
+    def _write_to_csv(
+        self, results, trial: Any | None = None
+    ):  # pylint: disable=unused-argument
         flat_results = [self._flatten_result_data(r) for r in results]
         write_header = not os.path.exists(self.csv_path)
 
@@ -186,9 +180,11 @@ class Tuner:
         # Parameter are first:
         flat_dict = {}
         for _, all_params in results[0].items():
-            for node_name, param_dict in all_params.items():
-                for param_name, param_value in param_dict.items():
-                    flat_dict[node_name + "_" + param_name] = param_value
+            for hp in self.hp_dag.sorted_nodes:
+                if hp.name in all_params:
+                    flat_dict[hp.name] = all_params[hp.name]
+                else:
+                    flat_dict[hp.name] = ""
 
         for key, value in results[1].items():
             flat_dict[key] = value
@@ -196,7 +192,7 @@ class Tuner:
         return flat_dict
 
     def _get_trial_parameters(
-        self, current_trials: int
+        self, current_trial: int
     ) -> list[dict[str, dict[str, Any]]]:
         raise NotImplementedError(
             "The base Tuner does not implement a search strategy, \
@@ -228,7 +224,10 @@ class Tuner:
             if hasattr(constraint, "relative"):
                 rel_value = constraint.relative  # type: ignore
                 if isinstance(rel_value, HyperParameter):
-                    constraint_dic["relative"] = type(rel_value).__name__
+                    if rel_value.is_fixed:
+                        constraint_dic["relative"] = rel_value.value
+                    else:
+                        constraint_dic["relative"] = type(rel_value).__name__
                 else:
                     constraint_dic["relative"] = rel_value
 

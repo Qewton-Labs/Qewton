@@ -7,7 +7,7 @@ import optuna
 
 from .base import Tuner, worker_eval
 from ..trainer.base import Trainer
-from ..hyperparameter.base import HyperParameter
+from ..hyperparameter.dag import HyperParameterDAG
 from ..hyperparameter.categorical_hyperparameter import (
     CategoricalHyperparameter,
     BooleanHyperparameter,
@@ -30,44 +30,37 @@ def run_optimization(job):
 def optuna_objective(
     trial: optuna.Trial,
     trainer_factory: Callable[[], Trainer],
-    tunable_parameters: dict[str, list[HyperParameter]],
+    hp_dag: HyperParameterDAG,
     device: str,
 ):
     # Sample hyperparameters from trial
-    params = {}
-    for node_name, param_list in tunable_parameters.items():
-        params[node_name] = {}
-        for param in param_list:
-            if param.is_fixed:
-                params[node_name][param.name] = param.value
-            else:
-                # TODO: this would also need to be updated for a tree
-                # structure
-                if isinstance(param, DiscreteHyperparameter):
-                    params[node_name][param.name] = trial.suggest_int(
-                        param.name,
-                        param.parameter_range[0],
-                        param.parameter_range[1],
-                        log=param.scale == HyperParameterScale.LOG,
-                    )
-                elif isinstance(param, ContinuousHyperparameter):
-                    params[node_name][param.name] = trial.suggest_float(
-                        param.name,
-                        param.parameter_range[0],
-                        param.parameter_range[1],
-                        log=param.scale == HyperParameterScale.LOG,
-                    )
-                elif isinstance(param, BooleanHyperparameter):
-                    params[node_name][param.name] = trial.suggest_categorical(
-                        param.name, param.parameter_range
-                    )
-                elif isinstance(param, CategoricalHyperparameter):
-                    params[node_name][param.name] = trial.suggest_categorical(
-                        param.name, param.categories
-                    )
+    config = {}
+    for hp in hp_dag.sorted_nodes:
+        config = {}
+        if not hp.is_active(config):
+            continue
+
+        if isinstance(hp, DiscreteHyperparameter):
+            config[hp.name] = trial.suggest_int(
+                hp.name,
+                hp.parameter_range[0],
+                hp.parameter_range[1],
+                log=hp.scale == HyperParameterScale.LOG,
+            )
+        elif isinstance(hp, ContinuousHyperparameter):
+            config[hp.name] = trial.suggest_float(
+                hp.name,
+                hp.parameter_range[0],
+                hp.parameter_range[1],
+                log=hp.scale == HyperParameterScale.LOG,
+            )
+        elif isinstance(hp, BooleanHyperparameter):
+            config[hp.name] = trial.suggest_categorical(hp.name, hp.parameter_range)
+        elif isinstance(hp, CategoricalHyperparameter):
+            config[hp.name] = trial.suggest_categorical(hp.name, hp.categories)
 
     # Run evaluation
-    result = worker_eval((trainer_factory, params, device))
+    result = worker_eval((trainer_factory, config, device))
     metric = next(iter(result[1].values()))  # TODO: adapt
     return metric
 
@@ -93,7 +86,7 @@ class OptunaTuner(Tuner):
         self.study = optuna_study
 
     def _get_trial_parameters(
-        self, current_trials: int
+        self, current_trial: int
     ) -> list[dict[str, dict[str, Any]]]:
         return []
 
@@ -104,7 +97,7 @@ class OptunaTuner(Tuner):
             (
                 self.study,
                 self.trainer_factory,
-                self.tunable_parameters,
+                self.hp_dag,
                 d,
                 trials,
                 [self._write_to_csv],  # callbacks

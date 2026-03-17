@@ -46,6 +46,7 @@ class Trainer:
         self.max_iterations: HyperParameter = HyperParameter.from_value(
             max_iterations, "Max. Iterations"
         )
+        self._all_hyperparameters = None
         self.validation_check = validation_check
         self.device = device
         self.save_path: str
@@ -147,14 +148,18 @@ class Trainer:
             total_loss += constraint.get_loss()
         return total_loss
 
-    def get_hyperparameter(self) -> dict[str, list[HyperParameter]]:
-        hyperparameter_dict: dict[str, list[HyperParameter]] = {}
-        # TODO: Does not work if we have conditional parameters?
-        # We would need some kind of tree-structure
+    @property
+    def hyperparameters(self) -> set[HyperParameter]:
+        """Returns all HyperParameters the trainer knows of, including
+        HyperParameters that are part of the pipelines."""
+        if self._all_hyperparameters is not None:
+            return self._all_hyperparameters
+
+        hyperparameter_set = set[HyperParameter]()
         for node in self.all_nodes:
             node_params = node.hyperparameters
-            if len(node_params) > 0:
-                hyperparameter_dict[node.name] = node.hyperparameters
+            for hp in node_params:
+                hyperparameter_set.add(hp)
         # TODO: Not completely correct, since maybe we want to try different
         # Optimizers, saved as Hyperparameters?! E.g. Adam, LBFGS or a combination
         # of them...
@@ -162,24 +167,15 @@ class Trainer:
         own_hyperparameters = [
             v for v in vars(self).values() if isinstance(v, HyperParameter)
         ]
-        hyperparameter_dict["trainer"] = own_hyperparameters
-        return hyperparameter_dict
+        for hp in own_hyperparameters:
+            hyperparameter_set.add(hp)
+        self._all_hyperparameters = hyperparameter_set
+        return hyperparameter_set
 
-    def set_hyperparameter(self, param_dict: dict[str, dict[str, Any]]):
-        own_hyperparameters = [
-            v for v in vars(self).values() if isinstance(v, HyperParameter)
-        ]
-        if "trainer" in param_dict:
-            for param in own_hyperparameters:
-                if param.name in param_dict["trainer"]:
-                    param.set_value(param_dict["trainer"][param.name])
-
-        for node in self.all_nodes:
-            if node.name in param_dict:
-                node_hyperparameters = node.hyperparameters
-                for param in node_hyperparameters:
-                    if param.name in param_dict[node.name]:
-                        param.set_value(param_dict[node.name][param.name])
+    def set_hyperparameter(self, param_dict: dict[str, Any]):
+        for param in self.hyperparameters:
+            if param.name in param_dict:
+                param.set_value(param_dict[param.name])
 
     def reset(self):
         for node in self.all_nodes:
