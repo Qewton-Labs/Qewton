@@ -39,7 +39,7 @@ class TensorFlowTrainer(Trainer):
     def _get_trainable_parameters(self):
         trainable_parameters = []
         for node in self.all_nodes:
-            node_params = node.trainable_parameters
+            node_params = node._trainable_parameters
             if node_params is not None:
                 trainable_parameters.extend(node_params)
         return trainable_parameters

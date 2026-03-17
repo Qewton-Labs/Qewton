@@ -1,6 +1,8 @@
 from __future__ import annotations
 from abc import ABC
+from enum import Enum
 from typing import Any
+import warnings
 
 from ..config.configuration_base import DataConfiguration
 from ..optim.hyperparameter.base import HyperParameter
@@ -122,6 +124,13 @@ class OutputPort(Port):
         return self._value
 
 
+class NodeState(Enum):
+    FIXED = 1
+    UNINITIALIZED = 2
+    INITIALIZED = 3
+    TRAINED = 4
+
+
 class Node(ABC):
     """Base class for all nodes to create a pipeline.
 
@@ -129,13 +138,16 @@ class Node(ABC):
     TODO: How about save and load methods?
     """
 
-    def __init__(self, name: str = "Node") -> None:
+    def __init__(self, name: str = "Node", state: NodeState = NodeState.FIXED) -> None:
         """
         Args:
             name (str, optional): The name of this node. Defaults to "Node".
+            state (NodeState, optional): The initial state of this node.
+                Defaults to NodeState.FIXED.
         """
         super().__init__()
         self.name = name
+        self.state = state
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
         self.pipeline_id: int = 0
 
@@ -215,6 +227,17 @@ class Node(ABC):
         """Returns trainable parameters of this node."""
         return TrainableParameters.create_empty()
 
+    @property
+    def _trainable_parameters(self) -> _TrainableParameterBase:
+        """Internal method to return trainable parameters of this node. This is used
+        to collect trainable parameters from all nodes in a pipeline.
+        """
+        return (
+            self.trainable_parameters
+            if self.state != NodeState.FIXED
+            else TrainableParameters.create_empty()
+        )
+
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
 
@@ -229,7 +252,29 @@ class Node(ABC):
         self.mode = new_mode
 
     def reset(self):
-        """Reset the state of the node."""
+        """Reset the node."""
+
+    def set_state(self, new_state: NodeState):
+        """Set the current state of this node. This can be used to track the
+        state of the node during the training process.
+
+        Args:
+            new_state (NodeState): The new state of this node.
+        """
+        self.state = new_state
+
+    def fix_node_state(self) -> None:
+        """Fix the state of the node so it will not be
+        trained or recreated!
+        """
+        if self.state == NodeState.UNINITIALIZED:
+            warnings.warn(
+                "This Algorithm is not initialized, fixing it now may lead \
+                    to unexpected behavior. Maybe call .setup() first?",
+                UserWarning,
+            )
+            return
+        self.state = NodeState.FIXED
 
     def set_pipeline_id(self, pipeline_id: int):
         self.pipeline_id = pipeline_id

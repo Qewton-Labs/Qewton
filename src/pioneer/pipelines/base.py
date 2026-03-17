@@ -187,7 +187,7 @@ class Graph:
         """Collect all trainable parameters from the nodes in this pipeline."""
         params_collection = TrainableParametersCollection()
         for node in self.nodes:
-            p = node.trainable_parameters
+            p = node._trainable_parameters
             if not p.empty:
                 params_collection.extend(p)
         return params_collection
@@ -244,3 +244,15 @@ class Pipeline(Graph):
         self.nodes.remove(node)
         if isinstance(node, Constraint):
             self.constrain_nodes.remove(node)
+
+
+class SequentialPipeline(Pipeline):
+    """
+    A pipeline that is initialized as a sequence of nodes.
+    """
+
+    def __init__(self, *nodes: Node, name="sequential_pipeline"):
+        super().__init__(name=name)
+        for i in range(len(nodes) - 1):
+            self.connect(nodes[i], nodes[i + 1])
+        self.sorted_nodes = list(nodes)

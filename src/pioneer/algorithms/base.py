@@ -2,22 +2,19 @@ import warnings
 from enum import Enum, auto
 from typing import Any
 
-from pioneer.optim.trainer.trainable_parameters import _TrainableParameterBase
+from pioneer.config.backend import DEFAULT_DL_BACKEND, TorchBackend
+from pioneer.config.configuration_base import DataConfiguration
+from pioneer.optim.trainer.trainable_parameters import (
+    _TrainableParameterBase,
+)
 
 
-from ..nodes.base import Node, InputPort, OutputPort
+from ..nodes.base import Node, InputPort, NodeState, OutputPort
 from ..pipelines.base import Graph
 from ..optim.hyperparameter.base import HyperParameter
 
 
-class AlgorithmState(Enum):
-    # TODO: Is this needed?
-    FIXED = 1
-    UNINITIALIZED = 2
-    READY = 3
-    TRAINED = 4
-
-
+# TODO
 class AlgorithmAttributes(Enum):
     SYMMETRIC = auto()  # if a "flipped" input yields the same output
     TRANSLATION_INVARIANT = auto()
@@ -33,46 +30,6 @@ class AlgorithmAttributes(Enum):
     MUTATES_INPUT = auto()  # if input is changed in-place
     SUPPORTS_MISSING_VALUES = auto()  # if values like NaN are handled
     INCLUDES_IMAGINARY_VALUES = auto()  # Some optimizers do not work then
-
-
-class AlgorithmNode(Node):
-    """General node representing an algorithm that should solve a given problem
-    or a part of it.
-    """
-
-    def __init__(
-        self,
-        name: str = "AlgorithmNode",
-    ) -> None:
-        """
-        Args:
-            input_variable (Variable): The input variables of the algorithm.
-            output_variable (Variable): The output variables of the algorithm.
-            name (str, optional): The name of the node. Defaults to "AlgorithmNode".
-        """
-        super().__init__(name=name)
-        self._state: AlgorithmState = AlgorithmState.UNINITIALIZED
-
-    @property
-    def state(self) -> AlgorithmState:
-        return self._state
-
-    @property
-    def attributes(self) -> set[AlgorithmAttributes]:
-        return set()
-
-    def fix_algorithm_state(self) -> None:
-        """Fix all properties of the algorithm so it will not be
-        trained or recreated!
-        """
-        if self.state == AlgorithmState.UNINITIALIZED:
-            warnings.warn(
-                "This Algorithm is not initialized, fixing it now may lead \
-                    to unexpected behavior. Maybe call .setup() first?",
-                UserWarning,
-            )
-            return
-        self._state = AlgorithmState.FIXED
 
 
 class GraphNode(Node):
@@ -140,49 +97,47 @@ class GraphNode(Node):
             port.set_connected_port(port.connected_ports[self.graph.id], pipeline_id)
 
 
-class ActivationFunction(AlgorithmNode):
-    """A node representing an activation function, which is a special type of
-    algorithm that is applied element-wise to the input data.
+class LayerNode(Node):
+    """A node representing a unary operation, which is an algorithm that takes
+    one input and produces one output.
     """
 
+    existing_implementations = None  # type: dict[BackendType, Implementation]
 
-class DifferentiableNode(Node):
-    """..."""
+    def __init__(
+        self,
+        name: str = "LayerNode",
+        backend=DEFAULT_DL_BACKEND,
+        state: NodeState = NodeState.FIXED,
+    ):
+        """Initializes the unary node with a single input and output port.
 
-
-class TorchNode(DifferentiableNode):
-    """A node representing a PyTorch module, which is a special type of
-    algorithm that can be trained and run on a GPU.
-    """
-
-    def __init__(self) -> None:
-        """Creates the underlying PyTorch module instance."""
-        self._torch_module = None  # self.create_torch_module()
-
-    @property
-    def torch_module(self):
-        return self._torch_module
-
-    def get_trainable_parameters(self) -> dict[str, Any]:
-        """Returns the trainable parameters of this node, which can be used for
-        training the underlying algorithm (e.g. a neural network).
-
-        Returns:
-            dict[str, any]: A dictionary of trainable parameters.
+        Args:
+            name (str, optional): The name of this node. Defaults to "UnaryNode".
+            implementation (callable, optional): The function that implements the
+                unary operation. It should take one argument (the input) and
+                return the output. Defaults to None.
+            state (NodeState, optional): The initial state of this node.
+                Defaults to NodeState.FIXED.
         """
-        return {}  # self.torch_module.parameters()
-
-
-class ReLU(ActivationFunction):
-    """..."""
-
-
-class TorchReLU(ReLU, TorchNode):
-    """..."""
-
-    @property
-    def input_ports(self):
-        return super().input_ports
+        super().__init__(name=name, state=state)
+        self.backend = backend
+        self.implementation = self.get_implementation()
+        self._input_ports = [InputPort(DataConfiguration(), self, "input")]
+        self._output_ports = [OutputPort(DataConfiguration(), self, "output")]
 
     def run(self):
-        pass
+        self._output_ports[0].set_value(self.implementation(self._input_ports[0].value))
+
+    def get_implementation(self):
+        if type(self).existing_implementations is None:
+            raise NotImplementedError(f"No implementations defined for {self.name}.")
+        if self.backend not in type(self).existing_implementations:
+            raise NotImplementedError(
+                f"Backend {self.backend} is not supported for {self.name}."
+            )
+        return type(self).existing_implementations[self.backend]
+
+    @property
+    def trainable_parameters(self):
+        return self.implementation.trainable_parameters
