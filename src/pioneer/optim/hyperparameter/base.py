@@ -15,6 +15,7 @@ class HyperParameter:
         state: HyperParameterState = HyperParameterState.OPTIMIZE,
         name: str = "",
         active_when: None | HyperParameterCondition = None,
+        default_grid: int | list = 0,
     ):
         """
         Args:
@@ -34,6 +35,7 @@ class HyperParameter:
         self.current_value = initial_value
         self.name = name
         self.condition = active_when
+        self.default_grid = default_grid
 
     @classmethod
     def from_value(cls, x, name: str | None = None) -> HyperParameter:
@@ -88,6 +90,12 @@ class HyperParameter:
     @property
     def value(self):
         return self.current_value
+
+    @property
+    def tuning_grid(self) -> list:
+        if isinstance(self.default_grid, list):
+            return self.default_grid
+        return self.sample_parameter_grid(self.default_grid)
 
     def is_active(self, config=None):
         return True if self.condition is None else self.condition.evaluate(config)
