@@ -1,21 +1,14 @@
-from enum import Enum
-from typing import Any
-
 from ..config.configuration_base import DataConfiguration
 from ..optim.hyperparameter.categorical_hyperparameter import (
     HyperParameter,
     BooleanHyperparameter,
 )
 from ..optim.hyperparameter.number_hyperparameter import ContinuousHyperparameter
-from ..nodes.base import Port
+from ..nodes.base import InputPort
 from .base import Constraint
 
 
 class MetricConstraint(Constraint):
-    class InputKeys(str, Enum):  # type: ignore[override]
-        INPUT1 = "input_1"
-        INPUT2 = "input_2"
-
     def __init__(
         self,
         input_config: DataConfiguration,
@@ -29,12 +22,9 @@ class MetricConstraint(Constraint):
         self.relative = HyperParameter.from_value(relative, "Relative Constraint")
         self.epsilon = epsilon  # for computation of the relative loss.
 
-    @property
-    def input_ports(self) -> dict[str, Port]:
-        return {
-            self.InputKeys.INPUT1: Port(self.input_config, self, "port_1", True),
-            self.InputKeys.INPUT2: Port(self.input_config, self, "port_2", True),
-        }
+        self.input_port_1 = InputPort(self.input_config, self, name="Input 1")
+        self.input_port_2 = InputPort(self.input_config, self, name="Input 2")
+        self._input_ports = [self.input_port_1, self.input_port_2]
 
 
 class MSEConstraint(MetricConstraint):
@@ -50,12 +40,9 @@ class MSEConstraint(MetricConstraint):
     ):
         super().__init__(input_config, name, relative, weight, epsilon=epsilon)
 
-    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        x = inputs[self.InputKeys.INPUT1]
-        y = inputs[self.InputKeys.INPUT2]
-        return self._compute_mean(x, y)
-
-    def _compute_mean(self, x, y):
+    def compute_loss(self):
+        x = self.input_port_1.value
+        y = self.input_port_2.value
         residual = x - y
         if hasattr(residual, "mean"):
             if self.relative.value:
@@ -75,10 +62,9 @@ class MSEConstraint(MetricConstraint):
             self.loss = tf.reduce_mean(tf.square(residual))
         else:
             raise ValueError("The MSE can not be computed for this input")
-        return {}
 
 
-class ResidualConstraint(MSEConstraint):
+class ResidualConstraint(Constraint):
     # TODO: Just some rough first version to see if PINNs would work
     def __init__(
         self,
@@ -89,23 +75,17 @@ class ResidualConstraint(MSEConstraint):
         weight: float | ContinuousHyperparameter = 1,
     ):
         super().__init__(
-            input_config=input_config_1,
             name=name,
             weight=weight,
         )
-        self.input_config_2 = input_config_2
+
+        self.input_port_1 = InputPort(input_config_1, self, name="Input 1")
+        self.input_port_2 = InputPort(input_config_2, self, name="Input 2")
+        self._input_ports = [self.input_port_1, self.input_port_2]
         self.residual_fn = residual_fn
 
-    @property
-    def input_ports(self) -> dict[str, Port]:
-        return {
-            self.InputKeys.INPUT1: Port(self.input_config, self, "port_1", True),
-            self.InputKeys.INPUT2: Port(self.input_config_2, self, "port_2", True),
-        }
-
-    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        x = inputs[self.InputKeys.INPUT1]
-        y = inputs[self.InputKeys.INPUT2]
+    def compute_loss(self):
+        x = self.input_port_1.value
+        y = self.input_port_2.value
         residual = self.residual_fn(x, y)
         self.loss = (residual**2).mean()
-        return {}

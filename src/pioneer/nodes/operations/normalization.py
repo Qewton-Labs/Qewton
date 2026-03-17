@@ -1,6 +1,4 @@
-from typing import Any
-
-from ..base import Node, Port
+from ..base import Node, InputPort, OutputPort
 from ...data.datasets.base import DataSet
 from ...config.configuration_base import DataConfiguration
 from ...optim.hyperparameter.base import HyperParameter
@@ -34,7 +32,8 @@ class NormalizationNode(Node):
         self.data_config = data_config
         self.dataset_node = dataset_node
         self.is_active = HyperParameter.from_value(active, "Normalization Active")
-        self.port = Port(self.data_config, self, "port", True)
+        self.in_port = InputPort(self.data_config, self)
+        self.out_port = OutputPort(self.data_config, self)
         if data_config.feature_axis is ... or data_config.feature_axis.variables is None:
             raise ValueError("No variables found in this data configuration!")
         if (
@@ -50,20 +49,13 @@ class NormalizationNode(Node):
                 f"Can not normalize data not inside the dataset {dataset_node}!"
             )
 
-    @property
-    def input_ports(self) -> dict[str, Port]:
-        return {self.InputKeys.INPUT: self.port}
-
-    @property
-    def output_ports(self) -> dict[str, Port]:
-        return {self.OutputKeys.OUTPUT: self.port}
-
-    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        data = inputs[self.InputKeys.INPUT]
+    def run(self):
+        data = self.in_port.value
         if self.is_active.value:
             data_mean, data_std = self._extract_mean_and_std()
-            return {self.OutputKeys.OUTPUT: (data - data_mean) / data_std}
-        return {self.OutputKeys.OUTPUT: data}
+            self.out_port.set_value((data - data_mean) / data_std)
+        else:
+            self.out_port.set_value(data)
 
     def _extract_mean_and_std(self):
         slices = [slice(None)] * len(self.data_config)
@@ -87,11 +79,10 @@ class InverseNormalizationNode(NormalizationNode):
     derivation and adding the mean value given in the dataset.
     """
 
-    def _run(self, inputs: dict[str, Any]) -> dict[str, Any]:
-        if inputs is None:
-            raise ValueError("Input can not be None!")
-        data = inputs[self.InputKeys.INPUT]
+    def run(self):
+        data = self.in_port.value
         if self.is_active.value:
             data_mean, data_std = self._extract_mean_and_std()
-            return {self.OutputKeys.OUTPUT: data * data_std + data_mean}
-        return {self.OutputKeys.OUTPUT: data}
+            self.out_port.set_value(data * data_std + data_mean)
+        else:
+            self.out_port.set_value(data)

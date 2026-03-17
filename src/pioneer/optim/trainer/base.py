@@ -1,7 +1,7 @@
 import warnings
 from typing import Any
 
-from ..base import EvaluationMode
+from ..base import EvaluationPhase
 from ..hyperparameter.base import HyperParameter
 from ..hyperparameter.categorical_hyperparameter import CategoricalHyperparameter
 from ..hyperparameter.number_hyperparameter import DiscreteHyperparameter
@@ -109,11 +109,6 @@ class Trainer:
         self.save_path = path
         # TODO: Set this path also for all callbacks and models
 
-    def _run_pipeline(self, pipeline: Pipeline, mode: EvaluationMode):
-        pipeline.set_mode(mode, include_constraints=False)
-        run_time = pipeline.create_runtime()
-        run_time.run()
-
     def _evaluate_constraints(
         self, constraint_list: list[Constraint]
     ) -> dict[str, float]:
@@ -125,22 +120,19 @@ class Trainer:
 
     def get_tuning_results(self):
         for constraint in self.tuning_constraints:
-            constraint.set_mode(EvaluationMode.TUNE)
+            constraint.set_mode(EvaluationPhase.TUNE)
         for pipeline in self.tune_pipelines:
-            self._run_pipeline(pipeline, EvaluationMode.TUNE)
+            pipeline.run(EvaluationPhase.TUNE)
         return self._evaluate_constraints(self.tuning_constraints)
 
     def _compute_loss(
         self,
         pipelines: set[Pipeline],
-        mode: EvaluationMode,
+        mode: EvaluationPhase,
         constraints: list[Constraint],
     ):
-        for constraint in constraints:
-            constraint.set_mode(mode)
-
         for pipeline in pipelines:
-            self._run_pipeline(pipeline, mode)
+            pipeline.run(mode)
 
         total_loss = 0.0
         for constraint in constraints:

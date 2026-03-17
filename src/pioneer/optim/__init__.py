@@ -16,4 +16,4 @@ from .hyperparameter.number_hyperparameter import (
 
 from .hyperparameter.dag import HyperParameterDAG
 
-from .base import EvaluationMode
+from .base import EvaluationPhase

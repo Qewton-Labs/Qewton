@@ -4,8 +4,11 @@ from typing import Any
 
 from ..config.configuration_base import DataConfiguration
 from ..optim.hyperparameter.base import HyperParameter
-from ..optim.base import EvaluationMode
-from ..optim.trainer.trainable_parameters import TrainableParameters
+from ..optim.base import EvaluationPhase
+from ..optim.trainer.trainable_parameters import (
+    _TrainableParameterBase,
+    TrainableParameters,
+)
 
 
 class NO_DEFAULT:
@@ -41,9 +44,6 @@ class Port:
         )
 
 
-# Probleme: nodes könnten mehrfach in einer pipeline auftauchen
-
-
 class InputPort(Port):
     """Denotes an input port of a node."""
 
@@ -51,7 +51,7 @@ class InputPort(Port):
         self,
         data_configuration: DataConfiguration,
         node: Node,
-        name: str,
+        name: str = "Input",
         default: Any = NO_DEFAULT(),
     ):
         super().__init__(data_configuration, node, name)
@@ -96,7 +96,9 @@ class InputPort(Port):
 class OutputPort(Port):
     """Denotes an output port of a node."""
 
-    def __init__(self, data_configuration: DataConfiguration, node: Node, name: str):
+    def __init__(
+        self, data_configuration: DataConfiguration, node: Node, name: str = "Output"
+    ):
         super().__init__(data_configuration, node, name)
         self._value = None
         self._current_data_config = []  # the updated data config for each pipeline
@@ -134,18 +136,18 @@ class Node(ABC):
         """
         super().__init__()
         self.name = name
-        self.mode: EvaluationMode = EvaluationMode.ALWAYS
+        self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
         self.pipeline_id: int = 0
 
-        self._input_ports: list[InputPort] = []
-        self._output_ports: list[OutputPort] = []
+        self._input_ports: list[InputPort] | None = None
+        self._output_ports: list[OutputPort] | None = None
 
     def setup(self) -> None:
         """Creates the underlying algorithm instance (e.g. creates the
         neural network)
 
         This should not happen in the __init__ call, given that in the
-        HyperParameter tuning we need to recreated the underlying algorithm
+        HyperParameter tuning we need to recreate the underlying algorithm
         instance, but dont want to create a new node inside our graph.
         """
 
@@ -209,20 +211,22 @@ class Node(ABC):
         return [v for v in vars(self).values() if isinstance(v, HyperParameter)]
 
     @property
-    def trainable_parameters(self) -> TrainableParameters:
+    def trainable_parameters(self) -> _TrainableParameterBase:
         """Returns trainable parameters of this node."""
         return TrainableParameters.create_empty()
 
     def to(self, device):
         """Move data stored in this node to a different device (GPU, CPU)"""
 
-    def set_mode(self, new_mode: EvaluationMode):
-        """Set the when this node should be evaluated, in the training
-        process.
+    def set_mode(self, new_mode: EvaluationPhase):
+        """Set the current phase/mode in the training process. Some
+        nodes behave differently depending on the current mode.
+        E.g. disabling Dropout when in validation.
 
         Args:
-            new_mode (EvaluationMode): The new evaluation mode.
+            new_mode (EvaluationPhase): The new evaluation mode.
         """
+        self.mode = new_mode
 
     def reset(self):
         """Reset the state of the node."""

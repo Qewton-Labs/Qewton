@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from ..base import EvaluationMode
+from ..base import EvaluationPhase
 from ..hyperparameter.base import HyperParameter
 from ..hyperparameter.categorical_hyperparameter import CategoricalHyperparameter
 from ..hyperparameter.number_hyperparameter import (
@@ -64,7 +64,7 @@ class TensorFlowTrainer(Trainer):
                 with tf.GradientTape() as tape:
                     for pipeline in self.train_pipelines:
                         # Assume _run_pipeline returns a scalar loss
-                        self._run_pipeline(pipeline, EvaluationMode.TRAIN)
+                        self._run_pipeline(pipeline, EvaluationPhase.TRAIN)
 
                     for train_constraint in self.training_constraints:
                         total_loss += train_constraint.get_loss()
@@ -76,7 +76,7 @@ class TensorFlowTrainer(Trainer):
                 # Check validation data
                 if step % self.validation_check == 0:
                     for pipeline in self.validation_pipelines:
-                        self._run_pipeline(pipeline, EvaluationMode.VALIDATION)
+                        self._run_pipeline(pipeline, EvaluationPhase.VALIDATION)
 
                     validation_loss = 0.0
                     for validation_constraint in self.validation_constraints:

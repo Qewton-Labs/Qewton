@@ -2,14 +2,10 @@ from __future__ import annotations
 import warnings
 from collections import deque
 
-from ..nodes.base import InputPort, Node, EvaluationMode, OutputPort
+from ..nodes.base import InputPort, Node, EvaluationPhase, OutputPort
 from ..algorithms.base import GraphNode
 from ..constraints.base import Constraint
-
-
-# TODO: Branching graphs are supported. What about cycles?
-# Cycles may be better included inside a node itself (e.g. a WhileNode has a
-# "sub-pipeline" that runs a time-stepping scheme?).
+from ..optim.trainer.trainable_parameters import TrainableParametersCollection
 
 
 class Graph:
@@ -20,6 +16,7 @@ class Graph:
         self.id = Graph._graph_id_counter
         Graph._graph_id_counter += 1
         self.sorted_nodes: list[Node] = []
+        self.mode = EvaluationPhase.ALWAYS
 
     def copy(self) -> Graph:
         """Creates a (not deep) copy of this graph.
@@ -177,22 +174,23 @@ class Graph:
             node.setup()
         self.sort()
 
-    def run(self):
+    def run(self, mode: EvaluationPhase = EvaluationPhase.ALWAYS):
         """Run the pipeline. The data will be passed through the graph according to
         the connections and the computations of the nodes will be executed.
         """
         for node in self.sorted_nodes:
+            node.set_mode(mode)
             node.set_pipeline_id(self.id)
             node.run()
 
     def collect_trainable_parameters(self):
         """Collect all trainable parameters from the nodes in this pipeline."""
-        params = {}
+        params_collection = TrainableParametersCollection()
         for node in self.nodes:
             p = node.trainable_parameters
             if not p.empty:
-                params[p.name] = p
-        return params
+                params_collection.extend(p)
+        return params_collection
 
 
 class SequentialGraph(Graph):
@@ -223,7 +221,6 @@ class Pipeline(Graph):
         super().__init__()
         self.constrain_nodes: set[Constraint] = set[Constraint]()
         self.name = name
-        self.mode = EvaluationMode.ALWAYS
 
     def add_node(self, node: Node, check_warning=True) -> None:
         """Adds a node to this pipeline.
@@ -247,16 +244,3 @@ class Pipeline(Graph):
         self.nodes.remove(node)
         if isinstance(node, Constraint):
             self.constrain_nodes.remove(node)
-
-    def set_mode(self, new_mode: EvaluationMode, include_constraints: bool = True):
-        """Set the process mode for the given training phase.
-
-        Args:
-            new_mode (EvaluationMode): The new evaluation mode.
-        """
-        self.mode = new_mode
-        nodes_to_set = (
-            self.nodes if include_constraints else self.nodes - self.constrain_nodes
-        )
-        for node in nodes_to_set:
-            node.set_mode(new_mode)
