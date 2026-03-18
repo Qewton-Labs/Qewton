@@ -3,7 +3,6 @@ import warnings
 from collections import deque
 
 from ..nodes.base import InputPort, Node, EvaluationPhase, OutputPort
-from ..algorithms.base import GraphNode
 from ..constraints.base import Constraint
 from ..optim.trainer.trainable_parameters import TrainableParametersCollection
 
@@ -128,10 +127,11 @@ class Graph:
 
             to_port.set_connected_port(from_port, self.id)  # type: ignore
 
-        if isinstance(from_node, GraphNode):
-            from_node.copy_connections(self.id)
-        if isinstance(to_node, GraphNode):
-            to_node.copy_connections(self.id)
+        # TODO: fix circular import
+        # if isinstance(from_node, GraphNode):
+        #     from_node.copy_connections(self.id)
+        # if isinstance(to_node, GraphNode):
+        #     to_node.copy_connections(self.id)
 
     def _check_connect(
         self, user_input: InputPort | OutputPort | Node, check_input: bool = True

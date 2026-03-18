@@ -1,6 +1,5 @@
 import tensorflow as tf
 
-from .base import AlgorithmNode, AlgorithmState
 from ..config.variables import Variable
 from ..optim.hyperparameter.base import (
     HyperParameter,

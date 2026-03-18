@@ -4,7 +4,6 @@ from itertools import product
 import math
 
 import numpy as np
-from scipy.stats.qmc import Sobol
 
 from .base import HyperParameter
 from .categorical_hyperparameter import CategoricalHyperparameter
@@ -75,54 +74,6 @@ class HyperParameterDAG:
             if len(deps) > 0:
                 return self._dynamic_grid(n_samples)
         return self._uniform_grid(n_samples)
-
-    def _dynamic_grid(self, n_samples: int) -> list[dict[str, Any]]:
-        """Generates a *dynamic* coverage of the DAG trying to explore
-        all branches."""
-        # Identify non categorical parameters
-        cont_nodes = [
-            node
-            for node in self.sorted_nodes
-            if not isinstance(node, CategoricalHyperparameter)
-        ]
-        # Generate Sobol points for non categorical parameters
-        # TODO: Is this okay?
-        if len(cont_nodes) > 0:
-            sobol_seq = Sobol(d=len(cont_nodes), scramble=True).random(n_samples)
-        else:
-            sobol_seq = np.zeros((n_samples, 0))
-
-        cat_nodes = [
-            node
-            for node in self.sorted_nodes
-            if isinstance(node, CategoricalHyperparameter)
-        ]
-        cat_sequences = {}
-        for node in cat_nodes:
-            values = node.parameter_range
-            reps = (n_samples + len(values) - 1) // len(values)
-            seq = values * reps
-            cat_sequences[node.name] = seq[:n_samples]
-
-        samples = []
-        for i in range(n_samples):
-            sample = {}
-            sobol_idx = 0
-
-            for node in self.sorted_nodes:
-                if not node.is_active(sample):
-                    continue
-
-                if isinstance(node, CategoricalHyperparameter):
-                    sample[node.name] = cat_sequences[node.name][i]
-                else:
-                    u = sobol_seq[i, sobol_idx]
-                    sample[node.name] = node.sample_from_unit(u)
-                    sobol_idx += 1
-
-            samples.append(sample)
-
-        return samples
 
     def _uniform_grid(self, n_samples: int) -> list[dict[str, Any]]:
         """Generates a *uniform* grid when all hyperparameters are independent

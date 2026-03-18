@@ -1,7 +1,7 @@
 import torch
 
 from .fcn import _construct_fc_layers
-from ..base import AlgorithmNode, AlgorithmState, AlgorithmAttributes
+from ..base import AlgorithmAttributes
 from ...nodes.base import Port
 from ...data.datasets.base import DataSet
 from ...config.variables import Variable

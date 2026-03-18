@@ -1,5 +1,4 @@
 from .base import Pipeline
-from ..algorithms.base import AlgorithmNode, AlgorithmAttributes
 from ..constraints.metric_constraint import MetricConstraint, MSEConstraint
 from ..data.datasets.base import DataSet
 from ..nodes.operations.slice_nodes import SliceNode
@@ -13,7 +12,7 @@ class MSEDataPipeline(Pipeline):
     def __init__(
         self,
         dataset: DataSet,
-        algorithm: AlgorithmNode,
+        algorithm,
         constraint: MetricConstraint | None = None,
         apply_normalization: bool = True,
         name="MSEDataPipeline",

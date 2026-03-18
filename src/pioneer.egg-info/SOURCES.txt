@@ -10,6 +10,7 @@ src/pioneer/algorithms/__init__.py
 src/pioneer/algorithms/base.py
 src/pioneer/algorithms/implementation.py
 src/pioneer/algorithms/tensorflow_fcn.py
+src/pioneer/algorithms/building_blocks/__init__.py
 src/pioneer/algorithms/building_blocks/activation_functions.py
 src/pioneer/algorithms/building_blocks/linear.py
 src/pioneer/algorithms/dl_models/fcn.py

@@ -7,7 +7,7 @@ from ..optim.trainer.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )
-
+from .implementation import Implementation, DEFAULT_DL_IMPLEMENTATION
 
 from ..nodes.base import Node, InputPort, NodeState, OutputPort
 from ..pipelines.base import Graph
@@ -108,7 +108,7 @@ class LayerNode(Node):
     def __init__(
         self,
         name: str = "LayerNode",
-        backend: Backend = DEFAULT_DL_BACKEND,
+        backend: Implementation = DEFAULT_DL_IMPLEMENTATION,
         state: NodeState = NodeState.FIXED,
     ):
         """Initializes the unary node with a single input and output port.
@@ -137,7 +137,7 @@ class LayerNode(Node):
             raise NotImplementedError(
                 f"Backend {self.backend} is not supported for {self.name}."
             )
-        return type(self).existing_implementations[self.backend]()
+        return type(self).existing_implementations[self.backend]
 
     @property
     def trainable_parameters(self):

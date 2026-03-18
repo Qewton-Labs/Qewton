@@ -1,6 +1,6 @@
 import torch
 
-from ..base import AlgorithmNode, AlgorithmState, AlgorithmAttributes
+from ..base import AlgorithmAttributes
 from ...config.variables import Variable
 from ...optim.hyperparameter.number_hyperparameter import (
     HyperParameter,

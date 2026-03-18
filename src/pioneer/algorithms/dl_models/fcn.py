@@ -1,6 +1,8 @@
 from ..building_blocks.linear import Linear
 from ..building_blocks.activation_functions import ActivationFunction, ReLU
 from ...pipelines.base import SequentialGraph
+from ..base import GraphNode
+from ..implementation import DEFAULT_DL_IMPLEMENTATION
 
 
 class FCN(GraphNode):

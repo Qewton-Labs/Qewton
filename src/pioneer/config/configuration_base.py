@@ -8,6 +8,100 @@ from .variables import Variable
 
 
 class DataConfiguration:
+    def __init__(
+        self,
+        axes: list[Axes | EllipsisType],
+        dtypes: list[tuple[type, int] | EllipsisType],
+    ):
+        """
+        Example:
+        self.axes = [batch_axis, object_axis, feature_axis]
+        self.dtypes = [(list, 1), (dict, 1), (torch.tensor, (2, 5))]
+        """
+        self.axes = axes
+        self.dtypes = dtypes
+
+        # check consistency of axes and dtypes
+        n_dtype_axes = (
+            None
+            if any(isinstance(dtype, EllipsisType) for dtype in self.dtypes)
+            else sum(dtype[1] for dtype in self.dtypes)
+        )
+        assert (
+            n_dtype_axes == self.n_axes
+        ), "Number of axes implied by dtypes must match number of axes in configuration"
+
+    def from_data(data) -> DataConfiguration:
+        raise NotImplementedError(
+            "TODO: implement this method to automatically infer configuration from data"
+        )
+
+    @property
+    def n_axes(self):
+        if any(isinstance(axis, EllipsisType) for axis in self.axes):
+            return None
+        return sum(len(axis.shape) for axis in self.axes)
+
+    def _get_axes(self, axis_type):
+        c = 0
+        out = []
+        for axis in self.axes:
+            if isinstance(axis, axis_type):
+                out.append((c, axis))
+            c += len(axis.shape)
+        return out
+
+    @property
+    def batch_axes(self):
+        return self._get_axes(BatchAxes)
+
+    @property
+    def feature_axis(self):
+        axis = self._get_axes(FeatureAxes)
+        assert len(axis) <= 1, "Multiple feature axes not supported"
+        return axis[0]
+
+    @property
+    def geometry_axes(self):
+        return self._get_axes(GeometryAxes)
+
+    def specify_backend(self, implementation):
+        pass
+
+
+# three general types of axes
+
+
+class Axes:
+    @property
+    def shape(self):
+        raise NotImplementedError
+
+
+class BatchAxes(Axes):
+    def __init__(self, shape=(None,)):
+        self.shape = shape
+
+
+class GeometryAxes(Axes):
+    def __init__(self, geometry):
+        self.geometry = geometry
+
+    @property
+    def shape(self):
+        return self.geometry.dim
+
+
+class FeatureAxes(Axes):
+    def __init__(self, variables: Variable):  # or space?
+        self.variables = variables
+
+    @property
+    def shape(self):
+        return self.variables.dim
+
+
+class DataConfiguration:
     """
     sets the basic type (numpy array, torch tensor etc) and shape of the data,
     and also collections of these will be used to check compatibility of the algorithms
