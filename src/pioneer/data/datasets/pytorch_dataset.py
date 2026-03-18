@@ -1,7 +1,7 @@
 from __future__ import annotations
 import torch
 
-from pioneer.config.configuration_base import DataConfiguration
+from ...config.configuration_base import DataConfiguration
 from ...optim.hyperparameter.number_hyperparameter import (
     DiscreteHyperparameter,
 )

@@ -50,7 +50,8 @@ disable = [
   "fixme",
   "too-few-public-methods",
   "E0402",
-  "R0902"
+  "R0902",
+  "C0415",
 ]
 
 [tool.pylint.format]

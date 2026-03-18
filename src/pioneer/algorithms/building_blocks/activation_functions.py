@@ -1,7 +1,6 @@
-from pioneer.config.backend import DEFAULT_DL_BACKEND, TorchBackend
-from .base import LayerNode
-from .implementation import TorchImplementation
-from ..nodes.base import NodeState
+from ..base import LayerNode
+from ..implementation import DEFAULT_DL_IMPLEMENTATION, TorchImplementation
+from ...nodes.base import NodeState
 
 
 class ActivationFunction(LayerNode):
@@ -9,7 +8,7 @@ class ActivationFunction(LayerNode):
     algorithm that is applied element-wise to the input data.
     """
 
-    def __init__(self, name, backend=DEFAULT_DL_BACKEND):
+    def __init__(self, name, backend=DEFAULT_DL_IMPLEMENTATION):
         super(ActivationFunction, self).__init__(
             name=name, backend=backend, state=NodeState.FIXED
         )
@@ -30,9 +29,9 @@ class TorchReLU(TorchImplementation):
 class ReLU(ActivationFunction):
     """General ReLU Class."""
 
-    existing_implementations = {TorchBackend: TorchReLU}
+    existing_implementations = {TorchImplementation: TorchReLU}
 
-    def __init__(self, name="ReLU", backend=DEFAULT_DL_BACKEND):
+    def __init__(self, name="ReLU", backend=DEFAULT_DL_IMPLEMENTATION):
         super(ReLU, self).__init__(name=name, backend=backend)
 
 
@@ -48,7 +47,25 @@ class TorchTanh(TorchImplementation):
 class Tanh(ActivationFunction):
     """General Tanh Class."""
 
-    existing_implementations = {TorchBackend: TorchTanh}
+    existing_implementations = {TorchImplementation: TorchTanh}
 
-    def __init__(self, name="Tanh", backend=DEFAULT_DL_BACKEND):
+    def __init__(self, name="Tanh", backend=DEFAULT_DL_IMPLEMENTATION):
         super(Tanh, self).__init__(name=name, backend=backend)
+
+
+class TorchSigmoid(TorchImplementation):
+    """Implementation of Sigmoid Activation in PyTorch backend."""
+
+    def __init__(self):
+        from torch.nn import Sigmoid as TSigmoid
+
+        super().__init__(TSigmoid)
+
+
+class Sigmoid(ActivationFunction):
+    """General Sigmoid Class."""
+
+    existing_implementations = {TorchImplementation: TorchSigmoid}
+
+    def __init__(self, name="Sigmoid", backend=DEFAULT_DL_IMPLEMENTATION):
+        super(Sigmoid, self).__init__(name=name, backend=backend)

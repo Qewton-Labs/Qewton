@@ -2,7 +2,7 @@ from typing import Any, Callable
 from itertools import product
 import math
 
-from pioneer.optim.trainer.base import Trainer
+from ...optim.trainer.base import Trainer
 
 
 from .base import Tuner

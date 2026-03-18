@@ -2,9 +2,8 @@ import warnings
 from enum import Enum, auto
 from typing import Any
 
-from pioneer.config.backend import DEFAULT_DL_BACKEND, TorchBackend, Backend
-from pioneer.config.configuration_base import DataConfiguration
-from pioneer.optim.trainer.trainable_parameters import (
+from ..config.configuration_base import DataConfiguration
+from ..optim.trainer.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )
@@ -124,7 +123,7 @@ class LayerNode(Node):
         """
         super().__init__(name=name, state=state)
         self.backend = backend
-        self.implementation = self.get_implementation()
+        self.implementation = self.set_implementation()
         self._input_ports = [InputPort(DataConfiguration(), self, "input")]
         self._output_ports = [OutputPort(DataConfiguration(), self, "output")]
 
