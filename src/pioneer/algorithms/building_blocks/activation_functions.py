@@ -12,8 +12,8 @@ class ActivationFunction(LayerNode):
         super(ActivationFunction, self).__init__(
             name=name, backend=backend, state=NodeState.FIXED
         )
-        self._input_ports[0].data_config.specify_backend(backend)
-        self._output_ports[0].data_config.specify_backend(backend)
+        self._input_ports[0].data_configuration.specify_backend(backend)
+        self._output_ports[0].data_configuration.specify_backend(backend)
         self.implementation_instance = self.implementation()
 
 
@@ -23,7 +23,7 @@ class TorchReLU(TorchImplementation):
     def __init__(self):
         from torch.nn import ReLU as TReLU
 
-        super().__init__(TReLU)
+        super().__init__(TReLU())
 
 
 class ReLU(ActivationFunction):
@@ -41,7 +41,7 @@ class TorchTanh(TorchImplementation):
     def __init__(self):
         from torch.nn import Tanh as TTanh
 
-        super().__init__(TTanh)
+        super().__init__(TTanh())
 
 
 class Tanh(ActivationFunction):
@@ -59,7 +59,7 @@ class TorchSigmoid(TorchImplementation):
     def __init__(self):
         from torch.nn import Sigmoid as TSigmoid
 
-        super().__init__(TSigmoid)
+        super().__init__(TSigmoid())
 
 
 class Sigmoid(ActivationFunction):

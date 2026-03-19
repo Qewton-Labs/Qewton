@@ -9,3 +9,6 @@ fcn = pioneer.algorithms.FCN(
     bias=True,
     activation=pioneer.building_blocks.ReLU,
 )
+
+X = torch.zeros((100, 10))
+print(fcn(input=X))

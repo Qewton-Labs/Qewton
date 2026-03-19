@@ -28,22 +28,22 @@ class _TrainableParameterBase(ABC):
 class TrainableParameters(_TrainableParameterBase):
     """A class to represent trainable parameters of a node."""
 
-    def __init__(self, name, parameters, **kwargs):
-        self._name = name
+    def __init__(self, node_id: int, parameters, **kwargs):
+        self._node_id = node_id
         self._parameters = parameters
         self._options = kwargs
 
     @classmethod
-    def create_empty(cls) -> TrainableParameters:
-        return cls("", None)
+    def create_empty(cls, node_id: int) -> TrainableParameters:
+        return cls(node_id, None)
 
     @property
     def empty(self) -> bool:
         return self._parameters is None
 
     @property
-    def name(self) -> str:
-        return self._name
+    def node_id(self) -> int:
+        return self._node_id
 
     @property
     def parameters(self):
@@ -64,16 +64,13 @@ class TrainableParametersCollection(_TrainableParameterBase):
 
     def __init__(self, *groups: _TrainableParameterBase):
         self._groups: list[TrainableParameters] = []
-        # save names as an extra set for faster look up of duplicates
-        self._names: set[str] = set()
         self.extend(groups)
 
     def add(self, param: TrainableParameters):
-        if param.empty or param.name in self._names:
+        if param.empty or param.node_id in [p.node_id for p in self._groups]:
             return
 
         self._groups.append(param)
-        self._names.add(param.name)
 
     def extend(self, groups: _TrainableParameterBase | Iterable[_TrainableParameterBase]):
         if isinstance(groups, _TrainableParameterBase):

@@ -1,5 +1,4 @@
 from typing import Iterable
-from ..optim.trainer.trainable_parameters import _TrainableParameterBase
 
 
 class Implementation:
@@ -33,12 +32,12 @@ class Implementation:
         )
 
     @property
-    def trainable_parameters(self) -> _TrainableParameterBase:
+    def trainable_parameters(self) -> Iterable:
         """Returns the trainable parameters of this node, which can be used for
         training the underlying algorithm (e.g. a neural network).
 
         Returns:
-            _TrainableParameterBase: trainable parameters
+            Iterable of the trainable parameters
         """
         raise NotImplementedError(
             "The trainable_parameters property must be implemented by subclasses \
@@ -51,7 +50,7 @@ class Implementation:
         Args:
             device: the device to move the underlying algorithm to.
         """
-        pass  # By default, do nothing. Subclasses can override this if needed.
+        # By default, do nothing. Subclasses can override this if needed.
 
 
 class TorchImplementation(Implementation):
@@ -153,7 +152,7 @@ class TensorflowImplementation(Implementation):
 
 
 DL_IMPLEMENTATION_HIERARCHY = [TorchImplementation, TensorflowImplementation]
-# TODO: could be slow due to unneccessary imports
+# TODO: could be slow due to unnecessary imports
 DEFAULT_DL_IMPLEMENTATION = None
 for implementation in DL_IMPLEMENTATION_HIERARCHY:
     if implementation.exists():

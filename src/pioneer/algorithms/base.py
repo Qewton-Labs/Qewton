@@ -1,6 +1,4 @@
-import warnings
 from enum import Enum, auto
-from typing import Any
 
 from ..config.configuration_base import DataConfiguration
 from ..optim.trainer.trainable_parameters import (
@@ -87,6 +85,9 @@ class GraphNode(Node):
         self.graph.setup()
 
     def run(self):
+        for i, port in enumerate(self.graph_input_ports):
+            self._inner_input_ports[i].set_manual_value(port.value)
+
         self.graph.run(self.mode)
         # Write the inner information into the own output ports
         for i, out_port in enumerate(self._inner_output_ports):
@@ -103,7 +104,7 @@ class LayerNode(Node):
     algorithm by calling the respective backend.
     """
 
-    existing_implementations = None  # type: dict[BackendType, Implementation]
+    existing_implementations: dict[type[Implementation], type[Implementation]]
 
     def __init__(
         self,
@@ -124,11 +125,14 @@ class LayerNode(Node):
         super().__init__(name=name, state=state)
         self.backend = backend
         self.implementation = self.set_implementation()
-        self._input_ports = [InputPort(DataConfiguration(), self, "input")]
-        self._output_ports = [OutputPort(DataConfiguration(), self, "output")]
+        self.implementation_instance: Implementation
+        self._input_ports = [InputPort(DataConfiguration([...], [...]), self, "input")]
+        self._output_ports = [OutputPort(DataConfiguration([...], [...]), self, "output")]
 
     def run(self):
-        self._output_ports[0].set_value(self.implementation(self._input_ports[0].value))
+        self._output_ports[0].set_value(
+            self.implementation_instance(self._input_ports[0].value)
+        )
 
     def set_implementation(self):
         if type(self).existing_implementations is None:

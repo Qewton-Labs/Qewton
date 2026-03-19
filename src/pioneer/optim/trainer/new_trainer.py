@@ -74,7 +74,7 @@ class TrainerBase:
         pass
 
 
-class CallbackBase:
+class Callback:
     """
     Base class for callbacks. Override the hooks you need.
     """

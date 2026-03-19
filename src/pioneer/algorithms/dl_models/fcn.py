@@ -1,6 +1,7 @@
 from ..building_blocks.linear import Linear
 from ..building_blocks.activation_functions import ActivationFunction, ReLU
 from ...pipelines.base import SequentialGraph
+from ...nodes.base import Node
 from ..base import GraphNode
 from ..implementation import DEFAULT_DL_IMPLEMENTATION
 
@@ -27,7 +28,7 @@ class FCN(GraphNode):
         self.activation = activation
         self.backend = backend
         self.setup()
-        super(FCN, self).__init__(
+        super().__init__(
             name=name,
             graph=self.graph,
             input_ports=self.graph.sorted_nodes[0].input_ports,
@@ -35,7 +36,7 @@ class FCN(GraphNode):
         )
 
     def setup(self):
-        nodes = []
+        nodes: list[Node] = []
         for i in range(self.n_hidden_layers):
             nodes.append(
                 Linear(
@@ -51,4 +52,4 @@ class FCN(GraphNode):
             )
             if i < self.n_hidden_layers - 1:  # No activation after the last layer
                 nodes.append(self.activation(backend=self.backend))
-        self.graph = SequentialGraph(nodes)
+        self.graph = SequentialGraph(*nodes)

@@ -31,7 +31,7 @@ class DataConfiguration:
             n_dtype_axes == self.n_axes
         ), "Number of axes implied by dtypes must match number of axes in configuration"
 
-    def from_data(data) -> DataConfiguration:
+    def from_data(self, data) -> DataConfiguration:
         raise NotImplementedError(
             "TODO: implement this method to automatically infer configuration from data"
         )
@@ -66,7 +66,12 @@ class DataConfiguration:
         return self._get_axes(GeometryAxes)
 
     def specify_backend(self, implementation):
+        # TODO
         pass
+
+    def fits(self, other_config: DataConfiguration) -> bool:
+        # TODO
+        return True
 
 
 # three general types of axes
@@ -101,212 +106,212 @@ class FeatureAxes(Axes):
         return self.variables.dim
 
 
-class DataConfiguration:
-    """
-    sets the basic type (numpy array, torch tensor etc) and shape of the data,
-    and also collections of these will be used to check compatibility of the algorithms
-    also include variables and their names?
+# class DataConfiguration:
+#     """
+#     sets the basic type (numpy array, torch tensor etc) and shape of the data,
+#     and also collections of these will be used to check compatibility of the algorithms
+#     also include variables and their names?
 
-    -> later implement several configuration conversion methods (and visualization),
-    it should be possible to this during the execution of an algorithm as well as offline
-    ->  also suggest automatic conversion methods between compatible configurations
+#     -> later implement several configuration conversion methods (and visualization),
+#     it should be possible to this during the execution of an algorithm as well as offline
+#     ->  also suggest automatic conversion methods between compatible configurations
 
-    TODO: how to handle dictionaries, lists etc... nested structures?
-    -> Best to do this in the dataset class? Since here we only specify the general
-    shape of the data (axis.size == None, means variable size along that axis).
+#     TODO: how to handle dictionaries, lists etc... nested structures?
+#     -> Best to do this in the dataset class? Since here we only specify the general
+#     shape of the data (axis.size == None, means variable size along that axis).
 
-    """
+#     """
 
-    def __init__(
-        self,
-        dtype,
-        axes: list[Axis | EllipsisType],
-        feature_axis: FeatureAxis | EllipsisType,
-        connection_to_axes: Mapping[Variable, Sequence[Axis]] | None = None,
-    ):
-        assert (
-            feature_axis is ... or feature_axis in axes
-        ), "Feature axis must be one of the axes."
-        self.dtype = dtype  # TODO: Currently None if type does not matter?
-        self.axes = axes
-        self.feature_axis = feature_axis
-        self.connection_to_axes = (
-            dict(connection_to_axes) if connection_to_axes is not None else {}
-        )
+#     def __init__(
+#         self,
+#         dtype,
+#         axes: list[Axis | EllipsisType],
+#         feature_axis: FeatureAxis | EllipsisType,
+#         connection_to_axes: Mapping[Variable, Sequence[Axis]] | None = None,
+#     ):
+#         assert (
+#             feature_axis is ... or feature_axis in axes
+#         ), "Feature axis must be one of the axes."
+#         self.dtype = dtype  # TODO: Currently None if type does not matter?
+#         self.axes = axes
+#         self.feature_axis = feature_axis
+#         self.connection_to_axes = (
+#             dict(connection_to_axes) if connection_to_axes is not None else {}
+#         )
 
-        self._batch_axis_idx: int | None = None
-        self._feature_axis_idx: int | None = None
+#         self._batch_axis_idx: int | None = None
+#         self._feature_axis_idx: int | None = None
 
-    @property
-    def batch_axis_idx(self) -> int:
-        if self._batch_axis_idx is not None:
-            return self._batch_axis_idx
-        self._batch_axis_idx = self._search_axis(BatchAxis)
-        return self._batch_axis_idx
+#     @property
+#     def batch_axis_idx(self) -> int:
+#         if self._batch_axis_idx is not None:
+#             return self._batch_axis_idx
+#         self._batch_axis_idx = self._search_axis(BatchAxis)
+#         return self._batch_axis_idx
 
-    @property
-    def feature_axis_idx(self) -> int:
-        if self._feature_axis_idx is not None:
-            return self._feature_axis_idx
-        self._feature_axis_idx = self._search_axis(FeatureAxis)
-        return self._feature_axis_idx
+#     @property
+#     def feature_axis_idx(self) -> int:
+#         if self._feature_axis_idx is not None:
+#             return self._feature_axis_idx
+#         self._feature_axis_idx = self._search_axis(FeatureAxis)
+#         return self._feature_axis_idx
 
-    def _search_axis(self, axis_type):
-        ellipsis_seen = False
-        for i, axis in enumerate(self.axes):
-            if isinstance(axis, EllipsisType):
-                ellipsis_seen = True
-                break
-            if isinstance(axis, axis_type):
-                return i
-        # check if we find axis backwards:
-        for i, axis in enumerate(reversed(self.axes)):
-            if isinstance(axis, axis_type):
-                return -(i + 1)
+#     def _search_axis(self, axis_type):
+#         ellipsis_seen = False
+#         for i, axis in enumerate(self.axes):
+#             if isinstance(axis, EllipsisType):
+#                 ellipsis_seen = True
+#                 break
+#             if isinstance(axis, axis_type):
+#                 return i
+#         # check if we find axis backwards:
+#         for i, axis in enumerate(reversed(self.axes)):
+#             if isinstance(axis, axis_type):
+#                 return -(i + 1)
 
-        if ellipsis_seen:
-            raise RuntimeError(
-                "Can not find index for configurations containing ellipsis!"
-            )
-        raise ValueError(f"Data configuration has no {axis_type}.")
+#         if ellipsis_seen:
+#             raise RuntimeError(
+#                 "Can not find index for configurations containing ellipsis!"
+#             )
+#         raise ValueError(f"Data configuration has no {axis_type}.")
 
-    def fits(self, other_config: DataConfiguration) -> bool:
-        """Checks if another data configuration is compatible with this one.
-        Meaning that the other configuration could be a specialization of this one,
-        where some ellipsis are replaced by concrete axes or where the variables
-        in the feature axis have been reduced.
-        """
-        idx_self = 0
-        idx_other = 0
-        ellipsis_at_end = False
-        while idx_self < len(self.axes) and idx_other < len(other_config.axes):
-            if self.axes[idx_self] is ...:
-                # Skip ellipsis
-                idx_self += 1
-                if idx_self == len(self.axes):
-                    # Trailing ellipsis matches everything remaining
-                    ellipsis_at_end = True
-                    break
+#     def fits(self, other_config: DataConfiguration) -> bool:
+#         """Checks if another data configuration is compatible with this one.
+#         Meaning that the other configuration could be a specialization of this one,
+#         where some ellipsis are replaced by concrete axes or where the variables
+#         in the feature axis have been reduced.
+#         """
+#         idx_self = 0
+#         idx_other = 0
+#         ellipsis_at_end = False
+#         while idx_self < len(self.axes) and idx_other < len(other_config.axes):
+#             if self.axes[idx_self] is ...:
+#                 # Skip ellipsis
+#                 idx_self += 1
+#                 if idx_self == len(self.axes):
+#                     # Trailing ellipsis matches everything remaining
+#                     ellipsis_at_end = True
+#                     break
 
-                # Advance other_config.axes until we find the next self.axes element
-                while (
-                    idx_other < len(other_config.axes)
-                    and other_config.axes[idx_other] != self.axes[idx_self]
-                ):
-                    idx_other += 1
-            else:
-                if other_config.axes[idx_other] != self.axes[idx_self]:
-                    return False
-                idx_self += 1
-                idx_other += 1
+#                 # Advance other_config.axes until we find the next self.axes element
+#                 while (
+#                     idx_other < len(other_config.axes)
+#                     and other_config.axes[idx_other] != self.axes[idx_self]
+#                 ):
+#                     idx_other += 1
+#             else:
+#                 if other_config.axes[idx_other] != self.axes[idx_self]:
+#                     return False
+#                 idx_self += 1
+#                 idx_other += 1
 
-        # Consume remaining ellipsis in self.axes
-        if not ellipsis_at_end:
-            while idx_self < len(self.axes) and (
-                self.axes[idx_self] is ... or idx_self == len(self.axes) - 1
-            ):
-                idx_self += 1
+#         # Consume remaining ellipsis in self.axes
+#         if not ellipsis_at_end:
+#             while idx_self < len(self.axes) and (
+#                 self.axes[idx_self] is ... or idx_self == len(self.axes) - 1
+#             ):
+#                 idx_self += 1
 
-            if not (idx_self == len(self.axes) and idx_other == len(other_config.axes)):
-                return False
+#             if not (idx_self == len(self.axes) and idx_other == len(other_config.axes)):
+#                 return False
 
-        # Check if variables in feature axis are compatible (or subset)
-        if (
-            other_config.feature_axis is ...
-            or other_config.feature_axis.variables is None
-            or self.feature_axis is ...
-            or self.feature_axis.variables is None
-        ):
-            return True
-        return other_config.feature_axis.variables in self.feature_axis.variables
+#         # Check if variables in feature axis are compatible (or subset)
+#         if (
+#             other_config.feature_axis is ...
+#             or other_config.feature_axis.variables is None
+#             or self.feature_axis is ...
+#             or self.feature_axis.variables is None
+#         ):
+#             return True
+#         return other_config.feature_axis.variables in self.feature_axis.variables
 
-    def __getitem__(self, key: int | slice | Variable) -> DataConfiguration:
-        """Slice the configuration by axis index/indices or by Variables,
-        to quickly obtain a new configuration.
-        """
-        if isinstance(key, Variable):
-            if self.feature_axis is ... or self.feature_axis.variables is None:
-                raise ValueError(
-                    "Cannot slice by Variable when feature_axis is Ellipsis or "
-                    "has no variables."
-                )
-            assert (
-                key in self.feature_axis.variables
-            ), "Variable slice must be a subset of the feature axis variables"
-            # Create new axis with reduced variables
-            new_feature_axis = FeatureAxis(size=key.dim, variables=key)
-            new_axes = copy.deepcopy(self.axes)
-            new_axes[self.feature_axis_idx] = new_feature_axis
-            return type(self)(
-                self.dtype, new_axes, new_feature_axis, self.connection_to_axes
-            )
+#     def __getitem__(self, key: int | slice | Variable) -> DataConfiguration:
+#         """Slice the configuration by axis index/indices or by Variables,
+#         to quickly obtain a new configuration.
+#         """
+#         if isinstance(key, Variable):
+#             if self.feature_axis is ... or self.feature_axis.variables is None:
+#                 raise ValueError(
+#                     "Cannot slice by Variable when feature_axis is Ellipsis or "
+#                     "has no variables."
+#                 )
+#             assert (
+#                 key in self.feature_axis.variables
+#             ), "Variable slice must be a subset of the feature axis variables"
+#             # Create new axis with reduced variables
+#             new_feature_axis = FeatureAxis(size=key.dim, variables=key)
+#             new_axes = copy.deepcopy(self.axes)
+#             new_axes[self.feature_axis_idx] = new_feature_axis
+#             return type(self)(
+#                 self.dtype, new_axes, new_feature_axis, self.connection_to_axes
+#             )
 
-        if isinstance(key, (int, slice)):
-            raw = self.axes[key]
+#         if isinstance(key, (int, slice)):
+#             raw = self.axes[key]
 
-            sliced_axes: list[Axis | EllipsisType]
-            if isinstance(raw, list):
-                sliced_axes = raw
-            else:
-                sliced_axes = [raw]
+#             sliced_axes: list[Axis | EllipsisType]
+#             if isinstance(raw, list):
+#                 sliced_axes = raw
+#             else:
+#                 sliced_axes = [raw]
 
-            if len(sliced_axes) == 0:
-                raise ValueError("Slice results in empty axes list")
+#             if len(sliced_axes) == 0:
+#                 raise ValueError("Slice results in empty axes list")
 
-            if self.feature_axis in sliced_axes:
-                feature_axis = self.feature_axis
-            else:
-                feature_axis = ...
+#             if self.feature_axis in sliced_axes:
+#                 feature_axis = self.feature_axis
+#             else:
+#                 feature_axis = ...
 
-            return type(self)(
-                self.dtype, sliced_axes, feature_axis, self.connection_to_axes
-            )
+#             return type(self)(
+#                 self.dtype, sliced_axes, feature_axis, self.connection_to_axes
+#             )
 
-        raise TypeError(f"Unsupported slicing type: {type(key)}")
+#         raise TypeError(f"Unsupported slicing type: {type(key)}")
 
-    def __len__(self) -> int:
-        return len(self.axes)
+#     def __len__(self) -> int:
+#         return len(self.axes)
 
-    def __eq__(self, other_config: object) -> bool:
-        if not isinstance(other_config, DataConfiguration):
-            return False
-        if len(other_config.axes) != len(self.axes):
-            return False
-        if self.dtype != other_config.dtype:
-            if self.dtype is not None and other_config.dtype is not None:
-                return False
-        for i, other_axis in enumerate(other_config.axes):
-            if not other_axis == self.axes[i]:
-                return False
-        return True
+#     def __eq__(self, other_config: object) -> bool:
+#         if not isinstance(other_config, DataConfiguration):
+#             return False
+#         if len(other_config.axes) != len(self.axes):
+#             return False
+#         if self.dtype != other_config.dtype:
+#             if self.dtype is not None and other_config.dtype is not None:
+#                 return False
+#         for i, other_axis in enumerate(other_config.axes):
+#             if not other_axis == self.axes[i]:
+#                 return False
+#         return True
 
-    def axes_of(self, var: Variable) -> list[Axis]:
-        return list(self.connection_to_axes.get(var, []))
+#     def axes_of(self, var: Variable) -> list[Axis]:
+#         return list(self.connection_to_axes.get(var, []))
 
-    def variables_on_axis(self, axis: Axis) -> Variable | None:
-        for v, axes in self.connection_to_axes.items():
-            if axis in axes:
-                return v
-        return None
+#     def variables_on_axis(self, axis: Axis) -> Variable | None:
+#         for v, axes in self.connection_to_axes.items():
+#             if axis in axes:
+#                 return v
+#         return None
 
-    def map_variable_to_axes(self, var: Variable, axes: list[Axis]):
-        for axis in axes:
-            assert axis in self.axes, "All axes must be part of the configuration."
-        self.connection_to_axes[var] = axes
+#     def map_variable_to_axes(self, var: Variable, axes: list[Axis]):
+#         for axis in axes:
+#             assert axis in self.axes, "All axes must be part of the configuration."
+#         self.connection_to_axes[var] = axes
 
-    def get_axis_indices_of_variables(self, var: Variable) -> list[int]:
-        if self.feature_axis is ... or self.feature_axis.variables is None:
-            return []
-        index_list: list[int] = []
-        counter: int = 0
-        for key, dim in self.feature_axis.variables.items():
-            if key in var:
-                for i in range(dim):
-                    index_list.append(counter + i)
-            counter += dim
-        return index_list
+#     def get_axis_indices_of_variables(self, var: Variable) -> list[int]:
+#         if self.feature_axis is ... or self.feature_axis.variables is None:
+#             return []
+#         index_list: list[int] = []
+#         counter: int = 0
+#         for key, dim in self.feature_axis.variables.items():
+#             if key in var:
+#                 for i in range(dim):
+#                     index_list.append(counter + i)
+#             counter += dim
+#         return index_list
 
-    def slice_axis(self, axis_idx: int, slice_values):
-        slices = [slice(None)] * len(self)
-        slices[axis_idx] = slice_values
-        return tuple(slices)
+#     def slice_axis(self, axis_idx: int, slice_values):
+#         slices = [slice(None)] * len(self)
+#         slices[axis_idx] = slice_values
+#         return tuple(slices)

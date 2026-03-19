@@ -138,6 +138,8 @@ class Node(ABC):
     TODO: How about save and load methods?
     """
 
+    _node_id_counter = 0
+
     def __init__(self, name: str = "Node", state: NodeState = NodeState.FIXED) -> None:
         """
         Args:
@@ -153,6 +155,9 @@ class Node(ABC):
 
         self._input_ports: list[InputPort] | None = None
         self._output_ports: list[OutputPort] | None = None
+
+        self.node_id = type(self)._node_id_counter
+        type(self)._node_id_counter += 1
 
     def setup(self) -> None:
         """Creates the underlying algorithm instance (e.g. creates the
@@ -225,7 +230,7 @@ class Node(ABC):
     @property
     def trainable_parameters(self) -> _TrainableParameterBase:
         """Returns trainable parameters of this node."""
-        return TrainableParameters.create_empty()
+        return TrainableParameters.create_empty(self.node_id)
 
     @property
     def _trainable_parameters(self) -> _TrainableParameterBase:
@@ -235,7 +240,7 @@ class Node(ABC):
         return (
             self.trainable_parameters
             if self.state != NodeState.FIXED
-            else TrainableParameters.create_empty()
+            else TrainableParameters.create_empty(self.node_id)
         )
 
     def to(self, device):
