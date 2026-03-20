@@ -2,11 +2,11 @@ from typing import Any, Callable
 from abc import abstractmethod
 
 from ...config import DataConfiguration
-from ...optim.hyperparameter.base import HyperParameter
-from ...optim.hyperparameter.number_hyperparameter import (
+from ...optim.parameters.hyperparameter_base import HyperParameter
+from ...optim.parameters.number_hyperparameter import (
     DiscreteHyperparameter,
 )
-from ...optim.hyperparameter.categorical_hyperparameter import (
+from ...optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
 from ...config.variables import Variable

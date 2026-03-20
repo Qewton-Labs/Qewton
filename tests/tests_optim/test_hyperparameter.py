@@ -2,7 +2,7 @@ import math
 import random
 import pytest
 
-from src.pioneer.optim.hyperparameter.base import (
+from pioneer.optim.parameters.hyperparameter_base import (
     HyperParameter,
     HyperParameterState,
     HyperParameterScale,

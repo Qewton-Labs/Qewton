@@ -6,7 +6,7 @@ from ...optim.trainer.base import Trainer
 
 
 from .base import Tuner
-from ..hyperparameter.categorical_hyperparameter import CategoricalHyperparameter
+from ..parameters.categorical_hyperparameter import CategoricalHyperparameter
 
 
 class GridSearchTuner(Tuner):

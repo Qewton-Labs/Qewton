@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..hyperparameter.base import HyperParameter
+from ..parameters.hyperparameter_base import HyperParameter
 
 
 class TrainingPhase:

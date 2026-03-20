@@ -8,10 +8,8 @@ class ActivationFunction(LayerNode):
     algorithm that is applied element-wise to the input data.
     """
 
-    def __init__(self, name, backend=DEFAULT_DL_IMPLEMENTATION):
-        super(ActivationFunction, self).__init__(
-            name=name, backend=backend, state=NodeState.FIXED
-        )
+    def __init__(self, name="Activation Functions", backend=DEFAULT_DL_IMPLEMENTATION):
+        super().__init__(name=name, backend=backend, state=NodeState.FIXED)
         self._input_ports[0].data_configuration.specify_backend(backend)
         self._output_ports[0].data_configuration.specify_backend(backend)
         self.implementation_instance = self.implementation()
@@ -32,7 +30,7 @@ class ReLU(ActivationFunction):
     existing_implementations = {TorchImplementation: TorchReLU}
 
     def __init__(self, name="ReLU", backend=DEFAULT_DL_IMPLEMENTATION):
-        super(ReLU, self).__init__(name=name, backend=backend)
+        super().__init__(name=name, backend=backend)
 
 
 class TorchTanh(TorchImplementation):
@@ -50,7 +48,7 @@ class Tanh(ActivationFunction):
     existing_implementations = {TorchImplementation: TorchTanh}
 
     def __init__(self, name="Tanh", backend=DEFAULT_DL_IMPLEMENTATION):
-        super(Tanh, self).__init__(name=name, backend=backend)
+        super().__init__(name=name, backend=backend)
 
 
 class TorchSigmoid(TorchImplementation):
@@ -68,4 +66,4 @@ class Sigmoid(ActivationFunction):
     existing_implementations = {TorchImplementation: TorchSigmoid}
 
     def __init__(self, name="Sigmoid", backend=DEFAULT_DL_IMPLEMENTATION):
-        super(Sigmoid, self).__init__(name=name, backend=backend)
+        super().__init__(name=name, backend=backend)

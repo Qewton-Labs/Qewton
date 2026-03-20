@@ -2,9 +2,9 @@ import warnings
 from typing import Any
 
 from ..base import EvaluationPhase
-from ..hyperparameter.base import HyperParameter
-from ..hyperparameter.categorical_hyperparameter import CategoricalHyperparameter
-from ..hyperparameter.number_hyperparameter import DiscreteHyperparameter
+from ..parameters.hyperparameter_base import HyperParameter
+from ..parameters.categorical_hyperparameter import CategoricalHyperparameter
+from ..parameters.number_hyperparameter import DiscreteHyperparameter
 from ...pipelines.base import Pipeline
 from ...nodes.base import Node
 from ...constraints.base import Constraint

@@ -1,6 +1,7 @@
 from ..base import LayerNode
 from ..implementation import TorchImplementation, DEFAULT_DL_IMPLEMENTATION
 from ...nodes.base import NodeState
+from ...optim.parameters.hyperparameter_base import HyperParameter
 
 
 class TorchLinear(TorchImplementation):
@@ -23,8 +24,8 @@ class Linear(LayerNode):
 
     def __init__(
         self,
-        in_neurons,
-        out_neurons,
+        in_neurons: int | HyperParameter,
+        out_neurons: int | HyperParameter,
         bias=True,
         name="linear",
         backend=DEFAULT_DL_IMPLEMENTATION,
@@ -34,17 +35,17 @@ class Linear(LayerNode):
         super().__init__(name=name, backend=backend, state=NodeState.FIXED)
         self._input_ports[0].data_configuration.specify_backend(backend)
         self._output_ports[0].data_configuration.specify_backend(backend)
-        self.in_neurons = in_neurons
-        self.out_neurons = out_neurons
+        self.in_neurons = HyperParameter.from_value(in_neurons, "In Neurons")
+        self.out_neurons = HyperParameter.from_value(out_neurons, "Out Neurons")
         self.bias = bias
         self.kwargs = kwargs
         self.setup()
 
     def setup(self):
         self.implementation_instance = self.implementation(
-            in_neurons=self.in_neurons,
-            out_neurons=self.out_neurons,
-            bias=self.bias,
+            in_neurons=self.in_neurons.value,  # type: ignore
+            out_neurons=self.out_neurons.value,  # type: ignore
+            bias=self.bias,  # type: ignore
             **self.kwargs,
         )
 

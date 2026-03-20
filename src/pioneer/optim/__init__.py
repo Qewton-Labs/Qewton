@@ -1,19 +1,19 @@
-from .hyperparameter.helpers import (
+from .parameters.helpers import (
     HyperParameterScale,
     HyperParameterState,
     HyperParameterCondition,
 )
 
-from .hyperparameter.base import HyperParameter
-from .hyperparameter.categorical_hyperparameter import (
+from .parameters.hyperparameter_base import HyperParameter
+from .parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
     BooleanHyperparameter,
 )
-from .hyperparameter.number_hyperparameter import (
+from .parameters.number_hyperparameter import (
     DiscreteHyperparameter,
     ContinuousHyperparameter,
 )
 
-from .hyperparameter.dag import HyperParameterDAG
+from .parameters.dag import HyperParameterDAG
 
 from .base import EvaluationPhase

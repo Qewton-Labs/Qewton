@@ -1,9 +1,9 @@
 import torch
 
 from ..base import EvaluationPhase
-from ..hyperparameter.base import HyperParameter
-from ..hyperparameter.categorical_hyperparameter import CategoricalHyperparameter
-from ..hyperparameter.number_hyperparameter import (
+from ..parameters.hyperparameter_base import HyperParameter
+from ..parameters.categorical_hyperparameter import CategoricalHyperparameter
+from ..parameters.number_hyperparameter import (
     DiscreteHyperparameter,
     ContinuousHyperparameter,
 )

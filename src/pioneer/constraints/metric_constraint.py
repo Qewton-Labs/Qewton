@@ -1,9 +1,9 @@
 from ..config.configuration_base import DataConfiguration
-from ..optim.hyperparameter.categorical_hyperparameter import (
+from ..optim.parameters.categorical_hyperparameter import (
     HyperParameter,
     BooleanHyperparameter,
 )
-from ..optim.hyperparameter.number_hyperparameter import ContinuousHyperparameter
+from ..optim.parameters.number_hyperparameter import ContinuousHyperparameter
 from ..nodes.base import InputPort
 from .base import Constraint
 
