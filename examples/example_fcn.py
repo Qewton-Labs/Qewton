@@ -1,5 +1,6 @@
 import torch
 import pioneer
+import pioneer.algorithms.building_blocks as bb
 
 fcn = pioneer.algorithms.FCN(
     in_neurons=10,
@@ -10,5 +11,9 @@ fcn = pioneer.algorithms.FCN(
     activation=pioneer.building_blocks.ReLU,
 )
 
-X = torch.zeros((100, 10))
+X = 3.0 * torch.ones((10, 10))
 print(fcn(input=X))
+
+
+add_layer = bb.math.Add()
+print(add_layer(input1=X, input2=3.0))
