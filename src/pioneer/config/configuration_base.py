@@ -6,6 +6,9 @@ import copy
 from .axis import Axis, FeatureAxis, BatchAxis
 from .variables import Variable
 
+# define a special data config mismatch error
+class DataConfigMismatchError(ValueError):
+    pass
 
 class DataConfiguration:
     def __init__(
@@ -28,7 +31,7 @@ class DataConfiguration:
 
     @property
     def shape(self):
-        return tuple(axis.shape for axis in self.axes)
+        return tuple(axis.shape for axis in [dtype.axes for dtype in self.dtype_units])
 
     def _get_axes(self, axis_type):
         c = 0
@@ -43,7 +46,13 @@ class DataConfiguration:
     def __str__(
         self,
     ):  # nice and comprehensive string representation of the configuration
-        pass
+        type_ls = []
+        for dtype in self.dtype_units:
+            axes_ls = []
+            for axis in dtype.axes:
+                axes_ls.append([axis.name, axis.shape])
+            type_ls.append([dtype.dtype, axes_ls])
+        return str(type_ls)
 
     @property
     def batch_axes(self):
@@ -61,13 +70,23 @@ class DataConfiguration:
     def geometry_axes(self):
         return self._get_axes(GeometryAxes)
 
-    def specify_backend(self, implementation):
+    def specify_dtype(self, implementation):
         # TODO
         pass
 
+    def unify(self, other_config: DataConfiguration) -> DataConfiguration:
+        
+
     def fits(self, other_config: DataConfiguration) -> bool:
-        # TODO
-        return True
+        """Checks if two modules can be conneted, this does not necessarily mean
+        that one is a subconfig of the other, since different axes might be specified
+        or unspecified."""
+        try:
+            self.unify(other_config)
+            return True
+        except DataConfigMismatchError:
+            return False
+
 
 
 class DTypeUnit:
@@ -80,13 +99,88 @@ class DTypeUnit:
 class Axes:
     @property
     def shape(self):
-        raise NotImplementedError
+        return ...
+
+    @property
+    def name(self):
+        return "Axes"
+    
+    def shape_fits(self, other_axes, broadcast_singleton=False) -> bool:
+        try:
+            self.unify_shapes(self.shape, other_axes.shape, broadcast_singleton)
+            return True
+        except DataConfigMismatchError:
+            return False
+    
+    @classmethod
+    def unify_shapes(cls, shape1, shape2, broadcast_singleton=False):
+        matching_end = []
+        matching_start = []
+        remaining_middle1 = []
+        remaining_middle2 = []
+        for s1, s2 in zip(reversed(shape1), reversed(shape2)):
+            try:
+                unified_dim = cls.unify_dim(s1, s2, broadcast_singleton)
+                matching_end.append(unified_dim)
+            except DataConfigMismatchError:
+                break
+        matching_end.reverse()
+        if len(matching_end) == len(shape1) and len(matching_end) == len(shape2):
+            #  fully matched
+            return matching_end
+        for s1, s2 in zip(shape1, shape2):
+            try:
+                unified_dim = cls.unify_dim(s1, s2, broadcast_singleton)
+                matching_start.append(unified_dim)
+            except DataConfigMismatchError:
+                break
+        remaining_middle1 = shape1[len(matching_start) : len(shape1) - len(matching_end)]
+        remaining_middle2 = shape2[len(matching_start) : len(shape2) - len(matching_end)]
+        # now, the middle has to contain ellipsis at its start/end to be compatible,
+        # TODO
+        
+        return matching_start + matched_middle + matching_end
+        
+        
+    
+    def unify_dim(cls, dim1, dim2, broadcast_singleton=False):
+        if dim1 == dim2:
+            return dim1
+        if dim1 is None:
+            return dim2
+        if dim2 is None:
+            return dim1
+        if broadcast_singleton:
+            if dim1 == 1:
+                return dim2
+            elif dim2 == 1:
+                return dim1
+        raise DataConfigMismatchError(f"Cannot unify dimensions {dim1} and {dim2}.")
+    
+    @classmethod
+    def _split_ellipsis(cls, shape):
+        if Ellipsis not in shape:
+            return shape, False, []
+
+        # assume there is only one ellipsis
+        i = shape.index(Ellipsis)
+        if shape.count(Ellipsis) > 1:
+            raise ValueError("Shape can only contain one ellipsis.")
+        # return splitted version
+        return shape[:i], True, shape[i+1:]
 
 
 class BatchAxes(Axes):
     def __init__(self, shape=(None,)):
-        self.shape = shape
+        self._shape = shape
 
+    @property
+    def shape(self):
+        return self._shape
+
+    @property
+    def name(self):
+        return "BatchAxes"
 
 class GeometryAxes(Axes):
     def __init__(self, geometry):
@@ -96,6 +190,10 @@ class GeometryAxes(Axes):
     def shape(self):
         return self.geometry.shape  # might be flattened?
 
+    @property
+    def name(self):
+        return "GeometryAxes"
+
 
 class FeatureAxes(Axes):
     def __init__(self, variables: Variable | EllipsisType):
@@ -104,6 +202,10 @@ class FeatureAxes(Axes):
     @property
     def shape(self):
         return self.variables.dim
+
+    @property
+    def name(self):
+        return "FeatureAxes"
 
 
 # class DataConfiguration:
