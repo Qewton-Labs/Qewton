@@ -10,46 +10,40 @@ from .variables import Variable
 class DataConfiguration:
     def __init__(
         self,
-        axes: list[Axes | EllipsisType],
-        dtypes: list[tuple[type, int] | EllipsisType],
+        dtype_units: list[DTypeUnit],
     ):
         """
         Example:
         self.axes = [batch_axis, object_axis, feature_axis]
         self.dtypes = [(list, 1), (dict, 1), (torch.tensor, (2, 5))]
         """
-        self.axes = axes
-        self.dtypes = dtypes
+        self.dtype_units = dtype_units
+        self.feature_axis  # to check there is only one feature axis
 
-        # check consistency of axes and dtypes
-        n_dtype_axes = (
-            None
-            if any(isinstance(dtype, EllipsisType) for dtype in self.dtypes)
-            else sum(dtype[1] for dtype in self.dtypes)
-        )
-        assert (
-            n_dtype_axes == self.n_axes
-        ), "Number of axes implied by dtypes must match number of axes in configuration"
-
-    def from_data(self, data) -> DataConfiguration:
+    @classmethod
+    def from_data(cls, data, config) -> DataConfiguration:
         raise NotImplementedError(
             "TODO: implement this method to automatically infer configuration from data"
         )
 
     @property
-    def n_axes(self):
-        if any(isinstance(axis, EllipsisType) for axis in self.axes):
-            return None
-        return sum(len(axis.shape) for axis in self.axes)
+    def shape(self):
+        return tuple(axis.shape for axis in self.axes)
 
     def _get_axes(self, axis_type):
         c = 0
         out = []
-        for axis in self.axes:
-            if isinstance(axis, axis_type):
-                out.append((c, axis))
-            c += len(axis.shape)
+        for dtype_unit in self.dtype_units:
+            for axis in dtype_unit.axes:
+                if isinstance(axis, axis_type):
+                    out.append((c, axis))
+                c += len(axis.shape)
         return out
+
+    def __str__(
+        self,
+    ):  # nice and comprehensive string representation of the configuration
+        pass
 
     @property
     def batch_axes(self):
@@ -58,7 +52,9 @@ class DataConfiguration:
     @property
     def feature_axis(self):
         axis = self._get_axes(FeatureAxes)
-        assert len(axis) <= 1, "Multiple feature axes not supported"
+        assert (
+            len(axis) == 1
+        ), "There should be exactly one feature axis in the configuration."
         return axis[0]
 
     @property
@@ -74,9 +70,13 @@ class DataConfiguration:
         return True
 
 
+class DTypeUnit:
+    def __init__(self, dtype, axes):
+        self.dtype = dtype
+        self.axes = axes
+
+
 # three general types of axes
-
-
 class Axes:
     @property
     def shape(self):
@@ -94,11 +94,11 @@ class GeometryAxes(Axes):
 
     @property
     def shape(self):
-        return self.geometry.dim
+        return self.geometry.shape  # might be flattened?
 
 
 class FeatureAxes(Axes):
-    def __init__(self, variables: Variable):  # or space?
+    def __init__(self, variables: Variable | EllipsisType):
         self.variables = variables
 
     @property
