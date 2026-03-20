@@ -5,7 +5,7 @@ import math
 
 import numpy as np
 
-from .base import HyperParameter
+from .hyperparameter_base import HyperParameter
 from .categorical_hyperparameter import CategoricalHyperparameter
 
 

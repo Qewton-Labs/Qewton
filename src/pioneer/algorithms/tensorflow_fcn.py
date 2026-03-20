@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from ..config.variables import Variable
-from ..optim.hyperparameter.base import (
+from ..optim.parameters.hyperparameter_base import (
     HyperParameter,
     DiscreteHyperparameter,
     CategoricalHyperparameter,

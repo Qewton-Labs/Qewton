@@ -5,9 +5,9 @@ from typing import Any
 import warnings
 
 from ..config.configuration_base import DataConfiguration
-from ..optim.hyperparameter.base import HyperParameter
+from ..optim.parameters.hyperparameter_base import HyperParameter
 from ..optim.base import EvaluationPhase
-from ..optim.trainer.trainable_parameters import (
+from ..optim.parameters.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )

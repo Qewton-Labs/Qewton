@@ -1,7 +1,7 @@
 import random
 
 from .helpers import HyperParameterState, HyperParameterCondition
-from .base import HyperParameter
+from .hyperparameter_base import HyperParameter
 
 
 class CategoricalHyperparameter(HyperParameter):

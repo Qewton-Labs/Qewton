@@ -1,6 +1,6 @@
 from .training_controllers import TrainingPhase, TrainerState
-from .trainable_parameters import _TrainableParameterBase
-from ..hyperparameter.base import HyperParameter
+from ..parameters.trainable_parameters import _TrainableParameterBase
+from ..parameters.hyperparameter_base import HyperParameter
 
 
 class TrainerBase:

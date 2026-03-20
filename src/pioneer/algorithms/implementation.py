@@ -66,7 +66,7 @@ class TorchImplementation(Implementation):
     @classmethod
     def exists(cls):
         try:
-            import torch
+            import torch  # pylint: disable=unused-import # type: ignore
 
             return True
         except ImportError:
@@ -84,8 +84,8 @@ class TorchImplementation(Implementation):
     def torch_module(self):
         return self._torch_module
 
-    def __call__(self, x):
-        return self._torch_module(x)
+    def __call__(self, *args, **kwargs):
+        return self._torch_module(*args, **kwargs)
 
     @property
     def trainable_parameters(self) -> Iterable:
@@ -119,7 +119,7 @@ class TensorflowImplementation(Implementation):
     @classmethod
     def exists(cls):
         try:
-            import tensorflow
+            import tensorflow  # pylint: disable=unused-import # type: ignore
 
             return True
         except ImportError:
@@ -129,7 +129,7 @@ class TensorflowImplementation(Implementation):
     def standard_datatype(cls):
         if not cls.exists():
             raise ImportError("TensorFlow is not installed.")
-        import tensorflow as tf
+        import tensorflow as tf  # pylint: disable=import-error # type: ignore
 
         return tf.Tensor
 
@@ -137,8 +137,8 @@ class TensorflowImplementation(Implementation):
     def tf_layer(self):
         return self._tf_layer
 
-    def __call__(self, x):
-        return self._tf_layer(x)
+    def __call__(self, *args, **kwargs):
+        return self._tf_layer(*args, **kwargs)
 
     @property
     def trainable_parameters(self) -> Iterable:

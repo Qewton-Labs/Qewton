@@ -7,12 +7,12 @@ import optuna
 
 from .base import Tuner, worker_eval
 from ..trainer.base import Trainer
-from ..hyperparameter.base import HyperParameter
-from ..hyperparameter.categorical_hyperparameter import (
+from ..parameters.hyperparameter_base import HyperParameter
+from ..parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
     BooleanHyperparameter,
 )
-from ..hyperparameter.number_hyperparameter import (
+from ..parameters.number_hyperparameter import (
     DiscreteHyperparameter,
     ContinuousHyperparameter,
     HyperParameterScale,

@@ -1,7 +1,7 @@
 from enum import Enum
 
 from ..optim.base import EvaluationPhase
-from ..optim.hyperparameter.base import HyperParameter
+from ..optim.parameters.hyperparameter_base import HyperParameter
 from ..nodes.base import Node
 
 

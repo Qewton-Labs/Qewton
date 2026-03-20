@@ -1,8 +1,6 @@
 import importlib.util
 
 from .base import Trainer
-from .trainable_parameters import TrainableParameters
-
 
 # Pytorch classes (only import when Pytorch is available)
 if importlib.util.find_spec("torch") is not None:

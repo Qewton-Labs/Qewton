@@ -1,8 +1,8 @@
 from ..base import Node, InputPort, OutputPort
 from ...data.datasets.base import DataSet
 from ...config.configuration_base import DataConfiguration
-from ...optim.hyperparameter.base import HyperParameter
-from ...optim.hyperparameter.categorical_hyperparameter import BooleanHyperparameter
+from ...optim.parameters.hyperparameter_base import HyperParameter
+from ...optim.parameters.categorical_hyperparameter import BooleanHyperparameter
 
 
 class NormalizationNode(Node):

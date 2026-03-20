@@ -1,15 +1,14 @@
 from enum import Enum, auto
 
 from ..config.configuration_base import DataConfiguration
-from ..optim.trainer.trainable_parameters import (
-    _TrainableParameterBase,
+from ..nodes.base import InputPort, Node, NodeState, OutputPort
+from ..optim.parameters.hyperparameter_base import HyperParameter
+from ..optim.parameters.trainable_parameters import (
     TrainableParameters,
+    _TrainableParameterBase,
 )
-from .implementation import Implementation, DEFAULT_DL_IMPLEMENTATION
-
-from ..nodes.base import Node, InputPort, NodeState, OutputPort
 from ..pipelines.base import Graph
-from ..optim.hyperparameter.base import HyperParameter
+from .implementation import DEFAULT_DL_IMPLEMENTATION, Implementation
 
 
 # TODO
@@ -115,7 +114,7 @@ class LayerNode(Node):
         """Initializes the unary node with a single input and output port.
 
         Args:
-            name (str, optional): The name of this node. Defaults to "UnaryNode".
+            name (str, optional): The name of this node. Defaults to "LayerNode".
             implementation (callable, optional): The function that implements the
                 unary operation. It should take one argument (the input) and
                 return the output. Defaults to None.
@@ -126,8 +125,12 @@ class LayerNode(Node):
         self.backend = backend
         self.implementation = self.set_implementation()
         self.implementation_instance: Implementation
-        self._input_ports = [InputPort(DataConfiguration([...], [...]), self, "input")]
-        self._output_ports = [OutputPort(DataConfiguration([...], [...]), self, "output")]
+        self._input_ports: list[InputPort] = [  # type: ignore
+            InputPort(DataConfiguration([]), self, "input")
+        ]
+        self._output_ports: list[OutputPort] = [  # type: ignore
+            OutputPort(DataConfiguration([]), self, "output")
+        ]
 
     def run(self):
         self._output_ports[0].set_value(
@@ -145,4 +148,4 @@ class LayerNode(Node):
 
     @property
     def trainable_parameters(self):
-        return TrainableParameters(self.name, self.implementation.trainable_parameters)
+        return TrainableParameters(self.node_id, self.implementation.trainable_parameters)

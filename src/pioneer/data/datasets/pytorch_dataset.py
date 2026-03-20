@@ -2,10 +2,10 @@ from __future__ import annotations
 import torch
 
 from ...config.configuration_base import DataConfiguration
-from ...optim.hyperparameter.number_hyperparameter import (
+from ...optim.parameters.number_hyperparameter import (
     DiscreteHyperparameter,
 )
-from ...optim.hyperparameter.categorical_hyperparameter import (
+from ...optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
 from ...optim.base import EvaluationPhase

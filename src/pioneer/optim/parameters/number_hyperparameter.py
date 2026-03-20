@@ -3,7 +3,7 @@ import random
 import math
 
 from .helpers import HyperParameterScale, HyperParameterState, HyperParameterCondition
-from .base import HyperParameter
+from .hyperparameter_base import HyperParameter
 
 
 class ContinuousHyperparameter(HyperParameter):

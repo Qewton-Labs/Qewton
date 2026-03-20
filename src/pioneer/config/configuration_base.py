@@ -21,7 +21,7 @@ class DataConfiguration:
         self.dtypes = [(list, 1), (dict, 1), (torch.tensor, (2, 5))]
         """
         self.dtype_units = dtype_units
-        self.feature_axis  # to check there is only one feature axis
+        # self.feature_axis  # to check there is only one feature axis
 
     @classmethod
     def from_data(cls, data, config) -> DataConfiguration:

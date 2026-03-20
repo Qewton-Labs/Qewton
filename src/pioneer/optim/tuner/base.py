@@ -11,7 +11,7 @@ import psutil
 
 from ...constraints.base import Constraint
 from ..trainer.base import Trainer
-from ..hyperparameter.base import HyperParameter
+from ..parameters.hyperparameter_base import HyperParameter
 
 
 class TunerLoggingKeys(Enum):

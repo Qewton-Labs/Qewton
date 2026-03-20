@@ -4,7 +4,7 @@ from collections import deque
 
 from ..nodes.base import InputPort, Node, EvaluationPhase, OutputPort
 from ..constraints.base import Constraint
-from ..optim.trainer.trainable_parameters import TrainableParametersCollection
+from ..optim.parameters.trainable_parameters import TrainableParametersCollection
 
 
 class Graph:
