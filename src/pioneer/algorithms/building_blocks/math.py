@@ -1,3 +1,5 @@
+from pioneer.algorithms.implementation import DEFAULT_DL_IMPLEMENTATION, Implementation
+
 from ..base import LayerNode
 from ..implementation import (
     DEFAULT_DL_IMPLEMENTATION,
@@ -50,15 +52,23 @@ class SingleInputOperation(LayerNode):
     }
 
     def __init__(self, name=None, backend=DEFAULT_DL_IMPLEMENTATION):
+        """A node representing a unary mathematical operation.
+
+        Args:
+            name (str, optional): Name of the Node.
+            backend (Implementation, optional): The backend used for the
+                mean computation. Defaults to DEFAULT_DL_IMPLEMENTATION.
+        """
         if name is None:
-            name = getattr(self, "node_name", "Math Operation")
+            name = self.node_name
         super().__init__(name=name, backend=backend, state=NodeState.FIXED)
         self._input_ports[0].data_configuration.specify_backend(backend)
         self._output_ports[0].data_configuration.specify_backend(backend)
         # Only now do we instantiate the backend wrapper
-        self.implementation_instance = self.implementation(
-            self.operation_name[backend]  # type: ignore
-        )
+        self.implementation_instance = self._build_implementation()
+
+    def _build_implementation(self):
+        return self.implementation(self.operation_name[self.backend])  # type: ignore
 
     @property
     def trainable_parameters(self):
@@ -69,6 +79,15 @@ class DoubleInputOperation(SingleInputOperation):
     node_name = "Double Input Operation"
 
     def __init__(self, name=None, backend=DEFAULT_DL_IMPLEMENTATION):
+        """A node representing a mathematical operation that requires two
+        input arguments. The port names are set to "input1" and "input2" to
+        differentiate them.
+
+        Args:
+            name (str, optional): Name of the Node.
+            backend (Implementation, optional): The backend used for the
+                mean computation. Defaults to DEFAULT_DL_IMPLEMENTATION.
+        """
         if name is None:
             name = getattr(self, "node_name", "Math Operation 2 Inputs")
         super().__init__(name=name, backend=backend)
@@ -309,6 +328,74 @@ class MatMul(DoubleInputOperation):
         TorchImplementation: "matmul",
         TensorflowImplementation: "matmul",
     }
+
+
+# endregion
+
+
+# region: Reshaping operations
+
+
+class TorchMean(TorchImplementation):
+    def __init__(self, axis, keepdims=False):
+        from torch import mean as torch_mean  # pylint: disable=no-name-in-module
+
+        super().__init__(torch_mean)
+        self.axis = axis
+        self.keepdims = keepdims
+
+    def __call__(self, x):
+        return self._torch_module(x, dim=self.axis, keepdim=self.keepdims)
+
+
+class TensorFlowMean(TensorflowImplementation):
+    def __init__(self, axis=None, keepdims=False):
+        import tensorflow as tf  # pylint: disable=import-error # type: ignore
+
+        super().__init__(tf.reduce_mean)
+        self.axis = axis
+        self.keepdims = keepdims
+
+    def __call__(self, x):
+        return self._tf_layer(x, axis=self.axis, keepdims=self.keepdims)
+
+
+class Mean(LayerNode):
+    existing_implementations = {
+        TorchImplementation: TorchMean,
+        TensorflowImplementation: TensorFlowMean,
+    }
+
+    def __init__(
+        self,
+        name: str = "MeanNode",
+        axis: int | list[int] | tuple[int] | None = 0,
+        keepdims: bool = True,
+        backend: Implementation = DEFAULT_DL_IMPLEMENTATION,
+    ):
+        """Computes the mean of the input over a given axis.
+
+        Args:
+            name (str, optional): Name of the Node. Defaults to "MeanNode".
+            axis (int | list[int] | tuple[int] | None, optional):
+                The axis over which the mean should be computed. In case
+                of None the mean over all axes is computed. Defaults to 0.
+            keepdims (bool, optional): If the mean computation should
+                remove or keep the dimension/axis of the data. Defaults to True.
+            backend (Implementation, optional): The backend used for the
+                mean computation. Defaults to DEFAULT_DL_IMPLEMENTATION.
+        """
+        super().__init__(name, backend, NodeState.FIXED)
+        self._input_ports[0].data_configuration.specify_backend(backend)
+        self._output_ports[0].data_configuration.specify_backend(backend)
+
+        self.implementation_instance = self.implementation(
+            axis=axis, keepdims=keepdims  # type: ignore
+        )
+
+    @property
+    def trainable_parameters(self):
+        return TrainableParameters.create_empty(self.node_id)
 
 
 # endregion

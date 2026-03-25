@@ -17,3 +17,7 @@ print(fcn(input=X))
 
 add_layer = bb.math.Add()
 print(add_layer(input1=X, input2=3.0))
+
+
+mean_layer = bb.math.Mean(axis=0)
+print(mean_layer(input=X))

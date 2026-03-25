@@ -12,6 +12,8 @@
     "cSpell.words": [
         "arccos",
         "arctan",
+        "keepdim",
+        "keepdims",
         "localdata",
         "lowrank",
         "PCANN",

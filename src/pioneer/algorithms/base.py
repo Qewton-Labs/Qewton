@@ -111,7 +111,7 @@ class LayerNode(Node):
         backend: Implementation = DEFAULT_DL_IMPLEMENTATION,
         state: NodeState = NodeState.FIXED,
     ):
-        """Initializes the unary node with a single input and output port.
+        """Initializes a Layer node with a single input and output port.
 
         Args:
             name (str, optional): The name of this node. Defaults to "LayerNode".

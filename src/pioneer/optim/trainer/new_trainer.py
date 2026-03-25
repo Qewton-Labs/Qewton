@@ -3,7 +3,7 @@ from ..parameters.trainable_parameters import _TrainableParameterBase
 from ..parameters.hyperparameter_base import HyperParameter
 
 
-class TrainerBase:
+class Trainer:
 
     def __init__(
         self,
@@ -41,7 +41,7 @@ class TrainerBase:
             for local_idx in range(stage.max_iterations.current_value):
                 self.training_step(local_idx)
 
-                self.train_state.iteration += 1  # global iteration counter
+                self.on_training_step_end()
 
                 # Check if training stage should be stopped
                 if self.train_state.stop_stage:
@@ -67,10 +67,10 @@ class TrainerBase:
     def training_step(self, idx: int):
         pass
 
-    def on_training_stage_end(self):
-        pass
+    def on_training_step_end(self):
+        self.train_state.iteration += 1  # global iteration counter
 
-    def run_validation(self):
+    def on_training_stage_end(self):
         pass
 
 
@@ -79,17 +79,20 @@ class Callback:
     Base class for callbacks. Override the hooks you need.
     """
 
-    def on_train_start(self, trainer: TrainerBase, state: TrainerState):
+    def on_training_start(self, trainer: Trainer, state: TrainerState):
         pass
 
-    def on_stage_start(self, trainer: TrainerBase, state: TrainerState):
+    def on_stage_start(self, trainer: Trainer, state: TrainerState):
         pass
 
-    def on_iteration_end(self, trainer: TrainerBase, state: TrainerState):
+    def training_step(self, trainer: Trainer, state: TrainerState):
         pass
 
-    def on_stage_end(self, trainer: TrainerBase, state: TrainerState):
+    def on_train_step_end(self, trainer: Trainer, state: TrainerState):
         pass
 
-    def on_train_end(self, trainer: TrainerBase, state: TrainerState):
+    def on_stage_end(self, trainer: Trainer, state: TrainerState):
+        pass
+
+    def on_training_end(self, trainer: Trainer, state: TrainerState):
         pass

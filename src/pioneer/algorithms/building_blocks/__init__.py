@@ -21,4 +21,5 @@ from .math import (
     Maximum,
     Minimum,
     MatMul,
+    Mean,
 )
