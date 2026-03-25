@@ -128,13 +128,44 @@ class TestConfigShapeMatching:
         result = Axes.unify_shapes(a, b)
         assert result == expected
 
-    def test_unify_shapes_with_ellipsis_in_both_at_start_and_end(self):
+    def test_unify_shapes_with_ellipsis_at_start_and_end(self):
         a = (..., 4)
         b = (5, 4, ...)
         expected = (5, 4)
         result = Axes.unify_shapes(a, b)
         assert result == expected
 
+    def test_unify_shapes_high_dim_with_broadcasting(self):
+        a = (2, 3, 4, 5, 6)
+        b = (1, 1, 4, 1, 6)
+        expected = (2, 3, 4, 5, 6)
+        result = Axes.unify_shapes(a, b, broadcast_singleton=True)
+        assert result == expected
 
-te = TestConfigShapeMatching()
-te.test_unify_shapes_with_ellipsis_in_both_at_start_and_end()
+    def test_unify_shapes_complex_none_ellipsis_mix(self):
+        a = (2, None, ..., 5)
+        b = (2, 3, 4, 5)
+        expected = (2, 3, 4, 5)
+        result = Axes.unify_shapes(a, b)
+        assert result == expected
+
+    def test_unify_shapes_ellipsis_with_none_broadcasting(self):
+        a = (2, None, ..., 6)
+        b = (1, 3, 4, 5, 1)
+        expected = (2, 3, 4, 5, 6)
+        result = Axes.unify_shapes(a, b, broadcast_singleton=True)
+        assert result == expected
+
+    def test_unify_shapes_concrete_without_ellipsis(self):
+        a = (2, 3, ..., 5, 6)
+        b = (2, 3, 5, 6)
+        expected = (2, 3, 5, 6)
+        result = Axes.unify_shapes(a, b)
+        assert result == expected
+
+    def test_unify_shapes_center_ellipsis_removed(self):
+        a = (2, 3, ..., 5, 6)
+        b = (..., 3, 5, 6)
+        expected = (2, 3, 5, 6)
+        result = Axes.unify_shapes(a, b)
+        assert result == expected

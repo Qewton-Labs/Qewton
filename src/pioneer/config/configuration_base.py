@@ -1,9 +1,5 @@
 from __future__ import annotations
 from types import EllipsisType
-from typing import Mapping, Sequence
-import copy
-
-from .axis import Axis, FeatureAxis, BatchAxis
 from .variables import Variable
 
 
@@ -108,47 +104,24 @@ class Axes:
 
     def shape_fits(self, other_axes, broadcast_singleton=False) -> bool:
         try:
-            self.unify_shapes(self.shape, other_axes.shape, broadcast_singleton)
+            _ = self.unify_shapes(self.shape, other_axes.shape, broadcast_singleton)
             return True
         except DataConfigMismatchError:
             return False
 
     @classmethod
-    def unify_shapes(cls, shape1, shape2, broadcast_singleton=False):
-        matching_end = []
-        matching_start = []
-        # first we check if they match at the end,
-        # since this is more common for ellipsis to be at the start.
-        # TODO: (Is this the only reason? Broadcasting currently does not automatically
-        # add an axis anyway)
-        for s1, s2 in zip(reversed(shape1), reversed(shape2)):
-            try:
-                unification_successful = cls._try_unify_dimensions(
-                    s1, s2, matching_end, broadcast_singleton
-                )
-                if not unification_successful:
-                    break
-            except DataConfigMismatchError as e:
-                raise DataConfigMismatchError(
-                    f"Shapes {shape1} and {shape2} do not match and can not be unified.\
-                        Mismatch at dimensions {s1} and {s2}."
-                ) from e
+    def unify_shapes(
+        cls, shape1, shape2, broadcast_singleton=False
+    ) -> tuple[int | None | EllipsisType, ...]:
+        # First we check if they match from the end
+        matching_end = cls._match_shapes(
+            reversed(shape1), reversed(shape2), broadcast_singleton
+        )
         matching_end.reverse()
         if len(matching_end) == len(shape1) and len(matching_end) == len(shape2):
             #  fully matched
             return tuple(matching_end)
-        for s1, s2 in zip(shape1, shape2):
-            try:
-                unification_successful = cls._try_unify_dimensions(
-                    s1, s2, matching_start, broadcast_singleton
-                )
-                if not unification_successful:
-                    break
-            except DataConfigMismatchError as e:
-                raise DataConfigMismatchError(
-                    f"Shapes {shape1} and {shape2} do not match and can not be unified.\
-                        Mismatch at dimensions {s1} and {s2}."
-                ) from e
+        matching_start = cls._match_shapes(shape1, shape2, broadcast_singleton)
         # Lastly we check the remaining middle part for compatibility (it has
         # to contain an ellipsis in at least one of the shapes to be compatible)
         remaining_middle1 = shape1[len(matching_start) : len(shape1) - len(matching_end)]
@@ -157,20 +130,28 @@ class Axes:
             raise DataConfigMismatchError(
                 f"Shapes {shape1} and {shape2} do not match and can not be unified."
             )
-        matching_middle = cls._build_middle_shape(
+        matching_middle = cls._match_middle_shape(
             remaining_middle1, remaining_middle2, broadcast_singleton
         )
         return tuple(matching_start + matching_middle + matching_end)
 
     @classmethod
-    def _try_unify_dimensions(cls, s1, s2, shape_list, broadcast_singleton=False) -> bool:
-        if s1 == ... or s2 == ...:
-            # We can not unify ellipsis directly, since they may need to consume
-            # other axis as well.
-            return False
-        unified_dim = cls.unify_dim(s1, s2, broadcast_singleton)
-        shape_list.append(unified_dim)
-        return True
+    def _match_shapes(cls, shape1, shape2, broadcast_singleton=False) -> list:
+        matching_dims = []
+        for s1, s2 in zip(shape1, shape2):
+            try:
+                if s1 == ... or s2 == ...:
+                    # We can not unify ellipsis directly, since they may need to
+                    # consume other axis as well.
+                    break
+                unified_dim = cls.unify_dim(s1, s2, broadcast_singleton)
+                matching_dims.append(unified_dim)
+            except DataConfigMismatchError as e:
+                raise DataConfigMismatchError(
+                    f"Shapes {shape1} and {shape2} do not match and can not be unified.\
+                        Mismatch at dimensions {s1} and {s2}."
+                ) from e
+        return matching_dims
 
     @classmethod
     def unify_dim(cls, dim1, dim2, broadcast_singleton=False):
@@ -188,10 +169,10 @@ class Axes:
         raise DataConfigMismatchError(f"Cannot unify dimensions {dim1} and {dim2}.")
 
     @classmethod
-    def _build_middle_shape(
+    def _match_middle_shape(
         cls, remaining_middle1, remaining_middle2, broadcast_singleton=False
     ) -> list:
-        # now, the middle has to contain ellipsis at its start/end to be compatible
+        # If one shape only is an axis we are done:
         if len(remaining_middle1) == 1 and ... in remaining_middle1:
             return list(remaining_middle2)
         if len(remaining_middle2) == 1 and ... in remaining_middle2:
@@ -204,39 +185,41 @@ class Axes:
         else:
             start_part, end_part = list(remaining_middle2), list(remaining_middle1)
 
-        start_shape_counter = len(start_part) - 1
-        end_shape_counter = len(end_part) - 2  # we can skip the ellipsis element
+        start_idx = len(start_part) - 1
+        end_idx = len(end_part) - 2  # skip ellipsis
         added_end_shape = False
-        while start_shape_counter > 0 and end_shape_counter >= 0:
-            s = start_part[start_shape_counter]
-            if s == end_part[end_shape_counter]:
-                # If they match, they may are the same axis, for this
+
+        while start_idx > 0 and end_idx >= 0:
+            current = start_part[start_idx]
+            if current == end_part[end_idx]:  # TODO: Maybe include broadcasting?
+                # If we have a match, they could be the same axis:
                 # check if all neighbors to the left also match
-                # (until the ellipsis). If yes we can just add everything
-                if end_shape_counter + 1 - start_shape_counter >= 0:
+                # If yes we can just add everything together
+                offset = end_idx + 1 - start_idx
+                if offset >= 0:
                     try:
-                        insert_dims = []
-                        for i in range(1, start_shape_counter + 1):
-                            unified_dim = cls.unify_dim(
+                        insert_dims = [
+                            cls.unify_dim(
                                 start_part[i],
-                                end_part[end_shape_counter - start_shape_counter + i],
+                                end_part[offset - 1 + i],
                                 broadcast_singleton,
                             )
-                            insert_dims.append(unified_dim)
-
+                            for i in range(1, start_idx + 1)
+                        ]
                         matching_middle.reverse()
                         matching_middle = (
-                            end_part[: end_shape_counter + 1 - start_shape_counter]
+                            end_part[: end_idx + 1 - start_idx]
                             + insert_dims
                             + matching_middle
                         )
-                        start_shape_counter = 0
+                        start_idx = 0
                         added_end_shape = True
                         break
                     except DataConfigMismatchError:
                         pass
-            matching_middle.append(s)
-            start_shape_counter -= 1
+
+            matching_middle.append(current)
+            start_idx -= 1
 
         if not added_end_shape:
             matching_middle.reverse()
