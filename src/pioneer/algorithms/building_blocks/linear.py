@@ -33,8 +33,8 @@ class Linear(LayerNode):
     ):
 
         super().__init__(name=name, backend=backend, state=NodeState.FIXED)
-        self._input_ports[0].data_configuration.specify_backend(backend)
-        self._output_ports[0].data_configuration.specify_backend(backend)
+        self._input_ports[0].data_configuration.specify_dtype(backend)
+        self._output_ports[0].data_configuration.specify_dtype(backend)
         self.in_neurons = HyperParameter.from_value(in_neurons, "In Neurons")
         self.out_neurons = HyperParameter.from_value(out_neurons, "Out Neurons")
         self.bias = bias
@@ -102,8 +102,8 @@ class Conv2d(LayerNode):
         **kwargs,
     ):
         super().__init__(name=name, backend=backend, state=NodeState.FIXED)
-        self._input_ports[0].data_configuration.specify_backend(backend)
-        self._output_ports[0].data_configuration.specify_backend(backend)
+        self._input_ports[0].data_configuration.specify_dtype(backend)
+        self._output_ports[0].data_configuration.specify_dtype(backend)
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size

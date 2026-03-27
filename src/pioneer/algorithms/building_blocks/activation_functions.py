@@ -10,8 +10,8 @@ class ActivationFunction(LayerNode):
 
     def __init__(self, name="Activation Functions", backend=DEFAULT_DL_IMPLEMENTATION):
         super().__init__(name=name, backend=backend, state=NodeState.FIXED)
-        self._input_ports[0].data_configuration.specify_backend(backend)
-        self._output_ports[0].data_configuration.specify_backend(backend)
+        self._input_ports[0].data_configuration.specify_dtype(backend)
+        self._output_ports[0].data_configuration.specify_dtype(backend)
         self.implementation_instance = self.implementation()
 
 

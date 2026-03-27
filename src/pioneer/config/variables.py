@@ -52,7 +52,7 @@ class Variable(OrderedDict):
         """
         result = Variable.from_dict(self)
         for k, v in other.items():
-            result[k] = result.get(k, 0) + v
+            result[k] = v
         return result
 
     def __add__(self, other: Variable) -> Variable:

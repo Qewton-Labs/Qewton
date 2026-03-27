@@ -62,8 +62,8 @@ class SingleInputOperation(LayerNode):
         if name is None:
             name = self.node_name
         super().__init__(name=name, backend=backend, state=NodeState.FIXED)
-        self._input_ports[0].data_configuration.specify_backend(backend)
-        self._output_ports[0].data_configuration.specify_backend(backend)
+        self._input_ports[0].data_configuration.specify_dtype(backend)
+        self._output_ports[0].data_configuration.specify_dtype(backend)
         # Only now do we instantiate the backend wrapper
         self.implementation_instance = self._build_implementation()
 
@@ -93,7 +93,7 @@ class DoubleInputOperation(SingleInputOperation):
         super().__init__(name=name, backend=backend)
         self._input_ports[0].name = "input1"
         self._input_ports.append(InputPort(DataConfiguration([]), self, "input2"))
-        self._input_ports[1].data_configuration.specify_backend(backend)
+        self._input_ports[1].data_configuration.specify_dtype(backend)
 
     def run(self):
         self._output_ports[0].set_value(
@@ -386,8 +386,8 @@ class Mean(LayerNode):
                 mean computation. Defaults to DEFAULT_DL_IMPLEMENTATION.
         """
         super().__init__(name, backend, NodeState.FIXED)
-        self._input_ports[0].data_configuration.specify_backend(backend)
-        self._output_ports[0].data_configuration.specify_backend(backend)
+        self._input_ports[0].data_configuration.specify_dtype(backend)
+        self._output_ports[0].data_configuration.specify_dtype(backend)
 
         self.implementation_instance = self.implementation(
             axis=axis, keepdims=keepdims  # type: ignore
