@@ -1,7 +1,10 @@
-from ..base import LayerNode
+from ..base import LayerNode, GraphNode
+from ...config.configuration_base import DataConfiguration
 from ..implementation import TorchImplementation, DEFAULT_DL_IMPLEMENTATION
-from ...nodes.base import NodeState
+from ...nodes.base import NodeState, InputPort, OutputPort, Node
 from ...optim.parameters.hyperparameter_base import HyperParameter
+from .math import MatMul, Add
+from ...pipelines.base import Graph
 
 
 class TorchLinear(TorchImplementation):
@@ -15,7 +18,56 @@ class TorchLinear(TorchImplementation):
         )
 
 
-class Linear(LayerNode):
+class FunctionalLinear(GraphNode):
+
+    def __init__(self, name="functional_linear", backend=DEFAULT_DL_IMPLEMENTATION):
+        self.data_input_port = InputPort(
+            data_configuration=DataConfiguration(),
+            node=self,
+            name="Input",
+        )
+        self.weight_input_port = InputPort(
+            data_configuration=DataConfiguration(),
+            node=self,
+            name="Weight",
+        )
+        self.bias_input_port = InputPort(
+            data_configuration=DataConfiguration(),
+            node=self,
+            name="Bias",
+            default=None,
+        )
+        self.output_port = OutputPort(
+            data_configuration=DataConfiguration(),
+            node=self,
+            name="Output",
+        )
+        self.backend = backend
+
+        self.matmul_node = MatMul(name="matmul", backend=backend)
+        self.add_node = Add(name="add", backend=backend)
+        graph = Graph()
+        graph.connect(self.matmul_node.output_ports[0], self.add_node.input_ports[0])
+
+        super().__init__(
+            graph=graph,
+            input_ports=[*self.matmul_node.input_ports, self.add_node.input_ports[0]],
+            output_ports=[self.add_node.output_ports[0]],
+            name=name,
+        )
+
+    def run(self):
+        data = self.data_input_port.value
+        weight = self.weight_input_port.value
+        bias = self.bias_input_port.value
+        if self.backend == DEFAULT_DL_IMPLEMENTATION:
+            import torch.nn.functional as F
+
+            output = F.linear(data, weight, bias)
+            self.output_port.set_value(output)
+
+
+class Linear(GraphNode):
     """A node representing an activation function, which is a special type of
     algorithm that is applied element-wise to the input data.
     """
