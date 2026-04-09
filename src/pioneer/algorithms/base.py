@@ -84,17 +84,14 @@ class GraphNode(Node):
         self.graph.setup()
 
     def run(self):
+        # TODO
         for i, port in enumerate(self.graph_input_ports):
-            self._inner_input_ports[i].set_manual_value(port.value)
+            self._inner_input_ports[i].set_value(port.value)
 
         self.graph.run(self.mode)
         # Write the inner information into the own output ports
         for i, out_port in enumerate(self._inner_output_ports):
             self.graph_output_ports[i].set_value(out_port.value)
-
-    def copy_connections(self, pipeline_id):
-        for port in self._inner_input_ports:
-            port.set_connected_port(port.connected_ports[self.graph.id], pipeline_id)
 
 
 class LayerNode(Node):

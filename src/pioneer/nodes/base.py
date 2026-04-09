@@ -36,6 +36,7 @@ class Port:
         self.data_configuration = data_configuration
         self.node = node
         self.name = name
+        self._value = None
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Port):
@@ -44,6 +45,13 @@ class Port:
             self.data_configuration == value.data_configuration
             and self.node == value.node
         )
+
+    def set_value(self, value):
+        self._value = value
+
+    @property
+    def value(self):
+        return self._value
 
 
 class InputPort(Port):
@@ -58,41 +66,14 @@ class InputPort(Port):
     ):
         super().__init__(data_configuration, node, name)
         self.default = default
-        self.connected_ports = []
-
-        # a value that is used only when one uses __call__ instead of pipelines
-        # order is: 1) check manual execution value,
-        #           2) check connected ports,
-        #           3) check default value
-        # a bit hacky
-        self._manual_execution_value = None
+        self._value = default
 
     @property
     def is_required(self):
         return isinstance(self.default, NO_DEFAULT)
 
-    def set_connected_port(self, port: OutputPort | None, pipeline_id: int):
-        if len(self.connected_ports) <= pipeline_id:
-            self.connected_ports.extend(
-                [None] * (pipeline_id - len(self.connected_ports) + 1)
-            )
-        self.connected_ports[pipeline_id] = port
-
-    def set_manual_value(self, value):
-        self._manual_execution_value = value
-
-    def clear_manual_value(self):
-        self._manual_execution_value = None
-
-    @property
-    def value(self):
-        if self._manual_execution_value is not None:
-            return self._manual_execution_value
-        if self.connected_ports[self.node.pipeline_id] is not None:
-            return self.connected_ports[self.node.pipeline_id].value
-        if not self.is_required:
-            return self.default
-        raise ValueError(f"Input port {self.name} is required but no value is provided.")
+    def clear_value(self):
+        self._value = self.default
 
 
 class OutputPort(Port):
@@ -102,26 +83,6 @@ class OutputPort(Port):
         self, data_configuration: DataConfiguration, node: Node, name: str = "Output"
     ):
         super().__init__(data_configuration, node, name)
-        self._value = None
-        self._current_data_config = []  # the updated data config for each pipeline
-
-    @property
-    def current_data_config(self):
-        return self._current_data_config[self.node.pipeline_id]
-
-    def set_current_data_config(self, data_config: DataConfiguration, pipeline_id: int):
-        if len(self._current_data_config) <= pipeline_id:
-            self._current_data_config.extend(
-                [None] * (pipeline_id - len(self._current_data_config) + 1)
-            )
-        self._current_data_config[pipeline_id] = data_config
-
-    def set_value(self, value):
-        self._value = value
-
-    @property
-    def value(self):
-        return self._value
 
 
 class NodeState(Enum):
@@ -203,14 +164,12 @@ class Node(ABC):
         for port in self.input_ports:
             if port.name not in kwargs and port.is_required:
                 raise ValueError(f"Missing required input: {port.name}")
-            port.set_manual_value(
-                kwargs[port.name],
-            )
+            port.set_value(kwargs[port.name])
 
         self.run()
 
         for port in self.input_ports:
-            port.clear_manual_value()
+            port.clear_value()
 
         out_dict = {}
         for port in self.output_ports:
