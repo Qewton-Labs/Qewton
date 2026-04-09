@@ -28,7 +28,7 @@ class DataConfiguration:
         _ = self.feature_axis  # to check there is only one feature axis
 
     @classmethod
-    def from_data(cls, data, config) -> DataConfiguration:
+    def from_data(cls, data) -> DataConfiguration:
         raise NotImplementedError(
             "TODO: implement this method to automatically infer configuration from data"
         )
