@@ -1,4 +1,4 @@
-from ..nodes.base import InputPort, OutputPort
+from .nodes import InputPort, OutputPort
 from ..config.configuration_base import DataConfiguration
 
 

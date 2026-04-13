@@ -6,8 +6,8 @@ from ..implementation import (
     TorchImplementation,
     TensorflowImplementation,
 )
-from ...nodes.base import NodeState
-from ...nodes.base import InputPort
+from ...graphs.nodes import NodeState
+from ...graphs.nodes import InputPort
 from ...config.configuration_base import DataConfiguration
 from ...optim.parameters.trainable_parameters import TrainableParameters
 

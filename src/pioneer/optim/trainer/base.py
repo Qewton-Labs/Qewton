@@ -5,8 +5,8 @@ from ..base import EvaluationPhase
 from ..parameters.hyperparameter_base import HyperParameter
 from ..parameters.categorical_hyperparameter import CategoricalHyperparameter
 from ..parameters.number_hyperparameter import DiscreteHyperparameter
-from ...pipelines.base import Pipeline
-from ...nodes.base import Node
+from ...graphs.pipeline import Pipeline
+from ...graphs.nodes import Node
 from ...constraints.base import Constraint
 
 

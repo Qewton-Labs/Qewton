@@ -4,7 +4,7 @@ from ..optim.parameters.categorical_hyperparameter import (
     BooleanHyperparameter,
 )
 from ..optim.parameters.number_hyperparameter import ContinuousHyperparameter
-from ..nodes.base import InputPort
+from ..graphs.nodes import InputPort
 from .base import Constraint
 
 

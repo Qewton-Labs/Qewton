@@ -31,7 +31,7 @@ def build_problem():
         ),
     )
 
-    pipeline = pioneer.pipelines.MSEDataPipeline(dataset, model)
+    pipeline = pioneer.graphs.MSEDataPipeline(dataset, model)
 
     trainer = pioneer.optim.trainer.PyTorchTrainer(
         [pipeline],

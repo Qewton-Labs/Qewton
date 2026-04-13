@@ -42,7 +42,9 @@ class HyperParameter:
         Args:
             x (_type_): The object that we want to transform to a HyperParameter.
             name (str | None, optional): Internal name of this parameter.
-                Defaults to None.
+                Defaults to None. If the input already is an HyperParameter,
+                the name will only be changed if the current name is empty string
+                and the value is not None.
 
         Returns:
             HyperParameter: The HyperParameter object for the given value.

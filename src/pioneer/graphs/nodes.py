@@ -44,6 +44,19 @@ class Port:
         return (
             self.data_configuration == value.data_configuration
             and self.node == value.node
+            and self.name == value.name
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.data_configuration, self.node.node_id, self.name))
+
+    def duplicate_with_new_owner(
+        self, new_owner: Node, new_name: str | None = None
+    ) -> Port:
+        return type(self)(
+            data_configuration=self.data_configuration,
+            node=new_owner,
+            name=new_name if new_name is not None else self.name,
         )
 
     def set_value(self, value):
@@ -67,6 +80,14 @@ class InputPort(Port):
         super().__init__(data_configuration, node, name)
         self.default = default
         self._value = default
+        self.input_received_from_outside_graph = False
+
+    def duplicate_with_new_owner(
+        self, new_owner: Node, new_name: str | None = None
+    ) -> Port:
+        new_port = super().duplicate_with_new_owner(new_owner, new_name)
+        new_port.default = self.default  # type: ignore
+        return new_port
 
     @property
     def is_required(self):

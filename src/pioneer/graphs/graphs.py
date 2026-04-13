@@ -1,8 +1,7 @@
 from __future__ import annotations
 from collections import deque
 
-from ..nodes.base import InputPort, Node, EvaluationPhase, OutputPort
-from ..constraints.base import Constraint
+from .nodes import InputPort, Node, EvaluationPhase, OutputPort
 from ..optim.parameters.trainable_parameters import TrainableParametersCollection
 from .edges import Edge
 
@@ -10,7 +9,7 @@ from .edges import Edge
 class Graph:
 
     def __init__(self):
-        self.nodes: list[Node] = list[Node]()
+        self.nodes: set[Node] = set[Node]()
         self.sorted_nodes: list[Node] = []
         self.mode = EvaluationPhase.ALWAYS
 
@@ -32,8 +31,9 @@ class Graph:
                     raise ValueError(
                         f"Node {node.name} and ID: {node.node_id} already exists in this graph!"
                     )
-        self.nodes.append(node)
-        self.incoming_edges[node] = list[Edge]()
+        self.nodes.add(node)
+        if not node in self.incoming_edges:
+            self.incoming_edges[node] = list[Edge]()
 
     def remove_node(self, node: Node) -> None:
         """Deletes a given node from this graph.
@@ -45,12 +45,11 @@ class Graph:
         self.incoming_edges.pop(node)
 
     def sort(self):
-        in_degree = {node: 0 for node in self.nodes}
+        in_degree = {node: len(self.incoming_edges[node]) for node in self.nodes}
         outgoing_connections = {node: [] for node in self.nodes}
         for node in self.nodes:
-            in_degree[node] = len(self.incoming_edges[node])
             for edge in self.incoming_edges[node]:
-                outgoing_connections[edge.to_port.node].append(node)
+                outgoing_connections[edge.from_port.node].append(node)
 
         queue = deque(node for node, deg in in_degree.items() if deg == 0)
         self.sorted_nodes: list[Node] = []
@@ -172,7 +171,7 @@ class Graph:
             for in_port in node.input_ports:
                 if in_port in edges:
                     in_port.set_value(edges[in_port].from_port.value)
-                else:
+                elif not in_port.input_received_from_outside_graph:
                     in_port.clear_value()
             node.run()
 
@@ -197,55 +196,7 @@ class SequentialGraph(Graph):
             self.connect(nodes[i], nodes[i + 1])
         self.sorted_nodes = list(nodes)
 
-
-class Pipeline(Graph):
-    """A pipeline represents a workflow of data getting transformed
-    through multiple computation steps and algorithms. Along this
-    workflow one can set different constraints which can be used
-    to train/validate/test the algorithm properties.
-    """
-
-    def __init__(self, name="pipeline"):
-        """
-        Args:
-            name (str, optional): The internal name of this pipeline.
-                Defaults to "pipeline".
-        """
-        super().__init__()
-        self.constrain_nodes: set[Constraint] = set[Constraint]()
-        self.name = name
-
-    def add_node(self, node: Node, check_warning=True) -> None:
-        """Adds a node to this pipeline.
-
-        Args:
-            node (Node): The node that is added.
-            check_warning (bool, optional): Whether it is checked, that
-                a node with the same name already exists in this pipeline.
-                Defaults to True.
-        """
-        super().add_node(node, check_warning=check_warning)
-        if isinstance(node, Constraint):
-            self.constrain_nodes.add(node)
-
-    def remove_node(self, node: Node) -> None:
-        """Deletes a given node from this pipeline.
-
-        Args:
-            node (Node): The node that should be deleted.
-        """
-        self.nodes.remove(node)
-        if isinstance(node, Constraint):
-            self.constrain_nodes.remove(node)
-
-
-class SequentialPipeline(Pipeline):
-    """
-    A pipeline that is initialized as a sequence of nodes.
-    """
-
-    def __init__(self, *nodes: Node, name="sequential_pipeline"):
-        super().__init__(name=name)
-        for i in range(len(nodes) - 1):
-            self.connect(nodes[i], nodes[i + 1])
-        self.sorted_nodes = list(nodes)
+        # If previous loop was skipped (only one node)
+        if len(self.sorted_nodes) == 1:
+            self.nodes.add(self.sorted_nodes[0])
+            self.incoming_edges[self.sorted_nodes[0]] = list[Edge]()

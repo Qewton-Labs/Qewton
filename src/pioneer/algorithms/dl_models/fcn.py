@@ -1,9 +1,9 @@
 from ..building_blocks.linear import Linear
 from ..building_blocks.activation_functions import ActivationFunction, ReLU
-from ..base import GraphNode
 from ..implementation import DEFAULT_DL_IMPLEMENTATION
-from ...pipelines.base import SequentialGraph
-from ...nodes.base import Node
+from ...graphs.graphs import SequentialGraph
+from ...graphs.nodes import Node, NodeState
+from ...graphs.control_nodes.graph_node import GraphNode
 from ...optim.parameters.hyperparameter_base import HyperParameter
 
 
@@ -39,10 +39,12 @@ class FCN(GraphNode):
             input_ports=self.graph.sorted_nodes[0].input_ports,
             output_ports=self.graph.sorted_nodes[-1].output_ports,
         )
+        self.state = NodeState.UNINITIALIZED
 
     def setup(self):
         nodes: list[Node] = []
-        for i in range(self.n_hidden_layers.value):
+        layers = self.n_hidden_layers.value + 1
+        for i in range(layers):
             nodes.append(
                 Linear(
                     in_neurons=(
@@ -50,16 +52,18 @@ class FCN(GraphNode):
                     ),
                     out_neurons=(
                         self.hidden_neurons.value
-                        if i < self.n_hidden_layers.value - 1
+                        if i < layers - 1
                         else self.out_neurons.value
                     ),
                     bias=self.bias.value,
                     backend=self.backend,
                 )
             )
-            if i < self.n_hidden_layers.value - 1:  # No activation after the last layer
+            # No activation after the last layer
+            if i < layers - 1:
                 nodes.append(self.activation.value(backend=self.backend))
         self.graph = SequentialGraph(*nodes)
+        self.graph.setup()
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:

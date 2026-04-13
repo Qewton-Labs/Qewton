@@ -3,8 +3,7 @@ from .algorithms import building_blocks as building_blocks
 from .config import *
 from .data import *
 from .domains import *
-from .nodes import *
-from .pipelines import *
+from .graphs import *
 from .optim import *
 from .constraints import *
 from .optim.trainer import *

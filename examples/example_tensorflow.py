@@ -18,7 +18,7 @@ constrain = pioneer.constraints.MSEConstraint(
     model[model.OutputKeys.OUTPUT].data_configuration,
 )
 
-pipeline = pioneer.pipelines.Pipeline()
+pipeline = pioneer.graphs.Pipeline()
 
 pipeline.connect(dataset[dataset.OutputKeys.OUTPUT], slice_node[dataset.InputKeys.INPUT])
 pipeline.connect(slice_node["x"], model[dataset.InputKeys.INPUT])

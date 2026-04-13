@@ -29,9 +29,7 @@ def build_problem():
         model[model.OutputKeys.OUTPUT].data_configuration, relative=True
     )
 
-    pipeline = pioneer.pipelines.MSEDataPipeline(
-        dataset, model, constraint=mse_constraint
-    )
+    pipeline = pioneer.graphs.MSEDataPipeline(dataset, model, constraint=mse_constraint)
 
     trainer = pioneer.optim.trainer.PyTorchTrainer(
         [pipeline],

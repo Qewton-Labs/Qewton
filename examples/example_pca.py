@@ -38,7 +38,7 @@ def build_problem():
         model[model.OutputKeys.OUTPUT].data_configuration,
     )
 
-    pipeline = pioneer.pipelines.Pipeline()
+    pipeline = pioneer.graphs.Pipeline()
 
     pipeline.connect(dataset_in, model)
     pipeline.connect(model, constraint[constraint.InputKeys.INPUT1])

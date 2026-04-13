@@ -1,5 +1,6 @@
 from .activation_functions import ActivationFunction, ReLU, Tanh, Sigmoid
-from .linear import Linear, Conv2d
+from .linear import Linear, FunctionalLinear
+from .conv import Conv2d
 from .math import (
     Add,
     Subtract,

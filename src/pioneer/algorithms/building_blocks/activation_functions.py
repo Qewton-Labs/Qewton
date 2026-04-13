@@ -1,6 +1,6 @@
 from ..base import LayerNode
 from ..implementation import DEFAULT_DL_IMPLEMENTATION, TorchImplementation
-from ...nodes.base import NodeState
+from ...graphs.nodes import NodeState
 
 
 class ActivationFunction(LayerNode):

@@ -2,7 +2,7 @@ from enum import Enum
 
 from ..optim.base import EvaluationPhase
 from ..optim.parameters.hyperparameter_base import HyperParameter
-from ..nodes.base import Node
+from ..graphs.nodes import Node
 
 
 class ConstraintObjective(Enum):

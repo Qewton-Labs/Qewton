@@ -11,7 +11,7 @@ from ...optim.parameters.categorical_hyperparameter import (
 )
 from ...config.variables import Variable
 from ...config.axis import SpatialAxis, BatchAxis, FeatureAxis
-from ...nodes.base import Node, OutputPort, InputPort
+from ...graphs.nodes import Node, OutputPort, InputPort
 
 # TODO: For now just a simple dataset where the data is provided
 # How do we handle splitting the data for training, testing, validation?

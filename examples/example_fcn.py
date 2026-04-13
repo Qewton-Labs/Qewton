@@ -2,19 +2,22 @@ import torch
 import pioneer
 import pioneer.algorithms.building_blocks as bb
 
+# lin = bb.Linear(5, 10)
+# lin.setup()
+# print(lin(input=torch.ones((3, 5))))
 fcn = pioneer.algorithms.FCN(
     in_neurons=10,
     hidden_neurons=20,
     out_neurons=5,
-    n_hidden_layers=2,
+    n_hidden_layers=1,
     bias=True,
-    activation=pioneer.building_blocks.ReLU,
+    activation=bb.ReLU,
 )
 
-X = 3.0 * torch.ones((10, 10))
-print(fcn(input=X))
+X = 3.0 * torch.ones((100, 10))
+print(fcn(input=X).shape)
 
-
+X = 3.0 * torch.ones((3, 4))
 add_layer = bb.math.Add()
 print(add_layer(input1=X, input2=3.0))
 
