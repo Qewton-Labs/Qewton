@@ -1,5 +1,5 @@
 from .math import MatMul, Add
-from ..base import TrainableParameterNode
+from .trainable_parameters import TrainableParameterNode
 from ..implementation import DEFAULT_DL_IMPLEMENTATION
 from ...config.configuration_base import DataConfiguration
 from ...optim.parameters.hyperparameter_base import HyperParameter

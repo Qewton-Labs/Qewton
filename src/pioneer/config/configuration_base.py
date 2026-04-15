@@ -123,7 +123,7 @@ class DataConfiguration:
             if self_dtype_unit.dtype != other_dtype_unit.dtype:
                 raise DataConfigDtypeMismatchError(
                     f"Found different data types {self_dtype_unit.dtype} \
-                      and {other_dtype_unit.dtype} at the some position."
+                      and {other_dtype_unit.dtype} at the same position."
                 )
             # In case of ellipsis this becomes more difficult
             if (
@@ -454,7 +454,7 @@ class BatchAxes(Axes):
 class GeometryAxes(Axes):
     # TODO: What would a convolutional layer have as a default config?
     # In 2D for example:
-    # [Dtyps: (..., Featureaxis(Variable), GeometryAxes(None, None))]?
+    # [Dtype: (..., Featureaxis(Variable), GeometryAxes(None, None))]?
     # This is currently not really possible? Do we have some dummy
     # Geometry later on for this? And in unify shapes we need to check
     # if we have such geometry?
