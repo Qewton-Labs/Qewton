@@ -1,22 +1,53 @@
-from ..implementation import DEFAULT_DL_IMPLEMENTATION, Implementation
+from __future__ import annotations
+from ..implementation import (
+    DEFAULT_DL_IMPLEMENTATION,
+    Implementation,
+    TorchImplementation,
+)
 from ...optim.parameters.hyperparameter_base import HyperParameter
+from ...optim.parameters.trainable_parameters import TrainableParameters
 from ...config.configuration_base import DataConfiguration
 from ...graphs.nodes import Node, NodeState, OutputPort
 
 
+class TorchParameter(TorchImplementation):
+
+    def __init__(self, shape=None, tensor=None) -> None:
+        import torch  # type: ignore
+
+        if tensor is not None:
+            assert isinstance(tensor, torch.Tensor)
+            self.param = torch.nn.Parameter(tensor)
+        elif shape is not None:
+            # TODO: We need some kind of initialization for these parameters
+            # E.g. 0, rand, xavier,... But this also needs to be exposed to the outside
+            self.param = torch.nn.Parameter(torch.zeros(shape), requires_grad=True)
+            if len(shape) > 1:
+                torch.nn.init.xavier_uniform_(self.param)
+        module = torch.nn.Module()
+        module.param = self.param
+        super().__init__(torch_module=module)
+
+
 class TrainableParameterNode(Node):
+
+    existing_implementations = {TorchImplementation: TorchParameter}
 
     def __init__(
         self,
         shape: tuple[int | HyperParameter, ...],
-        name: str = "Node",
-        backend: Implementation = DEFAULT_DL_IMPLEMENTATION,
+        initial_value=None,
+        name: str = "TrainableParameterNode",
+        backend=DEFAULT_DL_IMPLEMENTATION,
     ) -> None:
         super().__init__(name, state=NodeState.UNINITIALIZED)
         self.shape = tuple(
             HyperParameter.from_value(s, f"shape_{i}") for i, s in enumerate(shape)
         )
         self.backend = backend
+        self.implementation_class = self.existing_implementations[self.backend]
+        self.implementation: Implementation | None = None
+        self.initial_value = initial_value
         self.output = OutputPort(
             data_configuration=DataConfiguration(),
             node=self,
@@ -25,15 +56,39 @@ class TrainableParameterNode(Node):
 
     def setup(self) -> None:
         if self.state == NodeState.UNINITIALIZED:
-            int_shape = tuple(hp.value for hp in self.shape)
-            # TODO: We need some kind of initialization for these parameters
-            # E.g. 0, rand, xavier,... But this also needs to be exposed to the outside
-            params = self.backend.create_trainable_parameter(int_shape)
-            self.output.set_value(params)
+            if self.initial_value is not None:
+                self.implementation = self.implementation_class(
+                    self.initial_value.shape, self.initial_value
+                )
+            else:
+                int_shape = tuple(hp.value for hp in self.shape)
+                self.implementation = self.implementation_class(int_shape)
+            self.output.set_value(self.implementation.param)
             self.state = NodeState.INITIALIZED
 
     def run(self) -> None:
         pass
 
     def reset(self):
-        self.state = NodeState.UNINITIALIZED
+        if not self.state == NodeState.FIXED:
+            self.output.reset_value()
+            self.state = NodeState.UNINITIALIZED
+
+    def fix_node_state(self) -> None:
+        super().fix_node_state()
+        if self.implementation is not None:
+            self.implementation.requires_grad(False)
+
+    def set_state(self, new_state: NodeState):
+        super().set_state(new_state)
+        if new_state == NodeState.FIXED:
+            self.fix_node_state()
+
+    @property
+    def trainable_parameters(self):
+        params = (
+            []
+            if self.implementation is None
+            else self.implementation.trainable_parameters
+        )
+        return TrainableParameters(self.node_id, params)

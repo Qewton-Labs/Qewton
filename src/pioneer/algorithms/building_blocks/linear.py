@@ -8,20 +8,11 @@ from ...graphs.nodes import InputPort, OutputPort
 from ...graphs.control_nodes.graph_node import GraphNode
 
 
-# class TorchLinear(TorchImplementation):
-#     """Implementation of Linear layer in PyTorch backend."""
-
-#     def __init__(self, in_neurons, out_neurons, bias=True, **kwargs):
-#         from torch.nn import Linear as TLinear
-
-#         super().__init__(
-#             TLinear(in_features=in_neurons, out_features=out_neurons, bias=bias, **kwargs)
-#         )
-
-
 class FunctionalLinear(GraphNode):
 
-    def __init__(self, name="functional_linear", backend=DEFAULT_DL_IMPLEMENTATION):
+    def __init__(
+        self, name="functional_linear", bias=True, backend=DEFAULT_DL_IMPLEMENTATION
+    ):
         self.input = InputPort(
             data_configuration=DataConfiguration(),
             node=self,
@@ -48,7 +39,12 @@ class FunctionalLinear(GraphNode):
         self.matmul_node = MatMul(backend=self.backend)
         self.add_node = Add(backend=self.backend)
         graph = Graph()
-        graph.connect(self.matmul_node.output_ports[0], self.add_node.input_ports[0])
+        if bias:
+            graph.connect(self.matmul_node.output_ports[0], self.add_node.input_ports[0])
+            output_port = self.add_node.output_ports[0]
+        else:
+            graph.add_node(self.matmul_node)
+            output_port = self.matmul_node.output_ports[0]
 
         super().__init__(
             graph=graph,
@@ -57,7 +53,7 @@ class FunctionalLinear(GraphNode):
                 self.matmul_node.input_ports[0]: self.input,
                 self.add_node.input_ports[1]: self.bias,
             },
-            output_ports={self.add_node.output_ports[0]: self.output},
+            output_ports={output_port: self.output},
             name=name,
         )
 
@@ -93,7 +89,7 @@ class Linear(GraphNode):
             self.bias = TrainableParameterNode(
                 (out_neurons,), name="bias", backend=backend
             )
-        self.functional_linear_node = FunctionalLinear(backend=backend)
+        self.functional_linear_node = FunctionalLinear(bias=bias, backend=backend)
 
         graph = Graph()
         graph.connect(self.weight, self.functional_linear_node.weight)

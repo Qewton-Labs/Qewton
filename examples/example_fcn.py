@@ -10,7 +10,7 @@ fcn = pioneer.algorithms.FCN(
     hidden_neurons=20,
     out_neurons=5,
     n_hidden_layers=1,
-    bias=True,
+    bias=False,
     activation=bb.ReLU,
 )
 

@@ -59,6 +59,9 @@ class Port:
             name=new_name if new_name is not None else self.name,
         )
 
+    def reset_value(self):
+        self._value = None
+
     def set_value(self, value):
         self._value = value
 
