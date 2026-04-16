@@ -1,7 +1,7 @@
 from __future__ import annotations
+from typing import Any
 from ..implementation import (
     DEFAULT_DL_IMPLEMENTATION,
-    Implementation,
     TorchImplementation,
 )
 from ...optim.parameters.hyperparameter_base import HyperParameter
@@ -10,7 +10,23 @@ from ...config.configuration_base import DataConfiguration
 from ...graphs.nodes import Node, NodeState, OutputPort
 
 
-class TorchParameter(TorchImplementation):
+class _InternalParameter:
+
+    def __init__(self, shape) -> None:
+        self.shape = shape
+
+    def to(self, device):
+        pass
+
+    @property
+    def trainable_parameters(self) -> Any:
+        pass
+
+    def requires_grad(self, requires_grad: bool):
+        pass
+
+
+class TorchParameter(_InternalParameter):
 
     def __init__(self, shape=None, tensor=None) -> None:
         import torch  # type: ignore
@@ -24,9 +40,17 @@ class TorchParameter(TorchImplementation):
             self.param = torch.nn.Parameter(torch.zeros(shape), requires_grad=True)
             if len(shape) > 1:
                 torch.nn.init.xavier_uniform_(self.param)
-        module = torch.nn.Module()
-        module.param = self.param
-        super().__init__(torch_module=module)
+        super().__init__(shape)
+
+    def to(self, device):
+        self.param.to(device)
+
+    @property
+    def trainable_parameters(self):
+        return self.param
+
+    def requires_grad(self, requires_grad: bool):
+        self.param.requires_grad = requires_grad
 
 
 class ParameterNode(Node):
@@ -46,7 +70,7 @@ class ParameterNode(Node):
         )
         self.backend = backend
         self.implementation_class = self.existing_implementations[self.backend]
-        self.implementation: Implementation | None = None
+        self.implementation: _InternalParameter | None = None
         self.initial_value = initial_value
         self.output = OutputPort(
             data_configuration=DataConfiguration([]),

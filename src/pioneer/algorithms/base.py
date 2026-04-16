@@ -31,12 +31,15 @@ class OperationNode(Node):
     args = {}
     outputs = []
     data_configs = {}
-    implementations = []
+    implementations = {}
 
     def __init__(self, name=None, backend=DEFAULT_DL_IMPLEMENTATION):
+        name = name if name is not None else self.__class__.__name__
+        super().__init__(name=name, state=NodeState.FIXED)
+
         self.implementation = self.get_implementation(backend)
 
-        self.input_ports = [
+        self._input_ports = [
             InputPort(
                 data_configuration=self.data_configs.get(
                     name,
@@ -50,7 +53,7 @@ class OperationNode(Node):
             )
             for name, arg in self.args.items()
         ]
-        self.output_ports = [
+        self._output_ports = [
             OutputPort(
                 data_configuration=self.data_configs.get(
                     name,
@@ -75,18 +78,37 @@ class OperationNode(Node):
             else self.output_ports
         )
 
-        name = name if name is not None else self.__class__.__name__
-        super().__init__(name=name, state=NodeState.FIXED)
+        if len(self._output_ports) == 1:
+            self.parse_output = self._parse_single_output
+        else:
+            self.parse_output = self._parse_multi_output
+
+    @property
+    def input_ports(self) -> list[InputPort]:
+        if self._input_ports is not None:
+            return self._input_ports
+        return []
+
+    @property
+    def output_ports(self) -> list[OutputPort]:
+        if self._output_ports is not None:
+            return self._output_ports
+        return []
 
     def get_implementation(self, backend):
-        for impl in self.implementations:
-            if isinstance(impl, backend):
-                return impl
+        if backend in self.implementations:
+            return backend(*self.implementations[backend])
         raise ValueError(f"No implementation found for backend {backend}.")
 
     def run(self):
         outputs = self.implementation(
             *[port.value for port in self._implementation_ordered_input_ports]
         )
+        self.parse_output(outputs)
+
+    def _parse_single_output(self, output):
+        self._implementation_ordered_output_ports[0].set_value(output)
+
+    def _parse_multi_output(self, outputs):
         for i, port in enumerate(self._implementation_ordered_output_ports):
             port.set_value(outputs[i])

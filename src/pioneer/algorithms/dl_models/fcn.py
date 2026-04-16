@@ -1,5 +1,5 @@
 from ..building_blocks.linear import Linear
-from ..building_blocks.activation_functions import ActivationFunction, ReLU
+from ..building_blocks.activation_functions import ReLU
 from ..implementation import DEFAULT_DL_IMPLEMENTATION
 from ...graphs.graphs import SequentialGraph
 from ...graphs.nodes import Node, NodeState
@@ -17,7 +17,7 @@ class FCN(GraphNode):
         out_neurons: int | HyperParameter,
         n_hidden_layers: int | HyperParameter,
         bias: bool | HyperParameter = True,
-        activation: type[ActivationFunction] | HyperParameter = ReLU,
+        activation=ReLU,
         name="fcn",
         backend=DEFAULT_DL_IMPLEMENTATION,
     ):

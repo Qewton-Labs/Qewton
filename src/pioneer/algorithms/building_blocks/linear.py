@@ -100,6 +100,6 @@ class Linear(GraphNode):
             output_ports={self.functional_linear_node.output: self.output},
             name=name,
         )
-        if self._input_ports is not None and self._output_ports is not None:
-            self._input_ports[0].data_configuration.specify_dtype(backend)
-            self._output_ports[0].data_configuration.specify_dtype(backend)
+        # if self._input_ports is not None and self._output_ports is not None:
+        #     self._input_ports[0].data_configuration.specify_dtype(backend)
+        #     self._output_ports[0].data_configuration.specify_dtype(backend)

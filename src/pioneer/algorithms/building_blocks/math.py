@@ -19,46 +19,43 @@ from ...graphs.nodes import NO_DEFAULT
 class Add(OperationNode):
     args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("add"),
-        TensorflowImplementation("add"),
-    ]
+    implementations = {TorchImplementation: ("add",), TensorflowImplementation: ("add",)}
 
 
 class Subtract(OperationNode):
     args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("sub"),
-        TensorflowImplementation("subtract"),
-    ]
+    implementations = {
+        TorchImplementation: ("sub",),
+        TensorflowImplementation: ("subtract",),
+    }
 
 
 class Multiply(OperationNode):
     args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("mul"),
-        TensorflowImplementation("multiply"),
-    ]
+    implementations = {
+        TorchImplementation: ("mul",),
+        TensorflowImplementation: ("multiply",),
+    }
 
 
 class Divide(OperationNode):
     args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("true_divide"),
-        TensorflowImplementation("truediv"),
-    ]
+    implementations = {
+        TorchImplementation: ("true_divide",),
+        TensorflowImplementation: ("truediv",),
+    }
 
 
 class Mod(OperationNode):
     args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("remainder"),
-        TensorflowImplementation("mod"),
-    ]
+    implementations = {
+        TorchImplementation: ("remainder",),
+        TensorflowImplementation: ("mod",),
+    }
 
 
 # endregion
@@ -70,28 +67,25 @@ class Mod(OperationNode):
 class Square(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("square"),
-        TensorflowImplementation("square"),
-    ]
+    implementations = {
+        TorchImplementation: ("square",),
+        TensorflowImplementation: ("square",),
+    }
 
 
 class Sqrt(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("sqrt"),
-        TensorflowImplementation("sqrt"),
-    ]
+    implementations = {
+        TorchImplementation: ("sqrt",),
+        TensorflowImplementation: ("sqrt",),
+    }
 
 
 class Power(OperationNode):
     args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("pow"),
-        TensorflowImplementation("pow"),
-    ]
+    implementations = {TorchImplementation: ("pow",), TensorflowImplementation: ("pow",)}
 
 
 # endregion
@@ -103,37 +97,31 @@ class Power(OperationNode):
 class Exp(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("exp"),
-        TensorflowImplementation("exp"),
-    ]
+    implementations = {TorchImplementation: ("exp",), TensorflowImplementation: ("exp",)}
 
 
 class Log(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("log"),
-        TensorflowImplementation("log"),
-    ]
+    implementations = {TorchImplementation: ("log",), TensorflowImplementation: ("log",)}
 
 
 class Log2(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("log2"),
-        TensorflowImplementation("keras.ops.log2"),
-    ]
+    implementations = {
+        TorchImplementation: ("log2",),
+        TensorflowImplementation: ("keras.ops.log2",),
+    }
 
 
 class Log10(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("log10"),
-        TensorflowImplementation("log10"),
-    ]
+    implementations = {
+        TorchImplementation: ("log10",),
+        TensorflowImplementation: ("log10",),
+    }
 
 
 # endregion
@@ -145,55 +133,46 @@ class Log10(OperationNode):
 class Sin(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("sin"),
-        TensorflowImplementation("sin"),
-    ]
+    implementations = {TorchImplementation: ("sin",), TensorflowImplementation: ("sin",)}
 
 
 class Cos(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("cos"),
-        TensorflowImplementation("cos"),
-    ]
+    implementations = {TorchImplementation: ("cos",), TensorflowImplementation: ("cos",)}
 
 
 class Tan(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("tan"),
-        TensorflowImplementation("tan"),
-    ]
+    implementations = {TorchImplementation: ("tan",), TensorflowImplementation: ("tan",)}
 
 
 class ArcSin(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("arcsin"),
-        TensorflowImplementation("asin"),
-    ]
+    implementations = {
+        TorchImplementation: ("arcsin",),
+        TensorflowImplementation: ("asin",),
+    }
 
 
 class ArcCos(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("arccos"),
-        TensorflowImplementation("acos"),
-    ]
+    implementations = {
+        TorchImplementation: ("arccos",),
+        TensorflowImplementation: ("acos",),
+    }
 
 
 class ArcTan(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("arctan"),
-        TensorflowImplementation("atan"),
-    ]
+    implementations = {
+        TorchImplementation: ("arctan",),
+        TensorflowImplementation: ("atan",),
+    }
 
 
 # endregion
@@ -205,46 +184,43 @@ class ArcTan(OperationNode):
 class Abs(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("abs"),
-        TensorflowImplementation("abs"),
-    ]
+    implementations = {TorchImplementation: ("abs",), TensorflowImplementation: ("abs",)}
 
 
 class Floor(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("floor"),
-        TensorflowImplementation("floor"),
-    ]
+    implementations = {
+        TorchImplementation: ("floor",),
+        TensorflowImplementation: ("floor",),
+    }
 
 
 class Ceil(OperationNode):
     args = {"x": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("ceil"),
-        TensorflowImplementation("ceil"),
-    ]
+    implementations = {
+        TorchImplementation: ("ceil",),
+        TensorflowImplementation: ("ceil",),
+    }
 
 
 class Maximum(OperationNode):
     args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("maximum"),
-        TensorflowImplementation("maximum"),
-    ]
+    implementations = {
+        TorchImplementation: ("maximum",),
+        TensorflowImplementation: ("maximum",),
+    }
 
 
 class Minimum(OperationNode):
     args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("minimum"),
-        TensorflowImplementation("minimum"),
-    ]
+    implementations = {
+        TorchImplementation: ("minimum",),
+        TensorflowImplementation: ("minimum",),
+    }
 
 
 # endregion
@@ -256,10 +232,10 @@ class Minimum(OperationNode):
 class MatMul(OperationNode):
     args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
     outputs = ["output"]
-    implementations = [
-        TorchImplementation("matmul"),
-        TensorflowImplementation("matmul"),
-    ]
+    implementations = {
+        TorchImplementation: ("matmul",),
+        TensorflowImplementation: ("matmul",),
+    }
 
 
 # endregion
@@ -278,10 +254,10 @@ class Mean(OperationNode):
     args = {"input": NO_DEFAULT, "axis": NO_DEFAULT, "keepdims": False}
     outputs = ["output"]
     # Orders should be correct
-    implementations = [
-        TorchImplementation("mean"),
-        TensorflowImplementation("reduce_mean"),
-    ]
+    implementations = {
+        TorchImplementation: ("mean",),
+        TensorflowImplementation: ("reduce_mean",),
+    }
 
 
 # endregion

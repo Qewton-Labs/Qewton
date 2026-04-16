@@ -187,9 +187,11 @@ class Node(ABC):
     def __call__(self, **kwargs):
         # TODO: also add *args and assume the order is correct
         for port in self.input_ports:
-            if port.name not in kwargs and port.is_required:
+            if port.name in kwargs:
+                port.set_value(kwargs[port.name])
+                continue
+            if port.is_required:
                 raise ValueError(f"Missing required input: {port.name}")
-            port.set_value(kwargs[port.name])
 
         self.run()
 

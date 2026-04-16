@@ -1,7 +1,8 @@
 from .parameters import ParameterNode
-from .activation_functions import ActivationFunction, ReLU, Tanh, Sigmoid
+from .activation_functions import ReLU, Tanh, Sigmoid
 from .linear import Linear, FunctionalLinear
-from .conv import Conv2d
+
+# from .conv import Conv2d
 from .math import (
     Add,
     Subtract,
