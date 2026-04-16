@@ -1,4 +1,3 @@
-from ..base import LayerNode
 from ..implementation import DEFAULT_DL_IMPLEMENTATION, TorchImplementation
 from ...graphs.nodes import NodeState
 

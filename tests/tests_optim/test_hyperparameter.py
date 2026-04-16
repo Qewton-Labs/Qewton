@@ -5,11 +5,11 @@ import pytest
 from pioneer.optim.parameters.hyperparameter_base import (
     HyperParameter,
     HyperParameterState,
-    HyperParameterScale,
-    ContinuousHyperparameter,
-    DiscreteHyperparameter,
-    CategoricalHyperparameter,
-    BooleanHyperparameter,
+    # HyperParameterScale,
+    # ContinuousHyperparameter,
+    # DiscreteHyperparameter,
+    # CategoricalHyperparameter,
+    # BooleanHyperparameter,
 )
 
 

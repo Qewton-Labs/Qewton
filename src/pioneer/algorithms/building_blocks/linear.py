@@ -1,5 +1,5 @@
 from .math import MatMul, Add
-from .trainable_parameters import TrainableParameterNode
+from .trainable_parameters import ParameterNode
 from ..implementation import DEFAULT_DL_IMPLEMENTATION
 from ...config.configuration_base import DataConfiguration
 from ...optim.parameters.hyperparameter_base import HyperParameter
@@ -14,23 +14,23 @@ class FunctionalLinear(GraphNode):
         self, name="functional_linear", bias=True, backend=DEFAULT_DL_IMPLEMENTATION
     ):
         self.input = InputPort(
-            data_configuration=DataConfiguration(),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="input",
         )
         self.weight = InputPort(
-            data_configuration=DataConfiguration(),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="weight",
         )
         self.bias = InputPort(
-            data_configuration=DataConfiguration(),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="bias",
             default=None,
         )
         self.output = OutputPort(
-            data_configuration=DataConfiguration(),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="output",
         )
@@ -72,23 +72,21 @@ class Linear(GraphNode):
         backend=DEFAULT_DL_IMPLEMENTATION,
     ):
         self.input = InputPort(
-            data_configuration=DataConfiguration(),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="input",
         )
         self.output = OutputPort(
-            data_configuration=DataConfiguration(),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="output",
         )
 
-        self.weight = TrainableParameterNode(
+        self.weight = ParameterNode(
             (in_neurons, out_neurons), name="weight", backend=backend
         )
         if bias:
-            self.bias = TrainableParameterNode(
-                (out_neurons,), name="bias", backend=backend
-            )
+            self.bias = ParameterNode((out_neurons,), name="bias", backend=backend)
         self.functional_linear_node = FunctionalLinear(bias=bias, backend=backend)
 
         graph = Graph()

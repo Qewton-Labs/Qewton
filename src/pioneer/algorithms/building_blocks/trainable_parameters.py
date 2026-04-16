@@ -29,7 +29,7 @@ class TorchParameter(TorchImplementation):
         super().__init__(torch_module=module)
 
 
-class TrainableParameterNode(Node):
+class ParameterNode(Node):
 
     existing_implementations = {TorchImplementation: TorchParameter}
 
@@ -37,7 +37,7 @@ class TrainableParameterNode(Node):
         self,
         shape: tuple[int | HyperParameter, ...],
         initial_value=None,
-        name: str = "TrainableParameterNode",
+        name: str = "ParameterNode",
         backend=DEFAULT_DL_IMPLEMENTATION,
     ) -> None:
         super().__init__(name, state=NodeState.UNINITIALIZED)

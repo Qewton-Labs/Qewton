@@ -2,6 +2,12 @@ from typing import Iterable
 
 
 class Implementation:
+
+    def __init__(self, implementation_name, inputs=None, outputs=None):
+        self.implementation_name = implementation_name
+        self.inputs = inputs
+        self.outputs = outputs
+
     def __call__(self, *args, **kwargs):
         raise NotImplementedError(
             "The __call__ method must be implemented by subclasses of Implementation."
@@ -31,45 +37,18 @@ class Implementation:
                 Implementation."
         )
 
-    @property
-    def trainable_parameters(self) -> Iterable:
-        """Returns the trainable parameters of this node, which can be used for
-        training the underlying algorithm (e.g. a neural network).
-
-        Returns:
-            Iterable of the trainable parameters
-        """
-        raise NotImplementedError(
-            "The trainable_parameters property must be implemented by subclasses \
-                of Implementation."
-        )
-
-    def to(self, device):
-        """Moves the underlying algorithm to the specified device (e.g. GPU).
-
-        Args:
-            device: the device to move the underlying algorithm to.
-        """
-        # By default, do nothing. Subclasses can override this if needed.
-
-    def requires_grad(self, track_gradient: bool):
-        """Enables wether gradients in respect to the parameters of the class
-        should be tracked.
-
-        Args:
-            track_gradient (bool): If the gradient should be tracked or not.
-        """
-
 
 class TorchImplementation(Implementation):
     """
     A PyTorch implementation consisting of a single torch.nn.Module
     """
 
-    def __init__(self, torch_module) -> None:
+    def __init__(self, implementation_name, inputs=None, outputs=None) -> None:
         """Creates the underlying PyTorch module instance."""
-        super().__init__()
-        self._torch_module = torch_module
+        super().__init__(implementation_name, inputs, outputs)
+        import torch  # pylint: disable=import-outside-toplevel # type: ignore
+
+        self._torch_module = getattr(torch, self.implementation_name)
 
     @classmethod
     def exists(cls):
@@ -88,34 +67,21 @@ class TorchImplementation(Implementation):
 
         return torch.Tensor
 
-    @property
-    def torch_module(self):
-        return self._torch_module
-
     def __call__(self, *args, **kwargs):
         return self._torch_module(*args, **kwargs)
-
-    @property
-    def trainable_parameters(self) -> Iterable:
-        return self._torch_module.parameters()
-
-    def to(self, device):
-        self._torch_module.to(device)
-
-    def requires_grad(self, track_gradient: bool):
-        for p in self.trainable_parameters:
-            p.requires_grad = track_gradient
 
 
 class TensorflowImplementation(Implementation):
     """
-    A TensorFlow implementation consisting of a single tf.keras.Layer
+    A TensorFlow implementation consisting of a single tf layer
     """
 
-    def __init__(self, tf_layer) -> None:
+    def __init__(self, implementation_name, inputs=None, outputs=None) -> None:
         """Creates the underlying TensorFlow layer instance."""
-        super().__init__()
-        self._tf_layer = tf_layer
+        super().__init__(implementation_name, inputs, outputs)
+        import tensorflow as tf  # pylint: disable=import-error # type: ignore
+
+        self._tf_layer = getattr(tf, self.implementation_name)
 
     @classmethod
     def exists(cls):
@@ -134,16 +100,8 @@ class TensorflowImplementation(Implementation):
 
         return tf.Tensor
 
-    @property
-    def tf_layer(self):
-        return self._tf_layer
-
     def __call__(self, *args, **kwargs):
         return self._tf_layer(*args, **kwargs)
-
-    @property
-    def trainable_parameters(self) -> Iterable:
-        return self._tf_layer.trainable_variables  # TODO
 
 
 DL_IMPLEMENTATION_HIERARCHY = [TorchImplementation, TensorflowImplementation]
