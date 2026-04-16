@@ -203,7 +203,7 @@ class DTypeUnit:
                     new_var = a
                 elif a == ... or a.is_empty():
                     new_var = b
-
+                # TODO
                 new_axis = FeatureAxes(a if b == ... else b if a == ... else a * b)
 
             else:  # GeometryAxes
