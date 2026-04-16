@@ -17,21 +17,25 @@ class DataConfiguration:
         self,
         dtype_units: DTypeUnit | list[DTypeUnit],
     ):
-        """
-        Example:
-        self.axes = [batch_axis, object_axis, feature_axis]
-        self.dtypes = [(list, 1), (dict, 1), (torch.tensor, (2, 5))]
-        """
+
         if not isinstance(dtype_units, list):
             dtype_units = [dtype_units]
         self.dtype_units = dtype_units
         # _ = self.feature_axis  # to check there is only one feature axis
 
     @classmethod
+    def empty(cls):
+        return cls(DTypeUnit(None, [...]))
+
+    @classmethod
     def from_data(cls, data) -> DataConfiguration:
         raise NotImplementedError(
             "TODO: implement this method to automatically infer configuration from data"
         )
+
+    @classmethod
+    def default_for_dtype(cls, dtype) -> DataConfiguration:
+        return cls(DTypeUnit(dtype, [...]))
 
     @property
     def shape(self):
@@ -74,26 +78,18 @@ class DataConfiguration:
     def feature_axis(self):
         axis = self._get_axes(FeatureAxes)
         assert (
-            len(axis) == 1
-        ), "There should be exactly one feature axis in the configuration."
-        return axis[0]
+            len(axis) <= 1
+        ), "There should be at most one feature axis in the configuration."
+        return axis[0] if axis else None
 
     @property
     def geometry_axes(self):
         return self._get_axes(GeometryAxes)
 
-    def specify_dtype(self, implementation):
-        """TODO:
-        Do we need a kind of ordering for dtype-casting?
-
-        None -> List/Tuple -> Numpy -> Tensors, or None -> dict.
-
-        But from dict we can not directly cast further and also the other way
-        around is not always possible (tensor is on a GPU an must be moved first).
-
-        Even List -> Numpy/Tensor can be dangerous depending on the elements in the
-        list, do we need like a "meta type" further denoting torch.float32, etc.
-        """
+    # def specify_dtype(self, implementation):
+    #     """
+    #     Sets the dtype of this configuration, if it is None.
+    #     """
 
     def unify(self, other_config: DataConfiguration) -> DataConfiguration:
         """TODO: This will not handle any mismatches in dtypes currently.
@@ -119,12 +115,18 @@ class DataConfiguration:
         for self_dtype_unit, other_dtype_unit in zip(
             self.dtype_units, other_config.dtype_units
         ):
-            # Check if types are the same:
+            # Check if types are the same or one of them is None (unspecified), otherwise
+            # we can not unify:
             if self_dtype_unit.dtype != other_dtype_unit.dtype:
-                raise DataConfigDtypeMismatchError(
-                    f"Found different data types {self_dtype_unit.dtype} \
-                      and {other_dtype_unit.dtype} at the same position."
-                )
+                if self_dtype_unit.dtype is None:
+                    self_dtype_unit.dtype = other_dtype_unit.dtype
+                elif other_dtype_unit.dtype is None:
+                    other_dtype_unit.dtype = self_dtype_unit.dtype
+                else:
+                    raise DataConfigDtypeMismatchError(
+                        f"Found different data types {self_dtype_unit.dtype} \
+                        and {other_dtype_unit.dtype} at the same position."
+                    )
             # In case of ellipsis this becomes more difficult
             if (
                 self_dtype_unit.contains_ellipsis()
@@ -135,10 +137,32 @@ class DataConfiguration:
                 pass
             # Otherwise we can just compare the axis elements and see if they match
             else:
-                self._unify_dtype_unit(new_dtype_units, self_dtype_unit, other_dtype_unit)
+                new_dtype_units.append(DTypeUnit.unify(self_dtype_unit, other_dtype_unit))
         return DataConfiguration(new_dtype_units)
 
-    def _unify_dtype_unit(self, new_dtype_units, self_dtype_unit, other_dtype_unit):
+    def fits(self, other_config: DataConfiguration) -> bool:
+        """Checks if two modules can be connected, this does not necessarily mean
+        that one is a subconfig of the other, since different axes might be specified
+        or unspecified."""
+        try:
+            _ = self.unify(other_config)
+            return True
+        except DataConfigMismatchError:
+            return False
+
+
+class DTypeUnit:
+    def __init__(self, dtype, axes: list[Axes | EllipsisType | None]):
+        self.dtype = dtype
+        if axes.count(...) > 1:
+            raise ValueError("Axes configuration can at most contain 1 Ellipsis.")
+        self.axes = axes
+
+    def contains_ellipsis(self) -> bool:
+        return ... in self.axes
+
+    @classmethod
+    def unify(cls, self_dtype_unit, other_dtype_unit):
         # TODO: Maybe move this into the DTypeUnits
         if len(self_dtype_unit.axes) != len(other_dtype_unit.axes):
             raise DataConfigMismatchError(
@@ -146,7 +170,15 @@ class DataConfiguration:
                             vs {len(other_dtype_unit.axes)}) for the data type \
                             {self_dtype_unit.dtype}"
             )
+
+        new_axes = []
         for self_axis, other_axis in zip(self_dtype_unit.axes, other_dtype_unit.axes):
+            if self_axis is None:
+                new_axes.append(other_axis)
+                continue
+            if other_axis is None:
+                new_axes.append(self_axis)
+                continue
             if not isinstance(self_axis, type(other_axis)):
                 raise DataConfigMismatchError(
                     f"Could not unify configurations, found incompatible \
@@ -167,48 +199,19 @@ class DataConfiguration:
 
             elif isinstance(self_axis, FeatureAxes):
                 a, b = self_axis.variables, other_axis.variables  # type: ignore
+                if b == ... or b.is_empty():
+                    new_var = a
+                elif a == ... or a.is_empty():
+                    new_var = b
+                # TODO
                 new_axis = FeatureAxes(a if b == ... else b if a == ... else a * b)
 
             else:  # GeometryAxes
                 new_axis = GeometryAxes(
                     self_axis.unify_geometry(other_axis.geometry)  # type: ignore
                 )
-            # Now create new DTypeUnit or append at existing one:
-            if new_dtype_units and new_dtype_units[-1].dtype == self_dtype_unit.dtype:
-                new_dtype_units[-1].axes.append(new_axis)
-            else:
-                new_dtype_units.append(DTypeUnit(self_dtype_unit.dtype, [new_axis]))
-
-    def fits(self, other_config: DataConfiguration) -> bool:
-        """Checks if two modules can be connected, this does not necessarily mean
-        that one is a subconfig of the other, since different axes might be specified
-        or unspecified."""
-        try:
-            _ = self.unify(other_config)
-            return True
-        except DataConfigMismatchError:
-            return False
-
-
-class DTypeUnit:
-    def __init__(self, dtype, axes: list[Axes | EllipsisType]):
-        # TODO: Do we need Ellipsis in the axis?
-        # For example we need to somehow denote the configuration:
-        # Type : (..., Feature-axis) where in-front anything could happen?
-        #   But the in-front part is not part of the Feature-axis, since it may
-        #   be a batch axis
-        self.dtype = dtype
-        if axes.count(...) > 1:
-            raise ValueError("Axes configuration can at most contain 1 Ellipsis.")
-        self.axes = axes
-
-    def contains_ellipsis(self) -> bool:
-        return ... in self.axes
-
-    def unify_dtype(self, other_dtype):
-        # TODO: Implement structure for this, see also comment in .specify_dtype
-        pass
-        # raise DataConfigDtypeMismatchError
+            new_axes.append(new_axis)
+        return DTypeUnit(self_dtype_unit.dtype, new_axes)
 
     def collapse_batch_axes(self):
         """Simplifies the axes structure inside this object if possible.
@@ -389,7 +392,10 @@ class Axes:
 
         while start_idx > 0 and end_idx >= 0:
             current = start_part[start_idx]
-            if current == end_part[end_idx]:  # TODO: Maybe include broadcasting?
+            try:
+                cls.unify_dim(
+                    current, end_part[end_idx], broadcast_singleton
+                )  # check if they match
                 # If we have a match, they could be the same axis:
                 # check if all neighbors to the left also match
                 # If yes we can just add everything together
@@ -415,6 +421,8 @@ class Axes:
                         break
                     except DataConfigMismatchError:
                         pass
+            except DataConfigMismatchError:
+                pass
 
             matching_middle.append(current)
             start_idx -= 1
@@ -475,14 +483,16 @@ class GeometryAxes(Axes):
 
 
 class FeatureAxes(Axes):
-    def __init__(self, variables: Variable | EllipsisType):
+    def __init__(self, variables: Variable | EllipsisType = Variable()):
         self.variables = variables
 
     @property
     def shape(self):
         if self.variables is ...:
             return (...,)
-        return (self.variables.dim,)  # TODO: is this correct in case of matrices?
+        if isinstance(self.variables.dim, tuple):
+            return self.variables.dim
+        return (self.variables.dim,)
 
     @property
     def name(self) -> str:

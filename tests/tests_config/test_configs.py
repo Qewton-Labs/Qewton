@@ -234,7 +234,7 @@ class TestConfigUnify:
 
     def test_unify_wrong_dtypes(self):
         config_1 = DataConfiguration(
-            DTypeUnit(None, [BatchAxes((10, 5)), self.feature_dummy()])
+            DTypeUnit(tuple, [BatchAxes((10, 5)), self.feature_dummy()])
         )
         config_2 = DataConfiguration(
             DTypeUnit(list, [BatchAxes((10, 5)), self.feature_dummy()])
@@ -325,7 +325,3 @@ class TestConfigUnify:
     #     assert new_config.dtype_units[0].dtype == list
     #     assert new_config.dtype_units[0].axes[0].shape == (10, 5)  # type: ignore
     #     assert new_config.dtype_units[0].axes[1].shape == (1, 1, 7)  # type: ignore
-
-
-ttt = TestConfigUnify()
-ttt.test_unify_same_config()

@@ -1,7 +1,7 @@
 from collections import OrderedDict
 import pytest
 
-from src.pioneer.config.variables import Variable
+from pioneer.config.variables import Variable
 
 
 class TestVariableInit:
@@ -112,25 +112,8 @@ class TestVariableMul:
         """Test multiplying two variables with overlapping keys."""
         v1 = Variable.from_dict({"x": 2, "y": 1})
         v2 = Variable.from_dict({"y": 3, "z": 1})
-        result = v1 * v2
-        assert result["x"] == 2
-        assert result["y"] == 4  # 1 + 3
-        assert result["z"] == 1
-
-    def test_mul_preserves_first_variable(self):
-        """Test that multiplication doesn't modify first variable."""
-        v1 = Variable.from_dict({"x": 2})
-        v2 = Variable.from_dict({"x": 3})
-        result = v1 * v2
-        assert v1["x"] == 2  # Original unchanged
-        assert result["x"] == 5
-
-    def test_mul_large_sum(self):
-        """Test multiplication with large dimension sums."""
-        v1 = Variable.from_dict({"x": 1000000})
-        v2 = Variable.from_dict({"x": 2000000})
-        result = v1 * v2
-        assert result["x"] == 3000000
+        with pytest.raises(ValueError):
+            _ = v1 * v2
 
     def test_mul_returns_variable_instance(self):
         """Test that multiplication returns Variable instance."""

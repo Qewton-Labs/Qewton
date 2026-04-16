@@ -185,6 +185,7 @@ class Node(ABC):
         )
 
     def __call__(self, **kwargs):
+        # TODO: also add *args and assume the order is correct
         for port in self.input_ports:
             if port.name not in kwargs and port.is_required:
                 raise ValueError(f"Missing required input: {port.name}")
@@ -270,3 +271,20 @@ class Node(ABC):
 
     def set_pipeline_id(self, pipeline_id: int):
         self.pipeline_id = pipeline_id
+
+    def update_data_configs(self, input_configs, output_configs, changed_port):
+        # TODO
+        # by default, do not update anything
+        return input_configs, output_configs
+
+    def get_input_port(self, name):
+        for port in self.input_ports:
+            if port.name == name:
+                return port
+        raise ValueError(f"No input port with name {name} found in node {self.name}.")
+
+    def get_output_port(self, name):
+        for port in self.output_ports:
+            if port.name == name:
+                return port
+        raise ValueError(f"No output port with name {name} found in node {self.name}.")

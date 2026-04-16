@@ -14,23 +14,23 @@ class FunctionalLinear(GraphNode):
         self, name="functional_linear", bias=True, backend=DEFAULT_DL_IMPLEMENTATION
     ):
         self.input = InputPort(
-            data_configuration=DataConfiguration([]),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="input",
         )
         self.weight = InputPort(
-            data_configuration=DataConfiguration([]),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="weight",
         )
         self.bias = InputPort(
-            data_configuration=DataConfiguration([]),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="bias",
             default=None,
         )
         self.output = OutputPort(
-            data_configuration=DataConfiguration([]),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="output",
         )
@@ -72,12 +72,12 @@ class Linear(GraphNode):
         backend=DEFAULT_DL_IMPLEMENTATION,
     ):
         self.input = InputPort(
-            data_configuration=DataConfiguration([]),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="input",
         )
         self.output = OutputPort(
-            data_configuration=DataConfiguration([]),
+            data_configuration=DataConfiguration.empty(),
             node=self,
             name="output",
         )
