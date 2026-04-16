@@ -29,7 +29,7 @@ class TorchParameter(TorchImplementation):
         super().__init__(torch_module=module)
 
 
-class TrainableParameterNode(Node):
+class ParameterNode(Node):
 
     existing_implementations = {TorchImplementation: TorchParameter}
 
@@ -37,7 +37,7 @@ class TrainableParameterNode(Node):
         self,
         shape: tuple[int | HyperParameter, ...],
         initial_value=None,
-        name: str = "TrainableParameterNode",
+        name: str = "ParameterNode",
         backend=DEFAULT_DL_IMPLEMENTATION,
     ) -> None:
         super().__init__(name, state=NodeState.UNINITIALIZED)
@@ -49,7 +49,7 @@ class TrainableParameterNode(Node):
         self.implementation: Implementation | None = None
         self.initial_value = initial_value
         self.output = OutputPort(
-            data_configuration=DataConfiguration(),
+            data_configuration=DataConfiguration([]),
             node=self,
             name="parameters",
         )
@@ -64,7 +64,7 @@ class TrainableParameterNode(Node):
                 int_shape = tuple(hp.value for hp in self.shape)
                 self.implementation = self.implementation_class(int_shape)
             self.output.set_value(self.implementation.param)
-            self.state = NodeState.INITIALIZED
+            self._state = NodeState.INITIALIZED
 
     def run(self) -> None:
         pass
@@ -72,7 +72,7 @@ class TrainableParameterNode(Node):
     def reset(self):
         if not self.state == NodeState.FIXED:
             self.output.reset_value()
-            self.state = NodeState.UNINITIALIZED
+            self._state = NodeState.UNINITIALIZED
 
     def fix_node_state(self) -> None:
         super().fix_node_state()
@@ -92,3 +92,7 @@ class TrainableParameterNode(Node):
             else self.implementation.trainable_parameters
         )
         return TrainableParameters(self.node_id, params)
+
+    def to(self, device):
+        if self.implementation is not None:
+            self.implementation.to(device=device)

@@ -57,6 +57,14 @@ class GraphNode(Node):
             assert port.node == self
         self._output_ports = cast(list[OutputPort], new_output_ports)
 
+    def update_inner_input_ports(self, new_input_ports: list[InputPort]):
+        for i, port in enumerate(new_input_ports):
+            self._inner_input_ports[i] = port
+
+    def update_outer_input_ports(self, new_output_ports: list[OutputPort]):
+        for i, port in enumerate(new_output_ports):
+            self._inner_output_ports[i] = port
+
     def _create_ports(
         self,
         provided_ports: (
@@ -94,6 +102,10 @@ class GraphNode(Node):
     def trainable_parameters(self) -> _TrainableParameterBase:
         return self.graph.collect_trainable_parameters()
 
+    @property
+    def _trainable_parameters(self) -> _TrainableParameterBase:
+        return self.trainable_parameters
+
     def setup(self) -> None:
         self.graph.setup()
 
@@ -110,3 +122,7 @@ class GraphNode(Node):
     def reset(self):
         for node in self.graph.nodes:
             node.reset()
+
+    def to(self, device):
+        for node in self.graph.nodes:
+            node.to(device=device)

@@ -11,6 +11,8 @@ from ...graphs.pipeline import Pipeline
 from ...constraints.base import Constraint
 from .base import Trainer
 
+import time as time
+
 
 class PyTorchTrainer(Trainer):
     def __init__(
@@ -40,12 +42,14 @@ class PyTorchTrainer(Trainer):
         self.lr = HyperParameter.from_value(learning_rate, "Learning Rate")
 
     def _get_trainable_parameters(self):
-        trainable_parameters = []
-        for node in self.all_nodes:
-            node_params = node.trainable_parameters
-            if node_params is not None:
-                trainable_parameters.append({"params": node_params})
-        return trainable_parameters
+        trainable_parameters = super()._get_trainable_parameters()
+        if trainable_parameters is None:
+            raise ValueError("Found no trainable parameters in the problem.")
+        torch_params = []
+        for param in trainable_parameters:
+            torch_params.extend(list(param.parameters))
+            # torch_params.append({"params": param.parameters})
+        return torch_params
 
     def _move_to_device(self):
         for node in self.all_nodes:
@@ -63,6 +67,7 @@ class PyTorchTrainer(Trainer):
             trainable_parameters, lr=self.lr.value
         )
         # Start training loop
+        start_time = time.time()
         for step in range(self.max_iterations.value):
 
             # Run all pipelines and compute the training loss
@@ -71,28 +76,31 @@ class PyTorchTrainer(Trainer):
             )
 
             # Update parameters
+            loss_time = time.time()
             total_loss.backward()  # type: ignore
             self.optimizer.step()
             self.optimizer.zero_grad()
+            print("Loss took:", time.time() - loss_time)
 
-            # Check validation data
-            if step % self.validation_check == 0:
-                validation_loss = self._compute_loss(
-                    self.validation_pipelines,
-                    EvaluationPhase.VALIDATION,
-                    self.validation_constraints,
-                )
+            # # Check validation data
+            # if step % self.validation_check == 0:
+            #     validation_loss = self._compute_loss(
+            #         self.validation_pipelines,
+            #         EvaluationPhase.VALIDATION,
+            #         self.validation_constraints,
+            #     )
 
-                if show_progress:
-                    print(
-                        f"Training loss at {step}/{self.max_iterations.value}: \
-                        {total_loss}"
-                    )
-                    if len(self.validation_constraints) > 0:
-                        print(
-                            f"Validation loss at {step}/{self.max_iterations.value}:\
-                            {validation_loss}"
-                        )
+            #     if show_progress:
+            #         print(
+            #             f"Training loss at {step}/{self.max_iterations.value}: \
+            #             {total_loss}"
+            #         )
+            #         if len(self.validation_constraints) > 0:
+            #             print(
+            #                 f"Validation loss at {step}/{self.max_iterations.value}:\
+            #                 {validation_loss}"
+            #             )
+        print("Training took:", time.time() - start_time)
 
     def _evaluate_constraints(
         self, constraint_list: list[Constraint]

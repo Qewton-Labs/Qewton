@@ -12,6 +12,9 @@ class ConstraintObjective(Enum):
 
 class Constraint(Node):
     """
+    TODO: These could be become graph nodes as well, but this may be not
+    so nice for end user if they want to just implement there own constraint.
+
     problem constraints, e.g. data, PDE, symmetries etc...
     """
 

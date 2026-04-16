@@ -18,6 +18,7 @@
         "lowrank",
         "PCANN",
         "popleft",
+        "randperm",
         "Sobol",
         "TUNABLEPARAMS"
     ]

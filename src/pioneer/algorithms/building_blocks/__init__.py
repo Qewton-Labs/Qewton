@@ -1,4 +1,4 @@
-from .trainable_parameters import TrainableParameterNode
+from .parameters import ParameterNode
 from .activation_functions import ActivationFunction, ReLU, Tanh, Sigmoid
 from .linear import Linear, FunctionalLinear
 from .conv import Conv2d

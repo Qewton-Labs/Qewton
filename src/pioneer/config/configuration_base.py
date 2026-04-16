@@ -25,7 +25,7 @@ class DataConfiguration:
         if not isinstance(dtype_units, list):
             dtype_units = [dtype_units]
         self.dtype_units = dtype_units
-        _ = self.feature_axis  # to check there is only one feature axis
+        # _ = self.feature_axis  # to check there is only one feature axis
 
     @classmethod
     def from_data(cls, data) -> DataConfiguration:

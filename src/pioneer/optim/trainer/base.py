@@ -5,9 +5,12 @@ from ..base import EvaluationPhase
 from ..parameters.hyperparameter_base import HyperParameter
 from ..parameters.categorical_hyperparameter import CategoricalHyperparameter
 from ..parameters.number_hyperparameter import DiscreteHyperparameter
+from ..parameters.trainable_parameters import TrainableParameters
 from ...graphs.pipeline import Pipeline
 from ...graphs.nodes import Node
 from ...constraints.base import Constraint
+
+import time
 
 
 ###############################
@@ -93,8 +96,15 @@ class Trainer:
         self.tuning_constraints = constraints
         self.tune_pipelines = self._register_pipelines(self.tuning_constraints)
 
-    def _get_trainable_parameters(self):
-        return []
+    def _get_trainable_parameters(self) -> Any:
+        parameters = None
+        for node in self.all_nodes:
+            node_params = node.trainable_parameters
+            if parameters is None:
+                parameters = node_params
+            elif not node_params.empty:
+                parameters = parameters.combine(node_params)
+        return parameters
 
     def _move_to_device(self):
         pass
@@ -131,8 +141,10 @@ class Trainer:
         mode: EvaluationPhase,
         constraints: list[Constraint],
     ):
+        start_time = time.time()
         for pipeline in pipelines:
             pipeline.run(mode)
+        print("Run of pipeline took:", time.time() - start_time)
 
         total_loss = 0.0
         for constraint in constraints:

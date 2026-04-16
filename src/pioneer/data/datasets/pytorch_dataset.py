@@ -1,5 +1,8 @@
 from __future__ import annotations
+from typing import Any
 import torch
+
+from pioneer.config.variables import Variable
 
 from ...config.configuration_base import DataConfiguration
 from ...optim.parameters.number_hyperparameter import (
@@ -9,7 +12,6 @@ from ...optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
 from ...optim.base import EvaluationPhase
-from ...config.variables import Variable
 from .base import DataSet, register_dataset
 
 
@@ -18,8 +20,9 @@ class TorchDataSet(DataSet):
     def __init__(
         self,
         data_config: DataConfiguration,
-        data,
+        data: torch.Tensor,
         batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
+        batch_dimension: int = 0,
         splitting_ratio: tuple[float, float, float] = (0.8, 0.1, 0.1),
         shuffle_data: bool = True,
         name: str = "TorchDataSet",
@@ -27,27 +30,23 @@ class TorchDataSet(DataSet):
         assert isinstance(
             data, torch.Tensor
         ), "TorchDataSet expects torch tensors as data."
-        assert isinstance(
-            data_config.dtype, torch.dtype
-        ), f"Type of configuration is {data_config.dtype} and does not fit torch data."
         super().__init__(
             data_config,
             data,
             batch_size,
-            splitting_ratio,
+            batch_dimension=batch_dimension,
+            splitting_ratio=splitting_ratio,
             shuffle_data=shuffle_data,
             name=name,
         )
         self.data: torch.Tensor = self.data
 
         if self.shuffle_data:
-            rand_idx = torch.randperm(self.data.size(self.data_config.batch_axis_idx))
-            self.data = self.data[
-                self.data_config.slice_axis(self.data_config.batch_axis_idx, rand_idx)
-            ]
+            rand_idx = torch.randperm(self.data.size(self.batch_dimension))
+            self.data = self.data[self.build_axis_slice(self.batch_dimension, rand_idx)]
 
         # Build data splits for batching and different modes
-        n_samples = self.data.size(self.data_config.batch_axis_idx)
+        n_samples = self.data.size(self.batch_dimension)
         train_r, val_r, _ = self.splitting_ratio
         train_end = int(train_r * n_samples)
         val_end = train_end + int(val_r * n_samples)
@@ -70,10 +69,10 @@ class TorchDataSet(DataSet):
             self._std = self._std.to(device)
 
     def _compute_mean(self):
-        self._mean = self.data.mean(dim=self.data_config.batch_axis_idx, keepdim=True)
+        self._mean = self.data.mean(dim=self.batch_dimension, keepdim=True)
 
     def _compute_std(self):
-        self._std = self.data.std(dim=self.data_config.batch_axis_idx, keepdim=True)
+        self._std = self.data.std(dim=self.batch_dimension, keepdim=True)
 
     def run(self):
         start_split, end_split = self._splits[self.mode]
@@ -81,11 +80,7 @@ class TorchDataSet(DataSet):
         start = start_split + self._batch_progress
         end = min(start + self.batch_size.value, end_split)
 
-        batch = self.data[
-            self.data_config.slice_axis(
-                self.data_config.batch_axis_idx, slice(start, end)
-            )
-        ]
+        batch = self.data[self.build_axis_slice(self.batch_dimension, slice(start, end))]
 
         # update batch progress
         self._batch_progress += self.batch_size.value
@@ -93,22 +88,14 @@ class TorchDataSet(DataSet):
         if end >= end_split:
             self._batch_progress = 0
 
-        self.out_port.set_value(batch)
-
-    def compute_pca(
-        self, n_components: int, variable: Variable
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        normalized_data = (self.data - self.mean) / (self.std + self.std_eps)
-        variable_idx = self.data_config.get_axis_indices_of_variables(variable)
-        index_slice = self.data_config.slice_axis(
-            self.data_config.feature_axis_idx, variable_idx
-        )
-        return torch.pca_lowrank(
-            torch.flatten(normalized_data[index_slice], 1), q=n_components
-        )
+        self.output.set_value(batch)
 
     def reset(self):
         self.to("cpu")
+
+    def compute_pca(self, n_components: int, variable: Variable) -> tuple[Any, Any, Any]:
+        # TODO: Implement
+        return (None, None, None)
 
 
 register_dataset(lambda d: isinstance(d, torch.Tensor), TorchDataSet)

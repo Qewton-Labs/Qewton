@@ -134,7 +134,7 @@ class Node(ABC):
         """
         super().__init__()
         self.name = name
-        self.state = state
+        self._state = state
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
         self.pipeline_id: int = 0
 
@@ -249,7 +249,11 @@ class Node(ABC):
         Args:
             new_state (NodeState): The new state of this node.
         """
-        self.state = new_state
+        self._state = new_state
+
+    @property
+    def state(self):
+        return self._state
 
     def fix_node_state(self) -> None:
         """Fix the state of the node so it will not be
@@ -262,7 +266,7 @@ class Node(ABC):
                 UserWarning,
             )
             return
-        self.state = NodeState.FIXED
+        self._state = NodeState.FIXED
 
     def set_pipeline_id(self, pipeline_id: int):
         self.pipeline_id = pipeline_id

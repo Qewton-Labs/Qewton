@@ -40,6 +40,7 @@ class DataSet(Node):
         data_config: DataConfiguration,
         data,
         batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
+        batch_dimension: int = 0,
         splitting_ratio: tuple[float, float, float] = (0.8, 0.1, 0.1),
         shuffle_data: bool = True,
         name: str = "DataSet",
@@ -55,9 +56,9 @@ class DataSet(Node):
         self.batch_size: HyperParameter = HyperParameter.from_value(
             batch_size, name="Batch Size"
         )
+        self.batch_dimension = batch_dimension
         self.shuffle_data = shuffle_data
-        # TODO: Can the ratios be Hyperparameters, we could allow for a
-        # CategorialHyperparameter consisting of lists with 3 values?
+
         self.splitting_ratio = splitting_ratio
         self._batch_progress: int = (
             0  # the last element returned when "run" was called last.
@@ -66,7 +67,7 @@ class DataSet(Node):
         self._mean = None
         self._std = None
         self.std_eps = 1.0e-5  # small tolerance to add when std is equal 0
-        self.out_port = OutputPort(self.data_config, self)
+        self.output = OutputPort(self.data_config, self, name="data output")
 
     @classmethod
     def from_data(
@@ -116,9 +117,7 @@ class DataSet(Node):
             else:
                 axes.append(SpatialAxis(size=data_size, name=f"spatial_{i}"))
 
-        data_config = DataConfiguration(
-            dtype=data.dtype, axes=axes, feature_axis=axes[-1]
-        )
+        data_config = DataConfiguration([])
 
         return cls(
             data_config=data_config,
@@ -129,6 +128,11 @@ class DataSet(Node):
             shuffle_data=shuffle_data,
         )
 
+    def build_axis_slice(self, axis_idx: int, slice_values):
+        slices = [slice(None)] * len(self.data.shape)
+        slices[axis_idx] = slice_values
+        return tuple(slices)
+
     @property
     def input_ports(self) -> list[InputPort]:
         return []
@@ -138,14 +142,13 @@ class DataSet(Node):
         return [self.batch_size]
 
     def __len__(self) -> int:
-        batch_idx = self.data_config.batch_axis_idx
-        return self.data.shape[batch_idx]
+        return self.data.shape[self.batch_dimension]
 
     def run(self):
         # TODO: Add batching and splitting of data, currently
         # just a dummy to get a working example. Can this be done in the parent or
         # is this backend dependent? See TorchDataSet
-        self.out_port.set_value(self.data)
+        self.output.set_value(self.data)
 
     def set_mode(self, new_mode):
         if new_mode != self.mode:
@@ -173,7 +176,6 @@ class DataSet(Node):
             self._compute_std()
         return self._std
 
-    @abstractmethod
     def compute_pca(self, n_components: int, variable: Variable) -> tuple[Any, Any, Any]:
         """Does a principal component analysis (PCA) on the data.
 
