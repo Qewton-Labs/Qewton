@@ -11,11 +11,14 @@ dataset_X = pioneer.data.DataSet.from_data(x_data, X, batch_size=1000)
 dataset_U = pioneer.data.DataSet.from_data(u_data, U, batch_size=1000)
 # slice_node = pioneer.nodes.SplitNode(dataset.data_config)
 
+hidden_n = 50
+layers_n = 5
+
 model = pioneer.algorithms.FCN(
     in_neurons=1,
-    hidden_neurons=50,
+    hidden_neurons=hidden_n,
     out_neurons=1,
-    n_hidden_layers=8,
+    n_hidden_layers=layers_n,
     activation=pioneer.building_blocks.Tanh,
 )
 
@@ -38,7 +41,7 @@ pipeline.connect(dataset_U, constraint.input_2)
 # print(constraint.loss)
 # params = pipeline.collect_trainable_parameters()
 device = "cuda:0"
-iterations = 50
+iterations = 5000
 trainer = pioneer.optim.trainer.PyTorchTrainer(
     [pipeline],
     training_constraints=[constraint],
@@ -59,12 +62,13 @@ import torch
 
 activation = torch.nn.Tanh()
 layers = []
-layers.append(torch.nn.Linear(1, 50))
+hidden_n = 20
+layers.append(torch.nn.Linear(1, hidden_n))
 layers.append(activation)
-for i in range(8):
-    layers.append(torch.nn.Linear(50, 50))
+for i in range(layers_n):
+    layers.append(torch.nn.Linear(hidden_n, hidden_n))
     layers.append(activation)
-layers.append(torch.nn.Linear(50, 1))
+layers.append(torch.nn.Linear(hidden_n, 1))
 
 model_fcn = torch.nn.Sequential(*layers)
 
@@ -75,16 +79,16 @@ u_data = u_data.to(device)
 optimizer = torch.optim.Adam(model_fcn.parameters(), lr=0.001)
 start_time = time.time()
 for i in range(iterations):
-    start_time_eval = time.time()
+    # start_time_eval = time.time()
     out = model_fcn(x_data)
     loss_value = torch.mean((out - u_data) ** 2)
-    print("Computation step took:", time.time() - start_time_eval)
+    # print("Computation step took:", time.time() - start_time_eval)
 
-    start_time_loss = time.time()
+    # start_time_loss = time.time()
     loss_value.backward()
     optimizer.step()
     optimizer.zero_grad()
-    print("Computation of Loss took:", time.time() - start_time_loss)
-    if i % 100 == 0:
-        print("Loss:", loss_value.item())
+    # print("Computation of Loss took:", time.time() - start_time_loss)
+    # if i % 100 == 0:
+    #     print("Loss:", loss_value.item())
 print("Training took:", time.time() - start_time)

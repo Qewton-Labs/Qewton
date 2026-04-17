@@ -49,17 +49,17 @@ class MSEConstraint(MetricConstraint):
         )
         self.subtract_operation = Subtract(backend=backend)
         self.square_operation = Square(backend=backend)
-        self.mean_operation = Mean(axis=None, backend=backend)
+        self.mean_operation = Mean(backend=backend)
         self.divide_operation = Divide(backend=backend)
 
     def compute_loss(self):
         x = self.input_1.value
         y = self.input_2.value
-        residual = self.subtract_operation(input1=x, input2=y)
-        residual = self.square_operation(input=residual)
+        residual = self.subtract_operation(x=x, y=y)
+        residual = self.square_operation(x=residual)
         if self.relative.value:
             # TODO: Improve this relative error, do be batch wise and not
             # element wise (needs dataconfig)
-            data_norm = self.square_operation(input=y)
-            residual = self.divide_operation(input1=residual, input2=data_norm)
-        self.loss = self.mean_operation(input=residual)
+            data_norm = self.square_operation(x=y)
+            residual = self.divide_operation(x=residual, y=data_norm)
+        self.loss = self.mean_operation(x=residual, axis=None)

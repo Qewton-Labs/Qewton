@@ -47,7 +47,7 @@ class PyTorchTrainer(Trainer):
             raise ValueError("Found no trainable parameters in the problem.")
         torch_params = []
         for param in trainable_parameters:
-            torch_params.extend(list(param.parameters))
+            torch_params.append(param.parameters)
             # torch_params.append({"params": param.parameters})
         return torch_params
 
@@ -76,11 +76,11 @@ class PyTorchTrainer(Trainer):
             )
 
             # Update parameters
-            loss_time = time.time()
+            # loss_time = time.time()
             total_loss.backward()  # type: ignore
             self.optimizer.step()
             self.optimizer.zero_grad()
-            print("Loss took:", time.time() - loss_time)
+            # print("Loss took:", time.time() - loss_time)
 
             # # Check validation data
             # if step % self.validation_check == 0:

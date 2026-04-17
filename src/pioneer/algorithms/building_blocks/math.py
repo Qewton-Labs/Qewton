@@ -251,7 +251,7 @@ class Mean(OperationNode):
     # TODO: how to write docstrings for these methods?
     """
 
-    args = {"input": NO_DEFAULT, "axis": NO_DEFAULT, "keepdims": False}
+    args = {"x": NO_DEFAULT, "axis": NO_DEFAULT, "keepdims": False}
     outputs = ["output"]
     # Orders should be correct
     implementations = {

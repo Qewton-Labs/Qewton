@@ -141,10 +141,10 @@ class Trainer:
         mode: EvaluationPhase,
         constraints: list[Constraint],
     ):
-        start_time = time.time()
+        # start_time = time.time()
         for pipeline in pipelines:
             pipeline.run(mode)
-        print("Run of pipeline took:", time.time() - start_time)
+        # print("Run of pipeline took:", time.time() - start_time)
 
         total_loss = 0.0
         for constraint in constraints:

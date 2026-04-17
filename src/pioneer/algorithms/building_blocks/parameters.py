@@ -43,7 +43,7 @@ class TorchParameter(_InternalParameter):
         super().__init__(shape)
 
     def to(self, device):
-        self.param.to(device)
+        self.param.data = self.param.data.to(device)
 
     @property
     def trainable_parameters(self):
