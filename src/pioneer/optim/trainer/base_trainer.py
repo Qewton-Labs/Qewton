@@ -82,6 +82,7 @@ class Trainer:
         self.on_training_end()
 
     def on_training_start(self):
+        self.train_state.start_training_timer()
         for cb in self.callbacks:
             cb.on_training_start(self.train_state)
 
@@ -106,7 +107,20 @@ class Trainer:
         for cb in self.callbacks:
             cb.on_training_end(self.train_state)
 
+        if not self.train_state.stop_training:
+            self.train_state.stop_training_timer()
+
     def set_hyperparameter(self, param_dict: dict[str, Any]):
         for param in self.hyperparameters:
             if param.name in param_dict:
                 param.set_value(param_dict[param.name])
+
+    def set_device(self, device):
+        self.device = device
+
+    def evaluate_tuning_constraints(self):
+        pass
+
+    def populate_state_dict(self):
+        """Collect all relevant loss and metric names into the state dict, to
+        know at the start of training which values are to be expected."""

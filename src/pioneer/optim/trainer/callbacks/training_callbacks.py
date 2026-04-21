@@ -1,7 +1,7 @@
 from .base_callback import Callback
 from ..training_controllers import TrainerState
 from ...base import EvaluationPhase
-from ....graphs.pipeline import Graph
+from ....graphs.graphs import Graph
 from ....constraints.base import Constraint, ConstraintType
 
 

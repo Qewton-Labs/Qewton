@@ -77,8 +77,8 @@ class Graph:
         from_: Node | OutputPort,
         to_: Node | InputPort,
     ) -> None:
-        """Connect two nodes (which are automatically added to the pipeline, if they
-        are not part of it). When evaluating the pipeline data will be
+        """Connect two nodes (which are automatically added to the graph, if they
+        are not part of it). When evaluating the graph data will be
         exchanged between connected nodes.
 
         Args:
@@ -134,7 +134,7 @@ class Graph:
         return ports[0]
 
     def disconnect(self, port: InputPort) -> None:
-        """Remove an edge from this pipeline"""
+        """Remove an edge from this graph"""
         for edge in self.incoming_edges[port.node]:
             if edge.to_port == port:
                 self.incoming_edges[port.node].remove(edge)
@@ -163,7 +163,7 @@ class Graph:
         self.sort()
 
     def run(self, mode: EvaluationPhase = EvaluationPhase.ALWAYS):
-        """Run the pipeline. The data will be passed through the graph according to
+        """Run the graph. The data will be passed through the graph according to
         the connections and the computations of the nodes will be executed.
         """
         for node, edges in zip(self.sorted_nodes, self.sorted_edges):
@@ -176,7 +176,7 @@ class Graph:
             node.run()
 
     def collect_trainable_parameters(self):
-        """Collect all trainable parameters from the nodes in this pipeline."""
+        """Collect all trainable parameters from the nodes in this graph."""
         params_collection = TrainableParametersCollection()
         for node in self.nodes:
             p = node._trainable_parameters

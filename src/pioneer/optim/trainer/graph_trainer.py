@@ -9,7 +9,7 @@ from ..parameters.hyperparameter_base import HyperParameter
 from ..base import EvaluationPhase
 from ...graphs import Graph
 from ...graphs.nodes import Node
-from ...constraints.base import Constraint
+from ...constraints.base import Constraint, ConstraintType
 
 
 class GraphBasedTrainer(Trainer):
@@ -41,6 +41,9 @@ class GraphBasedTrainer(Trainer):
 
         # For all constraints check if they belong to some graph and order them
         self.tune_graphs = set[Graph]()
+        self.training_constraints = training_constraints
+        self.validation_constraints = validation_constraints
+        self.tuning_constraints: list[Constraint] = []
         self.train_graphs = self._register_graphs(training_constraints)
         self.validation_graphs = self._register_graphs(validation_constraints)
 
@@ -84,14 +87,14 @@ class GraphBasedTrainer(Trainer):
         missing = set(constraints) - found_constraints
         if missing:
             warnings.warn(
-                f"The Trainer has no pipelines containing constraints {missing}",
+                f"The Trainer has no graphs containing constraints {missing}",
                 RuntimeWarning,
             )
         return graph_set
 
     def set_tuning_constraints(self, constraints: list[Constraint]):
         self.tuning_constraints = constraints
-        self.tune_pipelines = self._register_graphs(self.tuning_constraints)
+        self.tune_graphs = self._register_graphs(self.tuning_constraints)
 
     def collect_graph_hyperparameters(self) -> set[HyperParameter]:
         hyperparameter_set = set[HyperParameter]()
@@ -120,3 +123,39 @@ class GraphBasedTrainer(Trainer):
         self.set_trainable_parameters(parameters=parameters)
 
         return super().on_training_start()
+
+    def populate_state_dict(self):
+        """Collect all relevant loss and metric names into the state dict, to
+        know at the start of training which values are to be expected."""
+        constraints_list = [
+            self.training_constraints,
+            self.validation_constraints,
+            self.tuning_constraints,
+        ]
+        evaluation_phases = [
+            EvaluationPhase.TRAIN,
+            EvaluationPhase.VALIDATION,
+            EvaluationPhase.TUNE,
+        ]
+        for constraints, eval_phase in zip(constraints_list, evaluation_phases):
+            for constraint in constraints:
+                if constraint.constraint_type == ConstraintType.LOSS:
+                    self.train_state.losses[eval_phase][constraint.name] = 0.0
+                elif constraint.constraint_type == ConstraintType.METRIC:
+                    self.train_state.metrics[eval_phase][constraint.name] = 0.0
+
+    def evaluate_tuning_constraints(self):
+        # Evaluate all graphs that have some tuning constraint
+        for graph in self.tune_graphs:
+            graph.run(EvaluationPhase.TUNE)
+
+        # Write out the loss
+        for constraint in self.tuning_constraints:
+            if constraint.constraint_type == ConstraintType.LOSS:
+                self.train_state.losses[EvaluationPhase.TUNE][constraint.name] = (
+                    constraint.get_loss(add_weight=False)
+                )
+            elif constraint.constraint_type == ConstraintType.METRIC:
+                self.train_state.metrics[EvaluationPhase.TUNE][constraint.name] = (
+                    constraint.get_loss(add_weight=False)
+                )

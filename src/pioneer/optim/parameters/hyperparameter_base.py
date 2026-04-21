@@ -7,7 +7,6 @@ from .helpers import HyperParameterState, HyperParameterCondition
 class HyperParameter:
     """Abstract HyperParameter class that represents tunable parameters."""
 
-    # TODO: dtype needed?
     def __init__(
         self,
         parameter_range: tuple | list,
@@ -80,7 +79,6 @@ class HyperParameter:
             return ContinuousHyperparameter(
                 (x, x), initial_value=x, state=HyperParameterState.FIXED, name=name
             )
-        # TODO: This is not save for any values?
         return CategoricalHyperparameter(
             categories=[x], state=HyperParameterState.FIXED, initial_value=x, name=name
         )

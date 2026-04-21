@@ -1,64 +1,42 @@
 import csv
 import os
 import math
-import json
-import platform
 import multiprocessing as mp
-from typing import Any, Callable
-from enum import Enum
-from datetime import datetime
-import psutil
+from typing import Any, Callable, Tuple
 
-from ...constraints.base import Constraint
+from ..base import EvaluationPhase
 from ..trainer.base_trainer import Trainer
+from ..trainer.training_controllers import TrainerState
 from ..parameters.hyperparameter_base import HyperParameter
-from ..hyperparameter.dag import HyperParameterDAG
+from ..parameters.dag import HyperParameterDAG
 
 
-class TunerLoggingKeys(Enum):
-    FIXEDPARAMS = "Fixed Hyperparameters"
-    TUNABLEPARAMS = "Tunable Hyperparameters"
-    TUNEMETRICS = "Tuning Metrics"
-    TRAINMETRICS = "Train Metrics"
-    # TODO: Maybe also add a section to point to the logs of loss curves.
-    #       Here, maybe just point to the general save location and in the
-    #       csv-file save the correct loss curve locations?
-
-
-def worker_eval(jobs):
+def worker_eval(jobs) -> Tuple[dict[str, Any], TrainerState]:
     trainer_factory, params, device = jobs
     local_trainer: Trainer = trainer_factory()
     if isinstance(device, str):
         local_trainer.set_device(device)
     local_trainer.set_hyperparameter(params)
     local_trainer.run(show_progress=False)
-    results = local_trainer.get_tuning_results()
-
-    # Cleanup
-    # TODO: Add clean up in trainer, so it can be backend dependent
-    del local_trainer  # remove references
-
-    return [{"params": params}, results]
+    local_trainer.evaluate_tuning_constraints()
+    local_trainer.train_state.detach_data()  # detach data to avoid memory issues
+    return (params, local_trainer.train_state)
 
 
-# TODO: Implement stuff like early stopping? And also stop when some given
-# constrain is reached
-#
-# TODO: We want to save the best performing results?
+# TODO: Implement callbacks for early stopping (loss or time based) and saving
+#       best results
 #
 # TODO: Add constraints for memory usage and speed
 #
-# TODO: Add different tuning strategies (also make the currently implemented one more
-#       general, e.g. conditional parameters are currently not handled)
-#
 # TODO: Enable to restart tuning from a given point
-#
-# TODO: Is passing the data via dictionaries the best way?
 #
 # TODO: In "devices" also allow for something like "auto" or "all" to automatically
 #       use all available CPUs/GPUs? Currently passing in an int just copies
 #       the trainer to the device given by the trainer!
 #       And maybe better switch to os["set_visible_devices"]?
+#
+# TODO: Save more information about the system and tuning setup, e.g. in a json file,
+#       to be able to better compare different tuning runs.
 class Tuner:
 
     def __init__(
@@ -74,69 +52,53 @@ class Tuner:
 
         if isinstance(devices, str):
             devices = [devices]
+        # Distribute trials on devices
         self.devices = [device for device in devices for _ in range(trials_per_device)]
         self.process_number = len(self.devices)
 
-        # check trainer factory
+        # Check trainer factory and if tuning data is set:
         trainer_dummy = self.trainer_factory()
+        trainer_dummy.populate_state_dict()
         assert (
-            len(trainer_dummy.tuning_constraints) > 0
+            len(trainer_dummy.train_state.losses[EvaluationPhase.TUNE])
+            + len(trainer_dummy.train_state.metrics[EvaluationPhase.TUNE])
+            > 0
         ), "The trainer object does not contain any constraints for tuning. \
             Set them via trainer.set_tuning_constraints(...)."
-        # Build saving path
-        self.save_path = save_path
-        # TODO: does this work for all systems? Windows and Mac?
-        file_path_extension = self.save_path + "/" + trainer_dummy.save_path + "/"
-        counter = 0
-        while os.path.exists(file_path_extension):
-            counter += 1
-            file_path_extension = (
-                self.save_path + "/" + trainer_dummy.save_path + str(counter) + "/"
-            )
-        self.file_path = file_path_extension
-        self.csv_path = f"{self.file_path}/tuning_results.csv"
-        os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
 
         # Find what parameters can be tuned
-        param_log = self._get_tuneable_parameters(trainer_dummy)
-        self.write_constrain_info(
-            param_log,
-            trainer_dummy.tuning_constraints,
-            TunerLoggingKeys.TUNEMETRICS,
-        )
-        self.write_constrain_info(
-            param_log,
-            trainer_dummy.training_constraints,
-            TunerLoggingKeys.TRAINMETRICS,
-        )
+        self.hp_dag = self._get_tuneable_parameters(trainer_dummy)
 
-        with open(f"{self.file_path}/tuning_setup.json", "w", encoding="utf-8") as f:
-            json.dump(param_log, f, indent=4)
+        # Build saving path
+        self.save_path = save_path
+        self.file_path = self.build_save_path(trainer_dummy)
+        self.csv_path = os.path.join(self.file_path, "tuning_results.csv")
+        self._setup_csv_file(trainer_dummy.train_state)
 
-        self.write_system_info()
+    def build_save_path(self, trainer: Trainer) -> str:
+        base_path = os.path.join(self.save_path, trainer.train_state.save_path)
 
-    def _get_tuneable_parameters(self, trainer: Trainer):
+        file_path = base_path
+        counter = 0
+
+        while os.path.exists(file_path):
+            counter += 1
+            file_path = f"{base_path}_{counter}"
+
+        os.makedirs(file_path, exist_ok=True)
+        return file_path
+
+    def _get_tuneable_parameters(self, trainer: Trainer) -> HyperParameterDAG:
         hyperparameter_set = trainer.hyperparameters
         tunable_parameters = set[HyperParameter]()
-        # Save all parameters also to a file:
-        param_log = {
-            TunerLoggingKeys.FIXEDPARAMS.value: {},
-            TunerLoggingKeys.TUNABLEPARAMS.value: {},
-        }
         for hp in hyperparameter_set:
             if not hp.is_fixed:
                 tunable_parameters.add(hp)
-                param_log[TunerLoggingKeys.TUNABLEPARAMS.value][hp.name] = type(
-                    hp
-                ).__name__
-            else:
-                param_log[TunerLoggingKeys.FIXEDPARAMS.value][hp.name] = hp.current_value
 
         if len(tunable_parameters) == 0:
             raise ValueError("Can not tune a problem without tunable parameters.")
 
-        self.hp_dag = HyperParameterDAG(tunable_parameters)
-        return param_log
+        return HyperParameterDAG(tunable_parameters)
 
     def run(self):
         trials = math.ceil(self.trial_number / self.process_number)
@@ -161,34 +123,43 @@ class Tuner:
             results = list(pool.imap(worker_eval, jobs))
         return results
 
-    def _write_to_csv(
-        self, results, trial: Any | None = None
-    ):  # pylint: disable=unused-argument
-        flat_results = [self._flatten_result_data(r) for r in results]
-        write_header = not os.path.exists(self.csv_path)
-
-        with open(self.csv_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=flat_results[0].keys())
-
-            if write_header:
+    def _setup_csv_file(self, trainer_state_dummy: TrainerState):
+        if not os.path.exists(self.csv_path):
+            with open(self.csv_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                param_names = [hp.name for hp in self.hp_dag.sorted_nodes]
+                loss_names = list(trainer_state_dummy.losses[EvaluationPhase.TUNE].keys())
+                metric_names = list(
+                    trainer_state_dummy.metrics[EvaluationPhase.TUNE].keys()
+                )
+                self.csv_columns = param_names + loss_names + metric_names
+                writer = csv.DictWriter(f, fieldnames=self.csv_columns)
                 writer.writeheader()
 
+    def _write_to_csv(
+        self, results: list[Tuple[dict[str, Any], TrainerState]], trial: Any | None = None
+    ):  # pylint: disable=unused-argument
+        flat_results = [self._flatten_result_data(r) for r in results]
+        with open(self.csv_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=flat_results[0].keys())
             writer.writerows(flat_results)
 
-    def _flatten_result_data(self, results):
-        # TODO: this is highly depending on the output of worker_eval and really unsafe...
-        # Parameter are first:
+    def _flatten_result_data(self, result: Tuple[dict[str, Any], TrainerState]):
         flat_dict = {}
-        for _, all_params in results[0].items():
-            for hp in self.hp_dag.sorted_nodes:
-                if hp.name in all_params:
-                    flat_dict[hp.name] = all_params[hp.name]
+        tune_loss = result[1].losses[EvaluationPhase.TUNE]
+        tune_metrics = result[1].metrics[EvaluationPhase.TUNE]
+        for name in self.csv_columns:
+            if name in result[0]:
+                if isinstance(result[0][name], type):
+                    flat_dict[name] = result[0][name].__name__
                 else:
-                    flat_dict[hp.name] = ""
-
-        for key, value in results[1].items():
-            flat_dict[key] = value
-
+                    flat_dict[name] = result[0][name]
+            elif name in tune_loss:
+                flat_dict[name] = tune_loss[name]
+            elif name in tune_metrics:
+                flat_dict[name] = tune_metrics[name]
+            else:
+                flat_dict[name] = ""
         return flat_dict
 
     def _get_trial_parameters(
@@ -198,37 +169,3 @@ class Tuner:
             "The base Tuner does not implement a search strategy, \
                 use one of the child classes."
         )
-
-    def write_system_info(self):
-        system_specs = {
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "os": platform.system(),
-            "os_version": platform.version(),
-            "architecture": platform.machine(),
-            "processor": platform.processor(),
-            "cpu_count": psutil.cpu_count(logical=True),
-            "ram_gb": round(psutil.virtual_memory().total / (1024**3), 2),
-            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
-        }
-        system_specs["used_devices"] = self.devices
-
-        with open(f"{self.file_path}/system_specs.json", "w", encoding="utf-8") as f:
-            json.dump(system_specs, f, indent=4)
-
-    def write_constrain_info(
-        self, param_log, constraints: list[Constraint], key: TunerLoggingKeys
-    ):
-        param_log[key.value] = {}
-        for constraint in constraints:
-            constraint_dic = {"objective": constraint.objective}
-            if hasattr(constraint, "relative"):
-                rel_value = constraint.relative  # type: ignore
-                if isinstance(rel_value, HyperParameter):
-                    if rel_value.is_fixed:
-                        constraint_dic["relative"] = rel_value.value
-                    else:
-                        constraint_dic["relative"] = type(rel_value).__name__
-                else:
-                    constraint_dic["relative"] = rel_value
-
-            param_log[key.value][constraint.name] = constraint_dic

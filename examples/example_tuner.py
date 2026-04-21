@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import torch
 import pioneer
 
@@ -23,6 +24,7 @@ def build_problem():
 
     constraint = pioneer.constraints.MSEConstraint(
         model.output_ports[0].data_configuration,
+        weight=pioneer.optim.ContinuousHyperparameter((1.0, 10.0)),
     )
 
     computation_graph = pioneer.Graph()
@@ -33,8 +35,10 @@ def build_problem():
 
     adam_phase = pioneer.optim.OptimizationPhase(
         optimizer=pioneer.optim.Adam(),
-        lr=0.001,
-        max_iterations=2000,
+        lr=pioneer.optim.ContinuousHyperparameter(
+            (1e-4, 1e-2), scale=pioneer.optim.HyperParameterScale.LOG
+        ),
+        max_iterations=pioneer.optim.CategoricalHyperparameter([500, 1000, 2000]),
     )
 
     trainer = pioneer.optim.GraphBasedTrainer(
@@ -48,11 +52,12 @@ def build_problem():
     return trainer
 
 
-# trainer.run()
-# tuner = pioneer.optim.tuner.GridSearchTuner(
-#     build_problem,
-#     trial_number=30,
-#     devices=["cuda:1", "cuda:2", "cuda:3"],
-#     trials_per_device=2,
-# )
-# tuner.run()
+if __name__ == "__main__":
+    mp.set_start_method("spawn")
+    tuner = pioneer.optim.tuner.GridSearchTuner(
+        build_problem,
+        trial_number=20,
+        devices=["cuda:0", "cuda:1"],
+        trials_per_device=2,
+    )
+    tuner.run()

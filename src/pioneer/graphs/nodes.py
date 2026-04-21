@@ -117,9 +117,8 @@ class NodeState(Enum):
 
 
 class Node(ABC):
-    """Base class for all nodes to create a pipeline.
+    """Base class for all nodes to create a graph.
 
-    TODO: Do we need a validate method here?
     TODO: How about save and load methods?
     """
 
@@ -136,7 +135,6 @@ class Node(ABC):
         self.name = name
         self._state = state
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
-        self.pipeline_id: int = 0
 
         self._input_ports: list[InputPort] | None = None
         self._output_ports: list[OutputPort] | None = None
@@ -224,7 +222,7 @@ class Node(ABC):
     @property
     def _trainable_parameters(self) -> _TrainableParameterBase:
         """Internal method to return trainable parameters of this node. This is used
-        to collect trainable parameters from all nodes in a pipeline.
+        to collect trainable parameters from all nodes in a graph.
         """
         return (
             self.trainable_parameters
@@ -273,9 +271,6 @@ class Node(ABC):
             )
             return
         self._state = NodeState.FIXED
-
-    def set_pipeline_id(self, pipeline_id: int):
-        self.pipeline_id = pipeline_id
 
     def update_data_configs(self, input_configs, output_configs, changed_port):
         # TODO

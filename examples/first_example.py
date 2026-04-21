@@ -45,7 +45,7 @@ trainer = pioneer.optim.GraphBasedTrainer(
     optimization_phases=[adam_phase, lbfgs_phase],
     graphs=[computation_graph],
     training_constraints=[constraint],
-    device="cpu",
+    device="cuda:0",
 )
 
 trainer.run()

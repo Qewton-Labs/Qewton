@@ -1,9 +1,7 @@
 from typing import Any, Callable
 
-from ...optim.trainer.base_trainer import Trainer
-
-
 from .base import Tuner
+from ...optim.trainer.base_trainer import Trainer
 
 
 class GridSearchTuner(Tuner):

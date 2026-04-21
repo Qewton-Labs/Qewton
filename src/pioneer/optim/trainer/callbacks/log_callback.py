@@ -3,7 +3,7 @@ from ..training_controllers import TrainerState
 
 
 class LogCallback(Callback):
-
+    # TODO: Decide on good log-format
     def __init__(self, log_interval=100, priority=-100):
         super().__init__(priority)
         self.log_interval = log_interval

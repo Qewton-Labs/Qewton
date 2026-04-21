@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any, Callable
+import time
 
 from .optimizers.optim_setups.pytorch_optims import (
     _pytorch_setup_optimizer,
@@ -19,15 +20,30 @@ class TrainerState:
     def __init__(self, save_path) -> None:
         self.current_optimization_phase: OptimizationPhase
         self.iteration: int = 0
+
         self.total_train_loss: float = 0.0
         self.losses: dict[EvaluationPhase, dict[str, float]] = {}
         self.metrics: dict[EvaluationPhase, dict[str, float]] = {}
         for eval_phase in EvaluationPhase:
             self.losses[eval_phase] = {}
             self.metrics[eval_phase] = {}
+
         self.stop_stage: bool = False
         self._stop_training: bool = False
+
         self.save_path = save_path
+
+        self.total_train_time = 0.0
+        self.start_time = 0.0
+        self.termination_reason = ""
+
+    def start_training_timer(self):
+        self.start_time = time.time()
+
+    def stop_training_timer(self, reason: str = ""):
+        self.total_train_time += time.time() - self.start_time
+        self.termination_reason = reason
+        self.stop_training = True
 
     @property
     def stop_training(self):
@@ -38,6 +54,13 @@ class TrainerState:
         self._stop_training = stop
         if stop:
             self.stop_stage = stop
+
+    def detach_data(self):
+        # TODO: make this backend independent!
+        for phase_loss in self.losses.values():
+            for key, loss in phase_loss.items():
+                if hasattr(loss, "detach"):
+                    phase_loss[key] = loss.detach().cpu().item()  # type: ignore
 
 
 class OptimizationPhase:

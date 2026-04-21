@@ -5,7 +5,6 @@ import warnings
 import random
 
 from .hyperparameter_base import HyperParameter
-from .categorical_hyperparameter import CategoricalHyperparameter
 
 
 class HyperParameterDAG:
@@ -85,8 +84,6 @@ class HyperParameterDAG:
         # This are all possible combinations from HyperParameters,
         # but some may not be valid, since they are only active when
         # specific conditions are fulfilled, check this now.
-        # TODO: What to do when HP output dependence on values of, another
-        # HP?
         grid_samples = []
         for current_params in total_param_grid:
             config = {}

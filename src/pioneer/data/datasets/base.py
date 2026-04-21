@@ -1,5 +1,4 @@
 from typing import Any, Callable
-from abc import abstractmethod
 
 from ...config import DataConfiguration
 from ...optim.parameters.hyperparameter_base import HyperParameter
@@ -16,7 +15,7 @@ from ...graphs.nodes import Node, OutputPort, InputPort
 # TODO: For now just a simple dataset where the data is provided
 # How do we handle splitting the data for training, testing, validation?
 # Currently everything is done here, but maybe split this further?
-# With the current way we can use the same pipeline for multiple things,
+# With the current way we can use the same graph for multiple things,
 # but this also makes it less transparent
 #
 # We need DataSets that can:

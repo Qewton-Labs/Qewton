@@ -1,13 +1,12 @@
 import csv
-import os
 import math
 import multiprocessing as mp
 from typing import Any, Callable
 import optuna
 
 from .base import Tuner, worker_eval
+from ..base import EvaluationPhase
 from ..trainer.base_trainer import Trainer
-from ..parameters.hyperparameter_base import HyperParameter
 from ..parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
     BooleanHyperparameter,
@@ -17,6 +16,7 @@ from ..parameters.number_hyperparameter import (
     ContinuousHyperparameter,
     HyperParameterScale,
 )
+from ..parameters.dag import HyperParameterDAG
 
 
 def run_optimization(job):
@@ -60,13 +60,16 @@ def optuna_objective(
             config[hp.name] = trial.suggest_categorical(hp.name, hp.categories)
 
     # Run evaluation
-    result = worker_eval((trainer_factory, config, device))
-    metric = next(iter(result[1].values()))  # TODO: adapt
-    return metric
+    _, train_state = worker_eval((trainer_factory, config, device))
+    # TODO: adapt to multiple metrics and losses also for minimum/maximum
+    total_loss = 0.0
+    for loss_name, loss in train_state.losses[EvaluationPhase.TUNE].items():
+        trial.set_user_attr(loss_name, loss)
+        total_loss += loss
+    return total_loss
 
 
 class OptunaTuner(Tuner):
-    # TODO: Just a first test
     def __init__(
         self,
         trainer_factory: Callable[[], Trainer],
@@ -108,16 +111,20 @@ class OptunaTuner(Tuner):
             _a = list(pool.imap(run_optimization, jobs))
         print("Best params:", self.study.best_params)
 
-    def _write_to_csv(self, results, trial: Any | None = None):
-        # df = self.study.trials_dataframe()
-        # df.to_csv(self.csv_path, index=False)
-        write_header = not os.path.exists(self.csv_path)
-        row = {**trial.params, "value": trial.value}  # type: ignore
+    def _write_to_csv(self, results, trial: Any = None):
+        flat_dict = {}
+        params = trial.params if trial is not None else {}
+        for name in self.csv_columns:
+            if name in params:
+                if isinstance(params[name], type):
+                    flat_dict[name] = params[name].__name__
+                else:
+                    flat_dict[name] = params[name]
+            elif trial is not None and name in trial.user_attrs:
+                flat_dict[name] = trial.user_attrs[name]
+            else:
+                flat_dict[name] = ""
 
         with open(self.csv_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=row.keys())
-
-            if write_header:
-                writer.writeheader()
-
-            writer.writerow(row)
+            writer = csv.DictWriter(f, fieldnames=flat_dict.keys())
+            writer.writerow(flat_dict)
