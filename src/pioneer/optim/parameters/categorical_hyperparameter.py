@@ -22,6 +22,7 @@ class CategoricalHyperparameter(HyperParameter):
             name=name,
             initial_value=initial_value,
             active_when=active_when,
+            default_grid=list(categories),
         )
         self.current_value = self.current_value
         # For tuning, some backends want objects to be serializable.

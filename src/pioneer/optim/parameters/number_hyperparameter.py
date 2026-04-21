@@ -16,6 +16,7 @@ class ContinuousHyperparameter(HyperParameter):
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
         power: float = 2.0,  # only used for POWER scale
         active_when: None | HyperParameterCondition = None,
+        default_grid: int | list = 5,
     ):
         assert len(parameter_range) == 2, "Range must be a tuple or list of length 2."
         if scale == HyperParameterScale.LOG and parameter_range[0] <= 0.0:
@@ -29,6 +30,7 @@ class ContinuousHyperparameter(HyperParameter):
             name=name,
             initial_value=initial_value,
             active_when=active_when,
+            default_grid=default_grid,
         )
         self.scale = scale
         self.power = power
@@ -90,10 +92,14 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
         power: float = 2.0,  # only used for POWER scale
         active_when: None | HyperParameterCondition = None,
+        default_grid: int | list | None = None,
     ):
         assert all(
             isinstance(x, int) for x in parameter_range
         ), "Range values must be integers."
+        if default_grid is None:
+            default_grid = int(parameter_range[1] - parameter_range[0] + 1)
+
         super().__init__(
             state=state,
             parameter_range=parameter_range,
@@ -102,6 +108,7 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
             scale=scale,
             power=power,
             active_when=active_when,
+            default_grid=default_grid,
         )
         self.current_value = int(self.current_value)
 
