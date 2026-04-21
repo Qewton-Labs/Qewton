@@ -1,14 +1,59 @@
-from dataclasses import dataclass, field
-from typing import Any
+from __future__ import annotations
+from typing import Any, Callable
 
+from .optimizers.optim_setups.pytorch_optims import (
+    _pytorch_setup_optimizer,
+    _pytorch_do_optimization_step,
+)
+from .optimizers.optimizers import Optimizer
+from ..base import EvaluationPhase
+from ...algorithms.implementation import (
+    TorchImplementation,
+    TensorflowImplementation,
+)
 from ..parameters.hyperparameter_base import HyperParameter
 
 
-class TrainingPhase:
+class TrainerState:
+
+    def __init__(self, save_path) -> None:
+        self.current_optimization_phase: OptimizationPhase
+        self.iteration: int = 0
+        self.total_train_loss: float = 0.0
+        self.losses: dict[EvaluationPhase, dict[str, float]] = {}
+        self.metrics: dict[EvaluationPhase, dict[str, float]] = {}
+        for eval_phase in EvaluationPhase:
+            self.losses[eval_phase] = {}
+            self.metrics[eval_phase] = {}
+        self.stop_stage: bool = False
+        self._stop_training: bool = False
+        self.save_path = save_path
+
+    @property
+    def stop_training(self):
+        return self._stop_training
+
+    @stop_training.setter
+    def stop_training(self, stop):
+        self._stop_training = stop
+        if stop:
+            self.stop_stage = stop
+
+
+class OptimizationPhase:
+
+    optimizer_setup_fn = {
+        TorchImplementation: _pytorch_setup_optimizer,
+        TensorflowImplementation: None,  # TODO
+    }
+    optimizer_step_fn = {
+        TorchImplementation: _pytorch_do_optimization_step,
+        TensorflowImplementation: None,  # TODO
+    }
 
     def __init__(
         self,
-        optimizer: Any,
+        optimizer: Optimizer,
         lr: float | HyperParameter,
         max_iterations: int | HyperParameter,
         optimizer_args: dict | None = None,
@@ -16,6 +61,7 @@ class TrainingPhase:
         lr_scheduler_args: dict | None = None,
     ) -> None:
         self.optimizer = optimizer
+        self.optimizer_obj: Any
         self.lr = HyperParameter.from_value(lr, "Learning Rate")
         self.max_iterations = HyperParameter.from_value(max_iterations, "Max Iterations")
         self.optimizer_args = optimizer_args if optimizer_args is not None else {}
@@ -23,6 +69,18 @@ class TrainingPhase:
         self.lr_scheduler_args = (
             lr_scheduler_args if lr_scheduler_args is not None else {}
         )
+
+        # Find correct function for the optimizer type
+        self.setup_fn: Callable
+        self.step_fn: Callable
+        if optimizer.backend == TorchImplementation:
+            self.setup_fn = self.optimizer_setup_fn[TorchImplementation]
+            self.step_fn = self.optimizer_step_fn[TorchImplementation]
+        elif optimizer.backend == TensorflowImplementation:
+            self.setup_fn = self.optimizer_setup_fn[TensorflowImplementation]
+            self.step_fn = self.optimizer_step_fn[TensorflowImplementation]
+        else:
+            raise ValueError(f"Unsupported optimizer type: {optimizer.backend}")
 
     def get_hyperparameter(self) -> set[HyperParameter]:
         hp_set = set[HyperParameter]()
@@ -36,25 +94,11 @@ class TrainingPhase:
             elif isinstance(value, (list, tuple, dict)):
                 self._scan_for_hyperparameter(value, hp_set)
 
+    def setup_optimizer(self, trainer):
+        # TODO: Add learning rate scheduler
+        self.optimizer_obj = self.setup_fn(self, trainer)
 
-@dataclass
-class TrainerState:
-    current_stage: TrainingPhase
-    iteration: int = 0
-    total_train_loss: float | None = None
-    train_losses: dict[str, float] = field(default_factory=dict)
-    train_metrics: dict[str, float] = field(default_factory=dict)
-    validation_losses: dict[str, float] = field(default_factory=dict)
-    validation_metrics: dict[str, float] = field(default_factory=dict)
-    stop_stage: bool = False
-    _stop_training: bool = False
-
-    @property
-    def stop_training(self):
-        return self._stop_training
-
-    @stop_training.setter
-    def stop_training(self, stop):
-        self._stop_training = stop
-        if stop:
-            self.stop_stage = stop
+    def do_optimization_step(
+        self, eval_function: Callable, step_idx: int, train_state: TrainerState
+    ):
+        self.step_fn(self, eval_function, step_idx, train_state)

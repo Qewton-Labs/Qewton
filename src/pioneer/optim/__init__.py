@@ -17,3 +17,6 @@ from .parameters.number_hyperparameter import (
 from .parameters.dag import HyperParameterDAG
 
 from .base import EvaluationPhase
+
+from .trainer import *
+from .tuner import *

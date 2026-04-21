@@ -52,7 +52,7 @@ class MSEConstraint(MetricConstraint):
         self.mean_operation = Mean(backend=backend)
         self.divide_operation = Divide(backend=backend)
 
-    def compute_loss(self):
+    def check_constraint(self):
         x = self.input_1.value
         y = self.input_2.value
         residual = self.subtract_operation(x=x, y=y)

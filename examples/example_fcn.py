@@ -20,6 +20,5 @@ X = 3.0 * torch.ones((3, 4))
 add_layer = bb.math.Add()
 print(add_layer(x=X, y=3.0))
 
-
 mean_layer = bb.math.Mean()
-print(mean_layer(input=X, axis=0))
+print(mean_layer(x=X, axis=0))

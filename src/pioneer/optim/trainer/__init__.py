@@ -1,12 +1,10 @@
 import importlib.util
 
-from .base import Trainer
+from .training_controllers import OptimizationPhase, TrainerState
+from .base_trainer import Trainer
+from .graph_trainer import GraphBasedTrainer
 
-# Pytorch classes (only import when Pytorch is available)
-if importlib.util.find_spec("torch") is not None:
-    from .pytorch_trainer import PyTorchTrainer
+from .callbacks.base_callback import Callback
+from .callbacks.training_callbacks import GraphEvalCallback
 
-
-# Tensorflow classes
-if importlib.util.find_spec("tensorflow") is not None:
-    from .tensorflow_trainer import TensorFlowTrainer
+from .optimizers.optimizers import Optimizer, Adam, SGD, LBFGS

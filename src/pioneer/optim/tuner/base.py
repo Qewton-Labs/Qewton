@@ -10,7 +10,7 @@ from datetime import datetime
 import psutil
 
 from ...constraints.base import Constraint
-from ..trainer.base import Trainer
+from ..trainer.base_trainer import Trainer
 from ..parameters.hyperparameter_base import HyperParameter
 
 

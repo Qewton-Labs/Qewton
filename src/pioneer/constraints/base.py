@@ -10,6 +10,11 @@ class ConstraintObjective(Enum):
     MAXIMIZE = "maximize"
 
 
+class ConstraintType(Enum):
+    LOSS = "loss"
+    METRIC = "metric"
+
+
 class Constraint(Node):
     """
     TODO: These could be become graph nodes as well, but this may be not
@@ -23,11 +28,13 @@ class Constraint(Node):
         name="Constraint",
         weight: float | HyperParameter = 1.0,
         objective: ConstraintObjective = ConstraintObjective.MINIMIZE,
+        constraint_type: ConstraintType = ConstraintType.LOSS,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
     ):
         super().__init__(name=name)
         self.weight: HyperParameter = HyperParameter.from_value(weight, "Weight")
         self.objective: ConstraintObjective = objective
+        self.constraint_type: ConstraintType = constraint_type
         self.loss = 0.0
         self.evaluated_in_mode = evaluated_in_mode
         self._output_ports = []
@@ -35,9 +42,9 @@ class Constraint(Node):
     def run(self) -> None:
         if self.evaluated_in_mode not in (self.mode, EvaluationPhase.ALWAYS):
             return
-        self.compute_loss()
+        self.check_constraint()
 
-    def compute_loss(self):
+    def check_constraint(self):
         pass
 
     def get_loss(self, add_weight: bool = True):

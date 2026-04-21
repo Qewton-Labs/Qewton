@@ -6,7 +6,7 @@ from typing import Any, Callable
 import optuna
 
 from .base import Tuner, worker_eval
-from ..trainer.base import Trainer
+from ..trainer.base_trainer import Trainer
 from ..parameters.hyperparameter_base import HyperParameter
 from ..parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,

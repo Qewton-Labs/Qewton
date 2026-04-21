@@ -184,8 +184,11 @@ class Node(ABC):
             "The run method must be implemented by subclasses of Node."
         )
 
-    def __call__(self, **kwargs):
-        # TODO: also add *args and assume the order is correct
+    def __call__(self, *args, **kwargs):
+        in_ports = self.input_ports
+        for i, arg in enumerate(args):
+            in_ports[i].set_value(arg)
+
         for port in self.input_ports:
             if port.name in kwargs:
                 port.set_value(kwargs[port.name])

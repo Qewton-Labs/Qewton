@@ -17,7 +17,7 @@ class FCN(GraphNode):
         out_neurons: int | HyperParameter,
         n_hidden_layers: int | HyperParameter,
         bias: bool | HyperParameter = True,
-        activation=ReLU,
+        activation: type[Node] | HyperParameter = ReLU,
         name="fcn",
         backend=DEFAULT_DL_IMPLEMENTATION,
     ):

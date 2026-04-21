@@ -1,12 +1,15 @@
-from typing import Iterable
-
-
 class Implementation:
 
     def __init__(self, implementation_name, inputs=None, outputs=None):
         self.implementation_name = implementation_name
         self.inputs = inputs
         self.outputs = outputs
+
+    def get_from_module(self, module, path: str):
+        obj = module
+        for part in path.split("."):
+            obj = getattr(obj, part)
+        return obj
 
     def __call__(self, *args, **kwargs):
         raise NotImplementedError(
@@ -48,7 +51,7 @@ class TorchImplementation(Implementation):
         super().__init__(implementation_name, inputs, outputs)
         import torch  # pylint: disable=import-outside-toplevel # type: ignore
 
-        self._torch_module = getattr(torch, self.implementation_name)
+        self._torch_module = self.get_from_module(torch, self.implementation_name)
 
     @classmethod
     def exists(cls):
@@ -81,7 +84,7 @@ class TensorflowImplementation(Implementation):
         super().__init__(implementation_name, inputs, outputs)
         import tensorflow as tf  # pylint: disable=import-error # type: ignore
 
-        self._tf_layer = getattr(tf, self.implementation_name)
+        self._tf_layer = self.get_from_module(tf, self.implementation_name)
 
     @classmethod
     def exists(cls):
