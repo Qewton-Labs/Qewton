@@ -2,6 +2,8 @@ from __future__ import annotations
 from abc import ABC
 from enum import Enum
 from typing import Any
+from typing import Annotated, get_type_hints, get_origin, get_args
+import inspect
 import warnings
 
 from ..config.configuration_base import DataConfiguration
@@ -136,11 +138,57 @@ class Node(ABC):
         self._state = state
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
 
-        self._input_ports: list[InputPort] | None = None
-        self._output_ports: list[OutputPort] | None = None
+        self._build_ports()
 
         self.node_id = type(self)._node_id_counter
         type(self)._node_id_counter += 1
+
+    def _build_ports(self):
+        call_sig = inspect.signature(self.__call__)
+        type_hints = get_type_hints(self.__call__)
+
+        self._input_ports = []
+        self._output_ports = []
+        # Build input ports:
+        for name, param in call_sig.parameters.items():
+            hint = type_hints.get(name, param.annotation)
+            _, config = self._unwrap_annotated(hint)
+            self._input_ports.append(
+                InputPort(
+                    config,
+                    node=self,
+                    name=name,
+                    default=(
+                        NO_DEFAULT
+                        if param.default is inspect.Parameter.empty
+                        else param.default
+                    ),
+                )
+            )
+        # Build output ports
+        return_values = type_hints.get("return", inspect.Signature.empty)
+        if return_values is None or return_values is inspect.Signature.empty:
+            return
+
+        if get_origin(return_values) is tuple:
+            outputs = list(get_args(return_values))
+        else:
+            outputs = [return_values]
+
+        for i, output in enumerate(outputs):
+            _, config = self._unwrap_annotated(output)
+            self._output_ports.append(OutputPort(config, node=self, name=f"output_{i}"))
+
+    def _unwrap_annotated(self, type_hint):
+        """Return (base_type, config)."""
+        if get_origin(type_hint) is Annotated:
+            base, *meta = get_args(type_hint)
+            config = next(
+                (m for m in meta if isinstance(m, DataConfiguration)),
+                DataConfiguration([]),
+            )
+            return base, config
+        return type_hint, DataConfiguration([])
 
     def setup(self) -> None:
         """Creates the underlying algorithm instance (e.g. creates the
@@ -158,10 +206,6 @@ class Node(ABC):
         Returns:
             list[InputPort]: A list of input ports.
         """
-        if self._input_ports is None:
-            self._input_ports = [
-                v for v in vars(self).values() if isinstance(v, InputPort)
-            ]
         return self._input_ports
 
     @property
@@ -171,53 +215,57 @@ class Node(ABC):
         Returns:
             list[OutputPort]: A list of output ports.
         """
-        if self._output_ports is None:
-            self._output_ports = [
-                v for v in vars(self).values() if isinstance(v, OutputPort)
-            ]
         return self._output_ports
 
     def run(self) -> None:
+        input_data = [in_port.value for in_port in self.input_ports]
+        output_data = self(*input_data)
+        if len(self.output_ports) == 1:
+            self.output_ports[0].set_value(output_data)
+        elif len(self.output_ports) > 1:
+            for i, out_port in enumerate(self.output_ports):
+                out_port.set_value(output_data[i])
+
+    def __call__(self):
         raise NotImplementedError(
-            "The run method must be implemented by subclasses of Node."
+            "The default node can not be called, "
+            "this method needs to be overwritten in the subclasses."
         )
+        # """Evaluate this node. This will call the run-method and will pass
+        # the input arguments to the corresponding ports. If args are given
+        # it is assumed that they appear in the correct order of the ports
+        # of the node. Otherwise kwargs are checked afterwards, where the
+        # keywords should match the port name.
 
-    def __call__(self, *args, **kwargs):
-        """Evaluate this node. This will call the run-method and will pass
-        the input arguments to the corresponding ports. If args are given
-        it is assumed that they appear in the correct order of the ports
-        of the node. Otherwise kwargs are checked afterwards, where the
-        keywords should match the port name.
+        # Raises:
+        #     ValueError: Missing a required input
 
-        Raises:
-            ValueError: Missing a required input
+        # Returns:
+        #     _type_: The output of this node, which are usually written in
+        #             the output ports, will either return a scalar value
+        #             or a tuple.
+        # """
+        # arg_counter = -1
+        # for port in self.input_ports:
+        #     arg_counter += 1
+        #     if arg_counter < len(args):
+        #         port.set_value(args[arg_counter])
+        #     elif port.name in kwargs:
+        #         port.set_value(kwargs[port.name])
+        #     elif port.is_required:
+        #         raise ValueError(f"Missing required input: {port.name}")
 
-        Returns:
-            _type_: The output of this node, which are usually written in
-                    the output ports, will either return a scalar value
-                    or a tuple.
-        """
-        arg_counter = -1
-        for port in self.input_ports:
-            arg_counter += 1
-            if arg_counter < len(args):
-                port.set_value(args[arg_counter])
-            elif port.name in kwargs:
-                port.set_value(kwargs[port.name])
-            elif port.is_required:
-                raise ValueError(f"Missing required input: {port.name}")
+        # self.run()
 
-        self.run()
+        # for port in self.input_ports:
+        #     port.clear_value()
 
-        for port in self.input_ports:
-            port.clear_value()
-
-        out_dict = {}
-        for port in self.output_ports:
-            out_dict[port.name] = port.value
-        if len(out_dict) == 1:
-            return next(iter(out_dict.values()))
-        return out_dict
+        # out_dict = {}
+        # for port in self.output_ports:
+        #     out_dict[port.name] = port.value
+        # if len(out_dict) == 1:
+        #     return next(iter(out_dict.values()))
+        # return out_dict
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:

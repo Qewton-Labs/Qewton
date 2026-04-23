@@ -1,10 +1,12 @@
-from pioneer.algorithms.implementation import DEFAULT_DL_IMPLEMENTATION
+from typing import Annotated, Any
 
+from ..implementation import DEFAULT_DL_IMPLEMENTATION
 from ..base import OperationNode
 from ..implementation import (
     TorchImplementation,
     TensorflowImplementation,
 )
+from ...config.configuration_base import DataConfiguration
 from ...graphs.nodes import NO_DEFAULT
 
 # The following classes represent basic mathematical operations.
@@ -19,9 +21,14 @@ from ...graphs.nodes import NO_DEFAULT
 
 
 class Add(OperationNode):
-    args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
-    outputs = ["output"]
     implementations = {TorchImplementation: ("add",), TensorflowImplementation: ("add",)}
+
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+        y: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x, y)
 
 
 class Subtract(OperationNode):

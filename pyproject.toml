@@ -28,6 +28,9 @@ where = ["src"]
 ###########################################################
 # Formatting setup:
 ###########################################################
+[tool.pyright]
+reportIncompatibleMethodOverride = "none"
+
 [tool.black]
 line-length = 90
 skip-string-normalization = false
@@ -51,7 +54,7 @@ disable = [
   "too-few-public-methods",
   "E0402",
   "R0902",
-  "C0415",
+  "C0415"
 ]
 
 [tool.pylint.format]
