@@ -1,3 +1,5 @@
+from typing import Any, Callable
+
 from .base_callback import Callback
 from ..training_controllers import TrainerState
 from ...base import EvaluationPhase
@@ -33,3 +35,24 @@ class GraphEvalCallback(Callback):
                     state.losses[self.evaluation_phase][constraint.name] = value
                 else:  # ConstraintType.METRIC
                     state.metrics[self.evaluation_phase][constraint.name] = value
+
+
+class FunctionEvalCallback(Callback):
+
+    def __init__(
+        self,
+        functions: list[Callable[[int, TrainerState], Any]],
+        evaluation_phase: EvaluationPhase,
+        evaluation_interval=1,
+        priority=0,
+    ) -> None:
+        super().__init__(priority)
+        self.functions = functions
+        self.evaluation_phase = evaluation_phase
+        self.evaluation_interval = evaluation_interval
+
+    def training_step(self, phase_idx: int, state: TrainerState):
+        if phase_idx % self.evaluation_interval == 0:
+            for fn in self.functions:
+                loss = fn(phase_idx, state)
+                state.losses[self.evaluation_phase][fn.__name__] = loss

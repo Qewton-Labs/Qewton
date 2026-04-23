@@ -183,15 +183,28 @@ class Node(ABC):
         )
 
     def __call__(self, *args, **kwargs):
-        in_ports = self.input_ports
-        for i, arg in enumerate(args):
-            in_ports[i].set_value(arg)
+        """Evaluate this node. This will call the run-method and will pass
+        the input arguments to the corresponding ports. If args are given
+        it is assumed that they appear in the correct order of the ports
+        of the node. Otherwise kwargs are checked afterwards, where the
+        keywords should match the port name.
 
+        Raises:
+            ValueError: Missing a required input
+
+        Returns:
+            _type_: The output of this node, which are usually written in
+                    the output ports, will either return a scalar value
+                    or a tuple.
+        """
+        arg_counter = -1
         for port in self.input_ports:
-            if port.name in kwargs:
+            arg_counter += 1
+            if arg_counter < len(args):
+                port.set_value(args[arg_counter])
+            elif port.name in kwargs:
                 port.set_value(kwargs[port.name])
-                continue
-            if port.is_required:
+            elif port.is_required:
                 raise ValueError(f"Missing required input: {port.name}")
 
         self.run()

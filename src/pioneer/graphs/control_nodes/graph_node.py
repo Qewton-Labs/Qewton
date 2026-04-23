@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Mapping, cast
 
 from ..nodes import InputPort, Node, OutputPort, Port
 from ..graphs import Graph
@@ -33,8 +33,8 @@ class GraphNode(Node):
     def __init__(
         self,
         graph: Graph,
-        input_ports: list[InputPort] | dict[InputPort, str | InputPort],
-        output_ports: list[OutputPort] | dict[OutputPort, str | OutputPort],
+        input_ports: list[InputPort] | Mapping[InputPort, str | InputPort],
+        output_ports: list[OutputPort] | Mapping[OutputPort, str | OutputPort],
         name: str = "GraphNode",
     ) -> None:
         super().__init__(name=name)
@@ -61,7 +61,7 @@ class GraphNode(Node):
         for i, port in enumerate(new_input_ports):
             self._inner_input_ports[i] = port
 
-    def update_outer_input_ports(self, new_output_ports: list[OutputPort]):
+    def update_inner_output_ports(self, new_output_ports: list[OutputPort]):
         for i, port in enumerate(new_output_ports):
             self._inner_output_ports[i] = port
 

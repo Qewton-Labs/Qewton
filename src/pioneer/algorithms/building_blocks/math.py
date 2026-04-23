@@ -1,3 +1,5 @@
+from pioneer.algorithms.implementation import DEFAULT_DL_IMPLEMENTATION
+
 from ..base import OperationNode
 from ..implementation import (
     TorchImplementation,
@@ -238,10 +240,20 @@ class MatMul(OperationNode):
     }
 
 
+class SVD(OperationNode):
+
+    args = {"x": NO_DEFAULT}
+    outputs = ["U", "S", "V"]
+    implementations = {
+        TorchImplementation: ("svd",),
+        TensorflowImplementation: ("linalg.svd",),
+    }
+
+
 # endregion
 
 
-# region: Reshaping operations
+# region: Statistic operations
 
 
 class Mean(OperationNode):
@@ -258,6 +270,84 @@ class Mean(OperationNode):
         TorchImplementation: ("mean",),
         TensorflowImplementation: ("reduce_mean",),
     }
+
+    def __init__(
+        self,
+        axis: type[NO_DEFAULT] | None | int | tuple[int] = NO_DEFAULT,
+        keepdims=False,
+        backend=DEFAULT_DL_IMPLEMENTATION,
+    ):
+        self.args = self.args.copy()
+        self.args["axis"] = axis
+        self.args["keepdims"] = keepdims
+        super().__init__(name=None, backend=backend)
+
+
+class Std(OperationNode):
+
+    args = {"x": NO_DEFAULT, "axis": NO_DEFAULT, "keepdims": False}
+    outputs = ["output"]
+    implementations = {
+        TorchImplementation: ("std",),
+        TensorflowImplementation: ("reduce_std",),
+    }
+
+    def __init__(
+        self,
+        axis: type[NO_DEFAULT] | None | int | tuple[int] = NO_DEFAULT,
+        keepdims=False,
+        backend=DEFAULT_DL_IMPLEMENTATION,
+    ):
+        self.args = self.args.copy()
+        if isinstance(axis, int):
+            axis = (axis,)
+        self.args["axis"] = axis
+        self.args["keepdims"] = keepdims
+        super().__init__(name=None, backend=backend)
+
+
+# endregion
+
+
+# region: Reshaping operations
+
+
+class Flatten(OperationNode):
+    args = {"x": NO_DEFAULT, "start_dim": 0, "end_dim": -1}
+    outputs = ["output"]
+    implementations = {
+        TorchImplementation: ("flatten",),
+        TensorflowImplementation: ("flatten",),
+    }
+
+    def __init__(
+        self,
+        start_dim: int = 0,
+        end_dim: int = -1,
+        backend=DEFAULT_DL_IMPLEMENTATION,
+    ):
+        self.args = self.args.copy()
+        self.args["start_dim"] = start_dim
+        self.args["end_dim"] = end_dim
+        super().__init__(name=None, backend=backend)
+
+
+class Transpose(OperationNode):
+    args = {"x": NO_DEFAULT, "perm": [1, 0]}
+    outputs = ["output"]
+    implementations = {
+        TorchImplementation: ("permute",),
+        TensorflowImplementation: ("transpose",),
+    }
+
+    def __init__(
+        self,
+        perm: list | None = None,
+        backend=DEFAULT_DL_IMPLEMENTATION,
+    ):
+        self.args = self.args.copy()
+        self.args["perm"] = perm if perm is not None else [1, 0]
+        super().__init__(name=None, backend=backend)
 
 
 # endregion

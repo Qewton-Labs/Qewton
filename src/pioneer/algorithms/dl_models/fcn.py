@@ -70,7 +70,7 @@ class FCN(GraphNode):
         self.graph = self._build_network()
         self.graph.setup()
         self.update_inner_input_ports(self.graph.sorted_nodes[0].input_ports)
-        self.update_outer_input_ports(self.graph.sorted_nodes[-1].output_ports)
+        self.update_inner_output_ports(self.graph.sorted_nodes[-1].output_ports)
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
