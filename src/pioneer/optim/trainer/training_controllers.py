@@ -8,9 +8,9 @@ from .optimizers.optim_setups.pytorch_optims import (
 )
 from .optimizers.optimizers import Optimizer
 from ..base import EvaluationPhase
-from ...algorithms.implementation import (
-    TorchImplementation,
-    TensorflowImplementation,
+from ...algorithms.backend import (
+    TorchBackend,
+    TensorflowBackend,
 )
 from ..parameters.hyperparameter_base import HyperParameter
 

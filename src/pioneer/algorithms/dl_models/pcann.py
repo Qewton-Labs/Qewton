@@ -14,7 +14,7 @@ from ..building_blocks.math import (
     Multiply,
 )
 from ..building_blocks.array_operations import Narrow
-from ..implementation import DEFAULT_DL_IMPLEMENTATION
+from ..backend import DEFAULT_DL_BACKEND
 from ...config.configuration_base import DataConfiguration
 from ...data.datasets.base import DataSet
 from ...graphs.control_nodes.graph_node import GraphNode
@@ -30,7 +30,7 @@ class PCA(GraphNode):
         batch_axis: int = 0,
         principal_components: int = 10,
         name: str = "PCANode",
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
         divide_eps=1.0e-5,
     ) -> None:
         self.backend = backend

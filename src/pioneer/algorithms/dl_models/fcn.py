@@ -1,6 +1,6 @@
 from ..building_blocks.linear import Linear
 from ..building_blocks.activation_functions import ReLU
-from ..implementation import DEFAULT_DL_IMPLEMENTATION
+from ..backend import DEFAULT_DL_BACKEND
 from ...graphs.graphs import SequentialGraph
 from ...graphs.nodes import Node, NodeState
 from ...graphs.control_nodes.graph_node import GraphNode
@@ -19,7 +19,7 @@ class FCN(GraphNode):
         bias: bool | HyperParameter = True,
         activation: type[Node] | HyperParameter = ReLU,
         name="fcn",
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
     ):
         self.in_neurons = HyperParameter.from_value(in_neurons, "FCN Input Neurons")
         self.hidden_neurons = HyperParameter.from_value(

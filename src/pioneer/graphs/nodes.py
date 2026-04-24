@@ -13,6 +13,7 @@ from ..optim.parameters.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )
+from .tracking import TrackingObject
 
 
 class NO_DEFAULT:
@@ -231,41 +232,25 @@ class Node(ABC):
             "The default node can not be called, "
             "this method needs to be overwritten in the subclasses."
         )
-        # """Evaluate this node. This will call the run-method and will pass
-        # the input arguments to the corresponding ports. If args are given
-        # it is assumed that they appear in the correct order of the ports
-        # of the node. Otherwise kwargs are checked afterwards, where the
-        # keywords should match the port name.
 
-        # Raises:
-        #     ValueError: Missing a required input
-
-        # Returns:
-        #     _type_: The output of this node, which are usually written in
-        #             the output ports, will either return a scalar value
-        #             or a tuple.
-        # """
-        # arg_counter = -1
-        # for port in self.input_ports:
-        #     arg_counter += 1
-        #     if arg_counter < len(args):
-        #         port.set_value(args[arg_counter])
-        #     elif port.name in kwargs:
-        #         port.set_value(kwargs[port.name])
-        #     elif port.is_required:
-        #         raise ValueError(f"Missing required input: {port.name}")
-
-        # self.run()
-
-        # for port in self.input_ports:
-        #     port.clear_value()
-
-        # out_dict = {}
-        # for port in self.output_ports:
-        #     out_dict[port.name] = port.value
-        # if len(out_dict) == 1:
-        #     return next(iter(out_dict.values()))
-        # return out_dict
+    def _track(self, *args, **kwargs):
+        """Track the data passed through this node. This can be used to implement
+        graph tracking for debugging or visualization purposes.
+        """
+        for i, tracking_object in enumerate(args):
+            if tracking_object.last_output_port is not None:
+                tracking_object.graph.connect(
+                    tracking_object.last_output_port, self.input_ports[i]
+                )
+        for key, tracking_object in kwargs.items():
+            if tracking_object.last_output_port is not None:
+                tracking_object.graph.connect(
+                    tracking_object.last_output_port, self.get_input_port(key)
+                )
+        output_trackers = []
+        for out_port in self.output_ports:
+            output_trackers.append(TrackingObject(out_port))
+        return tuple(output_trackers) if len(output_trackers) > 1 else output_trackers[0]
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:

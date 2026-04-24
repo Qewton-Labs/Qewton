@@ -1,6 +1,6 @@
 from ..config.configuration_base import DataConfiguration
 from ..graphs.nodes import InputPort, Node, NodeState, OutputPort
-from .implementation import DEFAULT_DL_IMPLEMENTATION
+from .backend import DEFAULT_DL_BACKEND, Backend, TorchBackend, TensorflowBackend
 
 
 # # TODO: Is this needed? Can we make this more natural?
@@ -21,21 +21,60 @@ from .implementation import DEFAULT_DL_IMPLEMENTATION
 #     INCLUDES_IMAGINARY_VALUES = auto()  # Some optimizers do not work then
 
 
-class OperationNode(Node):
+class BackendNode(Node):
     """A node representing an operation, which is a type of algorithm that takes
     input data and produces output data without any trainable parameters.
 
     This class is built to easily wrap functions from backends.
     """
 
-    implementations = {}
-
-    def __init__(self, name=None, backend=DEFAULT_DL_IMPLEMENTATION):
+    def __init__(self, name=None, backend: Backend = DEFAULT_DL_BACKEND):
         name = name if name is not None else self.__class__.__name__
         super().__init__(name=name, state=NodeState.FIXED)
-        self.implementation = self.get_implementation(backend)
+        self.backend = backend
+        _ = self.backend.import_library()
 
-    def get_implementation(self, backend):
-        if backend in self.implementations:
-            return backend(*self.implementations[backend])
-        raise ValueError(f"No implementation found for backend {backend}.")
+        self.choose_implementation()
+
+    def choose_implementation(self):
+        subclass_methods = {
+            TorchBackend: self.torch_implementation,
+            TensorflowBackend: self.tensorflow_implementation,
+        }
+
+        parent_methods = {
+            TorchBackend: BackendNode.torch_implementation,
+            TensorflowBackend: BackendNode.tensorflow_implementation,
+        }
+
+        # check whether the subclass overrides the method
+        if subclass_methods[self.backend] is not parent_methods[self.backend]:
+            self.implementation = subclass_methods[self.backend]
+        else:
+            if self.default_implementation is BackendNode.default_implementation:
+                self.implementation = self.default_implementation
+            else:
+                assert (
+                    self.__call__ is not BackendNode.__call__
+                ), "If no specific implementation is provided, the __call__ method must\
+                    be overridden."
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError(
+            "The __call__ method must be implemented by subclasses of BackendNode."
+        )
+
+    def default_implementation(self, *args, **kwargs):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not have a default implementation."
+        )
+
+    def torch_implementation(self, *args, **kwargs):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not have a Torch implementation."
+        )
+
+    def tensorflow_implementation(self, *args, **kwargs):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not have a Tensorflow implementation."
+        )

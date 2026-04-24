@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any
-from ..implementation import (
-    DEFAULT_DL_IMPLEMENTATION,
+from ..backend import (
+    DEFAULT_DL_BACKEND,
     TorchImplementation,
 )
 from ...optim.parameters.hyperparameter_base import HyperParameter
@@ -62,7 +62,7 @@ class ParameterNode(Node):
         shape: tuple[int | HyperParameter, ...],
         initial_value=None,
         name: str = "ParameterNode",
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
     ) -> None:
         super().__init__(name, state=NodeState.UNINITIALIZED)
         self.shape = tuple(

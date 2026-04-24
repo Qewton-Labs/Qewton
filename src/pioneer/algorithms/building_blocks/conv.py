@@ -1,5 +1,5 @@
 # from ..base import LayerNode
-# from ..implementation import TorchImplementation, DEFAULT_DL_IMPLEMENTATION
+# from ..implementation import TorchImplementation, DEFAULT_DL_BACKEND
 
 
 # class TorchConv2d(TorchImplementation):
@@ -50,7 +50,7 @@
 #         groups=1,
 #         bias=True,
 #         name="conv2d",
-#         backend=DEFAULT_DL_IMPLEMENTATION,
+#         backend=DEFAULT_DL_BACKEND,
 #         **kwargs,
 #     ):
 #         super().__init__(name=name, backend=backend, state=NodeState.FIXED)

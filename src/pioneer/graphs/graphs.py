@@ -1,5 +1,6 @@
 from __future__ import annotations
 from collections import deque
+from contextlib import contextmanager
 
 from .nodes import InputPort, Node, EvaluationPhase, OutputPort
 from ..optim.parameters.trainable_parameters import TrainableParametersCollection
@@ -184,6 +185,30 @@ class Graph:
                 params_collection.extend(p)
         return params_collection
 
+    @contextmanager
+    def tracker(self, n_tracking_vars=1):
+        if len(self.nodes) > 0:
+            raise RuntimeError(
+                "Graph tracking can only be used on an empty graph. Please create a new\
+                 graph for tracking or clear the current graph before starting tracking."
+            )
+        if TrackingObject.current_graph_tracked is not None:
+            raise RuntimeError(
+                "Nested graph tracking is not supported. Please exit the current tracking\
+                 context before starting a new one."
+            )
+        TrackingObject.current_graph_tracked = self
+
+        # set node mode
+
+        tracking_objects = [TrackingObject() for i in range(n_tracking_vars)]
+        try:
+            yield tracking_objects if n_tracking_vars > 1 else tracking_objects[0]
+        finally:
+            TrackingObject.current_graph_tracked = None
+
+            # reset node mode
+
 
 class SequentialGraph(Graph):
     """
@@ -200,3 +225,15 @@ class SequentialGraph(Graph):
         if len(self.sorted_nodes) == 1:
             self.nodes.add(self.sorted_nodes[0])
             self.incoming_edges[self.sorted_nodes[0]] = list[Edge]()
+
+
+my_graph = Graph()
+with my_graph.tracker as x, y, z:
+    a = x + y
+
+
+def f(x, y, z):
+    return z
+
+
+Graph.from_function(f)

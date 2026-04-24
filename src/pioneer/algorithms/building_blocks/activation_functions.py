@@ -1,39 +1,32 @@
-from ..base import OperationNode
-from ...graphs.nodes import NO_DEFAULT
-from ..implementation import (
-    TorchImplementation,
-    TensorflowImplementation,
-)
+from typing import Annotated, Any
+
+from ...config.configuration_base import DataConfiguration
+from ..base import BackendNode
 
 
-class ReLU(OperationNode):
+class ReLU(BackendNode):
     """General ReLU Class."""
 
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("relu",),
-        TensorflowImplementation: ("relu",),
-    }
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.relu(x)
 
 
-class Tanh(OperationNode):
-    """General Tanh Class."""
-
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("tanh",),
-        TensorflowImplementation: ("tanh",),
-    }
+class Tanh(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.tanh(x)
 
 
-class Sigmoid(OperationNode):
+class Sigmoid(BackendNode):
     """General Sigmoid Class."""
 
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("sigmoid",),
-        TensorflowImplementation: ("sigmoid",),
-    }
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.sigmoid(x)

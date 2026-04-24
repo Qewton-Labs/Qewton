@@ -1,11 +1,8 @@
 from typing import Annotated, Any
 
-from ..implementation import DEFAULT_DL_IMPLEMENTATION
-from ..base import OperationNode
-from ..implementation import (
-    TorchImplementation,
-    TensorflowImplementation,
-)
+from ..backend import DEFAULT_DL_BACKEND
+from ..base import BackendNode
+
 from ...config.configuration_base import DataConfiguration
 from ...graphs.nodes import NO_DEFAULT
 
@@ -20,9 +17,16 @@ from ...graphs.nodes import NO_DEFAULT
 # region: Arithmetic operations
 
 
-class Add(OperationNode):
-    implementations = {TorchImplementation: ("add",), TensorflowImplementation: ("add",)}
+class Add(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+        y: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.add(x, y)
 
+
+class Subtract(BackendNode):
     def __call__(
         self,
         x: Annotated[Any, DataConfiguration([])],
@@ -30,41 +34,56 @@ class Add(OperationNode):
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.implementation(x, y)
 
+    def torch_implementation(self, x, y):
+        return self.backend.library.sub(x, y)
 
-class Subtract(OperationNode):
-    args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("sub",),
-        TensorflowImplementation: ("subtract",),
-    }
+    def tensorflow_implementation(self, x, y):
+        return self.backend.library.subtract(x, y)
 
 
-class Multiply(OperationNode):
-    args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("mul",),
-        TensorflowImplementation: ("multiply",),
-    }
+class Multiply(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+        y: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x, y)
+
+    def torch_implementation(self, x, y):
+        return self.backend.library.mul(x, y)
+
+    def tensorflow_implementation(self, x, y):
+        return self.backend.library.multiply(x, y)
 
 
-class Divide(OperationNode):
-    args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("true_divide",),
-        TensorflowImplementation: ("truediv",),
-    }
+class Divide(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+        y: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x, y)
+
+    def torch_implementation(self, x, y):
+        return self.backend.library.true_divide(x, y)
+
+    def tensorflow_implementation(self, x, y):
+        return self.backend.library.truediv(x, y)
 
 
-class Mod(OperationNode):
-    args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("remainder",),
-        TensorflowImplementation: ("mod",),
-    }
+class Mod(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+        y: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x, y)
+
+    def torch_implementation(self, x, y):
+        return self.backend.library.remainder(x, y)
+
+    def tensorflow_implementation(self, x, y):
+        return self.backend.library.mod(x, y)
 
 
 # endregion
@@ -73,28 +92,29 @@ class Mod(OperationNode):
 # region: Powers and roots
 
 
-class Square(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("square",),
-        TensorflowImplementation: ("square",),
-    }
+class Square(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.square(x)
 
 
-class Sqrt(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("sqrt",),
-        TensorflowImplementation: ("sqrt",),
-    }
+class Sqrt(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.sqrt(x)
 
 
-class Power(OperationNode):
-    args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {TorchImplementation: ("pow",), TensorflowImplementation: ("pow",)}
+class Power(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+        y: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.pow(x, y)
 
 
 # endregion
@@ -103,34 +123,48 @@ class Power(OperationNode):
 # region: Exponential and logarithmic functions
 
 
-class Exp(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {TorchImplementation: ("exp",), TensorflowImplementation: ("exp",)}
+class Exp(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.exp(x)
 
 
-class Log(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {TorchImplementation: ("log",), TensorflowImplementation: ("log",)}
+class Log(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.log(x)
 
 
-class Log2(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("log2",),
-        TensorflowImplementation: ("keras.ops.log2",),
-    }
+class Log2(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
+
+    def torch_implementation(self, x):
+        return self.backend.library.log2(x)
+
+    def tensorflow_implementation(self, x):
+        return self.backend.library.keras.ops.log2(x)
 
 
-class Log10(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("log10",),
-        TensorflowImplementation: ("log10",),
-    }
+class Log10(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
+
+    def torch_implementation(self, x):
+        return self.backend.library.log10(x)
+
+    def tensorflow_implementation(self, x):
+        return self.backend.library.math.log10(x)
 
 
 # endregion
@@ -139,49 +173,64 @@ class Log10(OperationNode):
 # region: Trigonometric functions
 
 
-class Sin(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {TorchImplementation: ("sin",), TensorflowImplementation: ("sin",)}
+class Sin(BackendNode):
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.sin(x)
 
 
-class Cos(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {TorchImplementation: ("cos",), TensorflowImplementation: ("cos",)}
+class Cos(BackendNode):
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.cos(x)
 
 
-class Tan(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {TorchImplementation: ("tan",), TensorflowImplementation: ("tan",)}
+class Tan(BackendNode):
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.tan(x)
 
 
-class ArcSin(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("arcsin",),
-        TensorflowImplementation: ("asin",),
-    }
+class ArcSin(BackendNode):
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
+
+    def torch_implementation(self, x):
+        return self.backend.library.arcsin(x)
+
+    def tensorflow_implementation(self, x):
+        return self.backend.library.asin(x)
 
 
-class ArcCos(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("arccos",),
-        TensorflowImplementation: ("acos",),
-    }
+class ArcCos(BackendNode):
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
+
+    def torch_implementation(self, x):
+        return self.backend.library.arccos(x)
+
+    def tensorflow_implementation(self, x):
+        return self.backend.library.acos(x)
 
 
-class ArcTan(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("arctan",),
-        TensorflowImplementation: ("atan",),
-    }
+class ArcTan(BackendNode):
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
+
+    def torch_implementation(self, x):
+        return self.backend.library.arctan(x)
+
+    def tensorflow_implementation(self, x):
+        return self.backend.library.atan(x)
 
 
 # endregion
@@ -190,46 +239,43 @@ class ArcTan(OperationNode):
 # region: Other useful math functions
 
 
-class Abs(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {TorchImplementation: ("abs",), TensorflowImplementation: ("abs",)}
+class Abs(BackendNode):
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.abs(x)
 
 
-class Floor(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("floor",),
-        TensorflowImplementation: ("floor",),
-    }
+class Floor(BackendNode):
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.floor(x)
 
 
-class Ceil(OperationNode):
-    args = {"x": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("ceil",),
-        TensorflowImplementation: ("ceil",),
-    }
+class Ceil(BackendNode):
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.ceil(x)
 
 
-class Maximum(OperationNode):
-    args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("maximum",),
-        TensorflowImplementation: ("maximum",),
-    }
+class Maximum(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+        y: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.maximum(x, y)
 
 
-class Minimum(OperationNode):
-    args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("minimum",),
-        TensorflowImplementation: ("minimum",),
-    }
+class Minimum(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+        y: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.minimum(x, y)
 
 
 # endregion
@@ -238,23 +284,29 @@ class Minimum(OperationNode):
 # region: Matrix operations
 
 
-class MatMul(OperationNode):
-    args = {"x": NO_DEFAULT, "y": NO_DEFAULT}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("matmul",),
-        TensorflowImplementation: ("matmul",),
-    }
+class MatMul(BackendNode):
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+        y: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.backend.library.matmul(x, y)
 
 
-class SVD(OperationNode):
+class SVD(BackendNode):
+    def __call__(self, x: Annotated[Any, DataConfiguration([])]) -> tuple[
+        Annotated[Any, DataConfiguration([])],
+        Annotated[Any, DataConfiguration([])],
+        Annotated[Any, DataConfiguration([])],
+    ]:
+        return self.implementation(x)
 
-    args = {"x": NO_DEFAULT}
-    outputs = ["U", "S", "V"]
-    implementations = {
-        TorchImplementation: ("svd",),
-        TensorflowImplementation: ("linalg.svd",),
-    }
+    def torch_implementation(self, x):
+        return self.backend.library.svd(x)
+
+    def tensorflow_implementation(self, x):
+        s, u, v = self.backend.library.linalg.svd(x)
+        return u, s, v
 
 
 # endregion
@@ -263,54 +315,62 @@ class SVD(OperationNode):
 # region: Statistic operations
 
 
-class Mean(OperationNode):
+class Mean(BackendNode):
     """
     Computes the mean of the input tensor along the specified axis.
-
-    # TODO: how to write docstrings for these methods?
     """
 
-    args = {"x": NO_DEFAULT, "axis": NO_DEFAULT, "keepdims": False}
-    outputs = ["output"]
-    # Orders should be correct
-    implementations = {
-        TorchImplementation: ("mean",),
-        TensorflowImplementation: ("reduce_mean",),
-    }
-
     def __init__(
         self,
         axis: type[NO_DEFAULT] | None | int | tuple[int] = NO_DEFAULT,
         keepdims=False,
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
     ):
-        self.args = self.args.copy()
-        self.args["axis"] = axis
-        self.args["keepdims"] = keepdims
+        self.axis = axis
+        self.keepdims = keepdims
         super().__init__(name=None, backend=backend)
 
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
 
-class Std(OperationNode):
+    def torch_implementation(self, x):
+        if self.axis is NO_DEFAULT or self.axis is None:
+            return self.backend.library.mean(x)
+        return self.backend.library.mean(x, dim=self.axis, keepdim=self.keepdims)
 
-    args = {"x": NO_DEFAULT, "axis": NO_DEFAULT, "keepdims": False}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("std",),
-        TensorflowImplementation: ("reduce_std",),
-    }
+    def tensorflow_implementation(self, x):
+        if self.axis is NO_DEFAULT or self.axis is None:
+            return self.backend.library.reduce_mean(x)
+        return self.backend.library.reduce_mean(x, axis=self.axis, keepdims=self.keepdims)
 
+
+class Std(BackendNode):
     def __init__(
         self,
         axis: type[NO_DEFAULT] | None | int | tuple[int] = NO_DEFAULT,
         keepdims=False,
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
     ):
-        self.args = self.args.copy()
-        if isinstance(axis, int):
-            axis = (axis,)
-        self.args["axis"] = axis
-        self.args["keepdims"] = keepdims
+        self.axis = axis
+        self.keepdims = keepdims
         super().__init__(name=None, backend=backend)
+
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
+
+    def torch_implementation(self, x):
+        if self.axis is NO_DEFAULT or self.axis is None:
+            return self.backend.library.std(x)
+        return self.backend.library.std(x, dim=self.axis, keepdim=self.keepdims)
+
+    def tensorflow_implementation(self, x):
+        if self.axis is NO_DEFAULT or self.axis is None:
+            return self.backend.library.reduce_std(x)
+        return self.backend.library.reduce_std(x, axis=self.axis, keepdims=self.keepdims)
 
 
 # endregion
@@ -319,42 +379,50 @@ class Std(OperationNode):
 # region: Reshaping operations
 
 
-class Flatten(OperationNode):
-    args = {"x": NO_DEFAULT, "start_dim": 0, "end_dim": -1}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("flatten",),
-        TensorflowImplementation: ("flatten",),
-    }
-
+class Flatten(BackendNode):
     def __init__(
         self,
         start_dim: int = 0,
         end_dim: int = -1,
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
     ):
-        self.args = self.args.copy()
-        self.args["start_dim"] = start_dim
-        self.args["end_dim"] = end_dim
+        self.start_dim = start_dim
+        self.end_dim = end_dim
         super().__init__(name=None, backend=backend)
 
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
 
-class Transpose(OperationNode):
-    args = {"x": NO_DEFAULT, "perm": [1, 0]}
-    outputs = ["output"]
-    implementations = {
-        TorchImplementation: ("permute",),
-        TensorflowImplementation: ("transpose",),
-    }
+    def torch_implementation(self, x):
+        return self.backend.library.flatten(
+            x, start_dim=self.start_dim, end_dim=self.end_dim
+        )
 
+
+class Transpose(BackendNode):
     def __init__(
         self,
         perm: list | None = None,
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
     ):
-        self.args = self.args.copy()
-        self.args["perm"] = perm if perm is not None else [1, 0]
+        self.perm = perm if perm is not None else [1, 0]
         super().__init__(name=None, backend=backend)
+
+    def __call__(
+        self, x: Annotated[Any, DataConfiguration([])]
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
+
+    def torch_implementation(self, x):
+        return self.backend.library.permute(x, self.perm)
+
+    def tensorflow_implementation(self, x):
+        return self.backend.library.transpose(x, perm=self.perm)
+
+
+# endregion
 
 
 # endregion

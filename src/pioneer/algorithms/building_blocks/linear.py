@@ -1,6 +1,6 @@
 from .math import MatMul, Add
 from .parameters import ParameterNode
-from ..implementation import DEFAULT_DL_IMPLEMENTATION
+from ..backend import DEFAULT_DL_BACKEND
 from ...config.configuration_base import DataConfiguration
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...graphs.graphs import Graph
@@ -10,9 +10,7 @@ from ...graphs.control_nodes.graph_node import GraphNode
 
 class FunctionalLinear(GraphNode):
 
-    def __init__(
-        self, name="functional_linear", bias=True, backend=DEFAULT_DL_IMPLEMENTATION
-    ):
+    def __init__(self, name="functional_linear", bias=True, backend=DEFAULT_DL_BACKEND):
         self.input = InputPort(
             data_configuration=DataConfiguration.empty(),
             node=self,
@@ -69,7 +67,7 @@ class Linear(GraphNode):
         out_neurons: int | HyperParameter,
         bias=True,
         name="linear",
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
     ):
         self.input = InputPort(
             data_configuration=DataConfiguration.empty(),

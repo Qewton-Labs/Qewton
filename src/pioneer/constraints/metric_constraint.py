@@ -6,7 +6,7 @@ from ..optim.parameters.categorical_hyperparameter import (
 )
 from ..optim.parameters.number_hyperparameter import ContinuousHyperparameter
 from ..graphs.nodes import InputPort
-from ..algorithms.implementation import DEFAULT_DL_IMPLEMENTATION
+from ..algorithms.backend import DEFAULT_DL_BACKEND
 from ..algorithms.building_blocks.math import Subtract, Square, Mean, Divide
 
 
@@ -17,7 +17,7 @@ class MetricConstraint(Constraint):
         name="MetricConstraint",
         relative: bool | BooleanHyperparameter = False,
         weight: float | ContinuousHyperparameter = 1,
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
         epsilon=1e-8,
     ):
         super().__init__(name, weight)
@@ -41,7 +41,7 @@ class MSEConstraint(MetricConstraint):
         name="MSEConstraint",
         relative: bool | BooleanHyperparameter = False,
         weight: float | ContinuousHyperparameter = 1,
-        backend=DEFAULT_DL_IMPLEMENTATION,
+        backend=DEFAULT_DL_BACKEND,
         epsilon=1e-8,
     ):
         super().__init__(
@@ -49,7 +49,7 @@ class MSEConstraint(MetricConstraint):
         )
         self.subtract_operation = Subtract(backend=backend)
         self.square_operation = Square(backend=backend)
-        self.mean_operation = Mean(backend=backend)
+        self.mean_operation = Mean(backend=backend, axis=None)
         self.divide_operation = Divide(backend=backend)
 
     def check_constraint(self):
@@ -62,4 +62,4 @@ class MSEConstraint(MetricConstraint):
             # element wise (needs dataconfig)
             data_norm = self.square_operation(x=y)
             residual = self.divide_operation(x=residual, y=data_norm)
-        self.loss = self.mean_operation(x=residual, axis=None)
+        self.loss = self.mean_operation(x=residual)

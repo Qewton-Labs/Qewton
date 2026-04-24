@@ -1,21 +1,24 @@
-from pioneer.algorithms.implementation import DEFAULT_DL_IMPLEMENTATION
+from typing import Any, Annotated
 
-from ..base import OperationNode
-from ..implementation import (
-    TorchImplementation,
-)
+from ..backend import DEFAULT_DL_BACKEND
+from ...config.configuration_base import DataConfiguration
+from ..base import BackendNode
+
 from ...graphs.nodes import NO_DEFAULT
 
 
-class Narrow(OperationNode):
-    args = {"x": NO_DEFAULT, "dim": NO_DEFAULT, "start": 0, "length": NO_DEFAULT}
-    outputs = ["output"]
-    # TODO : Add Tensorflow implementation
-    implementations = {TorchImplementation: ("narrow",)}
-
-    def __init__(self, dim=None, start=0, length=None, backend=DEFAULT_DL_IMPLEMENTATION):
-        self.args = self.args.copy()
-        self.args["dim"] = dim if dim is not None else NO_DEFAULT
-        self.args["start"] = start
-        self.args["length"] = length if length is not None else NO_DEFAULT
+class Narrow(BackendNode):
+    def __init__(self, dim=None, start=0, length=None, backend=DEFAULT_DL_BACKEND):
+        self.dim = dim if dim is not None else NO_DEFAULT
+        self.start = start
+        self.length = length if length is not None else NO_DEFAULT
         super().__init__(name=None, backend=backend)
+
+    def __call__(
+        self,
+        x: Annotated[Any, DataConfiguration([])],
+    ) -> Annotated[Any, DataConfiguration([])]:
+        return self.implementation(x)
+
+    def torch_implementation(self, x):
+        return self.backend.library.narrow(x, self.dim, self.start, self.length)

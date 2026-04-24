@@ -54,7 +54,8 @@ disable = [
   "too-few-public-methods",
   "E0402",
   "R0902",
-  "C0415"
+  "C0415",
+  "W0221"
 ]
 
 [tool.pylint.format]

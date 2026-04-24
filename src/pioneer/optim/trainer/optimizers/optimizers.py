@@ -1,10 +1,10 @@
 from typing import Any
 
-from ....algorithms.implementation import (
+from ....algorithms.backend import (
     Implementation,
     TorchImplementation,
     TensorflowImplementation,
-    DEFAULT_DL_IMPLEMENTATION,
+    DEFAULT_DL_BACKEND,
 )
 
 
@@ -13,7 +13,7 @@ class Optimizer:
     existing_implementations = {}
     requires_closure = False
 
-    def __init__(self, backend: Implementation = DEFAULT_DL_IMPLEMENTATION) -> None:
+    def __init__(self, backend: Implementation = DEFAULT_DL_BACKEND) -> None:
         self.backend = backend
 
     def build_optimizer(self):

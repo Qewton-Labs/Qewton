@@ -1,10 +1,9 @@
 from .dl_models.fcn import FCN
 from .dl_models.pcann import PCA
 
-from .base import OperationNode
-from .implementation import (
-    Implementation,
-    TorchImplementation,
-    TensorflowImplementation,
-    DEFAULT_DL_IMPLEMENTATION,
+from .base import BackendNode
+from .backend import (
+    DEFAULT_DL_BACKEND,
+    TorchBackend,
+    TensorflowBackend,
 )
