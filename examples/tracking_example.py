@@ -18,7 +18,7 @@ U = pioneer.config.Variable("u", 1)
 dataset_X = pioneer.data.DataSet.from_data(x_data, X, batch_size=1000)
 dataset_U = pioneer.data.DataSet.from_data(u_data, U, batch_size=1000)
 
-model = pioneer.algorithms.FCN(1, 50, 1, 1)
+model = pioneer.algorithms.FCN(1, 50, 1, 1, activation=pioneer.building_blocks.Tanh)
 mse_constraint = pioneer.constraints.MSEConstraint(
     model.output_ports[0].data_configuration
 )

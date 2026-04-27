@@ -1,6 +1,7 @@
 from __future__ import annotations
 from collections import deque
 from contextlib import contextmanager
+import inspect
 
 from .nodes import InputPort, Node, EvaluationPhase, OutputPort
 from ..optim.parameters.trainable_parameters import TrainableParametersCollection
@@ -16,6 +17,47 @@ class Graph:
 
         self.incoming_edges: dict[Node, list[Edge]] = {}
         self.sorted_edges: list[dict[InputPort, Edge]] = []
+
+    @classmethod
+    def from_function(
+        cls, func: Callable
+    ) -> tuple[Graph, list[list[InputPort] | InputPort], list[OutputPort]]:
+        """Creates a graph from a function.
+        method of a node.
+
+        Args:
+            func (Callable): The function that is used to create the graph.
+        """
+        graph = cls()
+        sig = inspect.signature(func)
+        if len(sig.parameters) > 0:
+            with graph.tracker(n_tracking_vars=len(sig.parameters)) as tracking_vars:
+                if isinstance(tracking_vars, TrackingObject):
+                    tracking_vars = (tracking_vars,)
+                out = func(*tracking_vars)  # type: ignore
+            input_ports = [
+                var.to_ports if len(var.to_ports) > 1 else var.to_ports[0]
+                for var in tracking_vars  # type: ignore
+            ]
+        else:
+            with graph.tracker():
+                out = func()
+            input_ports = []
+        if isinstance(out, tuple):
+            assert all(
+                isinstance(o, TrackingObject) for o in out
+            ), "All outputs of the function must be TrackingObjects."
+            output_ports = [var.last_output_port for var in out]
+        else:
+            if out is None:
+                output_ports = []
+            else:
+                assert isinstance(
+                    out, TrackingObject
+                ), "The output of the function must be a TrackingObject."
+                output_ports = [out.last_output_port]
+
+        return graph, input_ports, output_ports
 
     def add_node(self, node: Node, check_warning=True) -> None:
         """Adds a node to this graph.
@@ -46,11 +88,13 @@ class Graph:
         self.incoming_edges.pop(node)
 
     def sort(self):
-        in_degree = {node: len(self.incoming_edges[node]) for node in self.nodes}
+        in_degree = {node: 0 for node in self.nodes}
         outgoing_connections = {node: [] for node in self.nodes}
         for node in self.nodes:
             for edge in self.incoming_edges[node]:
                 outgoing_connections[edge.from_port.node].append(node)
+                if not edge.connects_to_outside:  # don't count incoming, they are ready
+                    in_degree[node] += 1
 
         queue = deque(node for node, deg in in_degree.items() if deg == 0)
         self.sorted_nodes: list[Node] = []
@@ -234,6 +278,10 @@ class TrackingObject:
 
     def __init__(self, last_output_port: OutputPort | None = None):
         self.last_output_port: OutputPort | None = last_output_port
+        self.to_ports = []
+
+    def add_to_port(self, port: InputPort):
+        self.to_ports.append(port)
 
     def __add__(self, other):
         from ..algorithms.building_blocks import Add

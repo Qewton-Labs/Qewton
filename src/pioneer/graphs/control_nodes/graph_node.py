@@ -1,5 +1,8 @@
+import inspect
+
 from ..nodes import InputPort, Node, OutputPort
-from ..graphs import Graph
+from ..graphs import Graph, TrackingObject
+
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.trainable_parameters import _TrainableParameterBase
 
@@ -26,23 +29,37 @@ class GraphNode(Node):
 
     def __init__(
         self,
-        graph: Graph,
-        input_ports: list[InputPort],
-        output_ports: list[OutputPort],
+        graph: Graph = None,
+        input_ports: list[InputPort] = None,
+        output_ports: list[OutputPort] = None,
+        forward_func: callable = None,
         name: str = "GraphNode",
     ) -> None:
         super().__init__(name=name)
-        self.graph = graph
 
-        assert len(self._input_ports) == len(
-            input_ports
-        ), "Graph node inputs and and inner graph inputs are different"
-        self._inner_input_ports = input_ports
+        if graph is not None:
+            assert (
+                input_ports is not None
+            ), "Input ports must be provided if graph is provided."
+            assert (
+                output_ports is not None
+            ), "Output ports must be provided if graph is provided."
+            self._graph = graph
 
-        assert len(self._output_ports) == len(
-            output_ports
-        ), "Graph node outputs and and inner graph outputs are different"
-        self._inner_output_ports = output_ports
+            assert len(self._input_ports) == len(
+                input_ports
+            ), "Graph node inputs and and inner graph inputs are different"
+            self._inner_input_ports = input_ports
+
+            assert len(self._output_ports) == len(
+                output_ports
+            ), "Graph node outputs and and inner graph outputs are different"
+            self._inner_output_ports = output_ports
+
+        elif forward_func is not None:
+            ...
+        else:
+            raise ValueError("Either graph or forward_func must be provided.")
 
     def update_inner_input_ports(self, new_input_ports: list[InputPort]):
         for i, port in enumerate(new_input_ports):
@@ -55,35 +72,35 @@ class GraphNode(Node):
     @property
     def hyperparameters(self) -> list[HyperParameter]:
         hp_list = []
-        for node in self.graph.nodes:
+        for node in self._graph.nodes:
             hp_list.extend(node.hyperparameters)
         return hp_list
 
     @property
     def trainable_parameters(self) -> _TrainableParameterBase:
-        return self.graph.collect_trainable_parameters()
+        return self._graph.collect_trainable_parameters()
 
     @property
     def _trainable_parameters(self) -> _TrainableParameterBase:
         return self.trainable_parameters
 
     def setup(self) -> None:
-        self.graph.setup()
+        self._graph.setup()
 
     def run(self):
         # TODO: Maybe make faster by removing the loop
         for i, port in enumerate(self._input_ports):  # type: ignore
             self._inner_input_ports[i].input_received_from_outside_graph = True
             self._inner_input_ports[i].set_value(port.value)
-        self.graph.run(self.mode)
+        self._graph.run(self.mode)
         # Write the inner information into the own output ports
         for i, out_port in enumerate(self._inner_output_ports):
             self._output_ports[i].set_value(out_port.value)  # type: ignore
 
     def reset(self):
-        for node in self.graph.nodes:
+        for node in self._graph.nodes:
             node.reset()
 
     def to(self, device):
-        for node in self.graph.nodes:
+        for node in self._graph.nodes:
             node.to(device=device)

@@ -251,11 +251,15 @@ class Node(ABC):
                 tracking_object.current_graph_tracked.connect(
                     tracking_object.last_output_port, self.input_ports[i]
                 )
+            else:
+                tracking_object.add_to_port(self.input_ports[i])
         for key, tracking_object in kwargs.items():
             if tracking_object.last_output_port is not None:
                 tracking_object.current_graph_tracked.connect(
                     tracking_object.last_output_port, self.get_input_port(key)
                 )
+            else:
+                tracking_object.add_to_port(self.get_input_port(key))
         from .graphs import TrackingObject
 
         output_trackers = []
