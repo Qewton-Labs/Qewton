@@ -1,37 +1,17 @@
+from typing import Any, Annotated
+
 from .math import MatMul, Add
 from .parameters import ParameterNode
 from ..backend import DEFAULT_DL_BACKEND
 from ...config.configuration_base import DataConfiguration
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...graphs.graphs import Graph
-from ...graphs.nodes import InputPort, OutputPort
 from ...graphs.control_nodes.graph_node import GraphNode
 
 
 class FunctionalLinear(GraphNode):
 
     def __init__(self, name="functional_linear", bias=True, backend=DEFAULT_DL_BACKEND):
-        self.input = InputPort(
-            data_configuration=DataConfiguration.empty(),
-            node=self,
-            name="input",
-        )
-        self.weight = InputPort(
-            data_configuration=DataConfiguration.empty(),
-            node=self,
-            name="weight",
-        )
-        self.bias = InputPort(
-            data_configuration=DataConfiguration.empty(),
-            node=self,
-            name="bias",
-            default=None,
-        )
-        self.output = OutputPort(
-            data_configuration=DataConfiguration.empty(),
-            node=self,
-            name="output",
-        )
         self.backend = backend
 
         self.matmul_node = MatMul(backend=self.backend)
@@ -46,14 +26,30 @@ class FunctionalLinear(GraphNode):
 
         super().__init__(
             graph=graph,
-            input_ports={
-                self.matmul_node.input_ports[1]: self.weight,
-                self.matmul_node.input_ports[0]: self.input,
-                self.add_node.input_ports[1]: self.bias,
-            },
-            output_ports={output_port: self.output},
+            input_ports=[
+                self.matmul_node.input_ports[0],
+                self.matmul_node.input_ports[1],
+                self.add_node.input_ports[1],
+            ],
+            output_ports=[output_port],
             name=name,
         )
+        self.input = self.input_ports[0]
+        self.weight = self.input_ports[1]
+        self.bias = self.input_ports[2]
+        self.output = self.output_ports[0]
+
+    def forward(
+        self,
+        x: Annotated[Any, DataConfiguration.empty()],
+        weight: Annotated[Any, DataConfiguration.empty()],
+        bias: Annotated[Any, DataConfiguration.empty()] = None,
+    ) -> Annotated[Any, DataConfiguration.empty()]:
+        self.input.set_value(x)
+        self.weight.set_value(weight)
+        self.bias.set_value(bias)
+        self.run()
+        return self.output.value
 
 
 class Linear(GraphNode):
@@ -69,17 +65,6 @@ class Linear(GraphNode):
         name="linear",
         backend=DEFAULT_DL_BACKEND,
     ):
-        self.input = InputPort(
-            data_configuration=DataConfiguration.empty(),
-            node=self,
-            name="input",
-        )
-        self.output = OutputPort(
-            data_configuration=DataConfiguration.empty(),
-            node=self,
-            name="output",
-        )
-
         self.weight = ParameterNode(
             (in_neurons, out_neurons), name="weight", backend=backend
         )
@@ -94,10 +79,17 @@ class Linear(GraphNode):
 
         super().__init__(
             graph=graph,
-            input_ports={self.functional_linear_node.input: self.input},
-            output_ports={self.functional_linear_node.output: self.output},
+            input_ports=[self.functional_linear_node.input],
+            output_ports=[self.functional_linear_node.output],
             name=name,
         )
-        # if self._input_ports is not None and self._output_ports is not None:
-        #     self._input_ports[0].data_configuration.specify_dtype(backend)
-        #     self._output_ports[0].data_configuration.specify_dtype(backend)
+        self.input = self.input_ports[0]
+        self.output = self.output_ports[0]
+
+    def forward(
+        self,
+        x: Annotated[Any, DataConfiguration.empty()],
+    ) -> Annotated[Any, DataConfiguration.empty()]:
+        self.input.set_value(x)
+        self.run()
+        return self.output.value

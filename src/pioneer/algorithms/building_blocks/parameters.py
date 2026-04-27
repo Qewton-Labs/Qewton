@@ -1,13 +1,13 @@
 from __future__ import annotations
-from typing import Any
+from typing import Any, Annotated
 from ..backend import (
     DEFAULT_DL_BACKEND,
-    TorchImplementation,
+    TorchBackend,
 )
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.trainable_parameters import TrainableParameters
 from ...config.configuration_base import DataConfiguration
-from ...graphs.nodes import Node, NodeState, OutputPort
+from ...graphs.nodes import Node, NodeState
 
 
 class _InternalParameter:
@@ -55,7 +55,7 @@ class TorchParameter(_InternalParameter):
 
 class ParameterNode(Node):
 
-    existing_implementations = {TorchImplementation: TorchParameter}
+    existing_implementations = {TorchBackend: TorchParameter}
 
     def __init__(
         self,
@@ -72,11 +72,7 @@ class ParameterNode(Node):
         self.implementation_class = self.existing_implementations[self.backend]
         self.implementation: _InternalParameter | None = None
         self.initial_value = initial_value
-        self.output = OutputPort(
-            data_configuration=DataConfiguration([]),
-            node=self,
-            name="parameters",
-        )
+        self.output = self.output_ports[0]
 
     def setup(self) -> None:
         if self.state == NodeState.UNINITIALIZED:
@@ -91,7 +87,14 @@ class ParameterNode(Node):
             self._state = NodeState.INITIALIZED
 
     def run(self) -> None:
-        pass
+        pass  # value is set once in setup
+
+    def forward(self) -> Annotated[Any, DataConfiguration([])]:
+        return (
+            None
+            if self.implementation is None
+            else self.implementation.trainable_parameters
+        )
 
     def reset(self):
         if not self.state == NodeState.FIXED:

@@ -18,7 +18,7 @@ from ...graphs.nodes import NO_DEFAULT
 
 
 class Add(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
         y: Annotated[Any, DataConfiguration([])],
@@ -27,7 +27,7 @@ class Add(BackendNode):
 
 
 class Subtract(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
         y: Annotated[Any, DataConfiguration([])],
@@ -42,7 +42,7 @@ class Subtract(BackendNode):
 
 
 class Multiply(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
         y: Annotated[Any, DataConfiguration([])],
@@ -57,7 +57,7 @@ class Multiply(BackendNode):
 
 
 class Divide(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
         y: Annotated[Any, DataConfiguration([])],
@@ -72,7 +72,7 @@ class Divide(BackendNode):
 
 
 class Mod(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
         y: Annotated[Any, DataConfiguration([])],
@@ -93,7 +93,7 @@ class Mod(BackendNode):
 
 
 class Square(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:
@@ -101,7 +101,7 @@ class Square(BackendNode):
 
 
 class Sqrt(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:
@@ -109,7 +109,7 @@ class Sqrt(BackendNode):
 
 
 class Power(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
         y: Annotated[Any, DataConfiguration([])],
@@ -124,7 +124,7 @@ class Power(BackendNode):
 
 
 class Exp(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:
@@ -132,7 +132,7 @@ class Exp(BackendNode):
 
 
 class Log(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:
@@ -140,7 +140,7 @@ class Log(BackendNode):
 
 
 class Log2(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:
@@ -154,7 +154,7 @@ class Log2(BackendNode):
 
 
 class Log10(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:
@@ -174,28 +174,28 @@ class Log10(BackendNode):
 
 
 class Sin(BackendNode):
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.backend.library.sin(x)
 
 
 class Cos(BackendNode):
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.backend.library.cos(x)
 
 
 class Tan(BackendNode):
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.backend.library.tan(x)
 
 
 class ArcSin(BackendNode):
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.implementation(x)
@@ -208,7 +208,7 @@ class ArcSin(BackendNode):
 
 
 class ArcCos(BackendNode):
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.implementation(x)
@@ -221,7 +221,7 @@ class ArcCos(BackendNode):
 
 
 class ArcTan(BackendNode):
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.implementation(x)
@@ -240,28 +240,28 @@ class ArcTan(BackendNode):
 
 
 class Abs(BackendNode):
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.backend.library.abs(x)
 
 
 class Floor(BackendNode):
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.backend.library.floor(x)
 
 
 class Ceil(BackendNode):
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.backend.library.ceil(x)
 
 
 class Maximum(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
         y: Annotated[Any, DataConfiguration([])],
@@ -270,7 +270,7 @@ class Maximum(BackendNode):
 
 
 class Minimum(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
         y: Annotated[Any, DataConfiguration([])],
@@ -285,7 +285,7 @@ class Minimum(BackendNode):
 
 
 class MatMul(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
         y: Annotated[Any, DataConfiguration([])],
@@ -294,7 +294,7 @@ class MatMul(BackendNode):
 
 
 class SVD(BackendNode):
-    def __call__(self, x: Annotated[Any, DataConfiguration([])]) -> tuple[
+    def forward(self, x: Annotated[Any, DataConfiguration([])]) -> tuple[
         Annotated[Any, DataConfiguration([])],
         Annotated[Any, DataConfiguration([])],
         Annotated[Any, DataConfiguration([])],
@@ -330,7 +330,7 @@ class Mean(BackendNode):
         self.keepdims = keepdims
         super().__init__(name=None, backend=backend)
 
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.implementation(x)
@@ -357,7 +357,7 @@ class Std(BackendNode):
         self.keepdims = keepdims
         super().__init__(name=None, backend=backend)
 
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.implementation(x)
@@ -390,7 +390,7 @@ class Flatten(BackendNode):
         self.end_dim = end_dim
         super().__init__(name=None, backend=backend)
 
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.implementation(x)
@@ -410,7 +410,7 @@ class Transpose(BackendNode):
         self.perm = perm if perm is not None else [1, 0]
         super().__init__(name=None, backend=backend)
 
-    def __call__(
+    def forward(
         self, x: Annotated[Any, DataConfiguration([])]
     ) -> Annotated[Any, DataConfiguration([])]:
         return self.implementation(x)

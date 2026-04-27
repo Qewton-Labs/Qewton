@@ -1,6 +1,4 @@
-from typing import Mapping, cast
-
-from ..nodes import InputPort, Node, OutputPort, Port
+from ..nodes import InputPort, Node, OutputPort
 from ..graphs import Graph
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.trainable_parameters import _TrainableParameterBase
@@ -15,47 +13,36 @@ class GraphNode(Node):
     Args:
     graph (Graph):
         The graph that is encapsulated by this node.
-    input_ports (list[InputPort] | dict[InputPort, str | InputPort]):
+    input_ports (list[InputPort]):
         The input ports of the inner graph that are mapped to the input ports of
-        this node. If a list is provided, the ports are mapped in the order they
-        are given. If a dict is provided, the keys are the input ports of the inner
-        graph and the values are either the names of the input ports of this node or
-        the input ports of this node themselves.
+        this node. The ports should have the same order as the input variables of
+        the forward method.
     output_ports (list[OutputPort] | dict[OutputPort, str | OutputPort]):
         The output ports of the inner graph that are mapped to the output ports of
-        this node. If a list is provided, the ports are mapped in the order they are
-        given. If a dict is provided, the keys are the output ports of the inner
-        graph and the values are either the names of the output ports of this node or
-        the output ports of this node themselves.
+        this node. The ports should have the same order as the outputs of
+        the forward method.
     name (str, optional): The name of this node. Defaults to "GraphNode".
     """
 
     def __init__(
         self,
         graph: Graph,
-        input_ports: list[InputPort] | Mapping[InputPort, str | InputPort],
-        output_ports: list[OutputPort] | Mapping[OutputPort, str | OutputPort],
+        input_ports: list[InputPort],
+        output_ports: list[OutputPort],
         name: str = "GraphNode",
     ) -> None:
         super().__init__(name=name)
         self.graph = graph
 
-        new_input_ports, _inner_input_ports = self._create_ports(
-            input_ports  # type: ignore
-        )
-        for port in new_input_ports:
-            assert isinstance(port, InputPort)
-            assert port.node == self
-        self._inner_input_ports = cast(list[InputPort], _inner_input_ports)
-        self._input_ports = cast(list[InputPort], new_input_ports)
+        assert len(self._input_ports) == len(
+            input_ports
+        ), "Graph node inputs and and inner graph inputs are different"
+        self._inner_input_ports = input_ports
 
-        new_output_ports, self._inner_output_ports = self._create_ports(
-            output_ports  # type: ignore
-        )
-        for port in new_output_ports:
-            assert isinstance(port, OutputPort)
-            assert port.node == self
-        self._output_ports = cast(list[OutputPort], new_output_ports)
+        assert len(self._output_ports) == len(
+            output_ports
+        ), "Graph node outputs and and inner graph outputs are different"
+        self._inner_output_ports = output_ports
 
     def update_inner_input_ports(self, new_input_ports: list[InputPort]):
         for i, port in enumerate(new_input_ports):
@@ -64,32 +51,6 @@ class GraphNode(Node):
     def update_inner_output_ports(self, new_output_ports: list[OutputPort]):
         for i, port in enumerate(new_output_ports):
             self._inner_output_ports[i] = port
-
-    def _create_ports(
-        self,
-        provided_ports: (
-            list[InputPort | OutputPort]
-            | dict[InputPort | OutputPort, str | InputPort | OutputPort]
-        ),
-    ) -> tuple[list[Port], list[InputPort | OutputPort]]:
-        if isinstance(provided_ports, list):
-            ports_with_new_owner = [
-                port.duplicate_with_new_owner(self) for port in provided_ports
-            ]
-            return ports_with_new_owner, provided_ports
-        if isinstance(provided_ports, dict):
-            provided_port_list = list(provided_ports.keys())
-            ports_with_new_owner = []
-            for port in provided_port_list:
-                value = provided_ports[port]
-                ports_with_new_owner.append(
-                    port.duplicate_with_new_owner(self, new_name=value)
-                    if isinstance(value, str)
-                    else value
-                )
-            return ports_with_new_owner, provided_port_list
-
-        raise ValueError("input_ports and output_ports should be either list or dict.")
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:

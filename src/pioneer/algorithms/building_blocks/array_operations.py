@@ -14,7 +14,7 @@ class Narrow(BackendNode):
         self.length = length if length is not None else NO_DEFAULT
         super().__init__(name=None, backend=backend)
 
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:

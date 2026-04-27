@@ -1,9 +1,9 @@
 from typing import Any
 
 from ....algorithms.backend import (
-    Implementation,
-    TorchImplementation,
-    TensorflowImplementation,
+    Backend,
+    TorchBackend,
+    TensorflowBackend,
     DEFAULT_DL_BACKEND,
 )
 
@@ -13,17 +13,12 @@ class Optimizer:
     existing_implementations = {}
     requires_closure = False
 
-    def __init__(self, backend: Implementation = DEFAULT_DL_BACKEND) -> None:
+    def __init__(self, backend: Backend = DEFAULT_DL_BACKEND) -> None:
         self.backend = backend
+        _ = self.backend.import_library()
 
     def build_optimizer(self):
-        if self.backend in self.existing_implementations:
-            optimizer_cls_name = self.existing_implementations[self.backend]
-            return self.backend(optimizer_cls_name)
-        raise NotImplementedError(
-            f"No implementation of {self.__class__.__name__} exists for \
-                backend {self.backend}."
-        )
+        raise NotImplementedError("Optimizers are implemented via subclasses.")
 
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         optimizer_obj = self.build_optimizer()
@@ -38,24 +33,35 @@ class Optimizer:
 # TODO: Maybe we need some ordering of the inputs again between different backends?
 class Adam(Optimizer):
 
-    existing_implementations = {
-        TorchImplementation: "optim.Adam",
-        TensorflowImplementation: "keras.optimizers.Adam",
-    }
+    def build_optimizer(self):
+        if self.backend == TorchBackend:
+            return self.backend.library.optim.Adam
+        if self.backend == TensorflowBackend:
+            return self.backend.library.keras.optimizers.Adam
+        raise NotImplementedError(
+            f"No implementation of Adam exists for backend {self.backend}."
+        )
 
 
 class SGD(Optimizer):
 
-    existing_implementations = {
-        TorchImplementation: "optim.SGD",
-        TensorflowImplementation: "keras.optimizers.SGD",
-    }
+    def build_optimizer(self):
+        if self.backend == TorchBackend:
+            return self.backend.library.optim.SGD
+        if self.backend == TensorflowBackend:
+            return self.backend.library.keras.optimizers.SGD
+        raise NotImplementedError(
+            f"No implementation of SGD exists for backend {self.backend}."
+        )
 
 
 class LBFGS(Optimizer):
 
-    existing_implementations = {
-        TorchImplementation: "optim.LBFGS",
-        # TensorFlow has no direct equivalent
-    }
+    def build_optimizer(self):
+        if self.backend == TorchBackend:
+            return self.backend.library.optim.LBFGS
+        raise NotImplementedError(
+            f"No implementation of LBFGS exists for backend {self.backend}."
+        )
+
     requires_closure = True

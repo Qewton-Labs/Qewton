@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any, Callable, Annotated
 
 from ...config import DataConfiguration
 from ...optim.parameters.hyperparameter_base import HyperParameter
@@ -66,7 +66,7 @@ class DataSet(Node):
         self._mean = None
         self._std = None
         self.std_eps = 1.0e-5  # small tolerance to add when std is equal 0
-        self.output = OutputPort(self.data_config, self, name="data output")
+        self.output = self.output_ports[0]
 
     @classmethod
     def from_data(
@@ -148,6 +148,9 @@ class DataSet(Node):
         # just a dummy to get a working example. Can this be done in the parent or
         # is this backend dependent? See TorchDataSet
         self.output.set_value(self.data)
+
+    def forward(self) -> Annotated[Any, DataConfiguration([])]:
+        return self.data
 
     def set_mode(self, new_mode):
         if new_mode != self.mode:

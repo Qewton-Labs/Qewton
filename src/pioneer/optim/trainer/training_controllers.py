@@ -66,12 +66,11 @@ class TrainerState:
 class OptimizationPhase:
 
     optimizer_setup_fn = {
-        TorchImplementation: _pytorch_setup_optimizer,
-        TensorflowImplementation: None,  # TODO
+        TorchBackend: _pytorch_setup_optimizer,
     }
     optimizer_step_fn = {
-        TorchImplementation: _pytorch_do_optimization_step,
-        TensorflowImplementation: None,  # TODO
+        TorchBackend: _pytorch_do_optimization_step,
+        TensorflowBackend: None,  # TODO
     }
 
     def __init__(
@@ -96,12 +95,9 @@ class OptimizationPhase:
         # Find correct function for the optimizer type
         self.setup_fn: Callable
         self.step_fn: Callable
-        if optimizer.backend == TorchImplementation:
-            self.setup_fn = self.optimizer_setup_fn[TorchImplementation]
-            self.step_fn = self.optimizer_step_fn[TorchImplementation]
-        elif optimizer.backend == TensorflowImplementation:
-            self.setup_fn = self.optimizer_setup_fn[TensorflowImplementation]
-            self.step_fn = self.optimizer_step_fn[TensorflowImplementation]
+        if optimizer.backend in self.optimizer_setup_fn:
+            self.setup_fn = self.optimizer_setup_fn[optimizer.backend]
+            self.step_fn = self.optimizer_step_fn[optimizer.backend]
         else:
             raise ValueError(f"Unsupported optimizer type: {optimizer.backend}")
 

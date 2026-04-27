@@ -192,22 +192,22 @@ class Graph:
                 "Graph tracking can only be used on an empty graph. Please create a new\
                  graph for tracking or clear the current graph before starting tracking."
             )
-        if TrackingObject.current_graph_tracked is not None:
-            raise RuntimeError(
-                "Nested graph tracking is not supported. Please exit the current tracking\
-                 context before starting a new one."
-            )
+        prev_tracked_graph = TrackingObject.current_graph_tracked
         TrackingObject.current_graph_tracked = self
 
-        # set node mode
+        if prev_tracked_graph is None:
+            Node.set_tracking(True)
 
-        tracking_objects = [TrackingObject() for i in range(n_tracking_vars)]
+        tracking_objects = [TrackingObject() for _ in range(n_tracking_vars)]
         try:
-            yield tracking_objects if n_tracking_vars > 1 else tracking_objects[0]
+            if n_tracking_vars > 1:
+                yield tracking_objects if n_tracking_vars > 1 else tracking_objects[0]
+            else:
+                yield
         finally:
-            TrackingObject.current_graph_tracked = None
-
-            # reset node mode
+            TrackingObject.current_graph_tracked = prev_tracked_graph
+            if TrackingObject.current_graph_tracked is None:
+                Node.set_tracking(False)
 
 
 class SequentialGraph(Graph):
@@ -227,13 +227,55 @@ class SequentialGraph(Graph):
             self.incoming_edges[self.sorted_nodes[0]] = list[Edge]()
 
 
-my_graph = Graph()
-with my_graph.tracker as x, y, z:
-    a = x + y
+############################################################################
+# region: Tracking
+class TrackingObject:
+    current_graph_tracked: Graph | None = None
+
+    def __init__(self, last_output_port: OutputPort | None = None):
+        self.last_output_port: OutputPort | None = last_output_port
+
+    def __add__(self, other):
+        from ..algorithms.building_blocks import Add
+
+        add_node = Add()
+        return add_node(self, other)
+
+    def __matmul__(self, other):
+        from ..algorithms.building_blocks import MatMul
+
+        matmul_node = MatMul()
+        return matmul_node(self, other)
+
+    def __sub__(self, other):
+        from ..algorithms.building_blocks import Subtract
+
+        subtract_node = Subtract()
+        return subtract_node(self, other)
+
+    def __mul__(self, other):
+        from ..algorithms.building_blocks import Multiply
+
+        multiply_node = Multiply()
+        return multiply_node(self, other)
+
+    def __pow__(self, other):
+        from ..algorithms.building_blocks import Power
+
+        power_node = Power()
+        return power_node(self, other)
+
+    def __truediv__(self, other):
+        from ..algorithms.building_blocks import Divide
+
+        divide_node = Divide()
+        return divide_node(self, other)
+
+    def __abs__(self):
+        from ..algorithms.building_blocks import Abs
+
+        abs_node = Abs()
+        return abs_node(self)
 
 
-def f(x, y, z):
-    return z
-
-
-Graph.from_function(f)
+# endregion

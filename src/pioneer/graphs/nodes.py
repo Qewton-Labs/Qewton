@@ -13,7 +13,6 @@ from ..optim.parameters.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )
-from .tracking import TrackingObject
 
 
 class NO_DEFAULT:
@@ -126,6 +125,7 @@ class Node(ABC):
     """
 
     _node_id_counter = 0
+    _tracking_phase: bool = False
 
     def __init__(self, name: str = "Node", state: NodeState = NodeState.FIXED) -> None:
         """
@@ -144,9 +144,13 @@ class Node(ABC):
         self.node_id = type(self)._node_id_counter
         type(self)._node_id_counter += 1
 
+    @classmethod
+    def set_tracking(cls, set_active: bool):
+        cls._tracking_phase = set_active
+
     def _build_ports(self):
-        call_sig = inspect.signature(self.__call__)
-        type_hints = get_type_hints(self.__call__)
+        call_sig = inspect.signature(self.forward)
+        type_hints = get_type_hints(self.forward)
 
         self._input_ports = []
         self._output_ports = []
@@ -227,7 +231,12 @@ class Node(ABC):
             for i, out_port in enumerate(self.output_ports):
                 out_port.set_value(output_data[i])
 
-    def __call__(self):
+    def __call__(self, *args, **kwargs) -> Any:
+        if self._tracking_phase:
+            return self._track(*args, **kwargs)
+        return self.forward(*args, **kwargs)
+
+    def forward(self, *args, **kwargs):
         raise NotImplementedError(
             "The default node can not be called, "
             "this method needs to be overwritten in the subclasses."
@@ -239,18 +248,24 @@ class Node(ABC):
         """
         for i, tracking_object in enumerate(args):
             if tracking_object.last_output_port is not None:
-                tracking_object.graph.connect(
+                tracking_object.current_graph_tracked.connect(
                     tracking_object.last_output_port, self.input_ports[i]
                 )
         for key, tracking_object in kwargs.items():
             if tracking_object.last_output_port is not None:
-                tracking_object.graph.connect(
+                tracking_object.current_graph_tracked.connect(
                     tracking_object.last_output_port, self.get_input_port(key)
                 )
+        from .graphs import TrackingObject
+
         output_trackers = []
         for out_port in self.output_ports:
             output_trackers.append(TrackingObject(out_port))
-        return tuple(output_trackers) if len(output_trackers) > 1 else output_trackers[0]
+        if len(output_trackers) > 0:
+            return (
+                tuple(output_trackers) if len(output_trackers) > 1 else output_trackers[0]
+            )
+        return None
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -321,6 +336,7 @@ class Node(ABC):
     def update_data_configs(self, input_configs, output_configs, changed_port):
         # TODO
         # by default, do not update anything
+        _ = changed_port
         return input_configs, output_configs
 
     def get_input_port(self, name):

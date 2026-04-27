@@ -55,13 +55,13 @@ class BackendNode(Node):
                 self.implementation = self.default_implementation
             else:
                 assert (
-                    self.__call__ is not BackendNode.__call__
-                ), "If no specific implementation is provided, the __call__ method must\
+                    self.forward is not BackendNode.forward
+                ), "If no specific implementation is provided, the forward method must\
                     be overridden."
 
-    def __call__(self, *args, **kwargs):
+    def forward(self, *args, **kwargs):
         raise NotImplementedError(
-            "The __call__ method must be implemented by subclasses of BackendNode."
+            "The forward method must be implemented by subclasses of BackendNode."
         )
 
     def default_implementation(self, *args, **kwargs):

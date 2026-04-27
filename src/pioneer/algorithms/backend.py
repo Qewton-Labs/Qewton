@@ -39,7 +39,7 @@ class Backend:
 class TorchBackend(Backend):
     @classmethod
     def import_library(cls):
-        if cls.library is not None:
+        if cls.library is None:
             import torch  # pylint: disable=import-outside-toplevel # type: ignore
 
             cls.library = torch
@@ -56,7 +56,7 @@ class TorchBackend(Backend):
 class TensorflowBackend(Backend):
     @classmethod
     def import_library(cls):
-        if cls.library is not None:
+        if cls.library is None:
             import tensorflow as tf  # pylint: disable=import-outside-toplevel # type: ignore
 
             cls.library = tf

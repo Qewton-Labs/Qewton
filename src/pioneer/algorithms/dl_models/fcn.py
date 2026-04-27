@@ -1,6 +1,9 @@
+from typing import Any, Annotated
+
 from ..building_blocks.linear import Linear
 from ..building_blocks.activation_functions import ReLU
 from ..backend import DEFAULT_DL_BACKEND
+from ...config import DataConfiguration
 from ...graphs.graphs import SequentialGraph
 from ...graphs.nodes import Node, NodeState
 from ...graphs.control_nodes.graph_node import GraphNode
@@ -82,3 +85,10 @@ class FCN(GraphNode):
             self.bias,
             self.activation,
         ]
+
+    def forward(
+        self, x: Annotated[Any, DataConfiguration.empty()]
+    ) -> Annotated[Any, DataConfiguration.empty()]:
+        self.input_ports[0].set_value(x)
+        self.run()
+        return self.output_ports[0].value

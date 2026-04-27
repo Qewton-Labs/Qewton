@@ -7,7 +7,7 @@ from ..base import BackendNode
 class ReLU(BackendNode):
     """General ReLU Class."""
 
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:
@@ -15,7 +15,7 @@ class ReLU(BackendNode):
 
 
 class Tanh(BackendNode):
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:
@@ -25,7 +25,7 @@ class Tanh(BackendNode):
 class Sigmoid(BackendNode):
     """General Sigmoid Class."""
 
-    def __call__(
+    def forward(
         self,
         x: Annotated[Any, DataConfiguration([])],
     ) -> Annotated[Any, DataConfiguration([])]:

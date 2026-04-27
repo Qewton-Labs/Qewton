@@ -28,6 +28,10 @@ computation_graph.connect(dataset_X, model)
 computation_graph.connect(model, constraint.input_1)
 computation_graph.connect(dataset_U, constraint.input_2)
 
+computation_graph.setup()
+print(computation_graph.sorted_nodes)
+
+
 adam_phase = pioneer.optim.OptimizationPhase(
     optimizer=pioneer.optim.Adam(),
     lr=0.001,
