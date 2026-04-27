@@ -2,7 +2,7 @@ from typing import Any, Annotated
 
 from ..backend import DEFAULT_DL_BACKEND
 from ...config.configuration_base import DataConfiguration
-from ..base import BackendNode
+from ..backend_node import BackendNode
 
 from ...graphs.nodes import NO_DEFAULT
 

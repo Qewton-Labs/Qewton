@@ -1,7 +1,7 @@
 from typing import Annotated, Any
 
 from ...config.configuration_base import DataConfiguration
-from ..base import BackendNode
+from ..backend_node import BackendNode
 
 
 class ReLU(BackendNode):
