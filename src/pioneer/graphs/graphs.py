@@ -17,7 +17,7 @@ class Graph:
         self.mode = EvaluationPhase.ALWAYS
 
         self.incoming_edges: dict[Node, list[Edge]] = {}
-        self.sorted_edges: list[dict[InputPort, Edge]] = []
+        self.sorted_edges: list[dict[Port, Edge]] = []
         self.last_outgoing_edges: list[Edge] = []
 
     @classmethod
@@ -100,7 +100,7 @@ class Graph:
 
         queue = deque(node for node, deg in in_degree.items() if deg == 0)
         self.sorted_nodes: list[Node] = []
-        self.sorted_edges: list[dict[InputPort, Edge]] = []
+        self.sorted_edges: list[dict[Port, Edge]] = []
 
         while queue:
             node = queue.popleft()
