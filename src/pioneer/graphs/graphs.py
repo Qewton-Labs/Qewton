@@ -18,6 +18,7 @@ class Graph:
 
         self.incoming_edges: dict[Node, list[Edge]] = {}
         self.sorted_edges: list[dict[InputPort, Edge]] = []
+        self.last_outgoing_edges: list[Edge] = []
 
     @classmethod
     def from_function(
@@ -154,6 +155,11 @@ class Graph:
 
         from_node = from_ports[0].node
         to_node = to_ports[0].node
+
+        # before doing anything, check for validity
+        for from_port, to_port in zip(from_ports, to_ports):
+            self._check_port_is_free(to_node, to_port)
+
         # Nodes must be added to the graph
         self.add_node(from_node, check_warning=False)
         self.add_node(to_node, check_warning=False)
@@ -165,6 +171,14 @@ class Graph:
             unified_config = out_config.unify(in_config)
             edge = Edge(from_port, to_port, unified_config)
             self.incoming_edges[to_node].append(edge)
+
+    def _check_port_is_free(self, to_node: Node, input_port: InputPort) -> None:
+        for e in self.incoming_edges[to_node]:
+            if e.to_port == input_port:
+                raise ValueError(
+                    f"Input port '{input_port.name}' of node '{to_node.name}' is already \
+                        connected!"
+                )
 
     def _check_connect(
         self, user_input: InputPort | OutputPort | Node, check_input: bool = True
@@ -179,7 +193,7 @@ class Graph:
             )
         return ports[0]
 
-    def connect_to_outside_of_graph(self, from_port: Port, to_port: InputPort):
+    def connect_from_outside_of_graph(self, from_port: Port, to_port: InputPort):
         """Connects to ports where the 'from_port' is not part of this graph itself.
         The node of the 'to_port' will be added to this graph. The created edge
         will pass data between the ports, but will not increase the in-degree
@@ -191,13 +205,36 @@ class Graph:
             to_port (InputPort): The port of a node where data should go to.
         """
         to_node = to_port.node
+        self._check_port_is_free(to_node, to_port)
         self.add_node(to_node, check_warning=False)
         out_config = from_port.data_configuration
         in_config = to_port.data_configuration
         unified_config = out_config.unify(in_config)
         edge = Edge(from_port, to_port, unified_config, connects_to_outside=True)
-        to_port.input_received_from_outside_graph = True
         self.incoming_edges[to_node].append(edge)
+
+    def connect_to_outside_of_graph(self, from_port: OutputPort, to_port: Port):
+        """Connects to ports where the 'to_port' is not part of this graph itself.
+        The node of the 'from_port' will be added to this graph. The created edge
+        will pass data between the ports, but will not increase the in-degree
+        of the 'from_port' node (meaning the node can be evaluated at the start,
+        since data is read from 'outside' the graph)
+
+        Args:
+            from_port (OutputPort): The port of a node where data should come from.
+            to_port (Port): The port of a node where data should go to.
+        """
+        from_node = from_port.node
+        for e in self.last_outgoing_edges:
+            if e.to_port == to_port:
+                raise ValueError(f"Output port '{to_port.name}' is already connected!")
+
+        self.add_node(from_node, check_warning=False)
+        out_config = from_port.data_configuration
+        in_config = to_port.data_configuration
+        unified_config = out_config.unify(in_config)
+        edge = Edge(from_port, to_port, unified_config, connects_to_outside=True)
+        self.last_outgoing_edges.append(edge)
 
     def disconnect(self, port: InputPort) -> None:
         """Remove an edge from this graph"""
@@ -237,9 +274,11 @@ class Graph:
             for in_port in node.input_ports:
                 if in_port in edges:
                     in_port.set_value(edges[in_port].from_port.value)
-                elif not in_port.input_received_from_outside_graph:
+                else:
                     in_port.clear_value()
             node.run()
+        for edge in self.last_outgoing_edges:
+            edge.to_port.set_value(edge.from_port.value)
 
     def collect_trainable_parameters(self):
         """Collect all trainable parameters from the nodes in this graph."""

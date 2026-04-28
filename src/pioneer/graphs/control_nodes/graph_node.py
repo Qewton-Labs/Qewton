@@ -88,14 +88,7 @@ class GraphNode(Node):
         self._graph.setup()
 
     def run(self):
-        # TODO: Maybe make faster by removing the loop
-        for i, port in enumerate(self._input_ports):  # type: ignore
-            self._inner_input_ports[i].input_received_from_outside_graph = True
-            self._inner_input_ports[i].set_value(port.value)
         self._graph.run(self.mode)
-        # Write the inner information into the own output ports
-        for i, out_port in enumerate(self._inner_output_ports):
-            self._output_ports[i].set_value(out_port.value)  # type: ignore
 
     def reset(self):
         for node in self._graph.nodes:

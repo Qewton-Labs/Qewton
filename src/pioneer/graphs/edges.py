@@ -1,4 +1,4 @@
-from .nodes import InputPort, Port
+from .nodes import Port
 from ..config.configuration_base import DataConfiguration
 
 
@@ -6,7 +6,7 @@ class Edge:
     def __init__(
         self,
         from_port: Port,
-        to_port: InputPort,
+        to_port: Port,
         data_config: DataConfiguration,
         connects_to_outside: bool = False,
     ):

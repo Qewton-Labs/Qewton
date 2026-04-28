@@ -85,7 +85,6 @@ class InputPort(Port):
         super().__init__(data_configuration, node, name)
         self.default = default
         self._value = default
-        self.input_received_from_outside_graph = False
 
     def duplicate_with_new_owner(
         self, new_owner: Node, new_name: str | None = None
