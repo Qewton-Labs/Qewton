@@ -1,7 +1,7 @@
-import inspect
+from typing import Callable
 
 from ..nodes import InputPort, Node, OutputPort
-from ..graphs import Graph, TrackingObject
+from ..graphs import Graph
 
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.trainable_parameters import _TrainableParameterBase
@@ -29,10 +29,10 @@ class GraphNode(Node):
 
     def __init__(
         self,
-        graph: Graph = None,
-        input_ports: list[InputPort] = None,
-        output_ports: list[OutputPort] = None,
-        forward_func: callable = None,
+        graph: Graph | None = None,
+        input_ports: list[InputPort] | None = None,
+        output_ports: list[OutputPort] | None = None,
+        forward_func: Callable | None = None,
         name: str = "GraphNode",
     ) -> None:
         super().__init__(name=name)

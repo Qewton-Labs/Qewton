@@ -2,8 +2,9 @@ from __future__ import annotations
 from collections import deque
 from contextlib import contextmanager
 import inspect
+from typing import Callable
 
-from .nodes import InputPort, Node, EvaluationPhase, OutputPort
+from .nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
 from ..optim.parameters.trainable_parameters import TrainableParametersCollection
 from .edges import Edge
 
@@ -177,6 +178,26 @@ class Graph:
                 "Specify the port explicitly."
             )
         return ports[0]
+
+    def connect_to_outside_of_graph(self, from_port: Port, to_port: InputPort):
+        """Connects to ports where the 'from_port' is not part of this graph itself.
+        The node of the 'to_port' will be added to this graph. The created edge
+        will pass data between the ports, but will not increase the in-degree
+        of the 'to_port' node (meaning the node can be evaluated at the start,
+        since data is read from 'outside' the graph)
+
+        Args:
+            from_port (Port): The port of a node where data should come from.
+            to_port (InputPort): The port of a node where data should go to.
+        """
+        to_node = to_port.node
+        self.add_node(to_node, check_warning=False)
+        out_config = from_port.data_configuration
+        in_config = to_port.data_configuration
+        unified_config = out_config.unify(in_config)
+        edge = Edge(from_port, to_port, unified_config, connects_to_outside=True)
+        to_port.input_received_from_outside_graph = True
+        self.incoming_edges[to_node].append(edge)
 
     def disconnect(self, port: InputPort) -> None:
         """Remove an edge from this graph"""
