@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 from typing import Annotated, get_type_hints, get_origin, get_args
 import inspect
 import warnings
@@ -138,7 +138,7 @@ class Node(ABC):
         self._state = state
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
 
-        self._build_ports()
+        self._input_ports, self._output_ports = Node._build_ports(self.forward, self)
 
         self.node_id = type(self)._node_id_counter
         type(self)._node_id_counter += 1
@@ -147,20 +147,23 @@ class Node(ABC):
     def set_tracking(cls, set_active: bool):
         cls._tracking_phase = set_active
 
-    def _build_ports(self):
-        call_sig = inspect.signature(self.forward)
-        type_hints = get_type_hints(self.forward)
+    @classmethod
+    def _build_ports(
+        cls, func: Callable, owner: Node
+    ) -> tuple[list[InputPort], list[OutputPort]]:
+        call_sig = inspect.signature(func)
+        type_hints = get_type_hints(func)
 
-        self._input_ports = []
-        self._output_ports = []
+        input_ports = []
+        output_ports = []
         # Build input ports:
         for name, param in call_sig.parameters.items():
             hint = type_hints.get(name, param.annotation)
-            _, config = self._unwrap_annotated(hint)
-            self._input_ports.append(
+            _, config = cls._unwrap_annotated(hint)
+            input_ports.append(
                 InputPort(
                     config,
-                    node=self,
+                    node=owner,
                     name=name,
                     default=(
                         NO_DEFAULT
@@ -172,7 +175,7 @@ class Node(ABC):
         # Build output ports
         return_values = type_hints.get("return", inspect.Signature.empty)
         if return_values is None or return_values is inspect.Signature.empty:
-            return
+            return input_ports, output_ports
 
         if get_origin(return_values) is tuple:
             outputs = list(get_args(return_values))
@@ -180,10 +183,12 @@ class Node(ABC):
             outputs = [return_values]
 
         for i, output in enumerate(outputs):
-            _, config = self._unwrap_annotated(output)
-            self._output_ports.append(OutputPort(config, node=self, name=f"output_{i}"))
+            _, config = cls._unwrap_annotated(output)
+            output_ports.append(OutputPort(config, node=owner, name=f"output_{i}"))
+        return input_ports, output_ports
 
-    def _unwrap_annotated(self, type_hint):
+    @classmethod
+    def _unwrap_annotated(cls, type_hint):
         """Return (base_type, config)."""
         if get_origin(type_hint) is Annotated:
             base, *meta = get_args(type_hint)
@@ -353,3 +358,11 @@ class Node(ABC):
             if port.name == name:
                 return port
         raise ValueError(f"No output port with name {name} found in node {self.name}.")
+
+    def copy(self):
+        """Creates a copy of this node, with the same inner operations, parameters
+        etc., but with new input and output ports.
+        """
+        from .control_nodes.graph_node import CopiedNode
+
+        return CopiedNode(self)

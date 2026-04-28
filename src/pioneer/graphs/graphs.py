@@ -23,7 +23,7 @@ class Graph:
     @classmethod
     def from_function(
         cls, func: Callable
-    ) -> tuple[Graph, list[list[InputPort] | InputPort], list[OutputPort]]:
+    ) -> tuple[Graph, list[list[InputPort] | InputPort], list[OutputPort | int]]:
         """Creates a graph from a function.
         method of a node.
 
@@ -45,11 +45,21 @@ class Graph:
             with graph.tracker():
                 out = func()
             input_ports = []
+        tracking_vars_idcs = {
+            var: i for i, var in enumerate(tracking_vars)  # type: ignore
+        }
         if isinstance(out, tuple):
             assert all(
                 isinstance(o, TrackingObject) for o in out
             ), "All outputs of the function must be TrackingObjects."
-            output_ports = [var.last_output_port for var in out]
+            output_ports = [
+                (
+                    var.last_output_port
+                    if var.last_output_port is not None
+                    else tracking_vars_idcs[var]
+                )
+                for var in out
+            ]
         else:
             if out is None:
                 output_ports = []
@@ -57,9 +67,13 @@ class Graph:
                 assert isinstance(
                     out, TrackingObject
                 ), "The output of the function must be a TrackingObject."
-                output_ports = [out.last_output_port]
+                output_ports = (
+                    [out.last_output_port]
+                    if out.last_output_port is not None
+                    else [tracking_vars_idcs[out]]
+                )
 
-        return graph, input_ports, output_ports
+        return graph, input_ports, output_ports  # type: ignore
 
     def add_node(self, node: Node, check_warning=True) -> None:
         """Adds a node to this graph.
@@ -94,9 +108,9 @@ class Graph:
         outgoing_connections = {node: [] for node in self.nodes}
         for node in self.nodes:
             for edge in self.incoming_edges[node]:
-                outgoing_connections[edge.from_port.node].append(node)
                 if not edge.connects_to_outside:  # don't count incoming, they are ready
                     in_degree[node] += 1
+                    outgoing_connections[edge.from_port.node].append(node)
 
         queue = deque(node for node, deg in in_degree.items() if deg == 0)
         self.sorted_nodes: list[Node] = []
@@ -173,12 +187,13 @@ class Graph:
             self.incoming_edges[to_node].append(edge)
 
     def _check_port_is_free(self, to_node: Node, input_port: InputPort) -> None:
-        for e in self.incoming_edges[to_node]:
-            if e.to_port == input_port:
-                raise ValueError(
-                    f"Input port '{input_port.name}' of node '{to_node.name}' is already \
-                        connected!"
-                )
+        if to_node in self.incoming_edges:
+            for e in self.incoming_edges[to_node]:
+                if e.to_port == input_port:
+                    raise ValueError(
+                        f"Input port '{input_port.name}' of node '{to_node.name}' is already \
+                            connected!"
+                    )
 
     def _check_connect(
         self, user_input: InputPort | OutputPort | Node, check_input: bool = True
