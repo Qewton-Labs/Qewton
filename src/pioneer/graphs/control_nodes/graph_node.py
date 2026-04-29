@@ -115,8 +115,7 @@ class GraphNode(Node):
         output_values = [port.value for port in self.output_ports]
         if len(output_values) == 1:
             return output_values[0]
-        else:
-            return tuple(output_values)
+        return tuple(output_values)
 
     def run(self):
         self._graph.run()

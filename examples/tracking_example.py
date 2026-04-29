@@ -29,11 +29,6 @@ with graph.tracker():
     model_out = model(x)
     final_out = mse_constraint(model_out, u)
 
-print(graph.setup())
-print(graph.sorted_nodes)
-for edges in graph.sorted_edges:
-    for _, edge in edges.items():
-        print(edge.from_port.name, edge.to_port.name)
 adam_phase = pioneer.optim.OptimizationPhase(
     optimizer=pioneer.optim.Adam(),
     lr=0.001,

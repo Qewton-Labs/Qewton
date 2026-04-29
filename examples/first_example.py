@@ -29,10 +29,6 @@ computation_graph.connect(model, constraint.input_1)
 computation_graph.connect(dataset_U, constraint.input_2)
 
 computation_graph.setup()
-print(computation_graph.sorted_nodes)
-for edges in computation_graph.sorted_edges:
-    for _, edge in edges.items():
-        print(edge.from_port.name, edge.to_port.name)
 
 adam_phase = pioneer.optim.OptimizationPhase(
     optimizer=pioneer.optim.Adam(),

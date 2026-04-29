@@ -37,13 +37,13 @@ class FCN(GraphNode):
         self.backend = backend
 
         self._graph = self._build_network()
-        self._graph.setup()
         super().__init__(
             name=name,
             graph=self._graph,
             input_ports=self._graph.sorted_nodes[0].input_ports,
             output_ports=self._graph.sorted_nodes[-1].output_ports,
         )
+        self._graph.setup()
         self._state = NodeState.UNINITIALIZED
 
     def _build_network(self):
@@ -71,9 +71,9 @@ class FCN(GraphNode):
 
     def setup(self):
         self._graph = self._build_network()
-        self._graph.setup()
         self.update_inner_input_ports(self._graph.sorted_nodes[0].input_ports)
         self.update_inner_output_ports(self._graph.sorted_nodes[-1].output_ports)
+        self._graph.setup()
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:

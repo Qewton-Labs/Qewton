@@ -3,6 +3,7 @@ from collections import deque
 from contextlib import contextmanager
 import inspect
 from typing import Callable
+from warnings import warn
 
 from .nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
 from ..optim.parameters.trainable_parameters import TrainableParametersCollection
@@ -14,6 +15,7 @@ class Graph:
     def __init__(self):
         self.nodes: set[Node] = set[Node]()
         self.sorted_nodes: list[Node] = []
+        self.graph_was_sorted = False
         self.mode = EvaluationPhase.ALWAYS
 
         self.incoming_edges: dict[Node, list[Edge]] = {}
@@ -132,6 +134,7 @@ class Graph:
         # queue, hence we can compare the length to check for cycles:
         if len(self.sorted_nodes) != len(self.nodes):
             raise ValueError("Cycle detected in computation graph!")
+        self.graph_was_sorted = True
 
     def connect(
         self,
@@ -152,6 +155,7 @@ class Graph:
         Raises:
             ValueError: The ports of both nodes are not compatible.
         """
+        self._check_graph_was_sorted()
         ports_to_connect = []
         for inp in from_, to_:
             if isinstance(inp, Node):
@@ -186,6 +190,13 @@ class Graph:
             edge = Edge(from_port, to_port, unified_config)
             self.incoming_edges[to_node].append(edge)
 
+    def _check_graph_was_sorted(self):
+        if self.graph_was_sorted:
+            warn(
+                "The graph was already sorted. Inputting a new edge may change the "
+                "evaluation order, and the graph should be resorted."
+            )
+
     def _check_port_is_free(self, to_node: Node, input_port: InputPort) -> None:
         if to_node in self.incoming_edges:
             for e in self.incoming_edges[to_node]:
@@ -219,6 +230,7 @@ class Graph:
             from_port (Port): The port of a node where data should come from.
             to_port (InputPort): The port of a node where data should go to.
         """
+        self._check_graph_was_sorted()
         to_node = to_port.node
         self._check_port_is_free(to_node, to_port)
         self.add_node(to_node, check_warning=False)
@@ -239,6 +251,8 @@ class Graph:
             from_port (OutputPort): The port of a node where data should come from.
             to_port (Port): The port of a node where data should go to.
         """
+        self._check_graph_was_sorted()
+
         from_node = from_port.node
         for e in self.last_outgoing_edges:
             if e.to_port == to_port:
