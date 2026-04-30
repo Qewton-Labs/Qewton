@@ -70,10 +70,12 @@ class FCN(GraphNode):
         return SequentialGraph(*nodes)
 
     def setup(self):
-        self._graph = self._build_network()
-        self.update_inner_input_ports(self._graph.sorted_nodes[0].input_ports)
-        self.update_inner_output_ports(self._graph.sorted_nodes[-1].output_ports)
-        self._graph.setup()
+        new_graph = self._build_network()
+        self.setup_graph(
+            new_graph,
+            input_ports=new_graph.sorted_nodes[0].input_ports,
+            output_ports=new_graph.sorted_nodes[-1].output_ports,
+        )
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:

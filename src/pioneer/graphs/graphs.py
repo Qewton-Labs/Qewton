@@ -39,10 +39,7 @@ class Graph:
                 if isinstance(tracking_vars, TrackingObject):
                     tracking_vars = (tracking_vars,)
                 out = func(*tracking_vars)  # type: ignore
-            input_ports = [
-                var.to_ports if len(var.to_ports) > 1 else var.to_ports[0]
-                for var in tracking_vars  # type: ignore
-            ]
+            input_ports = [var.to_ports for var in tracking_vars]  # type: ignore
         else:
             with graph.tracker():
                 out = func()
