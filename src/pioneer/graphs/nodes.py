@@ -50,7 +50,7 @@ class Port:
         )
 
     def __hash__(self) -> int:
-        return hash((self.data_configuration, self.node.node_id, self.name))
+        return hash((self.data_configuration, self.node, self.name))
 
     def duplicate_with_new_owner(
         self, new_owner: Node, new_name: str | None = None
@@ -250,21 +250,28 @@ class Node(ABC):
         """Track the data passed through this node. This can be used to implement
         graph tracking for debugging or visualization purposes.
         """
-        for i, tracking_object in enumerate(args):
-            if tracking_object.last_output_port is not None:
-                tracking_object.current_graph_tracked.connect(
-                    tracking_object.last_output_port, self.input_ports[i]
-                )
-            else:
-                tracking_object.add_to_port(self.input_ports[i])
-        for key, tracking_object in kwargs.items():
-            if tracking_object.last_output_port is not None:
-                tracking_object.current_graph_tracked.connect(
-                    tracking_object.last_output_port, self.get_input_port(key)
-                )
-            else:
-                tracking_object.add_to_port(self.get_input_port(key))
         from .graphs import TrackingObject
+
+        for i, tracking_object in enumerate(args):
+            if isinstance(tracking_object, TrackingObject):
+                if tracking_object.last_output_port is not None:
+                    tracking_object.current_graph_tracked.connect(  # type: ignore
+                        tracking_object.last_output_port, self.input_ports[i]
+                    )
+                else:
+                    tracking_object.add_to_port(self.input_ports[i])
+            else:  # some default value was set:
+                self.input_ports[i].default = tracking_object
+        for key, tracking_object in kwargs.items():
+            if isinstance(tracking_object, TrackingObject):
+                if tracking_object.last_output_port is not None:
+                    tracking_object.current_graph_tracked.connect(  # type: ignore
+                        tracking_object.last_output_port, self.get_input_port(key)
+                    )
+                else:
+                    tracking_object.add_to_port(self.get_input_port(key))
+            else:
+                self.get_input_port(key).default = tracking_object
 
         output_trackers = []
         for out_port in self.output_ports:

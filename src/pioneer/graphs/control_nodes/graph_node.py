@@ -141,21 +141,27 @@ class TrackedNode(GraphNode):
     method. At runtime, we still execute the implemented forward method, the graph
     is only for visualization purposes."""
 
-    def __init__(self):
+    def __init__(self, name="TrackedNode"):
         graph, input_ports, output_ports = Graph.from_function(self.forward)
+        input_ports_to_list = [
+            [p] if isinstance(p, InputPort) else p for p in input_ports
+        ]
         outer_input_ports, outer_output_ports = Node._build_ports(self.forward, self)
         for i, port in enumerate(output_ports):
             if isinstance(port, int):
                 output_ports[i] = outer_input_ports[i]
 
-        input_ports_dict = dict(zip(outer_input_ports, input_ports))
+        input_ports_dict = dict(zip(outer_input_ports, input_ports_to_list))
         output_ports_dict = dict(zip(outer_output_ports, output_ports))
-        super().__init__(graph, input_ports_dict, output_ports_dict)
+        super().__init__(graph, input_ports_dict, output_ports_dict, name=name)
+        self._graph.setup()
 
-        def run() -> None:
-            Node.run(self)
+        if self.run is TrackedNode.run:
 
-        self.run = run
+            def run() -> None:
+                Node.run(self)
+
+            self.run = run
 
     def unfreeze(self):
         # todo, this makes this a normal GraphNode

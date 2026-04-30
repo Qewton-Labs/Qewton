@@ -32,7 +32,7 @@ class Graph:
         Args:
             func (Callable): The function that is used to create the graph.
         """
-        graph = cls()
+        graph = Graph()
         sig = inspect.signature(func)
         if len(sig.parameters) > 0:
             with graph.tracker(n_tracking_vars=len(sig.parameters)) as tracking_vars:
@@ -333,7 +333,7 @@ class Graph:
 
         tracking_objects = [TrackingObject() for _ in range(n_tracking_vars)]
         try:
-            if n_tracking_vars > 1:
+            if n_tracking_vars >= 1:
                 yield tracking_objects if n_tracking_vars > 1 else tracking_objects[0]
             else:
                 yield
