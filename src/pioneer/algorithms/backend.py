@@ -1,7 +1,10 @@
-from typing import Any
+from __future__ import annotations
+from typing import Any, Generic, TypeVar
+
+TensorType = TypeVar("TensorType")
 
 
-class Backend:
+class Backend(Generic[TensorType]):
     library: Any = None
 
     @classmethod
@@ -36,7 +39,16 @@ class Backend:
         )
 
 
-class TorchBackend(Backend):
+def get_dtype_torch():
+    try:
+        import torch
+
+        return torch.Tensor
+    except ImportError:
+        return Any
+
+
+class TorchBackend(Backend[get_dtype_torch()]):
     @classmethod
     def import_library(cls):
         if cls.library is None:
@@ -53,7 +65,16 @@ class TorchBackend(Backend):
         return cls.library.Tensor
 
 
-class TensorflowBackend(Backend):
+def get_dtype_tf():
+    try:
+        import tensorflow as tf
+
+        return tf.Tensor
+    except ImportError:
+        return Any
+
+
+class TensorflowBackend(Backend[get_dtype_tf()]):
     @classmethod
     def import_library(cls):
         if cls.library is None:

@@ -1,6 +1,8 @@
 from typing import Annotated, Any
 
-from ..backend import DEFAULT_DL_BACKEND
+from pioneer.config.axis import BatchAxis
+
+from ..backend import DEFAULT_DL_BACKEND, TensorType
 from ..backend_node import BackendNode
 
 from ...config.configuration_base import DataConfiguration
@@ -17,21 +19,23 @@ from ...graphs.nodes import NO_DEFAULT
 # region: Arithmetic operations
 
 
-class Add(BackendNode):
+class Add(BackendNode[TensorType]):
+    # axis_dims =
+    # batch_axis_size = AxisDim()
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-        y: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+        y: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.add(x, y)
 
 
-class Subtract(BackendNode):
+class Subtract(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-        y: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+        y: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x, y)
 
     def torch_implementation(self, x, y):
@@ -41,12 +45,12 @@ class Subtract(BackendNode):
         return self.backend.library.subtract(x, y)
 
 
-class Multiply(BackendNode):
+class Multiply(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-        y: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+        y: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x, y)
 
     def torch_implementation(self, x, y):
@@ -56,12 +60,12 @@ class Multiply(BackendNode):
         return self.backend.library.multiply(x, y)
 
 
-class Divide(BackendNode):
+class Divide(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-        y: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+        y: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x, y)
 
     def torch_implementation(self, x, y):
@@ -71,12 +75,12 @@ class Divide(BackendNode):
         return self.backend.library.truediv(x, y)
 
 
-class Mod(BackendNode):
+class Mod(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-        y: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+        y: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x, y)
 
     def torch_implementation(self, x, y):
@@ -92,28 +96,28 @@ class Mod(BackendNode):
 # region: Powers and roots
 
 
-class Square(BackendNode):
+class Square(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.square(x)
 
 
-class Sqrt(BackendNode):
+class Sqrt(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.sqrt(x)
 
 
-class Power(BackendNode):
+class Power(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-        y: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+        y: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.pow(x, y)
 
 
@@ -123,27 +127,27 @@ class Power(BackendNode):
 # region: Exponential and logarithmic functions
 
 
-class Exp(BackendNode):
+class Exp(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.exp(x)
 
 
-class Log(BackendNode):
+class Log(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.log(x)
 
 
-class Log2(BackendNode):
+class Log2(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -153,11 +157,11 @@ class Log2(BackendNode):
         return self.backend.library.keras.ops.log2(x)
 
 
-class Log10(BackendNode):
+class Log10(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -173,31 +177,31 @@ class Log10(BackendNode):
 # region: Trigonometric functions
 
 
-class Sin(BackendNode):
+class Sin(BackendNode[TensorType]):
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.sin(x)
 
 
-class Cos(BackendNode):
+class Cos(BackendNode[TensorType]):
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.cos(x)
 
 
-class Tan(BackendNode):
+class Tan(BackendNode[TensorType]):
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.tan(x)
 
 
-class ArcSin(BackendNode):
+class ArcSin(BackendNode[TensorType]):
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -207,10 +211,10 @@ class ArcSin(BackendNode):
         return self.backend.library.asin(x)
 
 
-class ArcCos(BackendNode):
+class ArcCos(BackendNode[TensorType]):
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -220,10 +224,10 @@ class ArcCos(BackendNode):
         return self.backend.library.acos(x)
 
 
-class ArcTan(BackendNode):
+class ArcTan(BackendNode[TensorType]):
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -239,42 +243,42 @@ class ArcTan(BackendNode):
 # region: Other useful math functions
 
 
-class Abs(BackendNode):
+class Abs(BackendNode[TensorType]):
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.abs(x)
 
 
-class Floor(BackendNode):
+class Floor(BackendNode[TensorType]):
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.floor(x)
 
 
-class Ceil(BackendNode):
+class Ceil(BackendNode[TensorType]):
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.ceil(x)
 
 
-class Maximum(BackendNode):
+class Maximum(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-        y: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+        y: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.maximum(x, y)
 
 
-class Minimum(BackendNode):
+class Minimum(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-        y: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+        y: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.minimum(x, y)
 
 
@@ -284,20 +288,20 @@ class Minimum(BackendNode):
 # region: Matrix operations
 
 
-class MatMul(BackendNode):
+class MatMul(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-        y: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+        y: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.matmul(x, y)
 
 
-class SVD(BackendNode):
-    def forward(self, x: Annotated[Any, DataConfiguration([])]) -> tuple[
-        Annotated[Any, DataConfiguration([])],
-        Annotated[Any, DataConfiguration([])],
-        Annotated[Any, DataConfiguration([])],
+class SVD(BackendNode[TensorType]):
+    def forward(self, x: Annotated[TensorType, DataConfiguration([])]) -> tuple[
+        Annotated[TensorType, DataConfiguration([])],
+        Annotated[TensorType, DataConfiguration([])],
+        Annotated[TensorType, DataConfiguration([])],
     ]:
         return self.implementation(x)
 
@@ -315,7 +319,7 @@ class SVD(BackendNode):
 # region: Statistic operations
 
 
-class Mean(BackendNode):
+class Mean(BackendNode[TensorType]):
     """
     Computes the mean of the input tensor along the specified axis.
     """
@@ -331,8 +335,8 @@ class Mean(BackendNode):
         super().__init__(name=None, backend=backend)
 
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -346,7 +350,7 @@ class Mean(BackendNode):
         return self.backend.library.reduce_mean(x, axis=self.axis, keepdims=self.keepdims)
 
 
-class Std(BackendNode):
+class Std(BackendNode[TensorType]):
     def __init__(
         self,
         axis: type[NO_DEFAULT] | None | int | tuple[int] = NO_DEFAULT,
@@ -358,8 +362,8 @@ class Std(BackendNode):
         super().__init__(name=None, backend=backend)
 
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -379,7 +383,7 @@ class Std(BackendNode):
 # region: Reshaping operations
 
 
-class Flatten(BackendNode):
+class Flatten(BackendNode[TensorType]):
     def __init__(
         self,
         start_dim: int = 0,
@@ -391,8 +395,8 @@ class Flatten(BackendNode):
         super().__init__(name=None, backend=backend)
 
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -401,7 +405,7 @@ class Flatten(BackendNode):
         )
 
 
-class Transpose(BackendNode):
+class Transpose(BackendNode[TensorType]):
     def __init__(
         self,
         perm: list | None = None,
@@ -411,8 +415,8 @@ class Transpose(BackendNode):
         super().__init__(name=None, backend=backend)
 
     def forward(
-        self, x: Annotated[Any, DataConfiguration([])]
-    ) -> Annotated[Any, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DataConfiguration([])]
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):

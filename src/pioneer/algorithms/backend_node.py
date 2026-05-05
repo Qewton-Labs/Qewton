@@ -1,6 +1,13 @@
-from ..graphs.nodes import Node, NodeState
-from .backend import DEFAULT_DL_BACKEND, Backend, TorchBackend, TensorflowBackend
+from typing import Generic
 
+from ..graphs.nodes import Node, NodeState
+from .backend import (
+    DEFAULT_DL_BACKEND,
+    Backend,
+    TorchBackend,
+    TensorflowBackend,
+    TensorType,
+)
 
 # # TODO: Is this needed? Can we make this more natural?
 # class AlgorithmAttributes(Enum):
@@ -20,14 +27,16 @@ from .backend import DEFAULT_DL_BACKEND, Backend, TorchBackend, TensorflowBacken
 #     INCLUDES_IMAGINARY_VALUES = auto()  # Some optimizers do not work then
 
 
-class BackendNode(Node):
+class BackendNode(Node, Generic[TensorType]):
     """A node representing an operation, which is a type of algorithm that takes
     input data and produces output data without any trainable parameters.
 
     This class is built to easily wrap functions from backends.
     """
 
-    def __init__(self, name=None, backend: Backend = DEFAULT_DL_BACKEND):
+    def __init__(
+        self, name=None, backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND
+    ):
         name = name if name is not None else self.__class__.__name__
         super().__init__(name=name, state=NodeState.FIXED)
         self.backend = backend

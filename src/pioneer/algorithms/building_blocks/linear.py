@@ -15,7 +15,7 @@ class FunctionalLinear(GraphNode):
         self.backend = backend
 
         self.matmul_node = MatMul(backend=self.backend)
-        self.add_node = Add(backend=self.backend)
+        self.add_node = Add[self.backend.dtype]()
         graph = Graph()
         if bias:
             graph.connect(self.matmul_node.output_ports[0], self.add_node.input_ports[0])
@@ -41,10 +41,10 @@ class FunctionalLinear(GraphNode):
 
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration.empty()],
-        weight: Annotated[Any, DataConfiguration.empty()],
-        bias: Annotated[Any, DataConfiguration.empty()] = None,
-    ) -> Annotated[Any, DataConfiguration.empty()]:
+        x: Annotated[TensorType, DataConfiguration.empty()],
+        weight: Annotated[TensorType, DataConfiguration.empty()],
+        bias: Annotated[TensorType, DataConfiguration.empty()] = None,
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
         self.input.set_value(x)
         self.weight.set_value(weight)
         self.bias.set_value(bias)
@@ -88,8 +88,8 @@ class Linear(GraphNode):
 
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration.empty()],
-    ) -> Annotated[Any, DataConfiguration.empty()]:
+        x: Annotated[TensorType, DataConfiguration.empty()],
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
         self.input.set_value(x)
         self.run()
         return self.output.value

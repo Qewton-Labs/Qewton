@@ -4,29 +4,29 @@ from ...config.configuration_base import DataConfiguration
 from ..backend_node import BackendNode
 
 
-class ReLU(BackendNode):
+class ReLU(BackendNode[TensorType]):
     """General ReLU Class."""
 
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.relu(x)
 
 
-class Tanh(BackendNode):
+class Tanh(BackendNode[TensorType]):
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.tanh(x)
 
 
-class Sigmoid(BackendNode):
+class Sigmoid(BackendNode[TensorType]):
     """General Sigmoid Class."""
 
     def forward(
         self,
-        x: Annotated[Any, DataConfiguration([])],
-    ) -> Annotated[Any, DataConfiguration([])]:
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.backend.library.sigmoid(x)
