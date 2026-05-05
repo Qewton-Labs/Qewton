@@ -152,7 +152,7 @@ class Node(ABC):
         cls, func: Callable, owner: Node
     ) -> tuple[list[InputPort], list[OutputPort]]:
         call_sig = inspect.signature(func)
-        type_hints = get_type_hints(func)
+        type_hints = get_type_hints(func, include_extras=True)
 
         input_ports = []
         output_ports = []
@@ -194,8 +194,8 @@ class Node(ABC):
             base, *meta = get_args(type_hint)
             config = next(
                 (m for m in meta if isinstance(m, DataConfiguration)),
-                DataConfiguration([]),
-            )
+                None,
+            ) or DataConfiguration([])
             return base, config
         return type_hint, DataConfiguration([])
 
