@@ -5,6 +5,8 @@ import inspect
 from typing import Callable
 from warnings import warn
 
+from ..config.configuration_base import DataConfiguration
+
 from .nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
 from ..optim.parameters.trainable_parameters import TrainableParametersCollection
 from .edges import Edge
@@ -19,8 +21,12 @@ class Graph:
         self.mode = EvaluationPhase.ALWAYS
 
         self.incoming_edges: dict[Node, list[Edge]] = {}
-        self.sorted_edges: list[dict[Port, Edge]] = []
+        self.outgoing_edges: dict[Node, list[Edge]] = {}
+
+        self.sorted_incoming_edges: list[dict[Port, Edge]] = []
         self.last_outgoing_edges: list[Edge] = []
+
+        self.data_configurations: dict[Node, dict[Port, DataConfiguration | Edge]] = {}
 
     @classmethod
     def from_function(
@@ -92,15 +98,21 @@ class Graph:
         self.nodes.add(node)
         if not node in self.incoming_edges:
             self.incoming_edges[node] = list[Edge]()
+            self.outgoing_edges[node] = list[Edge]()
 
-    def remove_node(self, node: Node) -> None:
-        """Deletes a given node from this graph.
+            self.data_configurations[node] = {}
+            for port in node.input_ports + node.output_ports:
+                self.data_configurations[node][port] = port.data_configuration
 
-        Args:
-            node (Node): The node that should be deleted.
-        """
-        self.nodes.remove(node)
-        self.incoming_edges.pop(node)
+    # def remove_node(self, node: Node) -> None:
+    #     """Deletes a given node from this graph.
+
+    #     Args:
+    #         node (Node): The node that should be deleted.
+    #     """
+    #     self.nodes.remove(node)
+    #     self.incoming_edges.pop(node)
+    #     self.outgoing_edges.pop(node)
 
     def sort(self):
         in_degree = {node: 0 for node in self.nodes}
@@ -113,7 +125,7 @@ class Graph:
 
         queue = deque(node for node, deg in in_degree.items() if deg == 0)
         self.sorted_nodes: list[Node] = []
-        self.sorted_edges: list[dict[Port, Edge]] = []
+        self.sorted_incoming_edges: list[dict[Port, Edge]] = []
 
         while queue:
             node = queue.popleft()
@@ -121,7 +133,7 @@ class Graph:
             input_port_edge_map = {
                 edge.to_port: edge for edge in self.incoming_edges[node]
             }
-            self.sorted_edges.append(input_port_edge_map)
+            self.sorted_incoming_edges.append(input_port_edge_map)
             for out_node in outgoing_connections[node]:
                 in_degree[out_node] -= 1
                 if in_degree[out_node] == 0:
@@ -181,11 +193,60 @@ class Graph:
 
         # Configurations should match
         for from_port, to_port in zip(from_ports, to_ports):
-            out_config = from_port.data_configuration
-            in_config = to_port.data_configuration
+            out_config = self.data_configurations[from_node][from_port]
+            if isinstance(out_config, Edge):
+                out_config = out_config.data_config
+            in_config = self.data_configurations[to_node][to_port]
             unified_config = out_config.unify(in_config)
             edge = Edge(from_port, to_port, unified_config)
             self.incoming_edges[to_node].append(edge)
+            self.outgoing_edges[from_node].append(edge)
+
+            self.update_data_configurations(from_node, from_port, edge)
+            self.update_data_configurations(to_node, to_port, edge)
+
+    def update_data_configurations(self, node: Node, port: Port, edge: Edge):
+        """Updates the data configurations of the given node and all its neighbors
+        recursively, based on the new edge that is added to the graph.
+
+        Args:
+            node (Node): The node for which the data configurations should be updated.
+            port (Port): The port of the node for which the data configuration should be updated.
+            edge (Edge): The edge that is added to the graph, connecting the given port.
+        """
+        self.data_configurations[node][port] = edge
+        # visited_nodes = set[Node]({node}) # experimental, check whether this iterates forever
+        # visited_edges = set[Edge]({edge})
+
+        old_config = self.data_configurations[node][port]
+        new_config = edge.data_config  # UnifiedDataConfiguration
+        if old_config != new_config:  # TODO: override __eq__ to make this work
+            # propagate to neighbors:
+            for p in node.input_ports + node.output_ports:
+                if p != port:
+                    old_p_config = self.data_configurations[node][p]
+                    new_p_config = old_p_config
+                    for dim in old_p_config.dims:
+                        for d in old_config.dims:
+                            if dim.connects_to(d):
+                                new_p_config = new_p_config.update_dim(
+                                    dim, d, new_d
+                                )  # new object
+                                self.data_configurations[node][p] = new_p_config
+            for e in self.incoming_edges[node] + self.outgoing_edges[node]:
+                # if e not in visited_edges:
+                first_config = self.data_configurations[e.from_port.node][e.from_port]
+                second_config = self.data_configurations[e.to_port.node][e.to_port]
+                new_edge_config = first_config.unify(second_config)
+                if new_edge_config != e.data_config:
+                    e.data_config = new_edge_config
+                    # visited_edges.add(e)
+                    if node == e.from_port.node:
+                        # and e.to_port.node not in visited_nodes
+                        self.update_data_configurations(e.to_port.node, e.to_port, e)
+                    elif node == e.to_port.node:
+                        # and e.from_port.node not in visited_nodes
+                        self.update_data_configurations(e.from_port.node, e.from_port, e)
 
     def _check_graph_was_sorted(self):
         if self.graph_was_sorted:
@@ -237,6 +298,8 @@ class Graph:
         edge = Edge(from_port, to_port, unified_config, connects_to_outside=True)
         self.incoming_edges[to_node].append(edge)
 
+        self.data_configurations[to_node][to_port] = edge
+
     def connect_to_outside_of_graph(self, from_port: OutputPort, to_port: Port):
         """Connects to ports where the 'to_port' is not part of this graph itself.
         The node of the 'from_port' will be added to this graph. The created edge
@@ -260,14 +323,17 @@ class Graph:
         in_config = to_port.data_configuration
         unified_config = out_config.unify(in_config)
         edge = Edge(from_port, to_port, unified_config, connects_to_outside=True)
+        self.outgoing_edges[from_node].append(edge)
         self.last_outgoing_edges.append(edge)
 
-    def disconnect(self, port: InputPort) -> None:
-        """Remove an edge from this graph"""
-        for edge in self.incoming_edges[port.node]:
-            if edge.to_port == port:
-                self.incoming_edges[port.node].remove(edge)
-                return
+        self.data_configurations[from_node][from_port] = edge
+
+    # def disconnect(self, port: InputPort) -> None:
+    #     """Remove an edge from this graph"""
+    #     for edge in self.incoming_edges[port.node]:
+    #         if edge.to_port == port:
+    #             self.incoming_edges[port.node].remove(edge)
+    #             return
 
     def validate(self) -> None:
         """Validate that all required input ports of each node are connected."""
@@ -295,7 +361,7 @@ class Graph:
         """Run the graph. The data will be passed through the graph according to
         the connections and the computations of the nodes will be executed.
         """
-        for node, edges in zip(self.sorted_nodes, self.sorted_edges):
+        for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
             node.set_mode(mode)
             for in_port in node.input_ports:
                 if in_port in edges:
@@ -353,8 +419,7 @@ class SequentialGraph(Graph):
 
         # If previous loop was skipped (only one node)
         if len(self.sorted_nodes) == 1:
-            self.nodes.add(self.sorted_nodes[0])
-            self.incoming_edges[self.sorted_nodes[0]] = list[Edge]()
+            self.add_node(self.sorted_nodes[0])
 
 
 ############################################################################

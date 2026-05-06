@@ -1,21 +1,26 @@
-from typing import Any, Annotated
+from typing import Annotated, Generic
 
 from .math import MatMul, Add
 from .parameters import ParameterNode
-from ..backend import DEFAULT_DL_BACKEND
+from ..backend import DEFAULT_DL_BACKEND, Backend, TensorType
 from ...config.configuration_base import DataConfiguration
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...graphs.graphs import Graph
 from ...graphs.control_nodes.graph_node import GraphNode
 
 
-class FunctionalLinear(GraphNode):
+class FunctionalLinear(GraphNode, Generic[TensorType]):
 
-    def __init__(self, name="functional_linear", bias=True, backend=DEFAULT_DL_BACKEND):
+    def __init__(
+        self,
+        name="functional_linear",
+        bias=True,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
         self.backend = backend
 
         self.matmul_node = MatMul(backend=self.backend)
-        self.add_node = Add[self.backend.dtype]()
+        self.add_node = Add(backend=self.backend)
         graph = Graph()
         if bias:
             graph.connect(self.matmul_node.output_ports[0], self.add_node.input_ports[0])
@@ -49,10 +54,10 @@ class FunctionalLinear(GraphNode):
         self.weight.set_value(weight)
         self.bias.set_value(bias)
         self.run()
-        return self.output.value
+        return self.output.value  # type: ignore
 
 
-class Linear(GraphNode):
+class Linear(GraphNode, Generic[TensorType]):
     """A node representing an activation function, which is a special type of
     algorithm that is applied element-wise to the input data.
     """
@@ -63,7 +68,7 @@ class Linear(GraphNode):
         out_neurons: int | HyperParameter,
         bias=True,
         name="linear",
-        backend=DEFAULT_DL_BACKEND,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.weight = ParameterNode(
             (in_neurons, out_neurons), name="weight", backend=backend
@@ -92,4 +97,4 @@ class Linear(GraphNode):
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         self.input.set_value(x)
         self.run()
-        return self.output.value
+        return self.output.value  # type: ignore

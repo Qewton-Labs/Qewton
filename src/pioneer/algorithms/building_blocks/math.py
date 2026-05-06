@@ -1,6 +1,4 @@
-from typing import Annotated, Any
-
-from pioneer.config.axis import BatchAxis
+from typing import Annotated
 
 from ..backend import DEFAULT_DL_BACKEND, TensorType
 from ..backend_node import BackendNode
@@ -21,7 +19,7 @@ from ...graphs.nodes import NO_DEFAULT
 
 class Add(BackendNode[TensorType]):
     # axis_dims =
-    # batch_axis_size = AxisDim()
+    # batch_axis_size = Axis.create_dim()
     def forward(
         self,
         x: Annotated[TensorType, DataConfiguration([])],
@@ -414,8 +412,11 @@ class Transpose(BackendNode[TensorType]):
         self.perm = perm if perm is not None else [1, 0]
         super().__init__(name=None, backend=backend)
 
+    def x_data_config(self):
+        return DataConfiguration(...)
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
+        self, x: Annotated[TensorType, x_data_config]
     ) -> Annotated[TensorType, DataConfiguration([])]:
         return self.implementation(x)
 

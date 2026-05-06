@@ -1,8 +1,8 @@
-from typing import Any, Annotated
+from typing import Any, Annotated, Generic
 
 from ..building_blocks.linear import Linear
 from ..building_blocks.activation_functions import ReLU
-from ..backend import DEFAULT_DL_BACKEND
+from ..backend import DEFAULT_DL_BACKEND, Backend, TensorType
 from ...config import DataConfiguration
 from ...graphs.graphs import SequentialGraph
 from ...graphs.nodes import Node, NodeState
@@ -10,19 +10,19 @@ from ...graphs.control_nodes.graph_node import GraphNode
 from ...optim.parameters.hyperparameter_base import HyperParameter
 
 
-class FCN(GraphNode):
+class FCN(GraphNode, Generic[TensorType]):
     """Fully Connected Network (FCN) implementation."""
 
     def __init__(
         self,
-        in_neurons: int | HyperParameter,
+        in_neurons: int | HyperParameter | Variable,
         hidden_neurons: int | HyperParameter,
-        out_neurons: int | HyperParameter,
+        out_neurons: int | HyperParameter | Variable,
         n_hidden_layers: int | HyperParameter,
         bias: bool | HyperParameter = True,
         activation: type[Node] | HyperParameter = ReLU,
-        name="fcn",
-        backend=DEFAULT_DL_BACKEND,
+        name: str = "fcn",
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.in_neurons = HyperParameter.from_value(in_neurons, "FCN Input Neurons")
         self.hidden_neurons = HyperParameter.from_value(
@@ -88,9 +88,18 @@ class FCN(GraphNode):
             self.activation,
         ]
 
+    def x_data_config(self):
+        self.ellipsis_dim = Axes.create_ellipsis_dim()
+        self.in_dim = Axes.create_dim(self.in_neurons.value)
+        return DataConfiguration(self.ellipsis_dim, FeatureAxis(self.in_dim))
+
+    def out_data_config(self):
+        self.out_dim = Axes.create_dim(self.out_neurons.value)
+        return DataConfiguration(self.ellipsis_dim, FeatureAxis(self.out_dim))
+
     def forward(
-        self, x: Annotated[Any, DataConfiguration.empty()]
-    ) -> Annotated[Any, DataConfiguration.empty()]:
+        self, x: Annotated[TensorType, x_data_config]
+    ) -> Annotated[TensorType, out_data_config]:
         self.input_ports[0].set_value(x)
         self.run()
         return self.output_ports[0].value

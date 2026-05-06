@@ -159,7 +159,7 @@ class Node(ABC):
         # Build input ports:
         for name, param in call_sig.parameters.items():
             hint = type_hints.get(name, param.annotation)
-            _, config = cls._unwrap_annotated(hint)
+            _, config = cls._unwrap_annotated(hint, owner)
             input_ports.append(
                 InputPort(
                     config,
@@ -183,19 +183,21 @@ class Node(ABC):
             outputs = [return_values]
 
         for i, output in enumerate(outputs):
-            _, config = cls._unwrap_annotated(output)
+            _, config = cls._unwrap_annotated(output, owner)
             output_ports.append(OutputPort(config, node=owner, name=f"output_{i}"))
         return input_ports, output_ports
 
     @classmethod
-    def _unwrap_annotated(cls, type_hint):
+    def _unwrap_annotated(cls, type_hint, owner):
         """Return (base_type, config)."""
         if get_origin(type_hint) is Annotated:
             base, *meta = get_args(type_hint)
             config = next(
-                (m for m in meta if isinstance(m, DataConfiguration)),
+                (m for m in meta if isinstance(m, (DataConfiguration, Callable))),
                 None,
             ) or DataConfiguration([])
+            if isinstance(config, Callable):
+                config = config(owner)
             return base, config
         return type_hint, DataConfiguration([])
 
