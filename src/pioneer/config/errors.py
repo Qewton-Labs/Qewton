@@ -1,0 +1,2 @@
+class DataConfigMismatchError(ValueError):
+    pass
