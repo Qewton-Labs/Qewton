@@ -1,7 +1,7 @@
-from typing import Annotated, Any
+from typing import Annotated
 
 from ...config.configuration_base import DataConfiguration
-from ..backend_node import BackendNode
+from ..backend_node import BackendNode, TensorType
 
 
 class ReLU(BackendNode[TensorType]):

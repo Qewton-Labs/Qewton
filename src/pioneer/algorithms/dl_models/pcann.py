@@ -13,30 +13,33 @@ from ..building_blocks.math import (
     MatMul,
     Multiply,
 )
+from ..building_blocks.normalizations import StdNormalizationNode, InverseStdNormalization
 from ..building_blocks.array_operations import Narrow
-from ..backend import DEFAULT_DL_BACKEND
+from ..backend import DEFAULT_DL_BACKEND, Backend
 from ...config.configuration_base import DataConfiguration
 from ...data.datasets.base import DataSet
-from ...graphs.control_nodes.graph_node import GraphNode
+from ...graphs.control_nodes.graph_node import GraphNode, TrackedNode
 from ...graphs.nodes import Node
 from ...optim.parameters.hyperparameter_base import HyperParameter
 
 
 class PCA(GraphNode):
-    # TODO Maybe get batch axis via Dataconfig
+    # TODO Maybe get batch axis via Dataconfig and make more complex splitting
+    # possible
     def __init__(
         self,
         dataset_node: DataSet,
         batch_axis: int = 0,
         principal_components: int = 10,
         name: str = "PCANode",
-        backend=DEFAULT_DL_BACKEND,
+        backend: Backend = DEFAULT_DL_BACKEND,
         divide_eps=1.0e-5,
     ) -> None:
         self.backend = backend
         self.divide_eps = divide_eps
         self.dataset_node = dataset_node
         self.batch_axis = batch_axis
+
         self.principal_components = HyperParameter.from_value(
             principal_components, "PCA Principal Components"
         )
@@ -70,14 +73,25 @@ class PCA(GraphNode):
     def _build_graph(self, backend):
         graph = Graph()
 
-        self.mean_node = Mean(axis=self.batch_axis, keepdims=True, backend=backend)
-        self.minus_node = Subtract(backend=backend)
+        # Create all needed nodes
 
-        self.std_node = Std(axis=self.batch_axis, keepdims=False, backend=backend)
-        std_add_eps_node = Add(backend=backend)
-        std_add_eps_node.input_ports[1].default = self.divide_eps
+        # Recompute the SVD of the dataset:
+        svd_node = SVD(backend=backend)
+        normalization_node = StdNormalizationNode(
+            dataset_node=self.dataset_node,
+            normalization_axis=self.batch_axis,
+            divide_eps=self.divide_eps,
+            backend=self.backend,
+        )
 
-        divide_node = Divide(backend=backend)
+        # Build the new graph:
+        normalization_node = StdNormalizationNode(
+            dataset_node=self.dataset_node,
+            normalization_axis=self.batch_axis,
+            divide_eps=self.divide_eps,
+            backend=self.backend,
+        )
+
         if self.batch_axis != 0:
             transpose_node = Transpose(perm=[0, self.batch_axis], backend=backend)
 
@@ -95,8 +109,6 @@ class PCA(GraphNode):
         )
 
         output_port_mapping = {
-            self.mean_node.output_ports[0]: self.mean,
-            std_add_eps_node.output_ports[0]: self.std,
             narrow_node_1.output_ports[0]: self.U,
             narrow_node_2.output_ports[0]: self.S,
             narrow_node_3.output_ports[0]: self.V,

@@ -32,7 +32,9 @@ class TorchParameter(_InternalParameter):
         import torch  # type: ignore
 
         if tensor is not None:
-            assert isinstance(tensor, torch.Tensor)
+            assert isinstance(
+                tensor, torch.Tensor
+            ), "Torch can only work with torch.Tensors, but got "
             self.param = torch.nn.Parameter(tensor)
         elif shape is not None:
             # TODO: We need some kind of initialization for these parameters
@@ -113,11 +115,14 @@ class ParameterNode(Node):
 
     @property
     def trainable_parameters(self):
-        params = (
-            []
-            if self.implementation is None
-            else self.implementation.trainable_parameters
-        )
+        if self.state == NodeState.FIXED:
+            params = []
+        else:
+            params = (
+                []
+                if self.implementation is None
+                else self.implementation.trainable_parameters
+            )
         return TrainableParameters(self.node_id, params)
 
     def to(self, device):

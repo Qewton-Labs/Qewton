@@ -1,9 +1,10 @@
-from typing import Any, Annotated, Generic
+from typing import Annotated, Generic
 
 from ..building_blocks.linear import Linear
 from ..building_blocks.activation_functions import ReLU
 from ..backend import DEFAULT_DL_BACKEND, Backend, TensorType
-from ...config import DataConfiguration
+from ...config.data_configurations import DataConfiguration
+from ...config.variables import Variable
 from ...graphs.graphs import SequentialGraph
 from ...graphs.nodes import Node, NodeState
 from ...graphs.control_nodes.graph_node import GraphNode
