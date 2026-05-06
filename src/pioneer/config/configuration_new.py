@@ -10,49 +10,114 @@ class DataConfiguration:
         self.axes = axes
         self.dtype = dtype
 
-    def unify(self, other: DataConfiguration) -> DataConfiguration:
+    def __str__(self):
+        return f"DataConfig({[str(a) for a in self.axes]})"
+
+    def unify_with(self, other: DataConfiguration) -> DataConfiguration:
         if self.dtype != other.dtype:
             raise DataConfigMismatchError(
                 f"Found different data types {self.dtype} and {other.dtype}."
             )
 
-        # Prepare inner batch axis, TODO: Maybe this can be done once
-        # in the initialization/ after specify_dtype as well? Not sure
-        # if some strange axes can be created in unification...
-        # TODO: Maybe one also to run it once without this, to check rather
-        # we can merge without collapsing -> see the one test-todo in test_configs.py
-        for dtype_u in (*self.dtype_units, *other_config.dtype_units):
-            dtype_u.collapse_batch_axes()
-
-        new_dtype_units: list[DTypeUnit] = []
-
-        for self_dtype_unit, other_dtype_unit in zip(
-            self.dtype_units, other_config.dtype_units
+        # First we check if they match from the end
+        matching_end = self._match_axes(reversed(self.axes), reversed(other.axes))
+        matching_end.reverse()
+        if len(matching_end) == len(self.axes) and len(matching_end) == len(other.axes):
+            #  fully matched
+            return DataConfiguration(*matching_end, dtype=self.dtype)
+        matching_start = self._match_axes(self.axes, other.axes)
+        # Lastly we check the remaining middle part for compatibility (it has
+        # to contain an ellipsis in at least one of the shapes to be compatible)
+        remaining_middle1 = self.axes[
+            len(matching_start) : len(self.axes) - len(matching_end)
+        ]
+        remaining_middle2 = other.axes[
+            len(matching_start) : len(other.axes) - len(matching_end)
+        ]
+        if not any(isinstance(dim, EllipsisDim) for dim in remaining_middle1) and not any(
+            isinstance(dim, EllipsisDim) for dim in remaining_middle2
         ):
-            # Check if types are the same or one of them is None (unspecified), otherwise
-            # we can not unify:
-            if self_dtype_unit.dtype != other_dtype_unit.dtype:
-                if self_dtype_unit.dtype is None:
-                    self_dtype_unit.dtype = other_dtype_unit.dtype
-                elif other_dtype_unit.dtype is None:
-                    other_dtype_unit.dtype = self_dtype_unit.dtype
-                else:
-                    raise DataConfigDtypeMismatchError(
-                        f"Found different data types {self_dtype_unit.dtype} \
-                        and {other_dtype_unit.dtype} at the same position."
-                    )
-            # In case of ellipsis this becomes more difficult
-            if (
-                self_dtype_unit.contains_ellipsis()
-                or other_dtype_unit.contains_ellipsis()
-            ):
-                # TODO: This becomes a bit ugly to match then to find which axis
-                # are where.
+            raise DataConfigMismatchError(
+                f"Axes {self.axes} and {other.axes} do not match and can not be unified."
+            )
+        matching_middle = self._match_middle_axes(remaining_middle1, remaining_middle2)
+        return DataConfiguration(
+            *(matching_start + matching_middle + matching_end), dtype=self.dtype
+        )
+
+    @classmethod
+    def _match_axes(cls, axes1, axes2) -> list:
+        matching_axes = []
+        for a1, a2 in zip(axes1, axes2):
+            try:
+                if isinstance(a1, EllipsisDim) or isinstance(a2, EllipsisDim):
+                    # We can not unify ellipsis directly, since they may need to
+                    # consume other axis as well.
+                    break
+                unified_axes = Axes.unify_with(a1, a2)
+                matching_axes.append(unified_axes)
+            except DataConfigMismatchError as e:
+                raise DataConfigMismatchError(
+                    f"Axes {axes1} and {axes2} do not match and can not be unified.\
+                        Mismatch at axes {a1} and {a2}."
+                ) from e
+        return matching_axes
+
+    @classmethod
+    def _match_middle_axes(cls, remaining_middle1, remaining_middle2) -> list:
+        # If one shape only is an ellipsis we are done:
+        if len(remaining_middle1) == 1 and isinstance(remaining_middle1[0], EllipsisDim):
+            return list(remaining_middle2)
+        if len(remaining_middle2) == 1 and isinstance(remaining_middle2[0], EllipsisDim):
+            return list(remaining_middle1)
+
+        matching_middle = []
+        # Determine which side has ellipsis at start vs end
+        if isinstance(remaining_middle1[0], EllipsisDim):
+            start_part, end_part = list(remaining_middle1), list(remaining_middle2)
+        else:
+            start_part, end_part = list(remaining_middle2), list(remaining_middle1)
+
+        start_idx = len(start_part) - 1
+        end_idx = len(end_part) - 2  # skip ellipsis
+        added_end_shape = False
+
+        while start_idx > 0 and end_idx >= 0:
+            current = start_part[start_idx]
+            try:
+                Axes.unify_with(current, end_part[end_idx])  # check if they match
+                # If we have a match, they could be the same axis:
+                # check if all neighbors to the left also match
+                # If yes we can just add everything together
+                offset = end_idx + 1 - start_idx
+                if offset >= 0:
+                    try:
+                        insert_axes = [
+                            Axes.unify_with(start_part[i], end_part[offset - 1 + i])
+                            for i in range(1, start_idx + 1)
+                        ]
+                        matching_middle.reverse()
+                        matching_middle = (
+                            end_part[: end_idx + 1 - start_idx]
+                            + insert_axes
+                            + matching_middle
+                        )
+                        start_idx = 0
+                        added_end_shape = True
+                        break
+                    except DataConfigMismatchError:
+                        pass
+            except DataConfigMismatchError:
                 pass
-            # Otherwise we can just compare the axis elements and see if they match
-            else:
-                new_dtype_units.append(DTypeUnit.unify(self_dtype_unit, other_dtype_unit))
-        return DataConfiguration(new_dtype_units)
+
+            matching_middle.append(current)
+            start_idx -= 1
+
+        if not added_end_shape:
+            matching_middle.reverse()
+            matching_middle = end_part[:-1] + matching_middle
+
+        return matching_middle
 
 
 class Axes:
@@ -62,6 +127,18 @@ class Axes:
     @property
     def shape(self):
         return self._shape
+
+    def unify_with(self: Axes, other: Axes) -> Axes:
+        if not self.__class__ == other.__class__:
+            raise DataConfigMismatchError(
+                f"Cannot unify axes of different types: {self.__class__} \
+                    and {other.__class__}."
+            )
+        unified_shape = self.unify_shapes(self.shape, other.shape)
+        return self.__class__(shape=unified_shape)
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}({[str(s) for s in self.shape]})"
 
     @classmethod
     def unify_shapes(
@@ -144,7 +221,7 @@ class Axes:
                     # We can not unify ellipsis directly, since they may need to
                     # consume other axis as well.
                     break
-                unified_dim = AxesDim.unify(s1, s2)
+                unified_dim = AxesDim.unify_with(s1, s2)
                 matching_dims.append(unified_dim)
             except DataConfigMismatchError as e:
                 raise DataConfigMismatchError(
@@ -175,7 +252,7 @@ class Axes:
         while start_idx > 0 and end_idx >= 0:
             current = start_part[start_idx]
             try:
-                AxesDim.unify(current, end_part[end_idx])  # check if they match
+                AxesDim.unify_with(current, end_part[end_idx])  # check if they match
                 # If we have a match, they could be the same axis:
                 # check if all neighbors to the left also match
                 # If yes we can just add everything together
@@ -183,7 +260,7 @@ class Axes:
                 if offset >= 0:
                     try:
                         insert_dims = [
-                            AxesDim.unify(start_part[i], end_part[offset - 1 + i])
+                            AxesDim.unify_with(start_part[i], end_part[offset - 1 + i])
                             for i in range(1, start_idx + 1)
                         ]
                         matching_middle.reverse()
@@ -229,6 +306,15 @@ class GeometryAxes(Axes):
             raise ValueError("Either geometry or shape must be provided.")
         super().__init__(self._geometry.shape)
 
+    def unify_with(self: Axes, other: Axes) -> Axes:
+        if not isinstance(other, GeometryAxes):
+            raise DataConfigMismatchError(
+                f"Cannot unify axes of different types: {self.__class__} \
+                    and {other.__class__}."
+            )
+        unified_geometry = self._geometry.unify_with(other._geometry)
+        return self.__class__(unified_geometry)
+
 
 class FeatureAxes(Axes):
     def __init__(
@@ -242,6 +328,15 @@ class FeatureAxes(Axes):
             self._variable = None
         super().__init__(shape if shape is not None else self._variable.shape)
 
+    def unify_with(self: Axes, other: Axes) -> Axes:
+        if not isinstance(other, FeatureAxes):
+            raise DataConfigMismatchError(
+                f"Cannot unify axes of different types: {self.__class__} \
+                    and {other.__class__}."
+            )
+        unified_shape = self.unify_shapes(self.shape, other.shape)
+        return self.__class__(shape=unified_shape)
+
 
 class AxesDim:
     def __init__(self, size=None, broadcastable=True):
@@ -249,13 +344,15 @@ class AxesDim:
         self.broadcastable = broadcastable
         self.graph = None
 
-    @classmethod
-    def unify(cls, dim1: AxesDim, dim2: AxesDim):
-        if dim1 == dim2:
-            return dim1
-        broadcastable = dim1.broadcastable and dim2.broadcastable
-        out_size = cls.unify_integer_dims(
-            dim1.size, dim2.size, broadcast_singleton=broadcastable
+    def __str__(self) -> str:
+        return str(self.size)
+
+    def unify_with(self: AxesDim, other: AxesDim):
+        if self == other:
+            return self
+        broadcastable = self.broadcastable and other.broadcastable
+        out_size = self.unify_integer_dims(
+            self.size, other.size, broadcast_singleton=broadcastable
         )
         return AxesDim(size=out_size, broadcastable=broadcastable)
 
@@ -281,4 +378,14 @@ class AxesDim:
 
 
 class EllipsisDim(AxesDim):
-    pass
+    def __str__(self) -> str:
+        return "..."
+
+
+class Geometry:
+    def __init__(self, shape: tuple[AxesDim, ...]):
+        self.shape = shape
+
+    def unify_with(self, other: Geometry) -> Geometry:
+        unified_shape = Axes.unify_shapes(self.shape, other.shape)
+        return Geometry(unified_shape)
