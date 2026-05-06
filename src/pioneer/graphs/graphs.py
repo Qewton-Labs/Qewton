@@ -26,7 +26,7 @@ class Graph:
         self.sorted_incoming_edges: list[dict[Port, Edge]] = []
         self.last_outgoing_edges: list[Edge] = []
 
-        self.data_configurations: dict[Node, dict[Port, DataConfiguration | Edge]] = {}
+        self.dynamic_data_configs: dict[Node, dict[Port, DataConfiguration | Edge]] = {}
 
     @classmethod
     def from_function(
@@ -100,9 +100,9 @@ class Graph:
             self.incoming_edges[node] = list[Edge]()
             self.outgoing_edges[node] = list[Edge]()
 
-            self.data_configurations[node] = {}
+            self.dynamic_data_configs[node] = {}
             for port in node.input_ports + node.output_ports:
-                self.data_configurations[node][port] = port.data_configuration
+                self.dynamic_data_configs[node][port] = port.data_configuration
 
     # def remove_node(self, node: Node) -> None:
     #     """Deletes a given node from this graph.
@@ -193,10 +193,10 @@ class Graph:
 
         # Configurations should match
         for from_port, to_port in zip(from_ports, to_ports):
-            out_config = self.data_configurations[from_node][from_port]
+            out_config = self.dynamic_data_configs[from_node][from_port]
             if isinstance(out_config, Edge):
                 out_config = out_config.data_config
-            in_config = self.data_configurations[to_node][to_port]
+            in_config = self.dynamic_data_configs[to_node][to_port]
             unified_config = out_config.unify(in_config)
             edge = Edge(from_port, to_port, unified_config)
             self.incoming_edges[to_node].append(edge)
@@ -211,20 +211,21 @@ class Graph:
 
         Args:
             node (Node): The node for which the data configurations should be updated.
-            port (Port): The port of the node for which the data configuration should be updated.
+            port (Port): The port of the node for which the data configuration should
+                be updated.
             edge (Edge): The edge that is added to the graph, connecting the given port.
         """
-        self.data_configurations[node][port] = edge
+        self.dynamic_data_configs[node][port] = edge
         # visited_nodes = set[Node]({node}) # experimental, check whether this iterates forever
         # visited_edges = set[Edge]({edge})
 
-        old_config = self.data_configurations[node][port]
+        old_config = self.dynamic_data_configs[node][port]
         new_config = edge.data_config  # UnifiedDataConfiguration
         if old_config != new_config:  # TODO: override __eq__ to make this work
             # propagate to neighbors:
             for p in node.input_ports + node.output_ports:
                 if p != port:
-                    old_p_config = self.data_configurations[node][p]
+                    old_p_config = self.dynamic_data_configs[node][p]
                     new_p_config = old_p_config
                     for dim in old_p_config.dims:
                         for d in old_config.dims:
@@ -232,11 +233,11 @@ class Graph:
                                 new_p_config = new_p_config.update_dim(
                                     dim, d, new_d
                                 )  # new object
-                                self.data_configurations[node][p] = new_p_config
+                                self.dynamic_data_configs[node][p] = new_p_config
             for e in self.incoming_edges[node] + self.outgoing_edges[node]:
                 # if e not in visited_edges:
-                first_config = self.data_configurations[e.from_port.node][e.from_port]
-                second_config = self.data_configurations[e.to_port.node][e.to_port]
+                first_config = self.dynamic_data_configs[e.from_port.node][e.from_port]
+                second_config = self.dynamic_data_configs[e.to_port.node][e.to_port]
                 new_edge_config = first_config.unify(second_config)
                 if new_edge_config != e.data_config:
                     e.data_config = new_edge_config
@@ -298,7 +299,7 @@ class Graph:
         edge = Edge(from_port, to_port, unified_config, connects_to_outside=True)
         self.incoming_edges[to_node].append(edge)
 
-        self.data_configurations[to_node][to_port] = edge
+        self.dynamic_data_configs[to_node][to_port] = edge
 
     def connect_to_outside_of_graph(self, from_port: OutputPort, to_port: Port):
         """Connects to ports where the 'to_port' is not part of this graph itself.
@@ -326,7 +327,7 @@ class Graph:
         self.outgoing_edges[from_node].append(edge)
         self.last_outgoing_edges.append(edge)
 
-        self.data_configurations[from_node][from_port] = edge
+        self.dynamic_data_configs[from_node][from_port] = edge
 
     # def disconnect(self, port: InputPort) -> None:
     #     """Remove an edge from this graph"""

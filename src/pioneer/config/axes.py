@@ -1,12 +1,16 @@
 from __future__ import annotations
+from types import EllipsisType
+from typing_extensions import Self
 
 from .variables import Variable
 from .errors import DataConfigMismatchError
 
 
 class Axes:
-    def __init__(self, shape: tuple[int | AxesDim, ...]):
-        shape = tuple(AxesDim(size=s) if isinstance(s, int) else s for s in shape)
+    def __init__(self, *shape: int | AxesDim | EllipsisType):
+        shape = tuple(
+            AxesDim(size=s) if isinstance(s, (int, EllipsisType)) else s for s in shape
+        )
         self._shape = shape
 
     @property
@@ -180,7 +184,7 @@ class GeometryAxes(Axes):
     def __init__(
         self,
         geometry: Geometry | None = None,
-        shape: tuple[int | AxesDim, ...] | None = None,
+        shape: tuple[int | AxesDim | EllipsisType, ...] | None = None,
     ):
 
         if geometry is not None and shape is not None:
@@ -191,7 +195,7 @@ class GeometryAxes(Axes):
             self._geometry = Geometry(shape)
         else:
             raise ValueError("Either geometry or shape must be provided.")
-        super().__init__(self._geometry.shape)
+        super().__init__(*self._geometry.shape)
 
     def unify_with(self: Axes, other: Axes) -> Axes:
         if not isinstance(other, GeometryAxes):
@@ -207,7 +211,7 @@ class FeatureAxes(Axes):
     def __init__(
         self,
         variable: Variable | None = None,
-        shape: tuple[int | AxesDim, ...] | None = None,
+        shape: tuple[int | AxesDim | EllipsisType, ...] | None = None,
     ):
         if variable is not None and shape is not None:
             raise ValueError("Only one of variable or shape can be provided.")
@@ -215,7 +219,7 @@ class FeatureAxes(Axes):
             self._variable = variable
         elif shape is not None:
             self._variable = None
-        super().__init__(shape if shape is not None else self._variable.shape)
+        super().__init__(*(shape if shape is not None else self._variable.shape))
 
     def unify_with(self: Axes, other: Axes) -> Axes:
         if not isinstance(other, FeatureAxes):
@@ -227,7 +231,28 @@ class FeatureAxes(Axes):
         return self.__class__(shape=unified_shape)
 
 
+class EllipsisAxes(Axes):
+    def __init__(self):
+        super().__init__(EllipsisDim())
+
+    def __str__(self) -> str:
+        return "..."
+
+
+class DynamicAxes(Axes):
+    def __init__(self, source_axes):
+        self.source_axes = source_axes
+        shape = [DynamicDim(d) for d in source_axes.shape]
+        super().__init__(shape)
+
+
 class AxesDim:
+    def __new__(cls, size=None, broadcastable=True) -> AxesDim:
+        if isinstance(size, EllipsisType):
+            return EllipsisDim(broadcastable)
+        else:
+            return AxesDim(size=size, broadcastable=broadcastable)
+
     def __init__(self, size=None, broadcastable=True):
         self.size = size
         self.broadcastable = broadcastable
@@ -267,8 +292,17 @@ class AxesDim:
 
 
 class EllipsisDim(AxesDim):
+    def __init__(self, broadcastable=True):
+        super().__init__(size=None, broadcastable=broadcastable)
+
     def __str__(self) -> str:
         return "..."
+
+
+class DynamicDim(AxesDim):
+    def __init__(self, source_dim):
+        self.source_dim = source_dim
+        super().__init__(source_dim.size, source_dim.broadcastable)
 
 
 class Geometry:

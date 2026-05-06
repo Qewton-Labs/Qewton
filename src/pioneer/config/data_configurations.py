@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from .axis import Axes, EllipsisDim
+from .axes import Axes, EllipsisAxes
 from .errors import DataConfigMismatchError
 
 
 class DataConfiguration:
-    def __init__(self, *axes: Axes | EllipsisDim, dtype=None):
+    def __init__(self, *axes: Axes | EllipsisAxes, dtype=None):
         self.axes = axes
         self.dtype = dtype
 
@@ -33,9 +33,9 @@ class DataConfiguration:
         remaining_middle2 = other.axes[
             len(matching_start) : len(other.axes) - len(matching_end)
         ]
-        if not any(isinstance(dim, EllipsisDim) for dim in remaining_middle1) and not any(
-            isinstance(dim, EllipsisDim) for dim in remaining_middle2
-        ):
+        if not any(
+            isinstance(axes, EllipsisAxes) for axes in remaining_middle1
+        ) and not any(isinstance(axes, EllipsisAxes) for axes in remaining_middle2):
             raise DataConfigMismatchError(
                 f"Axes {self.axes} and {other.axes} do not match and can not be unified."
             )
@@ -49,7 +49,7 @@ class DataConfiguration:
         matching_axes = []
         for a1, a2 in zip(axes1, axes2):
             try:
-                if isinstance(a1, EllipsisDim) or isinstance(a2, EllipsisDim):
+                if isinstance(a1, EllipsisAxes) or isinstance(a2, EllipsisAxes):
                     # We can not unify ellipsis directly, since they may need to
                     # consume other axis as well.
                     break
@@ -65,14 +65,14 @@ class DataConfiguration:
     @classmethod
     def _match_middle_axes(cls, remaining_middle1, remaining_middle2) -> list:
         # If one shape only is an ellipsis we are done:
-        if len(remaining_middle1) == 1 and isinstance(remaining_middle1[0], EllipsisDim):
+        if len(remaining_middle1) == 1 and isinstance(remaining_middle1[0], EllipsisAxes):
             return list(remaining_middle2)
-        if len(remaining_middle2) == 1 and isinstance(remaining_middle2[0], EllipsisDim):
+        if len(remaining_middle2) == 1 and isinstance(remaining_middle2[0], EllipsisAxes):
             return list(remaining_middle1)
 
         matching_middle = []
         # Determine which side has ellipsis at start vs end
-        if isinstance(remaining_middle1[0], EllipsisDim):
+        if isinstance(remaining_middle1[0], EllipsisAxes):
             start_part, end_part = list(remaining_middle1), list(remaining_middle2)
         else:
             start_part, end_part = list(remaining_middle2), list(remaining_middle1)
@@ -117,3 +117,10 @@ class DataConfiguration:
             matching_middle = end_part[:-1] + matching_middle
 
         return matching_middle
+
+
+class DynamicDataConfiguration(DataConfiguration):
+    def __init__(self, source_data_config):
+        self.source_data_config = source_data_config
+        axes = [DynamicAxes(a) for a in source_data_config.axes]
+        super().__init__(*source_data_config.axes, dtype=dtype)
