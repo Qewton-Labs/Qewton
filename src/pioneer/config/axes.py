@@ -6,6 +6,91 @@ from .variables import Variable
 from .errors import DataConfigMismatchError
 
 
+def _match_remainder(inner_type, start_part, end_part):
+    """Matches the remaining middle dimensions between two shapes containing ellipsis.
+
+    This method handles the complex case where one shape has an ellipsis at the start
+    (representing flexible dimensions at the beginning) and another has an ellipsis at
+    the end (representing flexible dimensions at the end). It attempts to unify the
+    dimensions by working backwards from the end, trying to find compatible mappings.
+
+    The algorithm starts from the last dimension before the ellipsis in start_part and
+    the second-to-last dimension in end_part (skipping the ellipsis), and works
+    backwards.
+    When a match is found, it checks if all preceding dimensions can also be unified.
+    If successful, it creates a unified mapping; otherwise, it treats dimensions as
+    separate.
+
+    Args:
+        start_part (list): List of dimensions from the shape with ellipsis at the
+                            start. The first element should be an EllipsisDim.
+        end_part (list): List of dimensions from the shape with ellipsis at the end.
+                        The last element should be an EllipsisDim.
+
+    Returns:
+        tuple[dict, dict]: A tuple of two dictionaries:
+            - First dict: Mapping from dimensions in start_part to their unified
+                            counterparts
+            - Second dict: Mapping from dimensions in end_part to their unified
+                            counterparts
+
+    Notes:
+        This method is used internally by _match_middle_shape to handle ellipsis
+        unification.
+        The returned mappings ensure that both shapes can be transformed to compatible
+        forms while preserving the semantic meaning of the ellipsis dimensions.
+    """
+    matching_middle_start = {}
+    matching_middle_end = {}
+    start_idx = len(start_part) - 1
+    end_idx = len(end_part) - 2  # skip ellipsis
+    added_end_shape = False
+
+    matching_middle_end[end_part[-1]] = []
+    while start_idx > 0 and end_idx >= 0:
+        current = start_part[start_idx]
+        try:
+            inner_type.unify_with(current, end_part[end_idx])  # check if they match
+            # If we have a match, they could be the same axis:
+            # check if all neighbors to the left also match
+            # If yes we can just add everything together
+            offset = end_idx + 1 - start_idx
+            if offset >= 0:
+                try:
+                    insert_dims = [
+                        inner_type.unify_with(start_part[i], end_part[offset - 1 + i])
+                        for i in range(1, start_idx + 1)
+                    ]
+                    matching_middle_end[end_part[-1]].reverse()
+                    matching_middle_start[start_part[0]] = end_part[:offset]
+                    matching_middle_end = matching_middle_end | {
+                        k: k for k in end_part[:offset]
+                    }
+                    for i in range(1, start_idx + 1):
+                        matching_middle_start[start_part[i]] = insert_dims[i - 1][0]
+                        matching_middle_end[end_part[offset + i - 1]] = insert_dims[
+                            i - 1
+                        ][1]
+                    start_idx = 0
+                    added_end_shape = True
+                    break
+                except DataConfigMismatchError:
+                    pass
+        except DataConfigMismatchError:
+            pass
+
+        matching_middle_start[current] = current
+        matching_middle_end[end_part[-1]].append(current)
+        start_idx -= 1
+
+    if not added_end_shape:
+        matching_middle_end[end_part[-1]].reverse()
+        matching_middle_end = matching_middle_end | {k: k for k in end_part[:-1]}
+        matching_middle_start[start_part[0]] = end_part[:-1]
+
+    return matching_middle_start, matching_middle_end
+
+
 class Axes:
     def __init__(self, *shape: int | AxesDim | EllipsisType):
         shape = tuple(
@@ -17,14 +102,13 @@ class Axes:
     def shape(self):
         return self._shape
 
-    def unify_with(self: Axes, other: Axes) -> Axes:
+    def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
         if not self.__class__ == other.__class__:
             raise DataConfigMismatchError(
                 f"Cannot unify axes of different types: {self.__class__} \
                     and {other.__class__}."
             )
-        unified_shape = self.unify_shapes(self.shape, other.shape)
-        return self.__class__(shape=unified_shape)
+        return self.unify_shapes(self.shape, other.shape)
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}([{', '.join(str(s) for s in self.shape)}])"
@@ -34,7 +118,7 @@ class Axes:
         cls,
         shape1: tuple[AxesDim, ...],
         shape2: tuple[AxesDim, ...],
-    ) -> tuple[AxesDim, ...]:
+    ) -> tuple[dict, dict]:
         """Returns a shape that both ``shape1`` and ``shape2`` are compatible with.
 
         The resulting shape is chosen to have the smallest number of axes and
@@ -82,28 +166,40 @@ class Axes:
         """
 
         # First we check if they match from the end
-        matching_end = cls._match_shapes(reversed(shape1), reversed(shape2))
-        matching_end.reverse()
-        if len(matching_end) == len(shape1) and len(matching_end) == len(shape2):
+        matching_end_1, matching_end_2 = cls._match_shapes(
+            reversed(shape1), reversed(shape2)
+        )
+        if len(matching_end_1) == len(shape1) and len(matching_end_2) == len(shape2):
             #  fully matched
-            return tuple(matching_end)
-        matching_start = cls._match_shapes(shape1, shape2)
+            return matching_end_1, matching_end_2
+        matching_start_1, matching_start_2 = cls._match_shapes(shape1, shape2)
         # Lastly we check the remaining middle part for compatibility (it has
         # to contain an ellipsis in at least one of the shapes to be compatible)
-        remaining_middle1 = shape1[len(matching_start) : len(shape1) - len(matching_end)]
-        remaining_middle2 = shape2[len(matching_start) : len(shape2) - len(matching_end)]
+        remaining_middle1 = shape1[
+            len(matching_start_1) : len(shape1) - len(matching_end_1)
+        ]
+        remaining_middle2 = shape2[
+            len(matching_start_2) : len(shape2) - len(matching_end_2)
+        ]
         if not any(isinstance(dim, EllipsisDim) for dim in remaining_middle1) and not any(
             isinstance(dim, EllipsisDim) for dim in remaining_middle2
         ):
             raise DataConfigMismatchError(
                 f"Shapes {shape1} and {shape2} do not match and can not be unified."
             )
-        matching_middle = cls._match_middle_shape(remaining_middle1, remaining_middle2)
-        return tuple(matching_start + matching_middle + matching_end)
+        matching_middle_1, matching_middle_2 = cls._match_middle_shape(
+            remaining_middle1, remaining_middle2
+        )
+        # return tuple(matching_start + matching_middle + matching_end)
+        return (
+            matching_start_1 | matching_middle_1 | matching_end_1,
+            matching_start_2 | matching_middle_2 | matching_end_2,
+        )
 
     @classmethod
-    def _match_shapes(cls, shape1, shape2) -> list:
-        matching_dims = []
+    def _match_shapes(cls, shape1, shape2) -> tuple[dict, dict]:
+        matching_dims_1 = {}
+        matching_dims_2 = {}
         for s1, s2 in zip(shape1, shape2):
             try:
                 if isinstance(s1, EllipsisDim) or isinstance(s2, EllipsisDim):
@@ -111,69 +207,39 @@ class Axes:
                     # consume other axis as well.
                     break
                 unified_dim = AxesDim.unify_with(s1, s2)
-                matching_dims.append(unified_dim)
+                matching_dims_1[s1], matching_dims_2[s2] = unified_dim
             except DataConfigMismatchError as e:
                 raise DataConfigMismatchError(
                     f"Shapes {shape1} and {shape2} do not match and can not be unified.\
                         Mismatch at dimensions {s1} and {s2}."
                 ) from e
-        return matching_dims
+        return matching_dims_1, matching_dims_2
 
     @classmethod
-    def _match_middle_shape(cls, remaining_middle1, remaining_middle2) -> list:
+    def _match_middle_shape(
+        cls, remaining_middle1, remaining_middle2
+    ) -> tuple[dict, dict]:
         # If one shape only is an ellipsis we are done:
         if len(remaining_middle1) == 1 and isinstance(remaining_middle1[0], EllipsisDim):
-            return list(remaining_middle2)
+            return {remaining_middle1[0]: remaining_middle2}, {
+                k: k for k in remaining_middle2
+            }
         if len(remaining_middle2) == 1 and isinstance(remaining_middle2[0], EllipsisDim):
-            return list(remaining_middle1)
+            return {k: k for k in remaining_middle1}, {
+                remaining_middle2[0]: remaining_middle1
+            }
 
-        matching_middle = []
         # Determine which side has ellipsis at start vs end
         if isinstance(remaining_middle1[0], EllipsisDim):
-            start_part, end_part = list(remaining_middle1), list(remaining_middle2)
+            middle1, middle2 = _match_remainder(
+                AxesDim, list(remaining_middle1), list(remaining_middle2)
+            )
         else:
-            start_part, end_part = list(remaining_middle2), list(remaining_middle1)
+            middle2, middle1 = _match_remainder(
+                AxesDim, list(remaining_middle2), list(remaining_middle1)
+            )
 
-        start_idx = len(start_part) - 1
-        end_idx = len(end_part) - 2  # skip ellipsis
-        added_end_shape = False
-
-        while start_idx > 0 and end_idx >= 0:
-            current = start_part[start_idx]
-            try:
-                AxesDim.unify_with(current, end_part[end_idx])  # check if they match
-                # If we have a match, they could be the same axis:
-                # check if all neighbors to the left also match
-                # If yes we can just add everything together
-                offset = end_idx + 1 - start_idx
-                if offset >= 0:
-                    try:
-                        insert_dims = [
-                            AxesDim.unify_with(start_part[i], end_part[offset - 1 + i])
-                            for i in range(1, start_idx + 1)
-                        ]
-                        matching_middle.reverse()
-                        matching_middle = (
-                            end_part[: end_idx + 1 - start_idx]
-                            + insert_dims
-                            + matching_middle
-                        )
-                        start_idx = 0
-                        added_end_shape = True
-                        break
-                    except DataConfigMismatchError:
-                        pass
-            except DataConfigMismatchError:
-                pass
-
-            matching_middle.append(current)
-            start_idx -= 1
-
-        if not added_end_shape:
-            matching_middle.reverse()
-            matching_middle = end_part[:-1] + matching_middle
-
-        return matching_middle
+        return middle1, middle2
 
 
 class BatchAxes(Axes):
@@ -184,9 +250,9 @@ class GeometryAxes(Axes):
     def __init__(
         self,
         geometry: Geometry | None = None,
-        shape: tuple[int | AxesDim | EllipsisType, ...] | None = None,
+        shape: tuple[int | AxesDim, ...] | None = None,
     ):
-
+        print("hi")
         if geometry is not None and shape is not None:
             raise ValueError("Only one of geometry or shape can be provided.")
         if geometry is not None:
@@ -197,21 +263,26 @@ class GeometryAxes(Axes):
             raise ValueError("Either geometry or shape must be provided.")
         super().__init__(*self._geometry.shape)
 
-    def unify_with(self: Axes, other: Axes) -> Axes:
+    def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
         if not isinstance(other, GeometryAxes):
             raise DataConfigMismatchError(
                 f"Cannot unify axes of different types: {self.__class__} \
                     and {other.__class__}."
             )
         unified_geometry = self._geometry.unify_with(other._geometry)
-        return self.__class__(unified_geometry)
+        new_axes = GeometryAxes(unified_geometry)
+        self_dict, other_dict = {}, {}
+        for self_key, other_key, new_a in zip(self.shape, other.shape, new_axes.shape):
+            self_dict[self_key] = new_a
+            other_dict[other_key] = new_a
+        return self_dict, other_dict
 
 
 class FeatureAxes(Axes):
     def __init__(
         self,
         variable: Variable | None = None,
-        shape: tuple[int | AxesDim | EllipsisType, ...] | None = None,
+        shape: tuple[int | AxesDim, ...] | None = None,
     ):
         if variable is not None and shape is not None:
             raise ValueError("Only one of variable or shape can be provided.")
@@ -221,14 +292,14 @@ class FeatureAxes(Axes):
             self._variable = None
         super().__init__(*(shape if shape is not None else self._variable.shape))
 
-    def unify_with(self: Axes, other: Axes) -> Axes:
+    def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
         if not isinstance(other, FeatureAxes):
             raise DataConfigMismatchError(
                 f"Cannot unify axes of different types: {self.__class__} \
                     and {other.__class__}."
             )
-        unified_shape = self.unify_shapes(self.shape, other.shape)
-        return self.__class__(shape=unified_shape)
+        unified_shapes = self.unify_shapes(self.shape, other.shape)
+        return unified_shapes
 
 
 class EllipsisAxes(Axes):
@@ -239,19 +310,12 @@ class EllipsisAxes(Axes):
         return "..."
 
 
-class DynamicAxes(Axes):
-    def __init__(self, source_axes):
-        self.source_axes = source_axes
-        shape = [DynamicDim(d) for d in source_axes.shape]
-        super().__init__(shape)
-
-
 class AxesDim:
     def __new__(cls, size=None, broadcastable=True) -> AxesDim:
         if isinstance(size, EllipsisType):
             return EllipsisDim(broadcastable)
         else:
-            return AxesDim(size=size, broadcastable=broadcastable)
+            return super().__new__(cls)
 
     def __init__(self, size=None, broadcastable=True):
         self.size = size
@@ -263,12 +327,13 @@ class AxesDim:
 
     def unify_with(self: AxesDim, other: AxesDim):
         if self == other:
-            return self
+            return (self, other)
         broadcastable = self.broadcastable and other.broadcastable
         out_size = self.unify_integer_dims(
             self.size, other.size, broadcast_singleton=broadcastable
         )
-        return AxesDim(size=out_size, broadcastable=broadcastable)
+        out_dim = AxesDim(size=out_size, broadcastable=broadcastable)
+        return (out_dim, out_dim)
 
     @classmethod
     def unify_integer_dims(
@@ -299,16 +364,10 @@ class EllipsisDim(AxesDim):
         return "..."
 
 
-class DynamicDim(AxesDim):
-    def __init__(self, source_dim):
-        self.source_dim = source_dim
-        super().__init__(source_dim.size, source_dim.broadcastable)
-
-
 class Geometry:
     def __init__(self, shape: tuple[int | AxesDim, ...]):
         self.shape = tuple(AxesDim(size=s) if isinstance(s, int) else s for s in shape)
 
     def unify_with(self, other: Geometry) -> Geometry:
         unified_shape = Axes.unify_shapes(self.shape, other.shape)
-        return Geometry(unified_shape)
+        return Geometry(tuple(unified_shape[1].values()))
