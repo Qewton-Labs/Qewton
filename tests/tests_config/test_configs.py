@@ -1,6 +1,6 @@
 import pytest
 
-from pioneer.config.axis import (
+from pioneer.config.axes import (
     Axes,
     EllipsisDim,
     AxesDim,

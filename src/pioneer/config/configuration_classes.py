@@ -1,5 +1,5 @@
 from .configuration_base import DataConfiguration
-from .axis import BatchAxis, FeatureAxis, SpatialAxis
+from .axes import BatchAxis, FeatureAxis, SpatialAxis
 from .variables import Variable
 
 

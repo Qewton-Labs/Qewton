@@ -202,8 +202,8 @@ class Graph:
             self.incoming_edges[to_node].append(edge)
             self.outgoing_edges[from_node].append(edge)
 
-            self.update_data_configurations(from_node, from_port, edge)
-            self.update_data_configurations(to_node, to_port, edge)
+            # self.update_data_configurations(from_node, from_port, edge)
+            # self.update_data_configurations(to_node, to_port, edge)
 
     def update_data_configurations(self, node: Node, port: Port, edge: Edge):
         """Updates the data configurations of the given node and all its neighbors

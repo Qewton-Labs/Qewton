@@ -9,7 +9,7 @@ from ...optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
 from ...config.variables import Variable
-from ...config.axis import GeometryAxes, BatchAxes, FeatureAxes
+from ...config.axes import GeometryAxes, BatchAxes, FeatureAxes
 from ...graphs.nodes import Node, OutputPort, InputPort
 
 # TODO: For now just a simple dataset where the data is provided

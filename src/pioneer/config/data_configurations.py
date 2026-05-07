@@ -122,5 +122,6 @@ class DataConfiguration:
 class DynamicDataConfiguration(DataConfiguration):
     def __init__(self, source_data_config):
         self.source_data_config = source_data_config
+        self.axes_changes = ...
         axes = [DynamicAxes(a) for a in source_data_config.axes]
         super().__init__(*source_data_config.axes, dtype=dtype)
