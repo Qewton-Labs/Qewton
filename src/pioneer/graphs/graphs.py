@@ -7,6 +7,7 @@ from warnings import warn
 from copy import deepcopy
 
 from ..config.data_configurations import DataConfiguration
+from ..config.errors import DataConfigMismatchError
 
 from .nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
 from ..optim.parameters.trainable_parameters import TrainableParametersCollection
@@ -199,7 +200,12 @@ class Graph:
         for from_port, to_port in zip(from_ports, to_ports):
             from_config = self.dynamic_data_configs[from_node][from_port]
             to_config = self.dynamic_data_configs[to_node][to_port]
-            unified_config = from_config.unify_with(to_config)
+            try:
+                unified_config = from_config.unify_with(to_config)
+            except DataConfigMismatchError as e:
+                raise DataConfigMismatchError(
+                    f"Connection of {from_node.name} to {to_node.name} failed, because {e}"
+                ) from e
             edge = Edge(from_port, to_port)
             self.incoming_edges[to_node].append(edge)
             self.outgoing_edges[from_node].append(edge)
@@ -221,7 +227,9 @@ class Graph:
         # visited_edges = set[Edge]({edge})
         # First we check if the port that was connected has been changed:
         port_config = self.dynamic_data_configs[node][port]
+        # print(port_config)
         port_config_was_updated = port_config.update_config(config_dict)
+        # print(port_config, port_config_was_updated)
         if not port_config_was_updated:
             # No change -> we are done
             return
@@ -231,10 +239,9 @@ class Graph:
         # port configurations separately.
         node_configs_was_updated = False
         for c_port, config in self.dynamic_data_configs[node].items():
-            if c_port == port:  # already updated
-                continue
-            config_was_updated = config.update_config(config_dict)
-            node_configs_was_updated |= config_was_updated
+            if c_port != port:  # original port already updated
+                config_was_updated = config.update_config(config_dict)
+                node_configs_was_updated |= config_was_updated
         # If the config was made more concrete we have to pass this information to
         # the remaining graph
         if node_configs_was_updated or port_config_was_updated:
@@ -242,7 +249,14 @@ class Graph:
                 # if e not in visited_edges:
                 first_config = self.dynamic_data_configs[e.from_port.node][e.from_port]
                 second_config = self.dynamic_data_configs[e.to_port.node][e.to_port]
-                new_config_dict = first_config.unify_with(second_config)
+
+                try:
+                    new_config_dict = first_config.unify_with(second_config)
+                except DataConfigMismatchError as err:
+                    raise DataConfigMismatchError(
+                        f"Reconnection of {e.from_port.node.name} to "
+                        + f"{e.to_port.node.name} failed, because {err}"
+                    ) from err
 
                 # visited_edges.add(e)
                 # and e.to_port.node not in visited_nodes
@@ -299,8 +313,10 @@ class Graph:
         self.add_node(to_node, check_warning=False)
         out_config = from_port.data_configuration
         in_config = to_port.data_configuration
+        # TODO !!!!!!!!!!!!!!!!!!!
+        raise NotImplementedError("This is not correct yet for matching configs!!!")
         unified_config = out_config.unify(in_config)
-        edge = Edge(from_port, to_port, unified_config, connects_to_outside=True)
+        edge = Edge(from_port, to_port, connects_to_outside=True)
         self.incoming_edges[to_node].append(edge)
 
         self.dynamic_data_configs[to_node][to_port] = edge
@@ -327,7 +343,7 @@ class Graph:
         out_config = from_port.data_configuration
         in_config = to_port.data_configuration
         unified_config = out_config.unify(in_config)
-        edge = Edge(from_port, to_port, unified_config, connects_to_outside=True)
+        edge = Edge(from_port, to_port, connects_to_outside=True)
         self.outgoing_edges[from_node].append(edge)
         self.last_outgoing_edges.append(edge)
 

@@ -4,7 +4,7 @@ import torch
 
 from pioneer.config.variables import Variable
 
-from ...config.configuration_base import DataConfiguration
+from ...config.data_configurations import DataConfiguration
 from ...optim.parameters.number_hyperparameter import (
     DiscreteHyperparameter,
 )

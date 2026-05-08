@@ -3,7 +3,7 @@ from typing import Annotated
 from ..backend import DEFAULT_DL_BACKEND, TensorType
 from ..backend_node import BackendNode
 
-from ...config.configuration_base import DataConfiguration
+from ...config.data_configurations import DataConfiguration
 from ...graphs.nodes import NO_DEFAULT
 
 # The following classes represent basic mathematical operations.

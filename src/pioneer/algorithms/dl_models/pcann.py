@@ -16,7 +16,7 @@ from ..building_blocks.math import (
 from ..building_blocks.normalizations import StdNormalizationNode, InverseStdNormalization
 from ..building_blocks.array_operations import Narrow
 from ..backend import DEFAULT_DL_BACKEND, Backend
-from ...config.configuration_base import DataConfiguration
+from ...config.data_configurations import DataConfiguration
 from ...data.datasets.base import DataSet
 from ...graphs.control_nodes.graph_node import GraphNode, TrackedNode
 from ...graphs.nodes import Node
