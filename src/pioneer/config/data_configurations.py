@@ -13,7 +13,6 @@ class DataConfiguration:
         return f"DataConfig([{', '.join(str(a) for a in self.axes)}])"
 
     def unify_with(self, other: DataConfiguration) -> tuple[dict, dict]:
-        print(self.axes, other.axes)
         if self.dtype != other.dtype:
             raise DataConfigMismatchError(
                 f"Found different data types {self.dtype} and {other.dtype}."
@@ -58,7 +57,6 @@ class DataConfiguration:
         matching_axes_1 = {}
         matching_axes_2 = {}
         for a1, a2 in zip(axes1, axes2):
-            print(a1, a2)
             try:
                 if isinstance(a1, EllipsisAxes) or isinstance(a2, EllipsisAxes):
                     # We can not unify ellipsis directly, since they may need to
@@ -99,6 +97,43 @@ class DataConfiguration:
 
         return middle1, middle2
 
-    def has_changed(self, new_config_dict: dict) -> bool:
-        # TODO
-        return True
+    def update_config(
+        self, new_config_dict: dict[Axes, Axes | dict | tuple[Axes, ...]]
+    ) -> bool:
+        """Updates the current config inplace. Returns whether anything has changed.
+
+        Parameters:
+            new_config_dict (dict[Axes, Axes | dict | tuple[Axes, ...]): A dictionary
+                containing for each original axis how it should be changed/updated.
+
+        Returns:
+            bool: If the configuration has changed in this update, or stayed the same.
+        """
+        changed_config = False
+        new_axes_list = []
+        for axes in self.axes:
+            # Check if axes is even updated
+            if not axes in new_config_dict:
+                new_axes_list.append(axes)
+                continue
+
+            new_axes = new_config_dict[axes]
+            if new_axes == axes:
+                # If the element is the same we don't have to do anything
+                new_axes_list.append(axes)
+            elif isinstance(new_axes, dict):
+                # If the new config is a dict, the general axis is the same
+                # and we have to update the inner axis dimensions
+                new_axes_list.append(axes)
+                updated_axes = axes.update_axes(new_axes)
+                changed_config = changed_config or updated_axes
+            elif isinstance(axes, EllipsisAxes):
+                # Then the current axes is only an EllipsisAxes and we can
+                # replace it with the new axes
+                if isinstance(new_axes, tuple):
+                    new_axes_list.extend(list(new_axes))
+                else:
+                    new_axes_list.append(new_axes)
+                changed_config = True
+        self.axes = tuple(new_axes_list)
+        return changed_config

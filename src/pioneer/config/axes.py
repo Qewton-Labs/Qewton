@@ -1,6 +1,5 @@
 from __future__ import annotations
 from types import EllipsisType
-from typing_extensions import Self
 
 from .variables import Variable
 from .errors import DataConfigMismatchError
@@ -93,10 +92,15 @@ def _match_remainder(inner_type, start_part, end_part):
 
 class Axes:
     def __init__(self, *shape: int | AxesDim | EllipsisType):
-        shape = tuple(
-            AxesDim(size=s) if isinstance(s, (int, EllipsisType)) else s for s in shape
-        )
-        self._shape = shape
+        new_shape = []
+        for s in shape:
+            if isinstance(s, int):
+                new_shape.append(AxesDim(size=s))
+            elif isinstance(s, EllipsisType):
+                new_shape.append(EllipsisDim())
+            else:
+                new_shape.append(s)
+        self._shape = tuple(new_shape)
 
     @property
     def shape(self):
@@ -241,6 +245,28 @@ class Axes:
 
         return middle1, middle2
 
+    def update_axes(
+        self, new_axes_dict: dict[AxesDim, AxesDim | tuple[AxesDim, ...]]
+    ) -> bool:
+        changed_axes = False
+        new_shape = []
+        for dim in self.shape:
+            new_dim = new_axes_dict[dim]
+            if isinstance(dim, EllipsisDim) and isinstance(new_dim, EllipsisDim):
+                new_shape.append(dim)
+            elif isinstance(dim, EllipsisDim) and isinstance(new_dim, tuple):
+                # Here the ellipsis is replaced by a concrete new axis dim.
+                new_shape.extend(list(new_dim))
+                changed_axes = True
+            if isinstance(dim, AxesDim) and isinstance(new_dim, AxesDim):
+                # Here we have to just update the inner axis dimensions, which
+                # depends on the specific implementation of the axis dimension
+                did_update_dim = dim.update_dim(new_dim)
+                new_shape.append(dim)  # updated in place
+                changed_axes = changed_axes or did_update_dim
+        self._shape = tuple(new_shape)
+        return changed_axes
+
 
 class BatchAxes(Axes):
     pass
@@ -252,7 +278,6 @@ class GeometryAxes(Axes):
         geometry: Geometry | None = None,
         shape: tuple[int | AxesDim, ...] | None = None,
     ):
-        print("hi")
         if geometry is not None and shape is not None:
             raise ValueError("Only one of geometry or shape can be provided.")
         if geometry is not None:
@@ -314,8 +339,7 @@ class AxesDim:
     def __new__(cls, size=None, broadcastable=True) -> AxesDim:
         if isinstance(size, EllipsisType):
             return EllipsisDim(broadcastable)
-        else:
-            return super().__new__(cls)
+        return super().__new__(cls)
 
     def __init__(self, size=None, broadcastable=True):
         self.size = size
@@ -354,6 +378,14 @@ class AxesDim:
 
     def __add__(self, other: AxesDim) -> AxesDim:
         return AddedDim(self, other)
+
+    def update_dim(self, new_dim: AxesDim) -> bool:
+        # TODO: Override this in subclasses, e.g. in AddedDim
+        if self.size == new_dim.size and self.broadcastable == new_dim.broadcastable:
+            return False
+        self.size = new_dim.size
+        self.broadcastable = new_dim.broadcastable
+        return True
 
 
 class EllipsisDim(AxesDim):

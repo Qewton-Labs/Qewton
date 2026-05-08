@@ -219,35 +219,39 @@ class Graph:
         """
         # visited_nodes = set[Node]({node}) # experimental, check whether this iterates forever
         # visited_edges = set[Edge]({edge})
+        # First we check if the port that was connected has been changed:
+        port_config = self.dynamic_data_configs[node][port]
+        port_config_was_updated = port_config.update_config(config_dict)
+        if not port_config_was_updated:
+            # No change -> we are done
+            return
 
-        old_config = self.dynamic_data_configs[node][port]
-        if any(old_c != new_config):  # TODO: override __eq__ to make this work
-            # propagate to neighbors:
-            for p in node.input_ports + node.output_ports:
-                if p != port:
-                    old_p_config = self.dynamic_data_configs[node][p]
-                    new_p_config = old_p_config
-                    for dim in old_p_config.dims:
-                        for d in old_config.dims:
-                            if dim.connects_to(d):
-                                new_p_config = new_p_config.update_dim(
-                                    dim, d, new_d
-                                )  # new object
-                                self.dynamic_data_configs[node][p] = new_p_config
+        # Iterate over all ports of the current node, since updates to the axes
+        # may not happen in place (e.g. ellipsis are replaced), we need to check all
+        # port configurations separately.
+        node_configs_was_updated = False
+        for c_port, config in self.dynamic_data_configs[node].items():
+            if c_port == port:  # already updated
+                continue
+            config_was_updated = config.update_config(config_dict)
+            node_configs_was_updated |= config_was_updated
+        # If the config was made more concrete we have to pass this information to
+        # the remaining graph
+        if node_configs_was_updated or port_config_was_updated:
             for e in self.incoming_edges[node] + self.outgoing_edges[node]:
                 # if e not in visited_edges:
                 first_config = self.dynamic_data_configs[e.from_port.node][e.from_port]
                 second_config = self.dynamic_data_configs[e.to_port.node][e.to_port]
-                new_edge_config = first_config.unify(second_config)
-                if new_edge_config != e.data_config:
-                    e.data_config = new_edge_config
-                    # visited_edges.add(e)
-                    if node == e.from_port.node:
-                        # and e.to_port.node not in visited_nodes
-                        self.update_data_configurations(e.to_port.node, e.to_port, e)
-                    elif node == e.to_port.node:
-                        # and e.from_port.node not in visited_nodes
-                        self.update_data_configurations(e.from_port.node, e.from_port, e)
+                new_config_dict = first_config.unify_with(second_config)
+
+                # visited_edges.add(e)
+                # and e.to_port.node not in visited_nodes
+                self.update_data_configurations(
+                    e.from_port.node, e.from_port, new_config_dict[0]
+                )
+                self.update_data_configurations(
+                    e.to_port.node, e.to_port, new_config_dict[1]
+                )
 
     def _check_graph_was_sorted(self):
         if self.graph_was_sorted:

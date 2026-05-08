@@ -12,6 +12,7 @@
     "cSpell.words": [
         "arccos",
         "arctan",
+        "broadcastable",
         "keepdim",
         "keepdims",
         "LBFGS",
