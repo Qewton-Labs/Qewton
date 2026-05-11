@@ -5,6 +5,7 @@ from ..building_blocks.activation_functions import ReLU
 from ..backend import DEFAULT_DL_BACKEND, Backend, TensorType
 from ...config.data_configurations import DataConfiguration
 from ...config.variables import Variable
+from ...config.axes import FeatureAxes, EllipsisAxes
 from ...graphs.graphs import SequentialGraph
 from ...graphs.nodes import Node, NodeState
 from ...graphs.control_nodes.graph_node import GraphNode
@@ -38,6 +39,7 @@ class FCN(GraphNode, Generic[TensorType]):
         self.backend = backend
 
         self._graph = self._build_network()
+        self.ellipsis_axes: EllipsisAxes
         super().__init__(
             name=name,
             graph=self._graph,
@@ -90,17 +92,15 @@ class FCN(GraphNode, Generic[TensorType]):
         ]
 
     def x_data_config(self):
-        self.ellipsis_dim = Axes.create_ellipsis_dim()
-        self.in_dim = Axes.create_dim(self.in_neurons.value)
-        return DataConfiguration(self.ellipsis_dim, FeatureAxis(self.in_dim))
+        self.ellipsis_axes = EllipsisAxes()
+        return DataConfiguration(self.ellipsis_axes, FeatureAxes(self.in_neurons.value))
 
     def out_data_config(self):
-        self.out_dim = Axes.create_dim(self.out_neurons.value)
-        return DataConfiguration(self.ellipsis_dim, FeatureAxis(self.out_dim))
+        return DataConfiguration(self.ellipsis_axes, FeatureAxes(self.out_neurons.value))
 
     def forward(
         self, x: Annotated[TensorType, x_data_config]
     ) -> Annotated[TensorType, out_data_config]:
         self.input_ports[0].set_value(x)
         self.run()
-        return self.output_ports[0].value
+        return self.output_ports[0].value  # type: ignore
