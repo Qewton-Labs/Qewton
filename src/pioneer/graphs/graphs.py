@@ -214,14 +214,14 @@ class Graph:
             self.update_data_configurations(to_node, to_port, unified_config[1])
 
     def update_data_configurations(self, node: Node, port: Port, config_dict: dict):
-        """Updates the data configurations of the given node and all its neighbors
-        recursively, based on the new edge that is added to the graph.
+        """Updates the data configurations recursively for the given node, port, and neighbors.
 
         Args:
             node (Node): The node for which the data configurations should be updated.
             port (Port): The port of the node for which the data configuration should
                 be updated.
-            edge (Edge): The edge that is added to the graph, connecting the given port.
+            config_dict (dict): Mapping of configuration keys/values used to update the
+                node and neighbor data configurations.
         """
         # visited_nodes = set[Node]({node}) # experimental, check whether this iterates forever
         # visited_edges = set[Edge]({edge})
