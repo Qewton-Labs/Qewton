@@ -94,11 +94,11 @@ class DataConfiguration:
         # Determine which side has ellipsis at start vs end
         if isinstance(remaining_middle1[0], EllipsisAxes):
             middle1, middle2 = _match_remainder(
-                Axes, list(remaining_middle1), list(remaining_middle2)
+                Axes, list(remaining_middle1), list(remaining_middle2), EllipsisAxes
             )
         else:
             middle2, middle1 = _match_remainder(
-                Axes, list(remaining_middle2), list(remaining_middle1)
+                Axes, list(remaining_middle2), list(remaining_middle1), EllipsisAxes
             )
 
         return middle1, middle2

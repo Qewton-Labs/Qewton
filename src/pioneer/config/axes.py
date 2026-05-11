@@ -5,7 +5,7 @@ from .variables import Variable
 from .errors import DataConfigMismatchError
 
 
-def _match_remainder(inner_type, start_part, end_part):
+def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
     """Matches the remaining middle dimensions between two shapes containing ellipsis.
 
     This method handles the complex case where one shape has an ellipsis at the start
@@ -83,9 +83,11 @@ def _match_remainder(inner_type, start_part, end_part):
         start_idx -= 1
 
     if not added_end_shape:
+        new_ellipsis = ellipsis_type()
+        matching_middle_end[end_part[-1]].append(new_ellipsis)
         matching_middle_end[end_part[-1]].reverse()
         matching_middle_end = matching_middle_end | {k: k for k in end_part[:-1]}
-        matching_middle_start[start_part[0]] = end_part[:-1]
+        matching_middle_start[start_part[0]] = end_part[:-1] + [new_ellipsis]
 
     return matching_middle_start, matching_middle_end
 
@@ -236,11 +238,11 @@ class Axes:
         # Determine which side has ellipsis at start vs end
         if isinstance(remaining_middle1[0], EllipsisDim):
             middle1, middle2 = _match_remainder(
-                AxesDim, list(remaining_middle1), list(remaining_middle2)
+                AxesDim, list(remaining_middle1), list(remaining_middle2), EllipsisDim
             )
         else:
             middle2, middle1 = _match_remainder(
-                AxesDim, list(remaining_middle2), list(remaining_middle1)
+                AxesDim, list(remaining_middle2), list(remaining_middle1), EllipsisDim
             )
 
         return middle1, middle2

@@ -26,7 +26,9 @@ class Graph:
         self.outgoing_edges: dict[Node, list[Edge]] = {}
 
         self.sorted_incoming_edges: list[dict[Port, Edge]] = []
-        self.last_outgoing_edges: list[Edge] = []
+
+        self.edges_from_outside: list[Edge] = []
+        self.edges_to_outside: list[Edge] = []
 
         self.dynamic_data_configs: dict[Node, dict[Port, DataConfiguration]] = {}
 
@@ -102,12 +104,7 @@ class Graph:
             self.incoming_edges[node] = list[Edge]()
             self.outgoing_edges[node] = list[Edge]()
 
-            self.dynamic_data_configs[node] = {}
-            copy_memo = {}
-            for port in node.input_ports + node.output_ports:
-                self.dynamic_data_configs[node][port] = deepcopy(
-                    port.data_configuration, copy_memo
-                )
+            self.dynamic_data_configs[node] = node.copy_data_configs()
 
     # def remove_node(self, node: Node) -> None:
     #     """Deletes a given node from this graph.
@@ -225,27 +222,18 @@ class Graph:
         """
         # visited_nodes = set[Node]({node}) # experimental, check whether this iterates forever
         # visited_edges = set[Edge]({edge})
-        # First we check if the port that was connected has been changed:
-        port_config = self.dynamic_data_configs[node][port]
-        # print(port_config)
-        port_config_was_updated = port_config.update_config(config_dict)
-        # print(port_config, port_config_was_updated)
-        if not port_config_was_updated:
-            # No change -> we are done
-            return
-
-        # Iterate over all ports of the current node, since updates to the axes
-        # may not happen in place (e.g. ellipsis are replaced), we need to check all
-        # port configurations separately.
-        node_configs_was_updated = False
-        for c_port, config in self.dynamic_data_configs[node].items():
-            if c_port != port:  # original port already updated
-                config_was_updated = config.update_config(config_dict)
-                node_configs_was_updated |= config_was_updated
+        updated_ports = node.update_data_configs(
+            port, config_dict, self.dynamic_data_configs[node]
+        )
         # If the config was made more concrete we have to pass this information to
         # the remaining graph
-        if node_configs_was_updated or port_config_was_updated:
+        if len(updated_ports) > 0:
             for e in self.incoming_edges[node] + self.outgoing_edges[node]:
+                if e.to_port not in updated_ports and e.from_port not in updated_ports:
+                    continue
+                # do not update outside of this graph context
+                if e.connects_to_outside:
+                    continue
                 # if e not in visited_edges:
                 first_config = self.dynamic_data_configs[e.from_port.node][e.from_port]
                 second_config = self.dynamic_data_configs[e.to_port.node][e.to_port]
@@ -260,12 +248,13 @@ class Graph:
 
                 # visited_edges.add(e)
                 # and e.to_port.node not in visited_nodes
-                self.update_data_configurations(
+                updated_ports |= self.update_data_configurations(
                     e.from_port.node, e.from_port, new_config_dict[0]
                 )
-                self.update_data_configurations(
+                updated_ports |= self.update_data_configurations(
                     e.to_port.node, e.to_port, new_config_dict[1]
                 )
+        return updated_ports
 
     def _check_graph_was_sorted(self):
         if self.graph_was_sorted:
@@ -311,43 +300,69 @@ class Graph:
         to_node = to_port.node
         self._check_port_is_free(to_node, to_port)
         self.add_node(to_node, check_warning=False)
-        out_config = from_port.data_configuration
-        in_config = to_port.data_configuration
-        # TODO !!!!!!!!!!!!!!!!!!!
-        raise NotImplementedError("This is not correct yet for matching configs!!!")
-        unified_config = out_config.unify(in_config)
+
         edge = Edge(from_port, to_port, connects_to_outside=True)
+        self.edges_from_outside.append(edge)
         self.incoming_edges[to_node].append(edge)
 
-        self.dynamic_data_configs[to_node][to_port] = edge
+        if from_port.node not in self.dynamic_data_configs:
+            self.dynamic_data_configs[from_port.node] = from_port.node.copy_data_configs()
+        elif from_port not in self.dynamic_data_configs[from_port.node]:
+            self.dynamic_data_configs[from_port.node][from_port] = (
+                from_port.node.copy_data_config_of_port(from_port, {})
+            )
+        to_config = self.dynamic_data_configs[to_node][to_port]
+        from_config = self.dynamic_data_configs[from_port.node][from_port]
+
+        try:
+            _, unified_to_config = from_config.unify_with(to_config)
+        except DataConfigMismatchError as e:
+            self.edges_from_outside.remove(edge)
+            self.incoming_edges[to_node].remove(edge)
+            raise DataConfigMismatchError(
+                f"Connection of {from_port.node.name} to {to_node.name} failed: {e}"
+            ) from e
+
+        self.update_data_configurations(to_node, to_port, unified_to_config)
 
     def connect_to_outside_of_graph(self, from_port: OutputPort, to_port: Port):
         """Connects to ports where the 'to_port' is not part of this graph itself.
         The node of the 'from_port' will be added to this graph. The created edge
-        will pass data between the ports, but will not increase the in-degree
-        of the 'from_port' node (meaning the node can be evaluated at the start,
-        since data is read from 'outside' the graph)
+        will pass data from an internal output port to an external port.
 
         Args:
             from_port (OutputPort): The port of a node where data should come from.
             to_port (Port): The port of a node where data should go to.
         """
         self._check_graph_was_sorted()
-
         from_node = from_port.node
-        for e in self.last_outgoing_edges:
-            if e.to_port == to_port:
-                raise ValueError(f"Output port '{to_port.name}' is already connected!")
-
         self.add_node(from_node, check_warning=False)
-        out_config = from_port.data_configuration
-        in_config = to_port.data_configuration
-        unified_config = out_config.unify(in_config)
-        edge = Edge(from_port, to_port, connects_to_outside=True)
-        self.outgoing_edges[from_node].append(edge)
-        self.last_outgoing_edges.append(edge)
 
-        self.dynamic_data_configs[from_node][from_port] = edge
+        edge = Edge(from_port, to_port, connects_to_outside=True)
+        self.edges_to_outside.append(edge)
+        self.outgoing_edges[from_node].append(edge)
+
+        to_node = to_port.node
+        if to_node not in self.dynamic_data_configs:
+            self.dynamic_data_configs[to_node] = to_node.copy_data_configs()
+        elif to_port not in self.dynamic_data_configs[to_node]:
+            self.dynamic_data_configs[to_node][to_port] = (
+                to_node.copy_data_config_of_port(to_port, {})
+            )
+
+        from_config = self.dynamic_data_configs[from_node][from_port]
+        to_config = self.dynamic_data_configs[to_node][to_port]
+
+        try:
+            unified_from_config, _ = from_config.unify_with(to_config)
+        except DataConfigMismatchError as e:
+            self.edges_to_outside.remove(edge)
+            self.outgoing_edges[from_node].remove(edge)
+            raise DataConfigMismatchError(
+                f"Connection of {from_node.name} to {to_node.name} failed: {e}"
+            ) from e
+
+        self.update_data_configurations(from_node, from_port, unified_from_config)
 
     # def disconnect(self, port: InputPort) -> None:
     #     """Remove an edge from this graph"""
@@ -390,7 +405,7 @@ class Graph:
                 else:
                     in_port.clear_value()
             node.run()
-        for edge in self.last_outgoing_edges:
+        for edge in self.edges_to_outside:
             edge.to_port.set_value(edge.from_port.value)
 
     def collect_trainable_parameters(self):

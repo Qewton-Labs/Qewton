@@ -1,5 +1,10 @@
+from typing import get_type_hints, get_origin, get_args, Annotated, Callable
+import inspect
+
+
 from ..nodes import InputPort, Node, OutputPort
 from ..graphs import Graph
+from ...config.data_configurations import DataConfiguration
 
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.trainable_parameters import _TrainableParameterBase
@@ -130,6 +135,90 @@ class GraphNode(Node):
         self.update_inner_input_ports(input_ports)
         self.update_inner_output_ports(output_ports)
         self._graph.setup()
+
+    def update_data_configs(self, updated_port, config_dict, dynamic_configs):
+        # Efficient case: the subclass has specified its configs
+        if self._configs_were_defined_in_forward():
+            return super().update_data_configs(updated_port, config_dict, dynamic_configs)
+
+        # Otherwise: infer data configs updates from the inner graph
+        else:
+            # search for inner ports at the beginning and end of the graph
+            inner_ports = []
+            if isinstance(updated_port, InputPort):
+                for e in self._graph.edges_from_outside:
+                    if e.from_port == updated_port:
+                        inner_ports.append(e.to_port)
+            else:
+                for e in self._graph.edges_to_outside:
+                    if e.to_port == updated_port:
+                        inner_ports.append(e.from_port)
+
+            # perform inner update
+            connected_to_outside_ports = {}
+            for e in self._graph.edges_from_outside:
+                connected_to_outside_ports[e.to_port] = e.from_port
+            for e in self._graph.edges_to_outside:
+                connected_to_outside_ports[e.from_port] = e.to_port
+
+            inner_updated_ports = set()
+            for inner_port in inner_ports:
+                inner_updated_ports.update(
+                    self._graph.update_data_configurations(
+                        inner_port.node, inner_port, config_dict
+                    )
+                )
+
+            outside_updated_inner_ports = (
+                connected_to_outside_ports.keys() & inner_updated_ports
+            )
+            # these data configs should be identical to the dynamic data configs
+            # of the outer graph, therefore these are automatically updated
+            return set(connected_to_outside_ports[k] for k in outside_updated_inner_ports)
+
+    def copy_data_configs(self):
+        if self._configs_were_defined_in_forward():
+            return super().copy_data_configs()
+        else:
+            dynamic_configs = {}
+            for input_port in self.input_ports:
+                for e in self._graph.edges_from_outside:
+                    if e.from_port == input_port:
+                        inner_config = self._graph.dynamic_data_configs[e.to_port.node][
+                            e.to_port
+                        ]
+                        dynamic_configs[input_port] = inner_config
+            for output_port in self.output_ports:
+                for e in self._graph.edges_to_outside:
+                    if e.to_port == output_port:
+                        inner_config = self._graph.dynamic_data_configs[e.from_port.node][
+                            e.from_port
+                        ]
+                        dynamic_configs[output_port] = inner_config
+            return dynamic_configs
+
+    def _configs_were_defined_in_forward(self):
+        call_sig = inspect.signature(self.forward)
+        type_hints = get_type_hints(self.forward, include_extras=True)
+        configs_defined = False
+        for name, param in call_sig.parameters.items():
+            hint = type_hints.get(name, param.annotation)
+            _, config = self._unwrap_annotated(hint, self)
+
+            if get_origin(hint) is Annotated:
+                _, *meta = get_args(hint)
+                config = next(
+                    (m for m in meta if isinstance(m, (DataConfiguration, Callable))),
+                    None,
+                )
+                if isinstance(config, Callable):
+                    config = config(self)
+                if not isinstance(config, DataConfiguration):
+                    return False
+                configs_defined = True
+            else:
+                return False
+        return configs_defined
 
     def run(self):
         self._graph.run()

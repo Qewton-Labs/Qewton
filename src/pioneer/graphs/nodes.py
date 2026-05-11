@@ -1,5 +1,6 @@
 from __future__ import annotations
 from abc import ABC
+from copy import deepcopy
 from enum import Enum
 from typing import Any, Callable
 from typing import Annotated, get_type_hints, get_origin, get_args
@@ -201,6 +202,16 @@ class Node(ABC):
             return base, config
         return type_hint, DataConfiguration([])
 
+    def copy_data_configs(self):
+        copy_memo = {}
+        dynamic_data_configs = {}
+        for port in self.input_ports + self.output_ports:
+            dynamic_data_configs[port] = self.copy_data_config_of_port(port, copy_memo)
+        return dynamic_data_configs
+
+    def copy_data_config_of_port(self, port, copy_memo):
+        return deepcopy(port.data_configuration, copy_memo)
+
     def setup(self) -> None:
         """Creates the underlying algorithm instance (e.g. creates the
         neural network)
@@ -350,11 +361,31 @@ class Node(ABC):
             return
         self._state = NodeState.FIXED
 
-    def update_data_configs(self, input_configs, output_configs, changed_port):
-        # TODO
-        # by default, do not update anything
-        _ = changed_port
-        return input_configs, output_configs
+    def update_data_configs(self, updated_port, config_dict, dynamic_configs):
+        """
+        Default implementation, could be overridden in subclasses where necessary.
+        """
+        # First we check if the port that was connected has been changed:
+        port_config = dynamic_configs[updated_port]
+        # print(port_config)
+        port_config_was_updated = port_config.update_config(config_dict)
+        # print(port_config, port_config_was_updated)
+        if not port_config_was_updated:
+            # No change -> we are done
+            return set()
+
+        # Iterate over all ports of the current node, since updates to the axes
+        # may not happen in place (e.g. ellipsis are replaced), we need to check all
+        # port configurations separately.
+        updated_ports = (
+            {updated_port} if not isinstance(updated_port, InputPort) else set()
+        )
+        for c_port, config in dynamic_configs.items():
+            if c_port != updated_port:  # original port already updated
+                if config.update_config(config_dict):
+                    updated_ports.add(c_port)
+
+        return updated_ports
 
     def get_input_port(self, name):
         for port in self.input_ports:
