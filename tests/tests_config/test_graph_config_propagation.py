@@ -75,10 +75,12 @@ class TestGraphConfigPropagation:
         n1 = MockNode(
             "n1", out_config=DataConfiguration(BatchAxes(AxesDim(None)), EllipsisAxes())
         )
+        # the ellipsis should point to the same object to view them as identical
+        middle_ellipsis = EllipsisAxes()
         n2 = MockNode(
             "n2",
-            in_config=DataConfiguration(EllipsisAxes()),
-            out_config=DataConfiguration(EllipsisAxes()),
+            in_config=DataConfiguration(middle_ellipsis),
+            out_config=DataConfiguration(middle_ellipsis),
         )
         n3 = MockNode(
             "n3",
@@ -94,6 +96,7 @@ class TestGraphConfigPropagation:
         # Configuration from n3 should have reached n1
         n1_out = g.dynamic_data_configs[n1][n1.output_ports[0]]
         assert len(n1_out.axes) == 2
+        print(n1_out)
         assert isinstance(n1_out.axes[0], BatchAxes)
         assert isinstance(n1_out.axes[1], FeatureAxes)
         assert n1_out.axes[1].shape[0].size == 5
@@ -169,15 +172,17 @@ class TestGraphConfigPropagation:
         a = MockNode(
             "A", out_config=DataConfiguration(BatchAxes(AxesDim(None)), EllipsisAxes())
         )
+        b_middle_ellipsis = EllipsisAxes()
         b = MockNode(
             "B",
-            in_config=DataConfiguration(EllipsisAxes()),
-            out_config=DataConfiguration(EllipsisAxes()),
+            in_config=DataConfiguration(b_middle_ellipsis),
+            out_config=DataConfiguration(b_middle_ellipsis),
         )
+        c_middle_ellipsis = EllipsisAxes()
         c = MockNode(
             "C",
-            in_config=DataConfiguration(EllipsisAxes()),
-            out_config=DataConfiguration(EllipsisAxes()),
+            in_config=DataConfiguration(c_middle_ellipsis),
+            out_config=DataConfiguration(c_middle_ellipsis),
         )
 
         # D defines the feature size
@@ -194,4 +199,7 @@ class TestGraphConfigPropagation:
 
         # Constraint from D (64) should have reached A via B
         config_a = g.dynamic_data_configs[a][a.output_ports[0]]
+        config_c_out = g.dynamic_data_configs[c][c.output_ports[0]]
+
         assert config_a.axes[1].shape[0].size == 64
+        assert config_c_out.axes[1].shape[0].size == 64
