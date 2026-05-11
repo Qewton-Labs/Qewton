@@ -6,7 +6,7 @@ from typing import Annotated, get_type_hints, get_origin, get_args
 import inspect
 import warnings
 
-from ..config.configuration_base import DataConfiguration
+from ..config.data_configurations import DataConfiguration
 from ..optim.parameters.hyperparameter_base import HyperParameter
 from ..optim.base import EvaluationPhase
 from ..optim.parameters.trainable_parameters import (

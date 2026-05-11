@@ -6,7 +6,7 @@ from ..backend import (
 )
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.trainable_parameters import TrainableParameters
-from ...config.configuration_base import DataConfiguration
+from ...config.data_configurations import DataConfiguration
 from ...graphs.nodes import Node, NodeState
 
 

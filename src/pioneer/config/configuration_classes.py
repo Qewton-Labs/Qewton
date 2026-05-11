@@ -1,4 +1,4 @@
-from .configuration_base import DataConfiguration
+from .data_configurations import DataConfiguration
 from .axes import BatchAxis, FeatureAxis, SpatialAxis
 from .variables import Variable
 

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from ...config.configuration_base import DataConfiguration
+from ...config.data_configurations import DataConfiguration
 from ..backend_node import BackendNode, TensorType
 
 

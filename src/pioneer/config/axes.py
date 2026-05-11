@@ -251,19 +251,32 @@ class Axes:
         changed_axes = False
         new_shape = []
         for dim in self.shape:
-            new_dim = new_axes_dict[dim]
-            if isinstance(dim, EllipsisDim) and isinstance(new_dim, EllipsisDim):
+            if dim not in new_axes_dict:
                 new_shape.append(dim)
-            elif isinstance(dim, EllipsisDim) and isinstance(new_dim, tuple):
-                # Here the ellipsis is replaced by a concrete new axis dim.
-                new_shape.extend(list(new_dim))
-                changed_axes = True
-            if isinstance(dim, AxesDim) and isinstance(new_dim, AxesDim):
+                continue
+            new_dim = new_axes_dict[dim]
+            if isinstance(dim, EllipsisDim):
+                if isinstance(new_dim, EllipsisDim):
+                    new_shape.append(dim)
+                elif isinstance(new_dim, tuple | list):
+                    # Here the ellipsis is replaced by a concrete new axis dim.
+                    new_shape.extend(list(new_dim))
+                    changed_axes = True
+                    if len(new_dim) == 1:
+                        changed_axes = not isinstance(new_dim[0], EllipsisDim)
+                elif isinstance(new_dim, AxesDim):
+                    # new_dim is not ellipsis but previously we where -> just save
+                    new_shape.append(new_dim)
+            elif isinstance(dim, AxesDim) and isinstance(new_dim, AxesDim):
                 # Here we have to just update the inner axis dimensions, which
                 # depends on the specific implementation of the axis dimension
                 did_update_dim = dim.update_dim(new_dim)
                 new_shape.append(dim)  # updated in place
                 changed_axes = changed_axes or did_update_dim
+            else:
+                raise RuntimeError(
+                    f"Got {new_dim} as an input, but expected AxesDim or EllipsisDim."
+                )
         self._shape = tuple(new_shape)
         return changed_axes
 

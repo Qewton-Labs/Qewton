@@ -3,7 +3,7 @@ from typing import Annotated, Generic
 from .math import MatMul, Add
 from .parameters import ParameterNode
 from ..backend import DEFAULT_DL_BACKEND, Backend, TensorType
-from ...config.configuration_base import DataConfiguration
+from ...config.data_configurations import DataConfiguration
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...graphs.graphs import Graph
 from ...graphs.control_nodes.graph_node import GraphNode

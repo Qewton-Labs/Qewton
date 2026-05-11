@@ -9,6 +9,10 @@ class DataConfiguration:
         self.axes = axes
         self.dtype = dtype
 
+    @classmethod
+    def empty(cls):
+        return DataConfiguration(EllipsisAxes())
+
     def __str__(self):
         return f"DataConfig([{', '.join(str(a) for a in self.axes)}])"
 
@@ -65,9 +69,11 @@ class DataConfiguration:
                 unified_axes = Axes.unify_with(a1, a2)
                 matching_axes_1[a1], matching_axes_2[a2] = unified_axes
             except DataConfigMismatchError as e:
+                axes_1_str = f"[{', '.join(str(a) for a in axes1)}]"
+                axes_2_str = f"[{', '.join(str(a) for a in axes2)}]"
                 raise DataConfigMismatchError(
-                    f"Axes {axes1} and {axes2} do not match and can not be unified.\
-                        Mismatch at axes {a1} and {a2}."
+                    f"Axes {axes_1_str} and {axes_2_str} do not match and can not be "
+                    + f"unified. Mismatch at axes {a1} and {a2}."
                 ) from e
         return matching_axes_1, matching_axes_2
 
@@ -126,14 +132,19 @@ class DataConfiguration:
                 # and we have to update the inner axis dimensions
                 new_axes_list.append(axes)
                 updated_axes = axes.update_axes(new_axes)
-                changed_config = changed_config or updated_axes
+                changed_config |= updated_axes
             elif isinstance(axes, EllipsisAxes):
                 # Then the current axes is only an EllipsisAxes and we can
                 # replace it with the new axes
-                if isinstance(new_axes, tuple):
+                if isinstance(new_axes, tuple | list):
                     new_axes_list.extend(list(new_axes))
+                    changed_config = True
+                    # Maybe its just tuple containing an EllipsisAxes
+                    if len(new_axes) == 1:
+                        changed_config = not isinstance(new_axes[0], EllipsisAxes)
                 else:
                     new_axes_list.append(new_axes)
-                changed_config = True
+                    changed_config = not isinstance(new_axes, EllipsisAxes)
+
         self.axes = tuple(new_axes_list)
         return changed_config

@@ -1,5 +1,5 @@
 from .base import Constraint
-from ..config.configuration_base import DataConfiguration
+from ..config.data_configurations import DataConfiguration
 from ..optim.parameters.categorical_hyperparameter import (
     HyperParameter,
     BooleanHyperparameter,
