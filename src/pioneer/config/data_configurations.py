@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .axes import Axes, EllipsisAxes, _match_remainder
+from .axes import Axes, EllipsisAxes, EllipsisDim, _match_remainder, FeatureAxes
 from .errors import DataConfigMismatchError
 
 
@@ -8,6 +8,9 @@ class DataConfiguration:
     def __init__(self, *axes: Axes | EllipsisAxes, dtype=None):
         self.axes = axes
         self.dtype = dtype
+        assert (
+            len([f for f in axes if isinstance(f, FeatureAxes)]) <= 1
+        ), "A DataConfig can have at most one FeatureAxes."
 
     @classmethod
     def empty(cls):
@@ -148,3 +151,29 @@ class DataConfiguration:
 
         self.axes = tuple(new_axes_list)
         return changed_config
+
+    def get_variable_slice(self, variable):
+        slc = []
+        feature_slice = None
+        for axes in self.axes:
+            if isinstance(axes, FeatureAxes):
+                feature_slice = axes.variables.get_slice(variable)
+                if isinstance(feature_slice, tuple):
+                    slc.extend(feature_slice)
+                else:
+                    slc.append(feature_slice)
+            elif isinstance(axes, EllipsisAxes) or any(
+                isinstance(d, EllipsisDim) for d in axes.shape
+            ):
+                if feature_slice is None:
+                    slc = [...]
+                else:
+                    assert (
+                        Ellipsis not in slc
+                    ), "Can not uniquely find the feature axes location. \
+                        Too many ellipses."
+                    slc.append(...)
+                    break
+            else:
+                slc.extend([slice(None)] * len(axes.shape))  # type: ignore
+        return tuple(slc)
