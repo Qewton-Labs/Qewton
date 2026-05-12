@@ -1,7 +1,12 @@
 from abc import ABC, abstractmethod
 
+from ...config.data_configurations import DataConfiguration
 
-class DataContainer(ABC):
+
+class DataSet(ABC):
+
+    def __init__(self, *data_config: DataConfiguration) -> None:
+        self.data_configs = data_config
 
     @property
     @abstractmethod
@@ -18,6 +23,10 @@ class DataContainer(ABC):
 
     @abstractmethod
     def __getitem__(self, idx):
+        pass
+
+    @abstractmethod
+    def get_batch(self, start_idx, end_idx):
         pass
 
     def load_complete_data(self):

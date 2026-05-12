@@ -1,7 +1,7 @@
-from ..base import DataContainer
+from ..base import DataSet
 
 
-class ArrayLikeDataContainer(DataContainer):
+class ArrayLikeDataSet(DataSet):
     """A data container that handles "array-like" or dense "data". This
     includes for example data such as np.array, torch.tensor, or hdf5 data.
     The concrete data containers are implemented via subclasses.
