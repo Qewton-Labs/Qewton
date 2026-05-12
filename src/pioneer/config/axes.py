@@ -332,6 +332,15 @@ class FeatureAxes(Axes):
             self._variable = None
         super().__init__(*(shape if shape is not None else self._variable.shape))
 
+    @property
+    def variables(self):
+        if self._variable is not None:
+            return self._variable
+        return Variable()
+
+    def get_variable_slice(self, variable):
+        return self.variables.get_slice(variable)
+
     def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
         if not isinstance(other, FeatureAxes):
             raise DataConfigMismatchError(

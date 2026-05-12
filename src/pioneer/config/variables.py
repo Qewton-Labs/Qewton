@@ -26,6 +26,7 @@ class Variable(OrderedDict):
         """
         super().__init__()
         self[name] = dim
+        self.has_multiple_axes = isinstance(dim, tuple)
 
     @classmethod
     def from_dict(cls, var_dict: dict[str, int]) -> Variable:
@@ -43,6 +44,19 @@ class Variable(OrderedDict):
         for name, dim in var_dict.items():
             v[name] = dim
         return v
+
+    def get_slice(self, variable):
+        if self.has_multiple_axes:
+            return tuple([slice(None)] * len(list(self.values())[0]))
+        slc = []
+        for variable_k, variable_v in variable.items():
+            prev_dims = 0
+            for k, v in self.items():
+                if k == variable_k:
+                    slc.append(list(range(prev_dims, prev_dims + variable_v)))
+                    break
+                prev_dims += v
+        return tuple(slc)
 
     def is_empty(self) -> bool:
         """Checks if the variable is empty, i.e. has no keys.
@@ -62,6 +76,8 @@ class Variable(OrderedDict):
             return other
         if other.is_empty():
             return self
+        if self.has_multiple_axes or other.has_multiple_axes:
+            raise ValueError("Can not combine variables with multiple axes.")
         key_diff = self.keys() ^ other.keys()
         out = {}
         if len(key_diff) == 2:
@@ -100,6 +116,8 @@ class Variable(OrderedDict):
             Variable: The combined variable containing the information from
                 both original variables (Cross-product)
         """
+        if self.has_multiple_axes or other.has_multiple_axes:
+            raise ValueError("Can not combine variables with multiple axes.")
         if len(self.keys() & other.keys()) > 0:
             raise ValueError("Variables with overlapping names cannot be combined.")
         result = Variable.from_dict(self)
@@ -107,10 +125,8 @@ class Variable(OrderedDict):
             result[k] = v
         for v in result.values():
             if isinstance(v, tuple):
-                raise ValueError(
-                    "Can not combine variables with tuple dimensions. \
-                        Please flatten the dimensions."
-                )
+                raise ValueError("Can not combine variables with tuple dimensions. \
+                        Please flatten the dimensions.")
         return result
 
     def __add__(self, other: Variable) -> Variable:
