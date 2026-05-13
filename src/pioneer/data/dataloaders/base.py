@@ -105,8 +105,11 @@ class DataLoader(DataNode):
         self._output_ports = []
         for config in self.data_set.data_configs:
             copied_config = copy.deepcopy(config)
+            # TODO: Ich glaube das geht nicht, da beide Configs
+            # eine BatchAxes mit verschiedener Größe haben werden?
             _, unified = batch_config.unify_with(copied_config)
             copied_config.update_config(unified)
+            # Vielleicht einfach direkt kopieren und die Dim ändern?
 
             self._output_ports.append(
                 OutputPort(
