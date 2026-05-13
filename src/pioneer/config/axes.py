@@ -366,9 +366,13 @@ class AxesDim:
         return super().__new__(cls)
 
     def __init__(self, size=None, broadcastable=True):
-        self.size = size
+        self._size = size
         self.broadcastable = broadcastable
         self.graph = None
+
+    @property
+    def size(self):
+        return self._size
 
     def __str__(self) -> str:
         return str(self.size)
@@ -410,6 +414,48 @@ class AxesDim:
         self.size = new_dim.size
         self.broadcastable = new_dim.broadcastable
         return True
+
+
+class AddedDim(AxesDim):
+
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls)
+
+    def __init__(self, dim_1, dim_2):
+        self.dim_1 = dim_1
+        self.dim_2 = dim_2
+        broadcastable = dim_1.broadcastable and dim_2.broadcastable
+        super().__init__(self.size, broadcastable)
+
+    @property
+    def size(self):
+        size = (
+            self.dim_1.size + self.dim_2.size
+            if self.dim_1.size is not None and self.dim_2.size is not None
+            else None
+        )
+        return size
+
+
+class MinimumDim(AxesDim):
+
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls)
+
+    def __init__(self, dim_1, dim_2):
+        self.dim_1 = dim_1
+        self.dim_2 = dim_2
+        broadcastable = dim_1.broadcastable and dim_2.broadcastable
+        super().__init__(self.size, broadcastable)
+
+    @property
+    def size(self):
+        size = (
+            min(self.dim_1.size, self.dim_2.size)
+            if self.dim_1.size is not None and self.dim_2.size is not None
+            else None
+        )
+        return size
 
 
 class EllipsisDim(AxesDim):
