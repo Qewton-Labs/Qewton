@@ -6,7 +6,7 @@ from ...config.data_configurations import DataConfiguration
 class DataSet(ABC):
     @property
     @abstractmethod
-    def data_configs(self):
+    def data_configs(self) -> list[DataConfiguration]:
         pass
 
     @abstractmethod
@@ -19,6 +19,10 @@ class DataSet(ABC):
 
     @abstractmethod
     def get_batch(self, start_idx, end_idx):
+        pass
+
+    @abstractmethod
+    def shuffle(self):
         pass
 
     def load_complete_data(self, variable=None, data_item=None):

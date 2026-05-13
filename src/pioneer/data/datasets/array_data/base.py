@@ -1,4 +1,5 @@
 from ....config.axes import EllipsisAxes, EllipsisDim
+from ....config import DataConfiguration
 
 from ..base import DataSet
 
@@ -42,17 +43,21 @@ class ArrayLikeDataSet(DataSet):
                 raise ValueError("Too few axes in data configuration for the given data.")
 
     @property
-    def __len__(self):
+    def __len__(self) -> int:
         return self._data[0].shape[0]
 
     def __getitem__(self, idx):
+        idx = self.permutation[idx]
         return [data[idx] for data in self._data]
 
     @property
-    def data_configs(self):
+    def data_configs(self) -> list[DataConfiguration]:
         return self._data_configs
 
-    def get_batch(self, start_idx, end_idx):
+    def get_batch(self, idx_list):
+        return [data[idx_list] for data in self._data]
+
+    def get_continuous_batch(self, start_idx, end_idx):
         return [data[start_idx:end_idx] for data in self._data]
 
     def load_complete_data(self, variable=None, data_item=None):
