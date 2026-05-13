@@ -1,4 +1,4 @@
-from typing import get_type_hints, get_origin, get_args, Annotated, Callable
+from typing import get_origin, get_args, Annotated, Callable
 import inspect
 
 
@@ -29,7 +29,7 @@ class GraphNode(Node):
         If it is a dict, the keys are the output ports of this GraphNode, and the
         values are the corresponding output ports of the inner graph. If it is a
         list, new output ports for this node are created with the same names and
-        DataConfigurations andthe output ports of the inner graph are mapped to
+        DataConfigurations and the output ports of the inner graph are mapped to
         the output ports of this node in the same order.
     name (str, optional): The name of this node. Defaults to "GraphNode".
     """
@@ -46,15 +46,22 @@ class GraphNode(Node):
         self._graph = graph
 
         self._input_ports = []
-        for p in input_ports:
+
+        self.configs_defined_in_forward = self._configs_were_defined_in_forward()
+        in_forward_ports, out_forward_ports = Node._build_ports(self.forward, self)
+        for i, p in enumerate(input_ports):
             if isinstance(input_ports, dict):
                 self._input_ports.append(p)
                 for inner_port in input_ports[p]:
                     self._graph.connect_from_outside_of_graph(p, inner_port)
             else:
+                if self.configs_defined_in_forward:
+                    port_config = in_forward_ports[i].data_configuration
+                else:
+                    port_config = p.data_configuration
                 self._input_ports.append(
                     InputPort(
-                        data_configuration=p.data_configuration,
+                        data_configuration=port_config,
                         node=self,
                         name=p.name,
                     )
@@ -62,14 +69,18 @@ class GraphNode(Node):
                 self._graph.connect_from_outside_of_graph(self._input_ports[-1], p)
 
         self._output_ports = []
-        for p in output_ports:
+        for i, p in enumerate(output_ports):
             if isinstance(output_ports, dict):
                 self._output_ports.append(p)
                 self._graph.connect_to_outside_of_graph(output_ports[p], p)
             else:
+                if self.configs_defined_in_forward:
+                    port_config = out_forward_ports[i].data_configuration
+                else:
+                    port_config = p.data_configuration
                 self._output_ports.append(
                     OutputPort(
-                        data_configuration=p.data_configuration,
+                        data_configuration=port_config,
                         node=self,
                         name=p.name,
                     )
@@ -138,73 +149,69 @@ class GraphNode(Node):
 
     def update_data_configs(self, updated_port, config_dict, dynamic_configs):
         # Efficient case: the subclass has specified its configs
-        if self._configs_were_defined_in_forward():
+        if self.configs_defined_in_forward:
             return super().update_data_configs(updated_port, config_dict, dynamic_configs)
 
         # Otherwise: infer data configs updates from the inner graph
-        else:
-            # search for inner ports at the beginning and end of the graph
-            inner_ports = []
-            if isinstance(updated_port, InputPort):
-                for e in self._graph.edges_from_outside:
-                    if e.from_port == updated_port:
-                        inner_ports.append(e.to_port)
-            else:
-                for e in self._graph.edges_to_outside:
-                    if e.to_port == updated_port:
-                        inner_ports.append(e.from_port)
-
-            # perform inner update
-            connected_to_outside_ports = {}
+        # search for inner ports at the beginning and end of the graph
+        inner_ports = []
+        if isinstance(updated_port, InputPort):
             for e in self._graph.edges_from_outside:
-                connected_to_outside_ports[e.to_port] = e.from_port
+                if e.from_port == updated_port:
+                    inner_ports.append(e.to_port)
+        else:
             for e in self._graph.edges_to_outside:
-                connected_to_outside_ports[e.from_port] = e.to_port
+                if e.to_port == updated_port:
+                    inner_ports.append(e.from_port)
 
-            inner_updated_ports = set()
-            for inner_port in inner_ports:
-                inner_updated_ports.update(
-                    self._graph.update_data_configurations(
-                        inner_port.node, inner_port, config_dict
-                    )
+        # perform inner update
+        connected_to_outside_ports = {}
+        for e in self._graph.edges_from_outside:
+            connected_to_outside_ports[e.to_port] = e.from_port
+        for e in self._graph.edges_to_outside:
+            connected_to_outside_ports[e.from_port] = e.to_port
+
+        inner_updated_ports = set()
+        for inner_port in inner_ports:
+            inner_updated_ports.update(
+                self._graph.update_data_configurations(
+                    inner_port.node, inner_port, config_dict
                 )
-
-            outside_updated_inner_ports = (
-                connected_to_outside_ports.keys() & inner_updated_ports
             )
-            # these data configs should be identical to the dynamic data configs
-            # of the outer graph, therefore these are automatically updated
-            return set(connected_to_outside_ports[k] for k in outside_updated_inner_ports)
+
+        outside_updated_inner_ports = (
+            connected_to_outside_ports.keys() & inner_updated_ports
+        )
+        # these data configs should be identical to the dynamic data configs
+        # of the outer graph, therefore these are automatically updated
+        return set(connected_to_outside_ports[k] for k in outside_updated_inner_ports)
 
     def copy_data_configs(self):
-        if self._configs_were_defined_in_forward():
+        if self.configs_defined_in_forward:
             return super().copy_data_configs()
-        else:
-            dynamic_configs = {}
-            for input_port in self.input_ports:
-                for e in self._graph.edges_from_outside:
-                    if e.from_port == input_port:
-                        inner_config = self._graph.dynamic_data_configs[e.to_port.node][
-                            e.to_port
-                        ]
-                        dynamic_configs[input_port] = inner_config
-            for output_port in self.output_ports:
-                for e in self._graph.edges_to_outside:
-                    if e.to_port == output_port:
-                        inner_config = self._graph.dynamic_data_configs[e.from_port.node][
-                            e.from_port
-                        ]
-                        dynamic_configs[output_port] = inner_config
-            return dynamic_configs
+        dynamic_configs = {}
+        for input_port in self.input_ports:
+            for e in self._graph.edges_from_outside:
+                if e.from_port == input_port:
+                    inner_config = self._graph.dynamic_data_configs[e.to_port.node][
+                        e.to_port
+                    ]
+                    dynamic_configs[input_port] = inner_config
+        for output_port in self.output_ports:
+            for e in self._graph.edges_to_outside:
+                if e.to_port == output_port:
+                    inner_config = self._graph.dynamic_data_configs[e.from_port.node][
+                        e.from_port
+                    ]
+                    dynamic_configs[output_port] = inner_config
+        return dynamic_configs
 
     def _configs_were_defined_in_forward(self):
         call_sig = inspect.signature(self.forward)
-        type_hints = get_type_hints(self.forward, include_extras=True)
         configs_defined = False
-        for name, param in call_sig.parameters.items():
-            hint = type_hints.get(name, param.annotation)
+        for param in call_sig.parameters.values():
+            hint = param.annotation
             _, config = self._unwrap_annotated(hint, self)
-
             if get_origin(hint) is Annotated:
                 _, *meta = get_args(hint)
                 config = next(

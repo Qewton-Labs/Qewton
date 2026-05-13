@@ -1,12 +1,11 @@
 from __future__ import annotations
 from typing import Any, Annotated
-from ..backend import (
-    DEFAULT_DL_BACKEND,
-    TorchBackend,
-)
+
+from ..backend import DEFAULT_DL_BACKEND, TorchBackend
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.trainable_parameters import TrainableParameters
 from ...config.data_configurations import DataConfiguration
+from ...config.axes import EllipsisAxes, FeatureAxes
 from ...graphs.nodes import Node, NodeState
 
 
@@ -66,7 +65,6 @@ class ParameterNode(Node):
         name: str = "ParameterNode",
         backend=DEFAULT_DL_BACKEND,
     ) -> None:
-        super().__init__(name, state=NodeState.UNINITIALIZED)
         self.shape = tuple(
             HyperParameter.from_value(s, f"shape_{i}") for i, s in enumerate(shape)
         )
@@ -74,6 +72,7 @@ class ParameterNode(Node):
         self.implementation_class = self.existing_implementations[self.backend]
         self.implementation: _InternalParameter | None = None
         self.initial_value = initial_value
+        super().__init__(name, state=NodeState.UNINITIALIZED)
         self.output = self.output_ports[0]
 
     def setup(self) -> None:
@@ -88,10 +87,14 @@ class ParameterNode(Node):
             self.output.set_value(self.implementation.param)
             self._state = NodeState.INITIALIZED
 
+    def output_config(self):
+        int_shape = tuple(hp.value for hp in self.shape)
+        return DataConfiguration(EllipsisAxes(), FeatureAxes(shape=int_shape))
+
     def run(self) -> None:
         pass  # value is set once in setup
 
-    def forward(self) -> Annotated[Any, DataConfiguration([])]:
+    def forward(self) -> Annotated[Any, ParameterNode.output_config]:
         return (
             None
             if self.implementation is None

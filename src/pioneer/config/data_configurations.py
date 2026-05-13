@@ -153,7 +153,7 @@ class DataConfiguration:
         return changed_config
 
     def get_variable_slice(self, variable):
-        slc = []
+        slc: list = []
         feature_slice = None
         for axes in self.axes:
             if isinstance(axes, FeatureAxes):

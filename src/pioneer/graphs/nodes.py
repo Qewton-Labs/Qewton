@@ -193,14 +193,17 @@ class Node(ABC):
         """Return (base_type, config)."""
         if get_origin(type_hint) is Annotated:
             base, *meta = get_args(type_hint)
-            config = next(
-                (m for m in meta if isinstance(m, (DataConfiguration, Callable))),
-                None,
-            ) or DataConfiguration([])
+            config = (
+                next(
+                    (m for m in meta if isinstance(m, (DataConfiguration, Callable))),
+                    None,
+                )
+                or DataConfiguration.empty()
+            )
             if isinstance(config, Callable):
                 config = config(owner)
             return base, config
-        return type_hint, DataConfiguration([])
+        return type_hint, DataConfiguration.empty()
 
     def copy_data_configs(self):
         copy_memo = {}
@@ -373,7 +376,6 @@ class Node(ABC):
         if not port_config_was_updated:
             # No change -> we are done
             return set()
-
         # Iterate over all ports of the current node, since updates to the axes
         # may not happen in place (e.g. ellipsis are replaced), we need to check all
         # port configurations separately.
@@ -384,7 +386,6 @@ class Node(ABC):
             if c_port != updated_port:  # original port already updated
                 if config.update_config(config_dict):
                     updated_ports.add(c_port)
-
         return updated_ports
 
     def get_input_port(self, name):

@@ -13,7 +13,9 @@ class Variable(OrderedDict):
     """
 
     def __init__(
-        self, name: str | None = NO_NAME, dim: int | tuple[int, ...] | None = None
+        self,
+        name: str | None | type[NO_NAME] = NO_NAME,
+        dim: int | tuple[int, ...] | None = None,
     ):
         """
         Args:
@@ -45,7 +47,7 @@ class Variable(OrderedDict):
             v[name] = dim
         return v
 
-    def get_slice(self, variable):
+    def get_slice(self, variable) -> tuple[slice, ...] | list[int]:
         if self.has_multiple_axes:
             return tuple([slice(None)] * len(list(self.values())[0]))
         slc = []
@@ -53,10 +55,10 @@ class Variable(OrderedDict):
             prev_dims = 0
             for k, v in self.items():
                 if k == variable_k:
-                    slc.append(list(range(prev_dims, prev_dims + variable_v)))
+                    slc.extend(list(range(prev_dims, prev_dims + variable_v)))
                     break
                 prev_dims += v
-        return tuple(slc)
+        return slc
 
     def is_empty(self) -> bool:
         """Checks if the variable is empty, i.e. has no keys.
@@ -125,8 +127,10 @@ class Variable(OrderedDict):
             result[k] = v
         for v in result.values():
             if isinstance(v, tuple):
-                raise ValueError("Can not combine variables with tuple dimensions. \
-                        Please flatten the dimensions.")
+                raise ValueError(
+                    "Can not combine variables with tuple dimensions. \
+                        Please flatten the dimensions."
+                )
         return result
 
     def __add__(self, other: Variable) -> Variable:
@@ -144,6 +148,12 @@ class Variable(OrderedDict):
         if isinstance(first_value, tuple):  # there can be no other keys
             return prod(first_value)
         return sum(self.values())
+
+    @property
+    def shape(self):
+        if self.has_multiple_axes:
+            return list(self.values())[0]
+        return (self.dim,)
 
     def __repr__(self):
         return f"{self.__class__.__name__}({dict(self)})"

@@ -293,6 +293,7 @@ class GeometryAxes(Axes):
         geometry: Geometry | None = None,
         shape: tuple[int | AxesDim, ...] | None = None,
     ):
+        self._geometry: Geometry
         if geometry is not None and shape is not None:
             raise ValueError("Only one of geometry or shape can be provided.")
         if geometry is not None:
@@ -303,13 +304,17 @@ class GeometryAxes(Axes):
             raise ValueError("Either geometry or shape must be provided.")
         super().__init__(*self._geometry.shape)
 
-    def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
+    @property
+    def geometry(self):
+        return self._geometry
+
+    def unify_with(self: GeometryAxes, other: Axes) -> tuple[dict, dict]:
         if not isinstance(other, GeometryAxes):
             raise DataConfigMismatchError(
                 f"Cannot unify axes of different types: {self.__class__} \
                     and {other.__class__}."
             )
-        unified_geometry = self._geometry.unify_with(other._geometry)
+        unified_geometry = self._geometry.unify_with(other.geometry)
         new_axes = GeometryAxes(unified_geometry)
         self_dict, other_dict = {}, {}
         for self_key, other_key, new_a in zip(self.shape, other.shape, new_axes.shape):
@@ -328,9 +333,10 @@ class FeatureAxes(Axes):
             raise ValueError("Only one of variable or shape can be provided.")
         if variable is not None:
             self._variable = variable
+            super().__init__(*self._variable.shape)
         elif shape is not None:
             self._variable = None
-        super().__init__(*(shape if shape is not None else self._variable.shape))
+            super().__init__(*shape)
 
     @property
     def variables(self):
@@ -411,7 +417,7 @@ class AxesDim:
         # TODO: Override this in subclasses, e.g. in AddedDim
         if self.size == new_dim.size and self.broadcastable == new_dim.broadcastable:
             return False
-        self.size = new_dim.size
+        self._size = new_dim.size
         self.broadcastable = new_dim.broadcastable
         return True
 

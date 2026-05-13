@@ -3,13 +3,17 @@ from typing import Annotated, Generic
 from .math import MatMul, Add
 from .parameters import ParameterNode
 from ..backend import DEFAULT_DL_BACKEND, Backend, TensorType
-from ...config.data_configurations import DataConfiguration
+from ...config.data_configurations import DataConfiguration as DC
+from ...config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...graphs.graphs import Graph
 from ...graphs.control_nodes.graph_node import GraphNode
 
 
 class FunctionalLinear(GraphNode, Generic[TensorType]):
+    ell_ax = EllipsisAxes()
+    dim_1 = AxesDim(None)
+    dim_2 = AxesDim(None)
 
     def __init__(
         self,
@@ -46,10 +50,10 @@ class FunctionalLinear(GraphNode, Generic[TensorType]):
 
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration.empty()],
-        weight: Annotated[TensorType, DataConfiguration.empty()],
-        bias: Annotated[TensorType, DataConfiguration.empty()] = None,
-    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+        weight: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1, dim_2)))],
+        bias: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2,)))] = None,
+    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2,)))]:
         self.input.set_value(x)
         self.weight.set_value(weight)
         self.bias.set_value(bias)
@@ -70,6 +74,7 @@ class Linear(GraphNode, Generic[TensorType]):
         name="linear",
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
+        self.ellipsis_axes: EllipsisAxes
         self.weight = ParameterNode(
             (in_neurons, out_neurons), name="weight", backend=backend
         )
@@ -91,10 +96,16 @@ class Linear(GraphNode, Generic[TensorType]):
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
 
+    def x_data_config(self):
+        self.ellipsis_axes = EllipsisAxes()
+        return DC(self.ellipsis_axes, FeatureAxes(shape=(self.weight.shape[0].value,)))
+
+    def out_data_config(self):
+        return DC(self.ellipsis_axes, FeatureAxes(shape=(self.weight.shape[1].value,)))
+
     def forward(
-        self,
-        x: Annotated[TensorType, DataConfiguration.empty()],
-    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        self, x: Annotated[TensorType, x_data_config]
+    ) -> Annotated[TensorType, out_data_config]:
         self.input.set_value(x)
         self.run()
         return self.output.value  # type: ignore

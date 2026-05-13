@@ -3,8 +3,9 @@ from typing import Annotated
 from ..backend import DEFAULT_DL_BACKEND, TensorType
 from ..backend_node import BackendNode
 
-from ...config.data_configurations import DataConfiguration
-from ...graphs.nodes import NO_DEFAULT
+from ...config.data_configurations import DataConfiguration as DC
+from ...config.axes import EllipsisAxes, AxesDim, FeatureAxes, MinimumDim
+from ...graphs.nodes import NO_DEFAULT, InputPort, Port
 
 # The following classes represent basic mathematical operations.
 # They are designed to work with different operations and one only needs to pass
@@ -18,22 +19,24 @@ from ...graphs.nodes import NO_DEFAULT
 
 
 class Add(BackendNode[TensorType]):
-    # axis_dims =
-    # batch_axis_size = Axis.create_dim()
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-        y: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.add(x, y)
 
 
 class Subtract(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-        y: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.implementation(x, y)
 
     def torch_implementation(self, x, y):
@@ -44,11 +47,13 @@ class Subtract(BackendNode[TensorType]):
 
 
 class Multiply(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-        y: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.implementation(x, y)
 
     def torch_implementation(self, x, y):
@@ -59,11 +64,13 @@ class Multiply(BackendNode[TensorType]):
 
 
 class Divide(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-        y: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.implementation(x, y)
 
     def torch_implementation(self, x, y):
@@ -74,11 +81,13 @@ class Divide(BackendNode[TensorType]):
 
 
 class Mod(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-        y: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.implementation(x, y)
 
     def torch_implementation(self, x, y):
@@ -95,27 +104,33 @@ class Mod(BackendNode[TensorType]):
 
 
 class Square(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.square(x)
 
 
 class Sqrt(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.sqrt(x)
 
 
 class Power(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-        y: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.pow(x, y)
 
 
@@ -126,26 +141,32 @@ class Power(BackendNode[TensorType]):
 
 
 class Exp(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.exp(x)
 
 
 class Log(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.log(x)
 
 
 class Log2(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -156,10 +177,12 @@ class Log2(BackendNode[TensorType]):
 
 
 class Log10(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -176,30 +199,42 @@ class Log10(BackendNode[TensorType]):
 
 
 class Sin(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.sin(x)
 
 
 class Cos(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.cos(x)
 
 
 class Tan(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.tan(x)
 
 
 class ArcSin(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -210,9 +245,12 @@ class ArcSin(BackendNode[TensorType]):
 
 
 class ArcCos(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -223,9 +261,12 @@ class ArcCos(BackendNode[TensorType]):
 
 
 class ArcTan(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -242,41 +283,54 @@ class ArcTan(BackendNode[TensorType]):
 
 
 class Abs(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.abs(x)
 
 
 class Floor(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.floor(x)
 
 
 class Ceil(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.ceil(x)
 
 
 class Maximum(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-        y: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.maximum(x, y)
 
 
 class Minimum(BackendNode[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-        y: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.library.minimum(x, y)
 
 
@@ -287,19 +341,31 @@ class Minimum(BackendNode[TensorType]):
 
 
 class MatMul(BackendNode[TensorType]):
+    ell_ax = EllipsisAxes()
+    dim_1 = AxesDim(None)
+    dim_2 = AxesDim(None)
+
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-        y: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+        y: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1, dim_2)))],
+    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2,)))]:
         return self.backend.library.matmul(x, y)
 
 
 class SVD(BackendNode[TensorType]):
-    def forward(self, x: Annotated[TensorType, DataConfiguration([])]) -> tuple[
-        Annotated[TensorType, DataConfiguration([])],
-        Annotated[TensorType, DataConfiguration([])],
-        Annotated[TensorType, DataConfiguration([])],
+    dim_1 = AxesDim(None)
+    dim_2 = AxesDim(None)
+    min_dim = MinimumDim(dim_1, dim_2)
+    ell_ax = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1, dim_2)))],
+    ) -> tuple[
+        Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1, dim_1)))],
+        Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(min_dim,)))],
+        Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2, dim_2)))],
     ]:
         return self.implementation(x)
 
@@ -324,7 +390,7 @@ class Mean(BackendNode[TensorType]):
 
     def __init__(
         self,
-        axis: type[NO_DEFAULT] | None | int | tuple[int] = NO_DEFAULT,
+        axis: None | int | tuple[int] = None,
         keepdims=False,
         backend=DEFAULT_DL_BACKEND,
     ):
@@ -332,19 +398,43 @@ class Mean(BackendNode[TensorType]):
         self.keepdims = keepdims
         super().__init__(name=None, backend=backend)
 
+    def update_data_configs(
+        self, updated_port, config_dict, dynamic_configs: dict[Port, DC]
+    ):
+        port_config = dynamic_configs[updated_port]
+        port_config_was_updated = port_config.update_config(config_dict)
+        changed_ports = set()
+        # TODO: Finish this
+        # if port_config_was_updated:
+        #     # if the port changed we also update the other one
+        #     if isinstance(updated_port, InputPort):
+        #         out_config = dynamic_configs[self.output_ports[0]]
+        #         if not self.keepdims:
+        #             if self.axis is None:
+        #                 out_config.axes = (FeatureAxes(shape=(AxesDim(1),)),)
+        #             elif isinstance(self.axis, int):
+        #                 pass
+        #         else:
+        #             pass
+
+        #     else:
+        #         changed_ports.add(updated_port)
+        #         in_port = self.input_ports[0]
+        #         if self.axis is None:
+        #             pass
+        #         out_port = updated_port
+
+        return changed_ports
+
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DC(EllipsisAxes())]
+    ) -> Annotated[TensorType, DC(EllipsisAxes())]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
-        if self.axis is NO_DEFAULT or self.axis is None:
-            return self.backend.library.mean(x)
         return self.backend.library.mean(x, dim=self.axis, keepdim=self.keepdims)
 
     def tensorflow_implementation(self, x):
-        if self.axis is NO_DEFAULT or self.axis is None:
-            return self.backend.library.reduce_mean(x)
         return self.backend.library.reduce_mean(x, axis=self.axis, keepdims=self.keepdims)
 
 
@@ -359,9 +449,7 @@ class Std(BackendNode[TensorType]):
         self.keepdims = keepdims
         super().__init__(name=None, backend=backend)
 
-    def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+    def forward(self, x: Annotated[TensorType, DC([])]) -> Annotated[TensorType, DC([])]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -393,8 +481,8 @@ class Flatten(BackendNode[TensorType]):
         super().__init__(name=None, backend=backend)
 
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration([])]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+        self, x: Annotated[TensorType, DC.empty()]
+    ) -> Annotated[TensorType, DC.empty()]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
@@ -413,11 +501,11 @@ class Transpose(BackendNode[TensorType]):
         super().__init__(name=None, backend=backend)
 
     def x_data_config(self):
-        return DataConfiguration(...)
+        return DC.empty()
 
     def forward(
         self, x: Annotated[TensorType, x_data_config]
-    ) -> Annotated[TensorType, DataConfiguration([])]:
+    ) -> Annotated[TensorType, DC.empty()]:
         return self.implementation(x)
 
     def torch_implementation(self, x):

@@ -4,7 +4,6 @@ from contextlib import contextmanager
 import inspect
 from typing import Callable
 from warnings import warn
-from copy import deepcopy
 
 from ..config.data_configurations import DataConfiguration
 from ..config.errors import DataConfigMismatchError
@@ -201,7 +200,8 @@ class Graph:
                 unified_config = from_config.unify_with(to_config)
             except DataConfigMismatchError as e:
                 raise DataConfigMismatchError(
-                    f"Connection of {from_node.name} to {to_node.name} failed, because {e}"
+                    f"Connection of {from_node.name} to {to_node.name} failed, "
+                    + f"because {e}"
                 ) from e
             edge = Edge(from_port, to_port)
             self.incoming_edges[to_node].append(edge)
@@ -211,7 +211,8 @@ class Graph:
             self.update_data_configurations(to_node, to_port, unified_config[1])
 
     def update_data_configurations(self, node: Node, port: Port, config_dict: dict):
-        """Updates the data configurations recursively for the given node, port, and neighbors.
+        """Updates the data configurations recursively for the given node, port,
+        and neighbors.
 
         Args:
             node (Node): The node for which the data configurations should be updated.
@@ -220,7 +221,8 @@ class Graph:
             config_dict (dict): Mapping of configuration keys/values used to update the
                 node and neighbor data configurations.
         """
-        # visited_nodes = set[Node]({node}) # experimental, check whether this iterates forever
+        # visited_nodes = set[Node]({node}) # experimental, check whether this
+        # iterates forever
         # visited_edges = set[Edge]({edge})
         updated_ports = node.update_data_configs(
             port, config_dict, self.dynamic_data_configs[node]
@@ -237,7 +239,6 @@ class Graph:
                 # if e not in visited_edges:
                 first_config = self.dynamic_data_configs[e.from_port.node][e.from_port]
                 second_config = self.dynamic_data_configs[e.to_port.node][e.to_port]
-
                 try:
                     new_config_dict = first_config.unify_with(second_config)
                 except DataConfigMismatchError as err:
