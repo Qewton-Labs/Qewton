@@ -17,7 +17,7 @@ from ..building_blocks.normalizations import StdNormalizationNode, InverseStdNor
 from ..building_blocks.array_operations import Narrow
 from ..backend import DEFAULT_DL_BACKEND, Backend
 from ...config.data_configurations import DataConfiguration
-from ...data.datasets.base import DataSet
+from ...data.dataloaders.base import DataSet
 from ...graphs.control_nodes.graph_node import GraphNode, TrackedNode
 from ...graphs.nodes import Node
 from ...optim.parameters.hyperparameter_base import HyperParameter
