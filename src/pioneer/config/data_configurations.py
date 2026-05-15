@@ -33,6 +33,13 @@ class DataConfiguration:
     def __str__(self):
         return f"DataConfig([{', '.join(str(a) for a in self.axes)}])"
 
+    @property
+    def feature_axes(self):
+        for axes in self.axes:
+            if isinstance(axes, FeatureAxes):
+                return axes
+        return None
+
     def get_axes_and_dim(self, idx) -> tuple[Axes | None, AxesDim | None]:
         counter = 0
         for axes in self.axes:

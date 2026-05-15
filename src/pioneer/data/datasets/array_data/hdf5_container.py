@@ -1,7 +1,7 @@
-from .base import ArrayLikeDataContainer
+from .base import ArrayLikeDataSet
 
 
-class HDF5DataContainer(ArrayLikeDataContainer):
+class HDF5DataContainer(ArrayLikeDataSet):
     """Data container for HDF5 files."""
 
     def __init__(self, dataset, file_handle):

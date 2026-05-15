@@ -1,5 +1,6 @@
 from typing import Any
 from abc import ABC, abstractmethod
+from typing import Iterable
 
 from ...config.data_configurations import DataConfiguration
 
@@ -19,11 +20,7 @@ class DataSet(ABC):
         pass
 
     @abstractmethod
-    def get_batch(self, idx_list) -> list[Any]:
-        pass
-
-    @abstractmethod
-    def get_continuous_batch(self, start_idx, end_idx) -> list[Any]:
+    def get_batch(self, idcs) -> Iterable:
         pass
 
     def load_complete_data(self, variable=None, data_item=None):

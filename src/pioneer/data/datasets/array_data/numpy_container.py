@@ -1,9 +1,9 @@
 import numpy as np
 
-from .base import ArrayLikeDataContainer
+from .base import ArrayLikeDataSet
 
 
-class NumpyDataContainer(ArrayLikeDataContainer):
+class NumpyDataContainer(ArrayLikeDataSet):
 
     def __init__(self, array: np.ndarray):
         assert isinstance(

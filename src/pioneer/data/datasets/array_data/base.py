@@ -48,10 +48,9 @@ class ArrayLikeDataSet(DataSet):
                 raise ValueError("Too few axes in data configuration for the given data.")
 
     def __len__(self) -> int:
-        return self._data[0].shape[0]
+        return int(self._data[0].shape[0])
 
     def __getitem__(self, idx):
-        idx = self.permutation[idx]
         return [data[idx] for data in self._data]
 
     @property

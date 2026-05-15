@@ -388,7 +388,7 @@ class AxesDim:
             return EllipsisDim(broadcastable)
         return super().__new__(cls)
 
-    def __init__(self, size=None, broadcastable=True):
+    def __init__(self, size: int | None = None, broadcastable=True):
         self._size = size
         self.broadcastable = broadcastable
         self.graph = None
@@ -399,6 +399,9 @@ class AxesDim:
     @property
     def size(self):
         return self._size
+
+    def set_size(self, size):
+        self._size = size
 
     def __str__(self) -> str:
         return str(self.size)
