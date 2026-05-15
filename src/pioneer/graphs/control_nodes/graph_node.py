@@ -256,11 +256,11 @@ class TrackedNode(GraphNode):
         outer_input_ports, outer_output_ports = Node._build_ports(self.forward, self)
         for i, port in enumerate(output_ports):
             if isinstance(port, int):
-                output_ports[i] = outer_input_ports[i]
+                output_ports[i] = outer_input_ports[i]  # type: ignore
 
         input_ports_dict = dict(zip(outer_input_ports, input_ports))
         output_ports_dict = dict(zip(outer_output_ports, output_ports))
-        super().__init__(graph, input_ports_dict, output_ports_dict, name=name)
+        super().__init__(graph, input_ports_dict, output_ports_dict, name=name)  # type: ignore
         self._graph.setup()
 
         if self.run is TrackedNode.run:

@@ -166,27 +166,30 @@ class Graph:
             ValueError: The ports of both nodes are not compatible.
         """
         self._check_graph_was_sorted()
-        ports_to_connect = []
-        for inp in from_, to_:
+
+        def get_ports(
+            inp, return_output_ports=False
+        ) -> list[InputPort] | list[OutputPort]:
             if isinstance(inp, Node):
-                ports_to_connect.append(
-                    inp.output_ports if inp is from_ else inp.input_ports
-                )
-            else:
-                ports_to_connect.append([inp])
-        from_ports, to_ports = ports_to_connect
+                if return_output_ports:
+                    return inp.output_ports
+                return inp.input_ports
+            return [inp]
+
+        from_ports = get_ports(from_, return_output_ports=True)
+        to_ports = get_ports(to_, return_output_ports=False)
         if len(from_ports) != len(to_ports):
             raise ValueError(
-                "When connecting two nodes directly, they should have the same number \
-                    of output and input ports!"
+                "When connecting two nodes directly, they should have the"
+                + "same number of output and input ports!"
             )
 
         from_node = from_ports[0].node
         to_node = to_ports[0].node
 
         # before doing anything, check for validity
-        for from_port, to_port in zip(from_ports, to_ports):
-            self._check_port_is_free(to_node, to_port)
+        for to_port in to_ports:
+            self._check_port_is_free(to_node, to_port)  # type: ignore
 
         # Nodes must be added to the graph
         self.add_node(from_node, check_warning=False)
