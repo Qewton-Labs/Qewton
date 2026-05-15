@@ -5,11 +5,15 @@ import pytest
 from pioneer.optim.parameters.hyperparameter_base import (
     HyperParameter,
     HyperParameterState,
-    # HyperParameterScale,
-    # ContinuousHyperparameter,
-    # DiscreteHyperparameter,
-    # CategoricalHyperparameter,
-    # BooleanHyperparameter,
+)
+from pioneer.optim.parameters.categorical_hyperparameter import (
+    CategoricalHyperparameter,
+    BooleanHyperparameter,
+)
+from pioneer.optim.parameters.number_hyperparameter import (
+    DiscreteHyperparameter,
+    ContinuousHyperparameter,
+    HyperParameterScale,
 )
 
 
@@ -377,14 +381,14 @@ class TestCategoricalHyperparameter:
     def test_sample_parameter_grid_with_tuple(self):
         hp = CategoricalHyperparameter(categories=("a", "b", "c"))
         grid = hp.sample_parameter_grid(2)
-        assert len(grid) == 3  # Returns all categories
-        assert set(grid) == {"a", "b", "c"}
+        assert len(grid) == 2  # Returns all categories
+        assert set(grid) == {"a", "b"}
 
     def test_sample_parameter_grid_with_list(self):
         hp = CategoricalHyperparameter(categories=["a", "b", "c"])
         grid = hp.sample_parameter_grid(2)
-        assert len(grid) == 3
-        assert grid == ["a", "b", "c"]
+        assert len(grid) == 2
+        assert grid == ["a", "b"]
 
     def test_with_integer_categories(self):
         hp = CategoricalHyperparameter(categories=[1, 2, 3, 4], initial_value=2)

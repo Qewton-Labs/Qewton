@@ -1,10 +1,7 @@
 from __future__ import annotations
 from collections import OrderedDict
 from math import prod
-
-
-class NO_NAME:
-    pass
+from typing import Optional
 
 
 class Variable(OrderedDict):
@@ -14,7 +11,7 @@ class Variable(OrderedDict):
 
     def __init__(
         self,
-        name: str | None | type[NO_NAME] = NO_NAME,
+        name: Optional[str] = None,
         dim: int | tuple[int, ...] | None = None,
     ):
         """
@@ -27,8 +24,13 @@ class Variable(OrderedDict):
             ValueError: _description_
         """
         super().__init__()
-        self[name] = dim
+        if name is not None:
+            self[name] = dim
         self.has_multiple_axes = isinstance(dim, tuple)
+
+    @property
+    def name(self):
+        return "_".join(str(key) for key in self.keys())
 
     @classmethod
     def from_dict(cls, var_dict: dict[str, int]) -> Variable:
@@ -66,7 +68,7 @@ class Variable(OrderedDict):
         Returns:
             bool: True if the variable is empty, False otherwise.
         """
-        return self.keys() == {NO_NAME} and self.values() == {None}
+        return len(self) == 0
 
     def unify(self, other: Variable) -> Variable:
         """Unifies two variables, i.e. checks if they are compatible and returns
@@ -82,16 +84,7 @@ class Variable(OrderedDict):
             raise ValueError("Can not combine variables with multiple axes.")
         key_diff = self.keys() ^ other.keys()
         out = {}
-        if len(key_diff) == 2:
-            if NO_NAME in key_diff:
-                other_key = next(iter(key_diff - {NO_NAME}))
-                if NO_NAME in self:
-                    out[other_key] = Variable.check(self, other, NO_NAME, other_key)
-                else:
-                    out[other_key] = Variable.check(other, self, NO_NAME, other_key)
-            else:
-                raise ValueError("Variable names have to agree for unification.")
-        elif len(key_diff) != 0:
+        if len(key_diff) != 0:
             raise ValueError("Variable names have to agree for unification.")
         for key in self.keys() & other.keys():
             out[key] = Variable.check(self, other, key, key)
