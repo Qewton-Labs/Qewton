@@ -22,10 +22,6 @@ class DataSet(ABC):
     def get_batch(self, idcs) -> Iterable:
         pass
 
-    @abstractmethod
-    def shuffle(self):
-        pass
-
     def load_complete_data(self, variable=None, data_item=None):
         """Fully load the data into memory.
         Many subclasses provide *lazy* slicing, where data is only read from the

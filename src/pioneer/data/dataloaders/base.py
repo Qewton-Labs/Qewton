@@ -52,7 +52,7 @@ class DataNode(Node):
         name: str = "DataNode",
         state: NodeState = NodeState.FIXED,
     ) -> None:
-        self._batch_size = HyperParameter.from_value(batch_size)
+        self._batch_size = HyperParameter.from_value(batch_size, "batch_size")
         self._is_cached = False
         super().__init__(name, state)
 
@@ -68,7 +68,6 @@ class DataNode(Node):
     def is_cached(self):
         return self._is_cached
 
-    @abstractmethod
     def cache(self, n_batches=-1):
         pass
 
@@ -99,7 +98,7 @@ class DataLoader(DataNode):
     ):
         self.data_set = data_set
         self.splitting_ratio = splitting_ratio
-        self.shuffle_data = HyperParameter.from_value(shuffle_data)
+        self.shuffle_data = HyperParameter.from_value(shuffle_data, "shuffle_data")
         self.shuffle_seed = shuffle_seed
         self._rng = np.random.default_rng(self.shuffle_seed)
 
@@ -119,7 +118,7 @@ class DataLoader(DataNode):
                 the first axes should be the batch axes."
             assert len(axes[0].shape) == 1, "Multi-dimensional \
                 batch axes not supported for batching."
-            assert axes[0].shape[0] >= self.batch_size, "Batch \
+            assert axes[0].shape[0].size >= self.batch_size, "Batch \
                 can not be larger than dataset size."
             axes[0] = BatchAxes(AxesDim(self.batch_size))
             new_config = DataConfiguration(
@@ -138,7 +137,7 @@ class DataLoader(DataNode):
             )
 
     def set_permutation(self):
-        if self.shuffle_data:
+        if self.shuffle_data.value:
             self.permutation = self._rng.permutation(len(self.data_set))
         else:
             self.permutation = np.arange(len(self.data_set))
@@ -176,7 +175,7 @@ class DataLoader(DataNode):
 
         if self._batch_progress >= n_split:
             self._batch_progress = 0
-            if self.shuffle_data:
+            if self.shuffle_data.value:
                 self._rng.shuffle(split_indices)
 
         indices = split_indices[self._batch_progress : self._batch_progress + bs]
@@ -197,7 +196,7 @@ class DataLoader(DataNode):
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
-        return [self.batch_size, self.shuffle_data]
+        return [self._batch_size, self.shuffle_data]
 
     def set_mode(self, new_mode):
         if new_mode != self.mode:

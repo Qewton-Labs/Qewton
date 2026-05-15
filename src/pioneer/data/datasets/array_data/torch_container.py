@@ -1,7 +1,7 @@
-from .base import ArrayLikeDataContainer
+from .base import ArrayLikeDataSet
 
 
-class TorchDataContainer(ArrayLikeDataContainer):
+class TorchDataContainer(ArrayLikeDataSet):
     def __init__(self, tensor):
         try:
             import torch

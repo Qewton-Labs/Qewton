@@ -1,3 +1,5 @@
+import torch
+
 from ....config.axes import EllipsisAxes, EllipsisDim
 from ....config import DataConfiguration
 
@@ -37,17 +39,15 @@ class ArrayLikeDataSet(DataSet):
                         raise ValueError(
                             "Too many axes in data configuration for the given data."
                         )
-                    d.size = data.shape[counter]
+                    d.set_size(data.shape[counter])
                     counter += 1
             if counter < len(data.shape):
                 raise ValueError("Too few axes in data configuration for the given data.")
 
-    @property
     def __len__(self) -> int:
-        return self._data[0].shape[0]
+        return int(self._data[0].shape[0])
 
     def __getitem__(self, idx):
-        idx = self.permutation[idx]
         return [data[idx] for data in self._data]
 
     @property
