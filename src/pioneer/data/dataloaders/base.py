@@ -1,5 +1,5 @@
+from copy import deepcopy
 import math
-from typing import Callable
 from abc import abstractmethod
 
 import numpy as np
@@ -17,6 +17,7 @@ from ...optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
 from ...config.axes import BatchAxes, AxesDim
+from ...config.data_configurations import DataConfiguration
 from ...graphs.nodes import Node, OutputPort, InputPort
 from ..datasets import DataSet
 
@@ -49,7 +50,7 @@ class DataNode(Node):
 
     @property
     def batch_size(self) -> int:
-        return self._batch_size.value.value
+        return self._batch_size.value
 
     @abstractmethod
     def __len__(self):
@@ -107,7 +108,7 @@ class DataLoader(DataNode):
         self._output_ports = []
         copy_memo = {}
         for config in self.data_set.data_configs:
-            axes = list(config.axes)  # TODO: hier lieber deep kopieren oder nicht?
+            axes = deepcopy(list(config.axes), memo=copy_memo)
             assert isinstance(
                 axes[0], BatchAxes
             ), "In DataSets, \
@@ -118,21 +119,16 @@ class DataLoader(DataNode):
                 batch axes not supported for batching."
             assert (
                 axes[0].shape[0].size >= self.batch_size
-            ), "Batch \
-                can not be larger than dataset size."
+            ), "Batch can not be larger than dataset size."
             axes[0] = BatchAxes(AxesDim(self.batch_size))
             new_config = DataConfiguration(
                 *axes, dtype=backend.standard_datatype() if backend else None
             )
-            port_name = str(
-                config.feature_axes.variables if config.feature_axes else None
-            )
-
             self._output_ports.append(
                 OutputPort(
                     new_config,
                     self,
-                    name=port_name,
+                    name=config.variable_name,
                 )
             )
 
@@ -162,44 +158,6 @@ class DataLoader(DataNode):
     def __len__(self):
         return math.ceil(len(self.data_set) / self.batch_size)
 
-    def run(self):
-        split_indices = self._permutation_splits[self.mode]
-        n_split = len(split_indices)
-
-        if n_split == 0:
-            return
-
-        bs = self.batch_size
-        if hasattr(bs, "value"):
-            bs = bs.value
-
-        if self._batch_progress >= n_split:
-            self._batch_progress = 0
-            if self.shuffle_data.value:
-                self._rng.shuffle(split_indices)
-
-        indices = split_indices[self._batch_progress : self._batch_progress + bs]
-        batch_data = self.data_set.get_batch(indices)
-
-        self._batch_progress += bs
-
-        for i, data in enumerate(batch_data):
-            self.output_ports[i].set_value(data)
-
-    def _build_data_split(self):
-        n_samples = len(self.data_set)
-        train_r, val_r, _ = self.splitting_ratio
-        train_end = int(train_r * n_samples)
-        val_end = train_end + int(val_r * n_samples)
-        self._splits = {
-            EvaluationPhase.TRAIN: (0, train_end),
-            EvaluationPhase.VALIDATION: (train_end, val_end),
-            # TODO: Tuning checks on the validation data???
-            EvaluationPhase.TUNE: (train_end, val_end),
-            EvaluationPhase.TEST: (val_end, n_samples),
-            EvaluationPhase.ALWAYS: (0, n_samples),
-        }
-
     @property
     def input_ports(self) -> list[InputPort]:
         return []
@@ -221,23 +179,26 @@ class DataLoader(DataNode):
         self._device = device
 
     def forward(self):
-        start_split, end_split = self._splits[self.mode]
+        split_indices = self._permutation_splits[self.mode]
+        n_split = len(split_indices)
 
-        start = start_split + self._batch_progress
-        end = min(start + self.batch_size, end_split)
+        if n_split == 0:
+            return
 
-        current_idx = self.permutation[start:end]
-        batch = self.data_set.get_batch(current_idx)
-        if self._device is not None and self.backend is not None:
-            batch = [self.backend.to(b, self._device) for b in batch]
+        bs = self.batch_size
 
-        # update batch progress
-        self._batch_progress += self.batch_size
-        # reset if exceeding split
-        if end >= end_split:
+        if self._batch_progress >= n_split:
             self._batch_progress = 0
+            if self.shuffle_data.value:
+                self._rng.shuffle(split_indices)
 
-        return tuple(batch)
+        indices = split_indices[self._batch_progress : self._batch_progress + bs]
+        batch_data = self.data_set.get_batch(indices)
+        if self._device is not None and self.backend is not None:
+            batch_data = [self.backend.to(b, self._device) for b in batch_data]
+
+        self._batch_progress += bs
+        return tuple(batch_data) if len(batch_data) > 1 else batch_data[0]
 
     def cache(self, n_batches=-1):
         return

@@ -5,7 +5,6 @@ from pioneer.data.datasets.array_data.base import ArrayLikeDataSet
 from pioneer.algorithms.building_blocks.math import Square
 from pioneer.data.dataloaders.base import DataLoader
 from pioneer.graphs.graphs import Graph
-from pioneer.graphs.nodes import Node
 
 
 def test_dataloader_to_algorithm_flow():
@@ -24,7 +23,11 @@ def test_dataloader_to_algorithm_flow():
     # 3. Create Dataset and DataLoader
     dataset = ArrayLikeDataSet(raw_data, data_config)
     dataloader = DataLoader(
-        data_set=dataset, batch_size=batch_size, shuffle_data=True, shuffle_seed=42
+        data_set=dataset,
+        batch_size=batch_size,
+        shuffle_data=True,
+        shuffle_seed=42,
+        backend=None,
     )
 
     # 4. Create Algorithm Node
@@ -50,7 +53,7 @@ def test_dataloader_to_algorithm_flow():
     # Verify logic: The output should be the square of the input batch
     input_batch = dataloader.output_ports[0].value
     assert torch.allclose(
-        output_value, input_batch**2
+        output_value, input_batch**2  # type: ignore
     ), "Algorithm logic was not applied correctly to the batch"
 
     print("Manual connection integration test passed successfully!")
@@ -71,7 +74,11 @@ def test_dataloader_tracking_flow():
     # 3. Create Dataset and DataLoader
     dataset = ArrayLikeDataSet(raw_data, data_config)
     dataloader = DataLoader(
-        data_set=dataset, batch_size=batch_size, shuffle_data=True, shuffle_seed=42
+        data_set=dataset,
+        batch_size=batch_size,
+        shuffle_data=True,
+        shuffle_seed=42,
+        backend=None,
     )
 
     # 4. Create Algorithm Node
@@ -96,7 +103,7 @@ def test_dataloader_tracking_flow():
     assert output_value.shape == (batch_size, n_features)
 
     input_batch = dataloader.output_ports[0].value
-    assert torch.allclose(output_value, input_batch**2)
+    assert torch.allclose(output_value, input_batch**2)  # type:ignore
 
     print("Tracking integration test passed successfully!")
 

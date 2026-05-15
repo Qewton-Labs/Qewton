@@ -400,9 +400,6 @@ class AxesDim:
     def size(self):
         return self._size
 
-    def set_size(self, size):
-        self._size = size
-
     def __str__(self) -> str:
         return str(self.size)
 

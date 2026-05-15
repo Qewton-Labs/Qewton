@@ -94,12 +94,16 @@ class FCN(GraphNode, Generic[TensorType]):
     def x_data_config(self):
         self.ellipsis_axes = EllipsisAxes()
         return DataConfiguration(
-            self.ellipsis_axes, FeatureAxes(shape=(self.in_neurons.value,))
+            self.ellipsis_axes,
+            FeatureAxes(shape=(self.in_neurons.value,)),
+            dtype=self.backend.standard_datatype(),
         )
 
     def out_data_config(self):
         return DataConfiguration(
-            self.ellipsis_axes, FeatureAxes(shape=(self.out_neurons.value,))
+            self.ellipsis_axes,
+            FeatureAxes(shape=(self.out_neurons.value,)),
+            dtype=self.backend.standard_datatype(),
         )
 
     def forward(
