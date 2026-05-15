@@ -1,11 +1,22 @@
+from copy import deepcopy
 from typing import Annotated
+
+from pioneer.algorithms.backend import DEFAULT_DL_BACKEND, Backend
 
 from ..backend import DEFAULT_DL_BACKEND, TensorType
 from ..backend_node import BackendNode
 
 from ...config.data_configurations import DataConfiguration as DC
-from ...config.axes import EllipsisAxes, AxesDim, FeatureAxes, MinimumDim
-from ...graphs.nodes import NO_DEFAULT, InputPort, Port
+from ...config.errors import DataConfigMismatchError
+from ...config.axes import (
+    EllipsisAxes,
+    AxesDim,
+    EllipsisDim,
+    FeatureAxes,
+    MinimumDim,
+    ProductDim,
+)
+from ...graphs.nodes import InputPort, Port
 
 # The following classes represent basic mathematical operations.
 # They are designed to work with different operations and one only needs to pass
@@ -381,22 +392,18 @@ class SVD(BackendNode[TensorType]):
 
 
 # region: Statistic operations
-
-
-class Mean(BackendNode[TensorType]):
-    """
-    Computes the mean of the input tensor along the specified axis.
-    """
+class ReductionNode(BackendNode[TensorType]):
 
     def __init__(
         self,
-        axis: None | int | tuple[int] = None,
+        name=None,
+        axis: None | int | tuple[int, ...] = None,
         keepdims=False,
-        backend=DEFAULT_DL_BACKEND,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.axis = axis
         self.keepdims = keepdims
-        super().__init__(name=None, backend=backend)
+        super().__init__(name=name, backend=backend)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DC]
@@ -404,27 +411,118 @@ class Mean(BackendNode[TensorType]):
         port_config = dynamic_configs[updated_port]
         port_config_was_updated = port_config.update_config(config_dict)
         changed_ports = set()
-        # TODO: Finish this
-        # if port_config_was_updated:
-        #     # if the port changed we also update the other one
-        #     if isinstance(updated_port, InputPort):
-        #         out_config = dynamic_configs[self.output_ports[0]]
-        #         if not self.keepdims:
-        #             if self.axis is None:
-        #                 out_config.axes = (FeatureAxes(shape=(AxesDim(1),)),)
-        #             elif isinstance(self.axis, int):
-        #                 pass
-        #         else:
-        #             pass
-
-        #     else:
-        #         changed_ports.add(updated_port)
-        #         in_port = self.input_ports[0]
-        #         if self.axis is None:
-        #             pass
-        #         out_port = updated_port
+        if port_config_was_updated:
+            if isinstance(updated_port, InputPort):
+                if not self.keepdims:
+                    new_config = self._build_reduced_out_config(port_config)
+                else:
+                    new_config = self._build_keepdims_config(port_config, 1)
+                if new_config is None:
+                    # We can not construct the output config:
+                    return changed_ports
+                # Now check if the config is changed:
+                out_config = dynamic_configs[self.output_ports[0]]  # old one
+                unify_config = out_config.unify_with(new_config)
+                if out_config.update_config(unify_config[0]):
+                    changed_ports.add(self.output_ports[0])
+            else:  # Output port was updated
+                changed_ports.add(updated_port)
+                if not self.keepdims:
+                    # TODO: Here it is somewhat difficult to determine
+                    # the expected input axis, since we remove them
+                    # -> we would need some placeholder that acts
+                    # over multiple axes/dims?
+                    # Else we will check compatibility once we connect
+                    # the input port.
+                    pass
+                else:  # keepdim case
+                    # check if all dimensions are 1 in the output:
+                    self._check_output_config_compatible(port_config)
+                    # Reconstruct input
+                    new_config = self._build_keepdims_config(port_config, None)
+                    if new_config is not None:
+                        old_in_config = dynamic_configs[self.input_ports[0]]
+                        unify_config = old_in_config.unify_with(new_config)
+                        if old_in_config.update_config(unify_config[0]):
+                            changed_ports.add(self.input_ports[0])
 
         return changed_ports
+
+    def _check_output_config_compatible(self, out_config):
+        if self.axis is not None:
+            return
+        for axes in out_config.axes:
+            for dim in axes.shape:
+                if not isinstance(dim, EllipsisDim):
+                    if dim.size != 1:
+                        raise DataConfigMismatchError(
+                            f"Output of mean needs to have size 1, but found {dim.size}"
+                        )
+
+    def _build_reduced_out_config(self, port_config: DC):
+        """If we reduce the dimension (keepdims=False) we have to
+        remove the corresponding dimensions"""
+        new_config = deepcopy(port_config)
+        mean_axes = (self.axis,) if isinstance(self.axis, int) else self.axis
+
+        if mean_axes is None:
+            # TODO: Is this the correct Axes to use?
+            return DC(FeatureAxes(shape=(AxesDim(1),)))
+
+        remove_elements = []
+        for idx in mean_axes:
+            axis_type, dim = new_config.get_axes_and_dim(idx)
+            if axis_type is None or dim is None:
+                return None
+            remove_elements.append((axis_type, dim))
+
+        for axis_type, dim in remove_elements:
+            new_config.remove_dim(axis_type, dim)
+
+        return new_config
+
+    def _build_keepdims_config(self, port_config: DC, update_value: int | None):
+        """If we keep the dimension (keepdims=True) we just have to
+        set the corresponding dimensions to 1."""
+        new_config = deepcopy(port_config)
+        mean_axes = (self.axis,) if isinstance(self.axis, int) else self.axis
+        max_value = max(mean_axes) if mean_axes is not None else None
+
+        reduce_idx = 0
+        replaced_all_dims = False
+        for axis in new_config.axes:
+            if isinstance(axis, EllipsisAxes):
+                if mean_axes is None:
+                    continue
+                # We can not construct the config, because we can
+                # not count the index
+                return None
+
+            for dim in axis.shape:
+                if isinstance(dim, EllipsisDim):
+                    if mean_axes is None:
+                        continue
+                    # We can not construct the config, because we can
+                    # not count the index
+                    return None
+                if mean_axes is None or reduce_idx in mean_axes:
+                    dim.update_size(update_value)
+
+                reduce_idx += 1
+                if max_value is not None and reduce_idx > max_value:
+                    replaced_all_dims = True
+                    break
+
+            if replaced_all_dims:
+                break
+
+        return new_config
+
+
+class Mean(ReductionNode[TensorType]):
+    """
+    Computes the mean of the input tensor along the specified axis.
+    """
 
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
@@ -438,27 +536,18 @@ class Mean(BackendNode[TensorType]):
         return self.backend.library.reduce_mean(x, axis=self.axis, keepdims=self.keepdims)
 
 
-class Std(BackendNode[TensorType]):
-    def __init__(
-        self,
-        axis: type[NO_DEFAULT] | None | int | tuple[int] = NO_DEFAULT,
-        keepdims=False,
-        backend=DEFAULT_DL_BACKEND,
-    ):
-        self.axis = axis
-        self.keepdims = keepdims
-        super().__init__(name=None, backend=backend)
+class Std(ReductionNode[TensorType]):
 
-    def forward(self, x: Annotated[TensorType, DC([])]) -> Annotated[TensorType, DC([])]:
+    def forward(
+        self, x: Annotated[TensorType, DC(EllipsisAxes())]
+    ) -> Annotated[TensorType, DC(EllipsisAxes())]:
         return self.implementation(x)
 
     def torch_implementation(self, x):
-        if self.axis is NO_DEFAULT or self.axis is None:
-            return self.backend.library.std(x)
         return self.backend.library.std(x, dim=self.axis, keepdim=self.keepdims)
 
     def tensorflow_implementation(self, x):
-        if self.axis is NO_DEFAULT or self.axis is None:
+        if self.axis is None:
             return self.backend.library.reduce_std(x)
         return self.backend.library.reduce_std(x, axis=self.axis, keepdims=self.keepdims)
 
@@ -480,6 +569,7 @@ class Flatten(BackendNode[TensorType]):
         self.end_dim = end_dim
         super().__init__(name=None, backend=backend)
 
+    # TODO: Make config connection
     def forward(
         self, x: Annotated[TensorType, DC.empty()]
     ) -> Annotated[TensorType, DC.empty()]:
@@ -500,6 +590,7 @@ class Transpose(BackendNode[TensorType]):
         self.perm = perm if perm is not None else [1, 0]
         super().__init__(name=None, backend=backend)
 
+    # TODO: Make config connection
     def x_data_config(self):
         return DC.empty()
 

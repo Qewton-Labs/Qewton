@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .axes import Axes, EllipsisAxes, EllipsisDim, _match_remainder, FeatureAxes
+from .axes import Axes, EllipsisAxes, EllipsisDim, _match_remainder, FeatureAxes, AxesDim
 from .errors import DataConfigMismatchError
 
 
@@ -16,8 +16,56 @@ class DataConfiguration:
     def empty(cls):
         return DataConfiguration(EllipsisAxes())
 
+    @property
+    def variables(self):
+        for axes in self.axes:
+            if isinstance(axes, FeatureAxes):
+                return axes.variables
+        return []
+
+    @property
+    def variable_name(self):
+        for axes in self.axes:
+            if isinstance(axes, FeatureAxes):
+                return axes.variables.name
+        return ""
+
     def __str__(self):
         return f"DataConfig([{', '.join(str(a) for a in self.axes)}])"
+
+    def get_axes_and_dim(self, idx) -> tuple[Axes | None, AxesDim | None]:
+        counter = 0
+        for axes in self.axes:
+            if isinstance(axes, EllipsisAxes):
+                # Can not get values via an index if ellipsis is present
+                return None, None
+            for dim in axes.shape:
+                if isinstance(dim, EllipsisDim):
+                    # Can not get values via an index if ellipsis is present
+                    return None, None
+                if counter == idx:
+                    return axes, dim
+                counter += 1
+        return None, None
+
+    def remove_dim(self, axis: Axes, dim: AxesDim):
+        for axes in self.axes:
+            if axes == axis:
+                axes.remove_dim(dim)
+                if axes.is_empty:
+                    axes_list = list(self.axes)
+                    axes_list.remove(axes)
+                    self.axes = tuple(axes_list)
+                return
+
+    def matches(self, other: DataConfiguration) -> bool:
+        """Check if both data configurations describe the same data."""
+        if len(self.axes) != len(other.axes):
+            return False
+        for a1, a2 in zip(self.axes, other.axes):
+            if not a1.matches(a2):
+                return False
+        return True
 
     def unify_with(self, other: DataConfiguration) -> tuple[dict, dict]:
         if self.dtype != other.dtype:

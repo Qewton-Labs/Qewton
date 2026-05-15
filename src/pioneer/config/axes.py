@@ -108,6 +108,23 @@ class Axes:
     def shape(self):
         return self._shape
 
+    @property
+    def is_empty(self):
+        return len(self._shape) == 0
+
+    def remove_dim(self, dim):
+        self._shape = tuple(d for d in self._shape if d != dim)
+
+    def matches(self, other: Axes) -> bool:
+        if len(self.shape) != len(other.shape):
+            return False
+        for s1, s2 in zip(self.shape, other.shape):
+            if not isinstance(s1, s2.__class__):
+                return False
+            if not s1.size == s2.size:
+                return False
+        return True
+
     def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
         if not self.__class__ == other.__class__:
             raise DataConfigMismatchError(
@@ -376,6 +393,9 @@ class AxesDim:
         self.broadcastable = broadcastable
         self.graph = None
 
+    def update_size(self, new_size):
+        self._size = new_size
+
     @property
     def size(self):
         return self._size
@@ -437,6 +457,27 @@ class AddedDim(AxesDim):
     def size(self):
         size = (
             self.dim_1.size + self.dim_2.size
+            if self.dim_1.size is not None and self.dim_2.size is not None
+            else None
+        )
+        return size
+
+
+class ProductDim(AxesDim):
+
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls)
+
+    def __init__(self, dim_1, dim_2):
+        self.dim_1 = dim_1
+        self.dim_2 = dim_2
+        broadcastable = dim_1.broadcastable and dim_2.broadcastable
+        super().__init__(self.size, broadcastable)
+
+    @property
+    def size(self):
+        size = (
+            self.dim_1.size * self.dim_2.size
             if self.dim_1.size is not None and self.dim_2.size is not None
             else None
         )
