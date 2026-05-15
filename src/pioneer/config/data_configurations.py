@@ -19,6 +19,13 @@ class DataConfiguration:
     def __str__(self):
         return f"DataConfig([{', '.join(str(a) for a in self.axes)}])"
 
+    @property
+    def feature_axes(self):
+        for axes in self.axes:
+            if isinstance(axes, FeatureAxes):
+                return axes
+        return None
+
     def unify_with(self, other: DataConfiguration) -> tuple[dict, dict]:
         if self.dtype != other.dtype:
             raise DataConfigMismatchError(

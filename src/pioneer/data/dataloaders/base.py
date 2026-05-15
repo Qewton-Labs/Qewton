@@ -1,6 +1,6 @@
-from typing import Any, Callable, Annotated
+import math
+from typing import Callable
 from abc import abstractmethod
-import copy
 
 import numpy as np
 
@@ -8,6 +8,7 @@ from ...graphs.nodes import NodeState
 from ...algorithms.backend import Backend
 
 from ...config import DataConfiguration, AxesDim
+from ...optim.base import EvaluationPhase
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.number_hyperparameter import (
     DiscreteHyperparameter,
@@ -15,8 +16,7 @@ from ...optim.parameters.number_hyperparameter import (
 from ...optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
-from ...config.variables import Variable
-from ...config.axes import BatchAxes, EllipsisAxes
+from ...config.axes import BatchAxes
 from ...graphs.nodes import Node, OutputPort, InputPort
 from ..datasets import DataSet
 
@@ -41,16 +41,28 @@ def register_dataset(condition: Callable[..., bool], cls_type: type):
 
 
 class DataNode(Node):
+    """
+    A Node that loads or samples data. Has only output ports in the graph,
+    no input ports.
+    """
+
     def __init__(
-        self, batch_size, name: str = "DataNode", state: NodeState = NodeState.FIXED
+        self,
+        batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
+        name: str = "DataNode",
+        state: NodeState = NodeState.FIXED,
     ) -> None:
-        self._batch_size = batch_size
+        self._batch_size = HyperParameter.from_value(batch_size)
         self._is_cached = False
         super().__init__(name, state)
 
     @property
     def batch_size(self):
-        return self._batch_size
+        return self._batch_size.value
+
+    @abstractmethod
+    def __len__(self):
+        pass
 
     @property
     def is_cached(self):
@@ -69,6 +81,10 @@ class DataLoader(DataNode):
     """
     TODO: parallelize this, similar to pytorch dataloader
     pin memory flag?
+
+    Implements a standard dataloader module.
+
+
     """
 
     def __init__(
@@ -76,48 +92,100 @@ class DataLoader(DataNode):
         data_set: DataSet,
         batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
         splitting_ratio: tuple[float, float, float] = (1.0, 0.0, 0.0),
-        shuffle_data: bool = True,
+        shuffle_data: bool | CategoricalHyperparameter = True,
         shuffle_seed: int | None = None,
         backend: Backend | None = None,
         name: str = "DataLoader",
     ):
         self.data_set = data_set
         self.splitting_ratio = splitting_ratio
-        self.shuffle_data = shuffle_data
+        self.shuffle_data = HyperParameter.from_value(shuffle_data)
         self.shuffle_seed = shuffle_seed
+        self._rng = np.random.default_rng(self.shuffle_seed)
 
-        if shuffle_data:
-            if shuffle_seed is not None:
-                rng = np.random.default_rng(self.shuffle_seed)
-                self.permutation = rng.permutation(len(self.data_set))
-            else:
-                self.permutation = np.random.permutation(len(self.data_set))
-        else:
-            self.permutation = np.arange(len(self.data_set))
+        self._batch_progress = 0
+        self.permutation = []
+        self._permutation_splits = {}
+        self.setup_iteration()
 
         self.backend = backend
 
         super().__init__(batch_size=batch_size, name=name)
 
-        batch_config = DataConfiguration(
-            BatchAxes(AxesDim(self.batch_size)), EllipsisAxes()
-        )
         self._output_ports = []
         for config in self.data_set.data_configs:
-            copied_config = copy.deepcopy(config)
-            # TODO: Ich glaube das geht nicht, da beide Configs
-            # eine BatchAxes mit verschiedener Größe haben werden?
-            _, unified = batch_config.unify_with(copied_config)
-            copied_config.update_config(unified)
-            # Vielleicht einfach direkt kopieren und die Dim ändern?
+            axes = list(config.axes)  # TODO: hier lieber deep kopieren oder nicht?
+            assert isinstance(axes[0], BatchAxes), "In DataSets, \
+                the first axes should be the batch axes."
+            assert len(axes[0].shape) == 1, "Multi-dimensional \
+                batch axes not supported for batching."
+            assert axes[0].shape[0] >= self.batch_size, "Batch \
+                can not be larger than dataset size."
+            axes[0] = BatchAxes(AxesDim(self.batch_size))
+            new_config = DataConfiguration(
+                *axes, dtype=backend.standard_datatype() if backend else None
+            )
+            port_name = str(
+                config.feature_axes.variables if config.feature_axes else None
+            )
 
             self._output_ports.append(
                 OutputPort(
-                    copied_config,
+                    new_config,
                     self,
-                    name=config.variable_name,
+                    name=port_name,
                 )
             )
+
+    def set_permutation(self):
+        if self.shuffle_data:
+            self.permutation = self._rng.permutation(len(self.data_set))
+        else:
+            self.permutation = np.arange(len(self.data_set))
+
+    def setup_iteration(self):
+        self._batch_progress = 0
+        self.set_permutation()
+        n_samples = len(self.permutation)
+        r_train, r_val, _ = self.splitting_ratio
+
+        train_end = int(r_train * n_samples)
+        val_end = train_end + int(r_val * n_samples)
+
+        self._permutation_splits = {
+            EvaluationPhase.TRAIN: self.permutation[0:train_end],
+            EvaluationPhase.VALIDATION: self.permutation[train_end:val_end],
+            EvaluationPhase.TUNE: self.permutation[train_end:val_end],
+            EvaluationPhase.TEST: self.permutation[val_end:n_samples],
+            EvaluationPhase.ALWAYS: self.permutation[0:n_samples],
+        }
+
+    def __len__(self):
+        return math.ceil(len(self.data_set) / self.batch_size)
+
+    def run(self):
+        split_indices = self._permutation_splits[self.mode]
+        n_split = len(split_indices)
+
+        if n_split == 0:
+            return
+
+        bs = self.batch_size
+        if hasattr(bs, "value"):
+            bs = bs.value
+
+        if self._batch_progress >= n_split:
+            self._batch_progress = 0
+            if self.shuffle_data:
+                self._rng.shuffle(split_indices)
+
+        indices = split_indices[self._batch_progress : self._batch_progress + bs]
+        batch_data = self.data_set.get_batch(indices)
+
+        self._batch_progress += bs
+
+        for i, data in enumerate(batch_data):
+            self.output_ports[i].set_value(data)
 
     @property
     def input_ports(self) -> list[InputPort]:
@@ -129,7 +197,7 @@ class DataLoader(DataNode):
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
-        return [self.batch_size]
+        return [self.batch_size, self.shuffle_data]
 
     def set_mode(self, new_mode):
         if new_mode != self.mode:
