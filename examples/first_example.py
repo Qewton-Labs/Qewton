@@ -7,14 +7,31 @@ data = torch.column_stack((x_data, u_data))
 
 X = pioneer.config.Variable("x", 1)
 U = pioneer.config.Variable("u", 1)
-dataset_X = pioneer.data.DataSet.from_data(x_data, X, batch_size=1000)
-dataset_U = pioneer.data.DataSet.from_data(u_data, U, batch_size=1000)
+
+input_config = pioneer.config.DataConfiguration(
+    pioneer.config.BatchAxes(1000), pioneer.config.FeatureAxes(X)
+)
+output_config = pioneer.config.DataConfiguration(
+    pioneer.config.BatchAxes(1000), pioneer.config.FeatureAxes(U)
+)
+
+dataset = pioneer.data.ArrayLikeDataSet(
+    data=[x_data, u_data], data_configs=[input_config, output_config]
+)
+
+data_loader = pioneer.data.DataLoader(
+    data_set=dataset,
+    batch_size=1000,
+    splitting_ratio=(1.0, 0.0, 0.0),
+    shuffle_data=False,
+)
+
 
 model = pioneer.algorithms.FCN(
     in_neurons=1,
     hidden_neurons=50,
     out_neurons=1,
-    n_hidden_layers=1,
+    n_hidden_layers=4,
     activation=pioneer.building_blocks.Tanh,
 )
 
@@ -24,9 +41,9 @@ constraint = pioneer.constraints.MSEConstraint(
 
 computation_graph = pioneer.Graph()
 
-computation_graph.connect(dataset_X, model)
+computation_graph.connect(data_loader.get_output_port(X), model)
 computation_graph.connect(model, constraint.input_1)
-computation_graph.connect(dataset_U, constraint.input_2)
+computation_graph.connect(data_loader.get_output_port(U), constraint.input_2)
 
 computation_graph.setup()
 

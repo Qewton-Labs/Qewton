@@ -38,6 +38,21 @@ class Backend(Generic[TensorType]):
             "The standard_datatype method must be implemented by subclasses of Backend."
         )
 
+    @classmethod
+    def to(cls, data, device):
+        """Moves the data to the given device.
+
+        Args:
+            data (TensorType): The data to move.
+            device (str): The device to move the data to.
+
+        Returns:
+            TensorType: The moved data.
+        """
+        raise NotImplementedError(
+            "The moving to a different device is backend dependent."
+        )
+
 
 def get_dtype_torch():
     try:
@@ -64,6 +79,10 @@ class TorchBackend(Backend[get_dtype_torch()]):
 
         return cls.library.Tensor
 
+    @classmethod
+    def to(cls, data, device):
+        return data.to(device)
+
 
 def get_dtype_tf():
     try:
@@ -89,6 +108,10 @@ class TensorflowBackend(Backend[get_dtype_tf()]):
             raise ImportError("TensorFlow is not installed.")
 
         return cls.library.Tensor
+
+    @classmethod
+    def to(cls, data, device):
+        return data
 
 
 DL_BACKEND_HIERARCHY = [TorchBackend, TensorflowBackend]
