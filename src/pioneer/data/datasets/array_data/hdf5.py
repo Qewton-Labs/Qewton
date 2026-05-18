@@ -1,10 +1,10 @@
 from .base import ArrayLikeDataSet
 
 
-class HDF5DataContainer(ArrayLikeDataSet):
+class HDF5DataSet(ArrayLikeDataSet):
     """Data container for HDF5 files."""
 
-    def __init__(self, dataset, file_handle):
+    def __init__(self, dataset, file_handle, data_configs):
         """
         Args:
             dataset (h5py.Dataset): The data from the HDF5 file that should be
@@ -16,11 +16,12 @@ class HDF5DataContainer(ArrayLikeDataSet):
                 file_handle = h5py.File(file_path, "r")
                 dataset = f[dataset_key]
         """
+        # TODO: should we automatically split up the data somehow?
         self._file = file_handle  # keep handle alive
-        super().__init__(dataset)
+        super().__init__(dataset, data_configs)
 
     @classmethod
-    def from_file(cls, file_path: str, dataset_key: str):
+    def from_file(cls, file_path: str, dataset_key: str, data_configs):
         try:
             import h5py
         except ImportError as e:
@@ -33,7 +34,7 @@ class HDF5DataContainer(ArrayLikeDataSet):
             raise KeyError(f"Dataset '{dataset_key}' not found in file.")
 
         dataset = f[dataset_key]
-        return cls(dataset, f)
+        return cls(dataset, f, data_configs)
 
     def close(self):
         """Close the HDF5 file if needed."""
@@ -54,4 +55,5 @@ class HDF5DataContainer(ArrayLikeDataSet):
 
     @property
     def metadata(self) -> dict:
-        return dict(self._data.attrs) if hasattr(self._data, "attrs") else {}
+        data_obj = self._data[0]
+        return dict(data_obj.attrs) if hasattr(data_obj, "attrs") else {}

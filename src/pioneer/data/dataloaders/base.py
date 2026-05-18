@@ -1,3 +1,7 @@
+"""
+Base classes for data loading and node-based data sampling in the graph.
+"""
+
 from copy import deepcopy
 import math
 from abc import abstractmethod
@@ -43,6 +47,13 @@ class DataNode(Node):
         state: NodeState = NodeState.FIXED,
         backend: type[Backend] | None = DEFAULT_DL_BACKEND,
     ) -> None:
+        """
+        Args:
+            batch_size: Number of samples per batch.
+            name: Display name of the node.
+            state: Initial state of the node.
+            backend: Computing backend (e.g., TorchBackend).
+        """
         self._batch_size = HyperParameter.from_value(batch_size, name="batch_size")
         self._batch_progress = 0
         self._is_cached = False
@@ -70,18 +81,20 @@ class DataNode(Node):
 
 
 class PointSampler(DataNode):
+    """Placeholder for sampling individual points from a domain."""
+
     pass
 
 
 class DataLoader(DataNode):
+    """Standard DataLoader module for batching, shuffling, and splitting datasets.
+
+    This node acts as a source in the computation graph, providing batches of
+    data to connected algorithms.
     """
-    TODO: parallelize this, similar to pytorch dataloader
-    pin memory flag?
 
-    Implements a standard dataloader module.
-
-
-    """
+    # TODO: parallelize this, similar to pytorch dataloader
+    # pin memory flag?
 
     def __init__(
         self,
@@ -93,6 +106,16 @@ class DataLoader(DataNode):
         backend: type[Backend] | None = DEFAULT_DL_BACKEND,
         name: str = "DataLoader",
     ):
+        """
+        Args:
+            data_set (DataSet): The source dataset.
+            batch_size: Number of samples per batch.
+            splitting_ratio: Proportions for (Train, Validation, Test) splits.
+            shuffle_data: Whether to shuffle the indices at the start of an epoch.
+            shuffle_seed: Random seed for reproducibility.
+            backend: The backend used for data types and device transfers.
+            name: Node name.
+        """
         self.data_set = data_set
         self.splitting_ratio = splitting_ratio
         self.shuffle_data = HyperParameter.from_value(shuffle_data, "shuffle_data")
@@ -104,17 +127,14 @@ class DataLoader(DataNode):
 
         super().__init__(batch_size=batch_size, name=name, backend=backend)
 
+        # Build output ports based on dataset configurations
         self._output_ports = []
         copy_memo = {}
         for config in self.data_set.data_configs:
             axes = deepcopy(list(config.axes), memo=copy_memo)
-            assert isinstance(
-                axes[0], BatchAxes
-            ), "In DataSets, \
+            assert isinstance(axes[0], BatchAxes), "In DataSets, \
                 the first axes should be the batch axes."
-            assert (
-                len(axes[0].shape) == 1
-            ), "Multi-dimensional \
+            assert len(axes[0].shape) == 1, "Multi-dimensional \
                 batch axes not supported for batching."
             assert (
                 axes[0].shape[0].size >= self.batch_size
@@ -132,12 +152,14 @@ class DataLoader(DataNode):
             )
 
     def set_permutation(self):
+        """Resets the data permutation based on shuffling settings."""
         if self.shuffle_data.value:
             self.permutation = self._rng.permutation(len(self.data_set))
         else:
             self.permutation = np.arange(len(self.data_set))
 
     def setup_iteration(self):
+        """Calculates index splits for different evaluation phases (Train, Val, Test)."""
         self._batch_progress = 0
         self.set_permutation()
         n_samples = len(self.permutation)
@@ -178,6 +200,11 @@ class DataLoader(DataNode):
         self._device = device
 
     def forward(self):
+        """Executes the data loading for one batch.
+
+        This method handles split indexing, batch slicing, and moving data to
+        the appropriate device.
+        """
         split_indices = self._permutation_splits[self.mode]
         n_split = len(split_indices)
 
@@ -186,6 +213,7 @@ class DataLoader(DataNode):
 
         bs = self.batch_size
 
+        # Reset progress if we've exhausted the current split
         if self._batch_progress >= n_split:
             self._batch_progress = 0
             if self.shuffle_data.value:
@@ -193,6 +221,8 @@ class DataLoader(DataNode):
 
         indices = split_indices[self._batch_progress : self._batch_progress + bs]
         batch_data = self.data_set.get_batch(indices)
+
+        # Move batch to device if backend is specified
         if self._device is not None and self.backend is not None:
             batch_data = [self.backend.to(b, self._device) for b in batch_data]
 
