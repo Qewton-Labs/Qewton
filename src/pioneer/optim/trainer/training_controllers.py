@@ -8,7 +8,7 @@ from .optimizers.optim_setups.pytorch_optims import (
 )
 from .optimizers.optimizers import Optimizer
 from ..base import EvaluationPhase
-from ...algorithms.backend import (
+from ...config.backend import (
     TorchBackend,
     TensorflowBackend,
 )

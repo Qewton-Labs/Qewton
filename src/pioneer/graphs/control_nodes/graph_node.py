@@ -5,7 +5,7 @@ import inspect
 from ..nodes import InputPort, Node, OutputPort
 from ..graphs import Graph
 from ...config.data_configurations import DataConfiguration
-
+from ...config.backend import Backend, TensorType
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.trainable_parameters import _TrainableParameterBase
 
@@ -40,15 +40,16 @@ class GraphNode(Node):
         input_ports: list[InputPort] | dict[InputPort, list[InputPort]],
         output_ports: list[OutputPort] | dict[OutputPort, OutputPort],
         name: str = "GraphNode",
+        backend: type[Backend[TensorType]] | None = None,
     ) -> None:
-        super().__init__(name=name)
+        super().__init__(name=name, backend=backend)
 
         self._graph = graph
 
         self._input_ports = []
 
         self.configs_defined_in_forward = self._configs_were_defined_in_forward()
-        in_forward_ports, out_forward_ports = Node._build_ports(self.forward, self)
+        in_forward_ports, out_forward_ports = self._build_ports(self.forward, self)
         for i, p in enumerate(input_ports):
             if isinstance(input_ports, dict):
                 self._input_ports.append(p)

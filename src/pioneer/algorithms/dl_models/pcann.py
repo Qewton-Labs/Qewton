@@ -15,7 +15,7 @@ from ..building_blocks.math import (
 )
 from ..building_blocks.normalizations import StdNormalizationNode, InverseStdNormalization
 from ..building_blocks.array_operations import Narrow
-from ..backend import DEFAULT_DL_BACKEND, Backend
+from ...config.backend import DEFAULT_DL_BACKEND, Backend
 from ...config.data_configurations import DataConfiguration
 from ...data.dataloaders.base import DataSet
 from ...graphs.control_nodes.graph_node import GraphNode, TrackedNode
@@ -35,7 +35,6 @@ class PCA(GraphNode):
         backend: Backend = DEFAULT_DL_BACKEND,
         divide_eps=1.0e-5,
     ) -> None:
-        self.backend = backend
         self.divide_eps = divide_eps
         self.dataset_node = dataset_node
         self.batch_axis = batch_axis
@@ -58,7 +57,9 @@ class PCA(GraphNode):
 
         self.graph, output_port_mapping = self._build_graph(self.backend)
 
-        super().__init__(self.graph, input_ports, output_port_mapping, name)
+        super().__init__(
+            self.graph, input_ports, output_port_mapping, name, backend=backend
+        )
 
     def reset(self):
         self.computed_pca = False

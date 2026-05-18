@@ -2,7 +2,7 @@ from typing import Annotated, Generic
 
 from .math import MatMul, Add
 from .parameters import ParameterNode
-from ..backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from ...config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
 from ...config.data_configurations import DataConfiguration as DC
 from ...config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from ...optim.parameters.hyperparameter_base import HyperParameter
@@ -21,10 +21,8 @@ class FunctionalLinear(GraphNode, Generic[TensorType]):
         bias=True,
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
-        self.backend = backend
-
-        self.matmul_node = MatMul(backend=self.backend)
-        self.add_node = Add(backend=self.backend)
+        self.matmul_node = MatMul(backend=backend)
+        self.add_node = Add(backend=backend)
         graph = Graph()
         if bias:
             graph.connect(self.matmul_node.output_ports[0], self.add_node.input_ports[0])
@@ -42,6 +40,7 @@ class FunctionalLinear(GraphNode, Generic[TensorType]):
             ],
             output_ports=[output_port],
             name=name,
+            backend=backend,
         )
         self.input = self.input_ports[0]
         self.weight = self.input_ports[1]

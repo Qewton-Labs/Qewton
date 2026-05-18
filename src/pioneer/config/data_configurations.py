@@ -40,6 +40,10 @@ class DataConfiguration:
                 return axes
         return None
 
+    def set_dtype(self, new_dtype):
+        # TODO: Any checkes needed here?
+        self.dtype = new_dtype
+
     def get_axes_and_dim(self, idx) -> tuple[Axes | None, AxesDim | None]:
         counter = 0
         for axes in self.axes:

@@ -5,7 +5,7 @@ from abc import abstractmethod
 import numpy as np
 
 from ...graphs.nodes import NodeState
-from ...algorithms.backend import Backend, DEFAULT_DL_BACKEND
+from ...config.backend import Backend, DEFAULT_DL_BACKEND
 from ...config.variables import Variable
 
 from ...optim.base import EvaluationPhase
@@ -41,12 +41,13 @@ class DataNode(Node):
         batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
         name: str = "DataNode",
         state: NodeState = NodeState.FIXED,
+        backend: type[Backend] | None = DEFAULT_DL_BACKEND,
     ) -> None:
         self._batch_size = HyperParameter.from_value(batch_size, name="batch_size")
         self._batch_progress = 0
         self._is_cached = False
         self._device = None
-        super().__init__(name, state)
+        super().__init__(name, state, backend=backend)
 
     @property
     def batch_size(self) -> int:
@@ -89,7 +90,7 @@ class DataLoader(DataNode):
         splitting_ratio: tuple[float, float, float] = (1.0, 0.0, 0.0),
         shuffle_data: bool | CategoricalHyperparameter = True,
         shuffle_seed: int | None = None,
-        backend: Backend | None = DEFAULT_DL_BACKEND,
+        backend: type[Backend] | None = DEFAULT_DL_BACKEND,
         name: str = "DataLoader",
     ):
         self.data_set = data_set
@@ -101,9 +102,7 @@ class DataLoader(DataNode):
         self._permutation_splits = {}
         self.setup_iteration()
 
-        self.backend = backend
-
-        super().__init__(batch_size=batch_size, name=name)
+        super().__init__(batch_size=batch_size, name=name, backend=backend)
 
         self._output_ports = []
         copy_memo = {}

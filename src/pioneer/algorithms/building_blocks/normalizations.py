@@ -2,7 +2,7 @@ from typing import Annotated, Any
 
 from .math import Mean, Std
 from .parameters import ParameterNode
-from ..backend import DEFAULT_DL_BACKEND, Backend
+from ...config.backend import DEFAULT_DL_BACKEND, Backend
 from ...config.data_configurations import DataConfiguration
 from ...data.dataloaders.base import DataSet
 from ...graphs.control_nodes.graph_node import TrackedNode

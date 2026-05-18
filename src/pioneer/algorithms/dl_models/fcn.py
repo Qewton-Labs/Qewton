@@ -2,7 +2,7 @@ from typing import Annotated, Generic
 
 from ..building_blocks.linear import Linear
 from ..building_blocks.activation_functions import ReLU
-from ..backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from ...config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
 from ...config.data_configurations import DataConfiguration
 from ...config.variables import Variable
 from ...config.axes import FeatureAxes, EllipsisAxes
@@ -36,20 +36,20 @@ class FCN(GraphNode, Generic[TensorType]):
         )
         self.bias = HyperParameter.from_value(bias, "FCN Bias")
         self.activation = HyperParameter.from_value(activation, "FCN Activations")
-        self.backend = backend
 
-        self._graph = self._build_network()
+        self._graph = self._build_network(backend)
         self.ellipsis_axes: EllipsisAxes
         super().__init__(
             name=name,
             graph=self._graph,
             input_ports=self._graph.sorted_nodes[0].input_ports,
             output_ports=self._graph.sorted_nodes[-1].output_ports,
+            backend=backend,
         )
         self._graph.setup()
         self._state = NodeState.UNINITIALIZED
 
-    def _build_network(self):
+    def _build_network(self, backend):
         nodes: list[Node] = []
         layers = self.n_hidden_layers.value + 1
         for i in range(layers):
@@ -64,16 +64,16 @@ class FCN(GraphNode, Generic[TensorType]):
                         else self.out_neurons.value
                     ),
                     bias=self.bias.value,
-                    backend=self.backend,
+                    backend=backend,
                 )
             )
             # No activation after the last layer
             if i < layers - 1:
-                nodes.append(self.activation.value(backend=self.backend))
+                nodes.append(self.activation.value(backend=backend))
         return SequentialGraph(*nodes)
 
     def setup(self):
-        new_graph = self._build_network()
+        new_graph = self._build_network(self.backend)
         self.setup_graph(
             new_graph,
             input_ports=new_graph.sorted_nodes[0].input_ports,

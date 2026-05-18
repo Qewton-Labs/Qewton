@@ -1,6 +1,6 @@
 from typing import Any
 
-from ....algorithms.backend import (
+from ....config.backend import (
     Backend,
     TorchBackend,
     TensorflowBackend,

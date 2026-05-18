@@ -1,5 +1,7 @@
 from enum import Enum
 
+from ..config.backend import TensorType, Backend
+
 from ..optim.base import EvaluationPhase
 from ..optim.parameters.hyperparameter_base import HyperParameter
 from ..graphs.nodes import Node
@@ -30,8 +32,9 @@ class Constraint(Node):
         objective: ConstraintObjective = ConstraintObjective.MINIMIZE,
         constraint_type: ConstraintType = ConstraintType.LOSS,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
+        backend: type[Backend[TensorType]] | None = None,
     ):
-        super().__init__(name=name)
+        super().__init__(name=name, backend=backend)
         self.weight: HyperParameter = HyperParameter.from_value(weight, "Weight")
         self.objective: ConstraintObjective = objective
         self.constraint_type: ConstraintType = constraint_type

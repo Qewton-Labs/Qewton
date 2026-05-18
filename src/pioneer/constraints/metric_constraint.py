@@ -6,7 +6,7 @@ from ..optim.parameters.categorical_hyperparameter import (
 )
 from ..optim.parameters.number_hyperparameter import ContinuousHyperparameter
 from ..graphs.nodes import InputPort
-from ..algorithms.backend import DEFAULT_DL_BACKEND
+from ..config.backend import DEFAULT_DL_BACKEND
 from ..algorithms.building_blocks.math import Subtract, Square, Mean, Divide
 
 
@@ -20,7 +20,7 @@ class MetricConstraint(Constraint):
         backend=DEFAULT_DL_BACKEND,
         epsilon=1e-8,
     ):
-        super().__init__(name, weight)
+        super().__init__(name, weight, backend=backend)
         self.input_config = input_config
         self.relative = HyperParameter.from_value(relative, "Relative Constraint")
         self.epsilon = epsilon  # for computation of the relative loss.
@@ -28,8 +28,6 @@ class MetricConstraint(Constraint):
         self.input_1 = InputPort(self.input_config, self, name="input1")
         self.input_2 = InputPort(self.input_config, self, name="input2")
         self._input_ports = [self.input_1, self.input_2]
-
-        self.backend = backend
 
 
 class MSEConstraint(MetricConstraint):

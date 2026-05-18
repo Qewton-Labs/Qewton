@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Annotated
 
-from ..backend import DEFAULT_DL_BACKEND, TorchBackend
+from ...config.backend import Backend, DEFAULT_DL_BACKEND, TorchBackend
 from ...optim.parameters.hyperparameter_base import HyperParameter
 from ...optim.parameters.trainable_parameters import TrainableParameters
 from ...config.data_configurations import DataConfiguration
@@ -68,11 +68,10 @@ class ParameterNode(Node):
         self.shape = tuple(
             HyperParameter.from_value(s, f"shape_{i}") for i, s in enumerate(shape)
         )
-        self.backend = backend
-        self.implementation_class = self.existing_implementations[self.backend]
+        self.implementation_class = self.existing_implementations[backend]
         self.implementation: _InternalParameter | None = None
         self.initial_value = initial_value
-        super().__init__(name, state=NodeState.UNINITIALIZED)
+        super().__init__(name, state=NodeState.UNINITIALIZED, backend=backend)
         self.output = self.output_ports[0]
 
     def setup(self) -> None:
@@ -89,7 +88,11 @@ class ParameterNode(Node):
 
     def output_config(self):
         int_shape = tuple(hp.value for hp in self.shape)
-        return DataConfiguration(EllipsisAxes(), FeatureAxes(shape=int_shape))
+        return DataConfiguration(
+            EllipsisAxes(),
+            FeatureAxes(shape=int_shape),
+            dtype=self.backend.standard_datatype(),  # type: ignore
+        )
 
     def run(self) -> None:
         pass  # value is set once in setup

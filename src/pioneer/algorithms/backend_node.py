@@ -1,7 +1,8 @@
+from __future__ import annotations
 from typing import Generic
 
 from ..graphs.nodes import Node, NodeState
-from .backend import (
+from ..config.backend import (
     DEFAULT_DL_BACKEND,
     Backend,
     TorchBackend,
@@ -38,9 +39,8 @@ class BackendNode(Node, Generic[TensorType]):
         self, name=None, backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND
     ):
         name = name if name is not None else self.__class__.__name__
-        super().__init__(name=name, state=NodeState.FIXED)
-        self.backend = backend
-        _ = self.backend.import_library()
+        super().__init__(name=name, state=NodeState.FIXED, backend=backend)
+        _ = backend.import_library()
 
         self.choose_implementation()
 

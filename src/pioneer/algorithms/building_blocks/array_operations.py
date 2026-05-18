@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from ..backend import DEFAULT_DL_BACKEND, TensorType
+from ...config.backend import DEFAULT_DL_BACKEND, TensorType
 from ...config.data_configurations import DataConfiguration
 from ..backend_node import BackendNode
 

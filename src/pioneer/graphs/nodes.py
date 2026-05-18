@@ -8,6 +8,7 @@ import inspect
 import warnings
 
 from ..config.data_configurations import DataConfiguration
+from ..config.backend import Backend, TensorType
 from ..optim.parameters.hyperparameter_base import HyperParameter
 from ..optim.base import EvaluationPhase
 from ..optim.parameters.trainable_parameters import (
@@ -127,7 +128,12 @@ class Node(ABC):
     _node_id_counter = 0
     _tracking_phase: bool = False
 
-    def __init__(self, name: str = "Node", state: NodeState = NodeState.FIXED) -> None:
+    def __init__(
+        self,
+        name: str = "Node",
+        state: NodeState = NodeState.FIXED,
+        backend: type[Backend[TensorType]] | None = None,
+    ) -> None:
         """
         Args:
             name (str, optional): The name of this node. Defaults to "Node".
@@ -137,9 +143,10 @@ class Node(ABC):
         super().__init__()
         self.name = name
         self._state = state
+        self.backend = backend
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
 
-        self._input_ports, self._output_ports = Node._build_ports(self.forward, self)
+        self._input_ports, self._output_ports = self._build_ports(self.forward, self)
 
         self.node_id = type(self)._node_id_counter
         type(self)._node_id_counter += 1
@@ -186,6 +193,11 @@ class Node(ABC):
         for i, output in enumerate(outputs):
             _, config = cls._unwrap_annotated(output, owner)
             output_ports.append(OutputPort(config, node=owner, name=f"output_{i}"))
+
+        if owner.backend is not None:
+            for port in input_ports + output_ports:
+                port.data_configuration.set_dtype(owner.backend.standard_datatype())
+
         return input_ports, output_ports
 
     @classmethod
