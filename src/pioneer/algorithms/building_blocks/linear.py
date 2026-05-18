@@ -91,6 +91,7 @@ class Linear(GraphNode, Generic[TensorType]):
             input_ports=[self.functional_linear_node.input],
             output_ports=[self.functional_linear_node.output],
             name=name,
+            backend=backend,
         )
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]

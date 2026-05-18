@@ -132,7 +132,7 @@ class Node(ABC):
         self,
         name: str = "Node",
         state: NodeState = NodeState.FIXED,
-        backend: type[Backend[TensorType]] | None = None,
+        backend: type[Backend[TensorType]] = Backend,
     ) -> None:
         """
         Args:
@@ -180,6 +180,9 @@ class Node(ABC):
                     ),
                 )
             )
+        if owner.backend != Backend:
+            for port in input_ports:
+                port.data_configuration.set_dtype(owner.backend.standard_datatype())
         # Build output ports
         return_values = type_hints.get("return", inspect.Signature.empty)
         if return_values is None or return_values is inspect.Signature.empty:
@@ -194,8 +197,8 @@ class Node(ABC):
             _, config = cls._unwrap_annotated(output, owner)
             output_ports.append(OutputPort(config, node=owner, name=f"output_{i}"))
 
-        if owner.backend is not None:
-            for port in input_ports + output_ports:
+        if owner.backend != Backend:
+            for port in output_ports:
                 port.data_configuration.set_dtype(owner.backend.standard_datatype())
 
         return input_ports, output_ports

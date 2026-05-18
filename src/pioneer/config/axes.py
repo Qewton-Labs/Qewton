@@ -348,11 +348,11 @@ class FeatureAxes(Axes):
     ):
         if variable is not None and shape is not None:
             raise ValueError("Only one of variable or shape can be provided.")
+        self._variable = None
         if variable is not None:
             self._variable = variable
             super().__init__(*self._variable.shape)
         elif shape is not None:
-            self._variable = None
             super().__init__(*shape)
 
     @property
@@ -364,13 +364,22 @@ class FeatureAxes(Axes):
     def get_variable_slice(self, variable):
         return self.variables.get_slice(variable)
 
-    def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
+    def unify_with(self: FeatureAxes, other: Axes) -> tuple[dict, dict]:
         if not isinstance(other, FeatureAxes):
             raise DataConfigMismatchError(
                 f"Cannot unify axes of different types: {self.__class__} \
                     and {other.__class__}."
             )
         unified_shapes = self.unify_shapes(self.shape, other.shape)
+        if self._variable is not None:
+            self._variable = other.variables
+        elif other._variable is not None:
+            other._variable = self.variables
+        else:
+            if self.variables != other.variables:
+                raise DataConfigMismatchError(
+                    "Variables do not match, when matching" + f"{self} and {other}."
+                )
         return unified_shapes
 
 

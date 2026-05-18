@@ -14,7 +14,6 @@ from ...config.axes import (
     EllipsisDim,
     FeatureAxes,
     MinimumDim,
-    ProductDim,
 )
 from ...graphs.nodes import InputPort, Port
 
