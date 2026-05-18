@@ -475,46 +475,52 @@ class TrackingObject:
         self.to_ports.append(port)
 
     def __add__(self, other):
-        from ..algorithms.building_blocks import Add
+        from ..algorithms.building_blocks.math import Add
 
         add_node = Add()
         return add_node(self, other)
 
     def __matmul__(self, other):
-        from ..algorithms.building_blocks import MatMul
+        from ..algorithms.building_blocks.math import MatMul
 
         matmul_node = MatMul()
         return matmul_node(self, other)
 
     def __sub__(self, other):
-        from ..algorithms.building_blocks import Subtract
+        from ..algorithms.building_blocks.math import Subtract
 
         subtract_node = Subtract()
         return subtract_node(self, other)
 
     def __mul__(self, other):
-        from ..algorithms.building_blocks import Multiply
+        from ..algorithms.building_blocks.math import Multiply
 
         multiply_node = Multiply()
         return multiply_node(self, other)
 
     def __pow__(self, other):
-        from ..algorithms.building_blocks import Power
+        from ..algorithms.building_blocks.math import Power
 
         power_node = Power()
         return power_node(self, other)
 
     def __truediv__(self, other):
-        from ..algorithms.building_blocks import Divide
+        from ..algorithms.building_blocks.math import Divide
 
         divide_node = Divide()
         return divide_node(self, other)
 
     def __abs__(self):
-        from ..algorithms.building_blocks import Abs
+        from ..algorithms.building_blocks.math import Abs
 
         abs_node = Abs()
         return abs_node(self)
+
+    def __getitem__(self, key):
+        from ..algorithms.building_blocks.array_operations import Slice
+
+        slice_node = Slice(key)
+        return slice_node(self)
 
 
 # endregion

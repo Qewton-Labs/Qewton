@@ -26,3 +26,6 @@ from .math import (
     MatMul,
     Mean,
 )
+
+from .array_operations import SplitVariables, Slice, Narrow
+from .derivatives import GradientTracking, Gradient

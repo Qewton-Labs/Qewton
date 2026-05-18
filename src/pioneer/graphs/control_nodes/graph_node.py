@@ -40,7 +40,7 @@ class GraphNode(Node):
         input_ports: list[InputPort] | dict[InputPort, list[InputPort]],
         output_ports: list[OutputPort] | dict[OutputPort, OutputPort],
         name: str = "GraphNode",
-        backend: type[Backend[TensorType]] | None = None,
+        backend: type[Backend[TensorType]] = Backend,
     ) -> None:
         super().__init__(name=name, backend=backend)
 

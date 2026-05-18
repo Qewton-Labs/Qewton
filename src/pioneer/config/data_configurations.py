@@ -40,6 +40,31 @@ class DataConfiguration:
                 return axes
         return None
 
+    def replace_feature_axes(self, new_feature_axes: FeatureAxes):
+        new_axes = []
+        for axes in self.axes:
+            if isinstance(axes, FeatureAxes):
+                new_axes.append(new_feature_axes)
+            else:
+                new_axes.append(axes)
+        self.axes = tuple(new_axes)
+
+    @property
+    def feature_idx(self) -> int:
+        counter = 0
+        for axes in self.axes:
+            if isinstance(axes, EllipsisAxes):
+                # Can not get values via an index if ellipsis is present
+                return -1
+            for dim in axes.shape:
+                if isinstance(dim, EllipsisDim):
+                    # Can not get values via an index if ellipsis is present
+                    return -1
+                if isinstance(axes, FeatureAxes):
+                    return counter
+                counter += 1
+        return -1
+
     def set_dtype(self, new_dtype):
         # TODO: Any checkes needed here?
         self.dtype = new_dtype

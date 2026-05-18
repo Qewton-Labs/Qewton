@@ -41,7 +41,7 @@ class BackendNode(Node, Generic[TensorType]):
         name = name if name is not None else self.__class__.__name__
         super().__init__(name=name, state=NodeState.FIXED, backend=backend)
         _ = backend.import_library()
-
+        self.backend: type[Backend[TensorType]] = self.backend
         self.choose_implementation()
 
     def choose_implementation(self):
