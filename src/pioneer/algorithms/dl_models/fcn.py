@@ -26,6 +26,17 @@ class FCN(GraphNode, Generic[TensorType]):
         name: str = "fcn",
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
+        if isinstance(in_neurons, Variable):
+            self.input_var = in_neurons
+            in_neurons = in_neurons.dim
+        else:
+            self.input_var = None
+        if isinstance(out_neurons, Variable):
+            self.output_var = out_neurons
+            out_neurons = out_neurons.dim
+        else:
+            self.output_var = None
+
         self.in_neurons = HyperParameter.from_value(in_neurons, "FCN Input Neurons")
         self.hidden_neurons = HyperParameter.from_value(
             hidden_neurons, "FCN Hidden Neurons"
@@ -93,10 +104,10 @@ class FCN(GraphNode, Generic[TensorType]):
 
     def x_data_config(self):
         self.ellipsis_axes = EllipsisAxes()
-        if isinstance(self.in_neurons.value, Variable):
+        if self.input_var is not None:
             return DataConfiguration(
                 self.ellipsis_axes,
-                FeatureAxes(variable=self.in_neurons.value),
+                FeatureAxes(variable=self.input_var),
                 dtype=self.backend.standard_datatype(),
             )
         return DataConfiguration(
@@ -107,10 +118,10 @@ class FCN(GraphNode, Generic[TensorType]):
 
     def out_data_config(self):
         b_end = self.backend.standard_datatype()
-        if isinstance(self.out_neurons.value, Variable):
+        if self.output_var is not None:
             return DataConfiguration(
                 self.ellipsis_axes,
-                FeatureAxes(variable=self.out_neurons.value),
+                FeatureAxes(variable=self.output_var),
                 dtype=b_end,
             )
         return DataConfiguration(

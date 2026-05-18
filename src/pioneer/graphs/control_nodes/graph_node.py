@@ -246,6 +246,27 @@ class GraphNode(Node):
         # for zooming into the graph and modifying stuff
         pass
 
+    def build_graph_from_function(self, function):
+        graph, input_ports, output_ports = Graph.from_function(function)
+        outer_input_ports, outer_output_ports = Node._build_ports(function, self)
+        for i, port in enumerate(output_ports):
+            if isinstance(port, int):
+                output_ports[i] = outer_input_ports[i]  # type: ignore
+
+        if len(outer_output_ports) == 0:
+            for p in output_ports:
+                outer_output_ports.append(
+                    OutputPort(
+                        p.data_configuration,  # type: ignore
+                        self,
+                        name=p.name,  # type: ignore
+                    )
+                )
+
+        input_ports_dict = dict(zip(outer_input_ports, input_ports))
+        output_ports_dict = dict(zip(outer_output_ports, output_ports))
+        return graph, input_ports_dict, output_ports_dict
+
 
 class TrackedNode(GraphNode):
     """A GraphNode where the graph is built automatically via tracking the forward
@@ -253,15 +274,10 @@ class TrackedNode(GraphNode):
     is only for visualization purposes."""
 
     def __init__(self, name="TrackedNode"):
-        graph, input_ports, output_ports = Graph.from_function(self.forward)
-        outer_input_ports, outer_output_ports = Node._build_ports(self.forward, self)
-        for i, port in enumerate(output_ports):
-            if isinstance(port, int):
-                output_ports[i] = outer_input_ports[i]  # type: ignore
-
-        input_ports_dict = dict(zip(outer_input_ports, input_ports))
-        output_ports_dict = dict(zip(outer_output_ports, output_ports))
-        super().__init__(graph, input_ports_dict, output_ports_dict, name=name)  # type: ignore
+        graph, input_ports_dict, output_ports_dict = self.build_graph_from_function(
+            self.forward
+        )
+        super().__init__(graph, input_ports_dict, output_ports_dict, name=name)
         self._graph.setup()
 
         if self.run is TrackedNode.run:

@@ -9,11 +9,18 @@ X = pioneer.config.Variable("x", 1)
 U = pioneer.config.Variable("u", 1)
 F = pioneer.config.Variable("f", 1)
 
-input_config = pioneer.config.DataConfiguration(
-    pioneer.config.BatchAxes(1000), pioneer.config.FeatureAxes(X * F)
+x_config = pioneer.config.DataConfiguration(
+    pioneer.config.BatchAxes(pioneer.config.AxesDim(None)),
+    pioneer.config.FeatureAxes(X),
+)
+f_config = pioneer.config.DataConfiguration(
+    pioneer.config.BatchAxes(pioneer.config.AxesDim(None)),
+    pioneer.config.FeatureAxes(F),
 )
 
-dataset = pioneer.data.ArrayLikeDataSet(data=[combined_data], data_configs=[input_config])
+dataset = pioneer.data.ArrayLikeDataSet(
+    data=[x_data, f_data], data_configs=[x_config, f_config]
+)
 
 data_loader = pioneer.data.DataLoader(
     data_set=dataset,
@@ -30,17 +37,25 @@ model = pioneer.algorithms.FCN(
     activation=pioneer.building_blocks.Tanh,
 )
 
-constraint = pioneer.constraints.MSEConstraint(
-    model.output_ports[0].data_configuration,
-)
+
+def residual_fun(u: U, f: F, x: X):  # type: ignore
+    return u.gradient(x) - f
+
+
+constraint = pioneer.constraints.PINNConstraint(residual_fun)
+grad_tracking = pioneer.algorithms.building_blocks.GradientTracking()
+
+# pipeline = pioneer.graphs.PINNPipeline(constraint / residual_fun, model, sampler)
 
 computation_graph = pioneer.Graph()
 
-computation_graph.connect(data_loader.get_output_port(X), model)
-computation_graph.connect(model, constraint.input_1)
-computation_graph.connect(data_loader.get_output_port(U), constraint.input_2)
+with computation_graph.tracker():
+    x, f = data_loader()
+    x = grad_tracking(x)
+    u = model(x)
+    constraint(u, f, x)
 
-computation_graph.setup()
+# computation_graph.setup()
 
 adam_phase = pioneer.optim.OptimizationPhase(
     optimizer=pioneer.optim.Adam(),

@@ -522,5 +522,11 @@ class TrackingObject:
         slice_node = Slice(key)
         return slice_node(self)
 
+    def gradient(self, with_respect_to):
+        from ..algorithms.building_blocks.derivatives import Gradient
+
+        grad_node = Gradient()
+        return grad_node(self, with_respect_to)
+
 
 # endregion

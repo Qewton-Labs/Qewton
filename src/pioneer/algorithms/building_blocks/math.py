@@ -535,6 +535,23 @@ class Mean(ReductionNode[TensorType]):
         return self.backend.library.reduce_mean(x, axis=self.axis, keepdims=self.keepdims)
 
 
+class Sum(ReductionNode[TensorType]):
+    """
+    Computes the sum of the input tensor along the specified axis.
+    """
+
+    def forward(
+        self, x: Annotated[TensorType, DC(EllipsisAxes())]
+    ) -> Annotated[TensorType, DC(EllipsisAxes())]:
+        return self.implementation(x)
+
+    def torch_implementation(self, x):
+        return self.backend.library.sum(x, dim=self.axis, keepdim=self.keepdims)
+
+    def tensorflow_implementation(self, x):
+        return self.backend.library.reduce_sum(x, axis=self.axis, keepdims=self.keepdims)
+
+
 class Std(ReductionNode[TensorType]):
 
     def forward(
