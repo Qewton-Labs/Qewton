@@ -146,7 +146,9 @@ class Node(ABC):
         self.backend = backend
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
 
-        self._input_ports, self._output_ports = self._build_ports(self.forward, self)
+        self._input_ports, self._output_ports = self._build_ports(
+            self.forward, self, backend
+        )
 
         self.node_id = type(self)._node_id_counter
         type(self)._node_id_counter += 1
@@ -157,7 +159,7 @@ class Node(ABC):
 
     @classmethod
     def _build_ports(
-        cls, func: Callable, owner: Node
+        cls, func: Callable, owner: Node, backend: type[Backend[TensorType]]
     ) -> tuple[list[InputPort], list[OutputPort]]:
         call_sig = inspect.signature(func)
         type_hints = get_type_hints(func, include_extras=True)
@@ -180,9 +182,7 @@ class Node(ABC):
                     ),
                 )
             )
-        if owner.backend != Backend:
-            for port in input_ports:
-                port.data_configuration.set_dtype(owner.backend.standard_datatype())
+        cls._set_port_backend(input_ports, backend)
         # Build output ports
         return_values = type_hints.get("return", inspect.Signature.empty)
         if return_values is None or return_values is inspect.Signature.empty:
@@ -197,11 +197,14 @@ class Node(ABC):
             _, config = cls._unwrap_annotated(output, owner)
             output_ports.append(OutputPort(config, node=owner, name=f"output_{i}"))
 
-        if owner.backend != Backend:
-            for port in output_ports:
-                port.data_configuration.set_dtype(owner.backend.standard_datatype())
+        cls._set_port_backend(output_ports, backend)
 
         return input_ports, output_ports
+
+    @classmethod
+    def _set_port_backend(cls, ports: list[Port], backend: type[Backend[TensorType]]):
+        for port in ports:
+            port.data_configuration.set_dtype(backend.standard_datatype())
 
     @classmethod
     def _unwrap_annotated(cls, type_hint, owner):

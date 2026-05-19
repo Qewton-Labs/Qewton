@@ -7,6 +7,7 @@ from ....base import EvaluationPhase
 # backend in a unified way.
 
 
+# TODO: Make consistent with backend class structure
 def _pytorch_setup_optimizer(optimization_phase, trainer):
     torch_params = []
     for param in trainer.trainable_parameters:

@@ -1,4 +1,4 @@
-from .base import Constraint
+from .base import Constraint, ConstraintObjective, ConstraintType
 from ..config.data_configurations import DataConfiguration
 from ..optim.parameters.categorical_hyperparameter import (
     HyperParameter,
@@ -6,8 +6,10 @@ from ..optim.parameters.categorical_hyperparameter import (
 )
 from ..optim.parameters.number_hyperparameter import ContinuousHyperparameter
 from ..graphs.nodes import InputPort
+from ..graphs.graphs import Graph
+from ..graphs.control_nodes.graph_node import GraphNode
 from ..config.backend import DEFAULT_DL_BACKEND
-from ..algorithms.building_blocks.math import Subtract, Square, Mean, Divide
+from ..algorithms.building_blocks.math import Subtract, Square, Mean, Divide, Sum
 
 
 class MetricConstraint(Constraint):
@@ -16,11 +18,18 @@ class MetricConstraint(Constraint):
         input_config: DataConfiguration,
         name="MetricConstraint",
         relative: bool | BooleanHyperparameter = False,
+        constraint_type: ConstraintType = ConstraintType.LOSS,
         weight: float | ContinuousHyperparameter = 1,
         backend=DEFAULT_DL_BACKEND,
         epsilon=1e-8,
     ):
-        super().__init__(name, weight, backend=backend)
+        super().__init__(
+            name=name,
+            weight=weight,
+            backend=backend,
+            constraint_type=constraint_type,
+            objective=ConstraintObjective.MINIMIZE,
+        )
         self.input_config = input_config
         self.relative = HyperParameter.from_value(relative, "Relative Constraint")
         self.epsilon = epsilon  # for computation of the relative loss.
@@ -30,7 +39,7 @@ class MetricConstraint(Constraint):
         self._input_ports = [self.input_1, self.input_2]
 
 
-class MSEConstraint(MetricConstraint):
+class MSEConstraint(MetricConstraint, GraphNode):
     # TODO: Add different kind of norms
 
     def __init__(
@@ -45,19 +54,41 @@ class MSEConstraint(MetricConstraint):
         super().__init__(
             input_config, name, relative, weight, backend=backend, epsilon=epsilon
         )
-        self.subtract_operation = Subtract(backend=backend)
-        self.square_operation = Square(backend=backend)
-        self.mean_operation = Mean(backend=backend, axis=None)
-        self.divide_operation = Divide(backend=backend)
+        self.subtract_node = Subtract(backend=backend)
+        self.sum_node = Sum(backend=backend, axis=-1)
+        self.square_node = Square(backend=backend)
 
-    def check_constraint(self):
-        x = self.input_1.value
-        y = self.input_2.value
-        residual = self.subtract_operation(x=x, y=y)
-        residual = self.square_operation(x=residual)
+        self.sum_node_relative = Sum(backend=backend, axis=-1)
+        self.square_node_relative = Square(backend=backend)
+        self.divide_node = Divide(backend=backend)
+
+        self.mean_node = Mean(backend=backend)
+
+    def _build_graph(self):
+        new_graph = Graph()
+        new_graph.connect(self.subtract_node, self.square_node)
+        new_graph.connect(self.square_node, self.sum_node)
         if self.relative.value:
-            # TODO: Improve this relative error, do be batch wise and not
-            # element wise (needs dataconfig)
-            data_norm = self.square_operation(x=y)
-            residual = self.divide_operation(x=residual, y=data_norm)
-        self.loss = self.mean_operation(x=residual)
+            new_graph.connect(self.square_node_relative, self.sum_node_relative)
+            new_graph.connect(self.sum_node_relative, self.divide_node.input_ports[1])
+            new_graph.connect(self.sum_node, self.divide_node.input_ports[0])
+            new_graph.connect(self.divide_node, self.mean_node)
+        else:
+            new_graph.connect(self.sum_node, self.mean_node)
+
+        in_ports = [
+            self.subtract_node.input_ports[0],
+            self.subtract_node.input_ports[1],
+            self.square_node_relative.input_ports[0],
+        ]
+
+        return new_graph, in_ports, self.mean_node.output_ports
+
+    def setup(self):
+        new_graph, in_ports, out_ports = self._build_graph()
+
+        self.setup_graph(
+            new_graph,
+            input_ports=in_ports,
+            output_ports=out_ports,
+        )

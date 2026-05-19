@@ -1,5 +1,6 @@
 import torch
 import pioneer
+import pickle
 
 x_data = torch.linspace(0, 1, 1000).reshape(-1, 1)
 u_data = x_data**2 + torch.sin(6.0 * x_data)
@@ -67,4 +68,6 @@ trainer = pioneer.optim.GraphBasedTrainer(
     device="cuda:0",
 )
 
-trainer.run()
+# trainer.run()
+with open("object.pkl", "wb") as f:
+    pickle.dump(trainer, f)

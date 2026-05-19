@@ -1,8 +1,9 @@
+from __future__ import annotations
 from typing import get_origin, get_args, Annotated, Callable
 import inspect
 
 
-from ..nodes import InputPort, Node, OutputPort
+from ..nodes import InputPort, Node, OutputPort, Port
 from ..graphs import Graph
 from ...config.data_configurations import DataConfiguration
 from ...config.backend import Backend, TensorType
@@ -38,9 +39,10 @@ class GraphNode(Node):
         self,
         graph: Graph,
         input_ports: list[InputPort] | dict[InputPort, list[InputPort]],
-        output_ports: list[OutputPort] | dict[OutputPort, OutputPort],
+        output_ports: list[OutputPort] | dict[OutputPort, Port],
         name: str = "GraphNode",
         backend: type[Backend[TensorType]] = Backend,
+        **kwargs,
     ) -> None:
         super().__init__(name=name, backend=backend)
 
@@ -49,7 +51,9 @@ class GraphNode(Node):
         self._input_ports = []
 
         self.configs_defined_in_forward = self._configs_were_defined_in_forward()
-        in_forward_ports, out_forward_ports = self._build_ports(self.forward, self)
+        in_forward_ports, out_forward_ports = self._build_ports(
+            self.forward, self, backend
+        )
         for i, p in enumerate(input_ports):
             if isinstance(input_ports, dict):
                 self._input_ports.append(p)
@@ -73,7 +77,10 @@ class GraphNode(Node):
         for i, p in enumerate(output_ports):
             if isinstance(output_ports, dict):
                 self._output_ports.append(p)
-                self._graph.connect_to_outside_of_graph(output_ports[p], p)
+                if output_ports[p].node == self:
+                    self._graph.add_skip_connection(output_ports[p], p)
+                else:
+                    self._graph.connect_to_outside_of_graph(output_ports[p], p)
             else:
                 if self.configs_defined_in_forward:
                     port_config = out_forward_ports[i].data_configuration
@@ -183,23 +190,35 @@ class GraphNode(Node):
         outside_updated_inner_ports = (
             connected_to_outside_ports.keys() & inner_updated_ports
         )
+
+        outer_updated_ports = set(
+            connected_to_outside_ports[k] for k in outside_updated_inner_ports
+        )
+
+        # check for skip connections that have been updated
+        for e in self._graph.skip_connections:
+            if e.to_port in outer_updated_ports:
+                outer_updated_ports.add(e.from_port)
+            if e.from_port in outer_updated_ports:
+                outer_updated_ports.add(e.to_port)
+
         # these data configs should be identical to the dynamic data configs
         # of the outer graph, therefore these are automatically updated
-        return set(connected_to_outside_ports[k] for k in outside_updated_inner_ports)
+        return outer_updated_ports
 
     def copy_data_configs(self):
         if self.configs_defined_in_forward:
             return super().copy_data_configs()
         dynamic_configs = {}
         for input_port in self.input_ports:
-            for e in self._graph.edges_from_outside:
+            for e in self._graph.edges_from_outside + self._graph.skip_connections:
                 if e.from_port == input_port:
                     inner_config = self._graph.dynamic_data_configs[e.to_port.node][
                         e.to_port
                     ]
                     dynamic_configs[input_port] = inner_config
         for output_port in self.output_ports:
-            for e in self._graph.edges_to_outside:
+            for e in self._graph.edges_to_outside + self._graph.skip_connections:
                 if e.to_port == output_port:
                     inner_config = self._graph.dynamic_data_configs[e.from_port.node][
                         e.from_port
@@ -246,39 +265,69 @@ class GraphNode(Node):
         # for zooming into the graph and modifying stuff
         pass
 
-    def build_graph_from_function(self, function):
+    def _build_graph_from_function(self, function, backend):
         graph, input_ports, output_ports = Graph.from_function(function)
-        outer_input_ports, outer_output_ports = Node._build_ports(function, self)
+        outer_input_ports, outer_output_ports = Node._build_ports(function, self, backend)
+
+        # Outputs that are integers are automatically mapped to the
+        # corresponding input ports.
+        output_ports_remapped = []
         for i, port in enumerate(output_ports):
             if isinstance(port, int):
-                output_ports[i] = outer_input_ports[i]  # type: ignore
+                output_ports_remapped.append(outer_input_ports[i])
+            else:
+                output_ports_remapped.append(port)
+        output_ports = output_ports_remapped
 
+        # If signature does not include any information about the output,
+        # derive them from the return values
         if len(outer_output_ports) == 0:
             for p in output_ports:
                 outer_output_ports.append(
                     OutputPort(
-                        p.data_configuration,  # type: ignore
-                        self,
-                        name=p.name,  # type: ignore
+                        p.data_configuration,
+                        self,  # type: ignore
+                        name=p.name,
                     )
                 )
+        # Make input ports consistent
+        input_port_list = []
+        for p in input_ports:
+            if not isinstance(p, list):
+                input_port_list.append([p])
+            else:
+                input_port_list.append(p)
 
-        input_ports_dict = dict(zip(outer_input_ports, input_ports))
+        # Build graph node:
+        input_ports_dict = dict(zip(outer_input_ports, input_port_list))
         output_ports_dict = dict(zip(outer_output_ports, output_ports))
         return graph, input_ports_dict, output_ports_dict
 
 
-class TrackedNode(GraphNode):
+class FromFunctionNode(GraphNode):
+
+    def __init__(
+        self,
+        function: Callable,
+        name="FromFunctionNode",
+        backend: type[Backend[TensorType]] = Backend,
+    ) -> None:
+        graph, input_ports_dict, output_ports_dict = self._build_graph_from_function(
+            function, backend=backend
+        )
+        super().__init__(
+            graph, input_ports_dict, output_ports_dict, name=name, backend=backend
+        )
+        self._graph.setup()
+
+
+class TrackedNode(FromFunctionNode):
     """A GraphNode where the graph is built automatically via tracking the forward
     method. At runtime, we still execute the implemented forward method, the graph
     is only for visualization purposes."""
 
-    def __init__(self, name="TrackedNode"):
-        graph, input_ports_dict, output_ports_dict = self.build_graph_from_function(
-            self.forward
-        )
-        super().__init__(graph, input_ports_dict, output_ports_dict, name=name)
-        self._graph.setup()
+    def __init__(self, name="TrackedNode", backend: type[Backend[TensorType]] = Backend):
+        super().__init__(self.forward, name=name, backend=backend)
 
         if self.run is TrackedNode.run:
 

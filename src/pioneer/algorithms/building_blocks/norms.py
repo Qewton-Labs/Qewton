@@ -20,4 +20,5 @@ class MSN(GraphNode):
             input_ports=self.square_node.input_ports,
             output_ports=self.mean_node.output_ports,
             backend=backend,
+            name="MSN",
         )
