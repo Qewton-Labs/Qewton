@@ -11,20 +11,19 @@ def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
     This method handles the complex case where one shape has an ellipsis at the start
     (representing flexible dimensions at the beginning) and another has an ellipsis at
     the end (representing flexible dimensions at the end). It attempts to unify the
-    dimensions by working backwards from the end, trying to find compatible mappings.
-
-    The algorithm starts from the last dimension before the ellipsis in start_part and
-    the second-to-last dimension in end_part (skipping the ellipsis), and works
-    backwards.
-    When a match is found, it checks if all preceding dimensions can also be unified.
-    If successful, it creates a unified mapping; otherwise, it treats dimensions as
-    separate.
+    dimensions by working backwards from the end, trying to find compatible mappings. The
+    algorithm starts from the last dimension before the ellipsis in `start_part` and the
+    second-to-last dimension in `end_part` (skipping the ellipsis), and works backwards.
+    When a match is found, it checks if all preceding dimensions can also be unified. If
+    successful, it creates a unified mapping; otherwise, it treats dimensions as separate.
 
     Args:
-        start_part (list): List of dimensions from the shape with ellipsis at the
-                            start. The first element should be an EllipsisDim.
-        end_part (list): List of dimensions from the shape with ellipsis at the end.
-                        The last element should be an EllipsisDim.
+        inner_type: The type of `AxesDim` to use for unification (e.g., `AxesDim`).
+        start_part (list): A list of `AxesDim` objects, where the first element is an `EllipsisDim`.
+                           Represents the dimensions of a shape with an ellipsis at the beginning.
+        end_part (list): A list of `AxesDim` objects, where the last element is an `EllipsisDim`.
+                         Represents the dimensions of a shape with an ellipsis at the end.
+        ellipsis_type: The class type for ellipsis dimensions (e.g., `EllipsisDim`).
 
     Returns:
         tuple[dict, dict]: A tuple of two dictionaries:
@@ -33,11 +32,9 @@ def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
             - Second dict: Mapping from dimensions in end_part to their unified
                             counterparts
 
-    Notes:
-        This method is used internally by _match_middle_shape to handle ellipsis
-        unification.
-        The returned mappings ensure that both shapes can be transformed to compatible
-        forms while preserving the semantic meaning of the ellipsis dimensions.
+    The returned mappings ensure that both shapes can be transformed to compatible forms
+    while preserving the semantic meaning of the ellipsis dimensions. This method is
+    used internally by `_match_middle_shape` to handle ellipsis unification.
     """
     matching_middle_start = {}
     matching_middle_end = {}
@@ -93,6 +90,10 @@ def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
 
 
 class Axes:
+    """
+    Represents a collection of axes (dimensions) for data, including their sizes and types.
+    """
+
     def __init__(self, *shape: int | AxesDim | EllipsisType):
         new_shape = []
         for s in shape:
@@ -106,18 +107,41 @@ class Axes:
 
     @property
     def shape(self):
+        """
+        Returns the tuple of `AxesDim` objects representing the shape.
+        """
         return self._shape
 
     @property
     def is_empty(self):
+        """
+        Checks if the axes collection is empty.
+        Returns:
+            bool: True if the shape has no dimensions, False otherwise.
+        """
         return len(self._shape) == 0
 
     def remove_dim(self, dim):
+        """
+        Removes a specific dimension from the axes.
+        Args:
+            dim (AxesDim): The dimension to remove.
+        """
         self._shape = tuple(d for d in self._shape if d != dim)
 
     def matches(self, other: Axes) -> bool:
+        """
+        Checks if these axes exactly match another `Axes` object in terms of
+        number of dimensions, type, and size.
+        Args:
+            other (Axes): The other `Axes` object to compare with.
+        Returns:
+            bool: True if the axes match, False otherwise.
+        """
         if len(self.shape) != len(other.shape):
             return False
+        # Iterate through dimensions and check for type and size equality.
+        # This ensures a strict match.
         for s1, s2 in zip(self.shape, other.shape):
             if not isinstance(s1, s2.__class__):
                 return False
@@ -126,6 +150,18 @@ class Axes:
         return True
 
     def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
+        """
+        Unifies these axes with another `Axes` object, finding a common compatible shape.
+        Args:
+            other (Axes): The other `Axes` object to unify with.
+        Returns:
+            tuple[dict, dict]: A tuple of two dictionaries. The first maps dimensions
+                from `self` to the unified dimensions, and the second maps dimensions
+                from `other`.
+        Raises:
+            DataConfigMismatchError: If the axes are of different types or cannot be
+                unified.
+        """
         if not self.__class__ == other.__class__:
             raise DataConfigMismatchError(
                 f"Cannot unify axes of different types: {self.__class__} \
@@ -135,6 +171,9 @@ class Axes:
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}([{', '.join(str(s) for s in self.shape)}])"
+        """
+        Returns a string representation of the Axes object.
+        """
 
     @classmethod
     def unify_shapes(
@@ -142,50 +181,27 @@ class Axes:
         shape1: tuple[AxesDim, ...],
         shape2: tuple[AxesDim, ...],
     ) -> tuple[dict, dict]:
-        """Returns a shape that both ``shape1`` and ``shape2`` are compatible with.
+        """
+        Unifies two shapes, `shape1` and `shape2`, to find a common compatible representation.
 
-        The resulting shape is chosen to have the smallest number of axes and
-        the least ambiguity. Unknown or flexible dimensions may be represented
-        by ``None`` or ``Ellipsis``.
+        This method attempts to match dimensions from both the start and the end of the shapes.
+        It specifically handles `EllipsisDim` to allow for flexible matching of intermediate dimensions.
 
         Args:
-            shape1, shape2 (tuple):
-                The shapes to unify.
-            broadcast_singleton (bool, optional):
-                Whether dimensions of size 1 can be broadcast to match larger
-                dimensions. Defaults to False.
-
-        Raises:
-            DataConfigMismatchError:
-                If the shapes are not compatible.
+            shape1 (tuple[AxesDim, ...]): The first shape to unify.
+            shape2 (tuple[AxesDim, ...]): The second shape to unify.
 
         Returns:
-            tuple[int | None | EllipsisType, ...]:
-                A shape that both input shapes can be transformed to.
+            tuple[dict, dict]: A tuple of two dictionaries. The first maps dimensions from `shape1`
+                               to their unified counterparts, and the second maps dimensions from `shape2`.
 
-        Notes:
-            Examples:
+        Raises:
+            DataConfigMismatchError: If the shapes are not compatible and cannot be unified.
 
-            Basic matching:
-                (2, 3) and (2, 3) -> (2, 3)
-
-            Broadcasting disabled:
-                (1, 3) and (2, 3) -> Error
-
-            Broadcasting enabled:
-                (1, 3) and (2, 3) -> (2, 3)
-
-            Unknown dimensions:
-                (None, 3) and (2, 3) -> (2, 3)
-
-            Conflicting dimensions:
-                (2, 3) and (4, 3) -> Error
-
-            Using Ellipsis:
-                (1, ..., 3) and (1, 2, 3) -> (1, 2, 3)
-
-            Smallest matching shape:
-                (5, ...) and (..., 5) -> (5,)
+        The unification process involves:
+        1. Matching dimensions from the end of both shapes.
+        2. Matching dimensions from the start of both shapes.
+        3. Handling any remaining middle parts, especially if they contain `EllipsisDim`.
         """
 
         # First we check if they match from the end
@@ -221,6 +237,17 @@ class Axes:
 
     @classmethod
     def _match_shapes(cls, shape1, shape2) -> tuple[dict, dict]:
+        """
+        Matches dimensions between two shapes from their respective starting points.
+
+        This helper method iterates through the dimensions of `shape1` and `shape2`
+        (or their reversed versions) and attempts to unify corresponding `AxesDim` objects.
+        Args:
+            shape1 (Iterable[AxesDim]): The first sequence of dimensions.
+            shape2 (Iterable[AxesDim]): The second sequence of dimensions.
+        Returns:
+            tuple[dict, dict]: Dictionaries mapping original dimensions to their unified forms.
+        """
         matching_dims_1 = {}
         matching_dims_2 = {}
         for s1, s2 in zip(shape1, shape2):
@@ -242,6 +269,16 @@ class Axes:
     def _match_middle_shape(
         cls, remaining_middle1, remaining_middle2
     ) -> tuple[dict, dict]:
+        """
+        Matches the middle parts of two shapes, specifically handling `EllipsisDim`.
+
+        This method is called after matching the start and end parts of shapes.
+        Args:
+            remaining_middle1 (tuple[AxesDim, ...]): The middle part of the first shape.
+            remaining_middle2 (tuple[AxesDim, ...]): The middle part of the second shape.
+        Returns:
+            tuple[dict, dict]: Dictionaries mapping original middle dimensions to their unified forms.
+        """
         # If one shape only is an ellipsis we are done:
         if len(remaining_middle1) == 1 and isinstance(remaining_middle1[0], EllipsisDim):
             return {remaining_middle1[0]: remaining_middle2}, {
@@ -267,6 +304,18 @@ class Axes:
     def update_axes(
         self, new_axes_dict: dict[AxesDim, AxesDim | tuple[AxesDim, ...]]
     ) -> bool:
+        """
+        Updates the dimensions of these axes based on a provided dictionary of new
+        dimensions.
+
+        This method allows for dynamic modification of the axes, including replacing
+        ellipsis dimensions with concrete sequences of dimensions.
+        Args:
+            new_axes_dict (dict[AxesDim, AxesDim | tuple[AxesDim, ...]]): A dictionary
+                mapping existing `AxesDim` objects to their new forms.
+        Returns:
+            bool: True if any axes were changed, False otherwise.
+        """
         changed_axes = False
         new_shape = []
         for dim in self.shape:
@@ -301,10 +350,22 @@ class Axes:
 
 
 class BatchAxes(Axes):
-    pass
+    """
+    Represents batch-specific axes, inheriting from `Axes`.
+
+    This class can be used to explicitly denote dimensions that correspond to
+    batch size.
+    """
 
 
 class GeometryAxes(Axes):
+    """
+    Represents geometry-specific axes, typically used for spatial dimensions.
+
+    It encapsulates a `Geometry` object to manage the underlying geometric shape,
+    which can also be used for plotting etc.
+    """
+
     def __init__(
         self,
         geometry: Geometry | None = None,
@@ -323,9 +384,26 @@ class GeometryAxes(Axes):
 
     @property
     def geometry(self):
+        """
+        Returns the encapsulated `Geometry` object.
+        """
         return self._geometry
 
     def unify_with(self: GeometryAxes, other: Axes) -> tuple[dict, dict]:
+        """
+        Unifies these `GeometryAxes` with another `Axes` object.
+
+        It specifically checks for `GeometryAxes` type and delegates the unification
+        to the underlying `Geometry` objects.
+        Args:
+            other (Axes): The other `Axes` object to unify with.
+        Returns:
+            tuple[dict, dict]: Dictionaries mapping original dimensions to unified
+                dimensions.
+        Raises:
+            DataConfigMismatchError: If the other object is not `GeometryAxes` or
+                unification fails.
+        """
         if not isinstance(other, GeometryAxes):
             raise DataConfigMismatchError(
                 f"Cannot unify axes of different types: {self.__class__} \
@@ -341,6 +419,11 @@ class GeometryAxes(Axes):
 
 
 class FeatureAxes(Axes):
+    """
+    Represents feature-specific axes, often associated with a `Variable` object
+    that defines the features.
+    """
+
     def __init__(
         self,
         variable: Variable | None = None,
@@ -357,14 +440,40 @@ class FeatureAxes(Axes):
 
     @property
     def variables(self):
+        """
+        Returns the encapsulated `Variable` object, or a new empty `Variable` if none was
+        set.
+        """
         if self._variable is not None:
             return self._variable
         return Variable()
 
     def get_variable_slice(self, variable):
+        """
+        Retrieves a slice corresponding to a specific variable from the encapsulated
+        `Variable` object.
+        Args:
+            variable: The variable for which to get the slice.
+        Returns:
+            Any: The slice corresponding to the variable.
+        """
         return self.variables.get_slice(variable)
 
     def unify_with(self: FeatureAxes, other: Axes) -> tuple[dict, dict]:
+        """
+        Unifies these `FeatureAxes` with another `Axes` object.
+
+        It specifically checks for `FeatureAxes` type and ensures compatibility
+        of underlying `Variable` objects if they exist.
+        Args:
+            other (Axes): The other `Axes` object to unify with.
+        Returns:
+            tuple[dict, dict]: Dictionaries mapping original dimensions to unified
+                dimensions.
+        Raises:
+            DataConfigMismatchError: If the other object is not `FeatureAxes` or
+                variables do not match.
+        """
         if not isinstance(other, FeatureAxes):
             raise DataConfigMismatchError(
                 f"Cannot unify axes of different types: {self.__class__} \
@@ -384,6 +493,10 @@ class FeatureAxes(Axes):
 
 
 class EllipsisAxes(Axes):
+    """
+    Represents an ellipsis in axes, indicating a flexible number of dimensions.
+    """
+
     def __init__(self):
         super().__init__(EllipsisDim())
 
@@ -392,7 +505,22 @@ class EllipsisAxes(Axes):
 
 
 class AxesDim:
+    """
+    Represents a single dimension within a set of axes, with an optional size and
+    broadcastability.
+    """
+
     def __new__(cls, size=None, broadcastable=True) -> AxesDim:
+        """
+        Creates a new `AxesDim` instance. If `size` is an `EllipsisType`, it returns an
+        `EllipsisDim`.
+
+        Args:
+            size (int | EllipsisType | None, optional): The size of the dimension.
+                Defaults to None.
+            broadcastable (bool, optional): Whether this dimension can be broadcast.
+                Defaults to True.
+        """
         if isinstance(size, EllipsisType):
             return EllipsisDim(broadcastable)
         return super().__new__(cls)
@@ -403,16 +531,34 @@ class AxesDim:
         self.graph = None
 
     def update_size(self, new_size):
+        """
+        Updates the size of this dimension.
+        Args:
+            new_size (int | None): The new size for the dimension.
+        """
         self._size = new_size
 
     @property
     def size(self):
+        """
+        Returns the size of the dimension.
+        """
         return self._size
 
     def __str__(self) -> str:
         return str(self.size)
 
     def unify_with(self: AxesDim, other: AxesDim):
+        """
+        Unifies this `AxesDim` with another `AxesDim`.
+
+        It determines a common size, considering broadcastability.
+        Args:
+            other (AxesDim): The other dimension to unify with.
+        Returns:
+            tuple[AxesDim, AxesDim]: A tuple where both elements are the unified
+                `AxesDim`.
+        """
         if self == other:
             return (self, other)
         broadcastable = self.broadcastable and other.broadcastable
@@ -426,6 +572,18 @@ class AxesDim:
     def unify_integer_dims(
         cls, dim1: int | None, dim2: int | None, broadcast_singleton=False
     ):
+        """
+        Unifies two integer dimensions, potentially allowing singleton broadcasting.
+        Args:
+            dim1 (int | None): The first dimension size.
+            dim2 (int | None): The second dimension size.
+            broadcast_singleton (bool, optional): If True, a dimension of size 1 can be
+                broadcast to match another dimension's size. Defaults to False.
+        Returns:
+            int | None: The unified dimension size, or None if one of the inputs was None.
+        Raises:
+            DataConfigMismatchError: If the dimensions cannot be unified.
+        """
         if dim1 == dim2:
             return dim1
         if dim1 is None:
@@ -440,9 +598,24 @@ class AxesDim:
         raise DataConfigMismatchError(f"Cannot unify dimensions {dim1} and {dim2}.")
 
     def __add__(self, other: AxesDim) -> AxesDim:
+        """
+        Defines addition for `AxesDim` objects, resulting in an `AddedDim`.
+        Args:
+            other (AxesDim): The other dimension to add.
+        Returns:
+            AddedDim: A new dimension representing the sum of the two.
+        """
         return AddedDim(self, other)
 
     def update_dim(self, new_dim: AxesDim) -> bool:
+        """
+        Updates the properties (size and broadcastability) of this dimension with those
+        of `new_dim`.
+        Args:
+            new_dim (AxesDim): The dimension whose properties will be copied.
+        Returns:
+            bool: True if the dimension's properties were changed, False otherwise.
+        """
         # TODO: Override this in subclasses, e.g. in AddedDim
         if self.size == new_dim.size and self.broadcastable == new_dim.broadcastable:
             return False
@@ -452,6 +625,10 @@ class AxesDim:
 
 
 class AddedDim(AxesDim):
+    """
+    Represents a dimension whose size is the sum of two other dimensions.
+    This is for automatic referencing, to build symbolic relations.
+    """
 
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls)
@@ -464,6 +641,10 @@ class AddedDim(AxesDim):
 
     @property
     def size(self):
+        """
+        Calculates and returns the size of this dimension, which is the sum of its
+        constituent dimensions' sizes.
+        """
         size = (
             self.dim_1.size + self.dim_2.size
             if self.dim_1.size is not None and self.dim_2.size is not None
@@ -473,6 +654,9 @@ class AddedDim(AxesDim):
 
 
 class ProductDim(AxesDim):
+    """
+    Represents a dimension whose size is the product of two other dimensions.
+    """
 
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls)
@@ -485,6 +669,10 @@ class ProductDim(AxesDim):
 
     @property
     def size(self):
+        """
+        Calculates and returns the size of this dimension, which is the product of
+        its constituent dimensions' sizes.
+        """
         size = (
             self.dim_1.size * self.dim_2.size
             if self.dim_1.size is not None and self.dim_2.size is not None
@@ -494,6 +682,9 @@ class ProductDim(AxesDim):
 
 
 class MinimumDim(AxesDim):
+    """
+    Represents a dimension whose size is the minimum of two other dimensions.
+    """
 
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls)
@@ -506,12 +697,23 @@ class MinimumDim(AxesDim):
 
     @property
     def size(self):
+        """
+        Calculates and returns the size of this dimension, which is the minimum of
+        its constituent dimensions' sizes.
+        """
         size = (
             min(self.dim_1.size, self.dim_2.size)
             if self.dim_1.size is not None and self.dim_2.size is not None
             else None
         )
         return size
+
+
+class EllipsisDim(AxesDim):
+    """
+    A special `AxesDim` representing an ellipsis (`...`), indicating a flexible
+    number of dimensions.
+    """
 
 
 class EllipsisDim(AxesDim):
@@ -523,9 +725,22 @@ class EllipsisDim(AxesDim):
 
 
 class Geometry:
+    """
+    Represents a geometric shape defined by a tuple of `AxesDim` objects.
+    """
+
     def __init__(self, shape: tuple[int | AxesDim, ...]):
         self.shape = tuple(AxesDim(size=s) if isinstance(s, int) else s for s in shape)
 
     def unify_with(self, other: Geometry) -> Geometry:
+        """
+        Unifies this `Geometry` object with another `Geometry` object.
+
+        It uses `Axes.unify_shapes` to find a common compatible shape.
+        Args:
+            other (Geometry): The other `Geometry` object to unify with.
+        Returns:
+            Geometry: A new `Geometry` object representing the unified shape.
+        """
         unified_shape = Axes.unify_shapes(self.shape, other.shape)
         return Geometry(tuple(unified_shape[1].values()))

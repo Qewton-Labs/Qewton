@@ -12,6 +12,16 @@ from ..parameters.dag import HyperParameterDAG
 
 
 def worker_eval(jobs) -> Tuple[dict[str, Any], TrainerState]:
+    """
+    Worker function to evaluate a single set of hyperparameters in a separate process.
+
+    This function is designed to be run in a multiprocessing pool. It initializes a trainer,
+    sets hyperparameters, runs the training, and evaluates tuning constraints.
+    Args:
+        jobs (tuple): A tuple containing (trainer_factory, params, device).
+    Returns:
+        Tuple[dict[str, Any], TrainerState]: A tuple of the evaluated parameters and the final trainer state.
+    """
     trainer_factory, params, device = jobs
     local_trainer: Trainer = trainer_factory()
     if isinstance(device, str):
@@ -37,7 +47,15 @@ def worker_eval(jobs) -> Tuple[dict[str, Any], TrainerState]:
 #
 # TODO: Save more information about the system and tuning setup, e.g. in a json file,
 #       to be able to better compare different tuning runs.
+
+
 class Tuner:
+    """
+    Base class for hyperparameter tuners.
+
+    Manages the execution of multiple training trials with different hyperparameters
+    across various devices, and logs the results.
+    """
 
     def __init__(
         self,
@@ -47,6 +65,16 @@ class Tuner:
         trials_per_device: int = 1,
         save_path: str = "tuner_results",
     ) -> None:
+        """
+        Initializes the Tuner.
+        Args:
+            trainer_factory (Callable[[], Trainer]): A callable that returns a new Trainer instance.
+            trial_number (int, optional): The total number of hyperparameter trials to run. Defaults to 10.
+            devices (str | list[str], optional): A single device name (e.g., "cpu", "cuda:0") or a list of device names.
+                                                 Defaults to "cpu".
+            trials_per_device (int, optional): The number of trials to run concurrently on each device. Defaults to 1.
+            save_path (str, optional): The base directory to save tuning results. Defaults to "tuner_results".
+        """
         self.trainer_factory = trainer_factory
         self.trial_number = trial_number
 
@@ -76,6 +104,13 @@ class Tuner:
         self._setup_csv_file(trainer_dummy.train_state)
 
     def build_save_path(self, trainer: Trainer) -> str:
+        """
+        Constructs a unique save path for the tuning results.
+        Args:
+            trainer (Trainer): A dummy trainer instance to get its save_path.
+        Returns:
+            str: The unique file path for saving results.
+        """
         base_path = os.path.join(self.save_path, trainer.train_state.save_path)
 
         file_path = base_path
@@ -89,6 +124,13 @@ class Tuner:
         return file_path
 
     def _get_tuneable_parameters(self, trainer: Trainer) -> HyperParameterDAG:
+        """
+        Identifies and collects all tunable hyperparameters from the trainer.
+        Args:
+            trainer (Trainer): A dummy trainer instance to inspect its hyperparameters.
+        Returns:
+            HyperParameterDAG: A DAG representing the dependencies and structure of tunable hyperparameters.
+        """
         hyperparameter_set = trainer.hyperparameters
         tunable_parameters = set[HyperParameter]()
         for hp in hyperparameter_set:
@@ -101,6 +143,9 @@ class Tuner:
         return HyperParameterDAG(tunable_parameters)
 
     def run(self):
+        """
+        Executes the hyperparameter tuning process.
+        """
         trials = math.ceil(self.trial_number / self.process_number)
         print("--- Start Tuning ---")
         for i in range(trials):
@@ -112,6 +157,13 @@ class Tuner:
             self._write_to_csv(results)
 
     def _run_generation(self, params):
+        """
+        Runs a generation of trials using multiprocessing.
+        Args:
+            params (list): A list of hyperparameter dictionaries for each trial in the generation.
+        Returns:
+            list: A list of results from each worker process.
+        """
         # TODO: Using the same pools and not recreating everything would be nice, but:
         # - Data stays on the GPUs and can only be cleared by backend dependent calls
         with mp.Pool(
@@ -124,6 +176,11 @@ class Tuner:
         return results
 
     def _setup_csv_file(self, trainer_state_dummy: TrainerState):
+        """
+        Sets up the CSV file for logging tuning results, including writing the header.
+        Args:
+            trainer_state_dummy (TrainerState): A dummy trainer state to extract loss and metric names.
+        """
         if not os.path.exists(self.csv_path):
             with open(self.csv_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
@@ -139,6 +196,12 @@ class Tuner:
     def _write_to_csv(
         self, results: list[Tuple[dict[str, Any], TrainerState]], trial: Any | None = None
     ):  # pylint: disable=unused-argument
+        """
+        Writes the results of a batch of trials to the CSV file.
+        Args:
+            results (list[Tuple[dict[str, Any], TrainerState]]): A list of (parameters, trainer_state) tuples.
+            trial (Any | None, optional): Placeholder for potential future trial object. Defaults to None.
+        """
         flat_results = [self._flatten_result_data(r) for r in results]
         with open(self.csv_path, "a", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=flat_results[0].keys())
@@ -146,6 +209,13 @@ class Tuner:
 
     def _flatten_result_data(self, result: Tuple[dict[str, Any], TrainerState]):
         flat_dict = {}
+        """
+        Flattens the result data (hyperparameters, losses, metrics) into a single dictionary for CSV writing.
+        Args:
+            result (Tuple[dict[str, Any], TrainerState]): A tuple containing the parameters and trainer state for a trial.
+        Returns:
+            dict: A flattened dictionary suitable for CSV row.
+        """
         tune_loss = result[1].losses[EvaluationPhase.TUNE]
         tune_metrics = result[1].metrics[EvaluationPhase.TUNE]
         for name in self.csv_columns:
@@ -165,7 +235,12 @@ class Tuner:
     def _get_trial_parameters(
         self, current_trial: int
     ) -> list[dict[str, dict[str, Any]]]:
-        raise NotImplementedError(
-            "The base Tuner does not implement a search strategy, \
-                use one of the child classes."
-        )
+        """
+        Abstract method to generate the next set of hyperparameters for trials.
+        Args:
+            current_trial (int): The current trial number (used for seeding or progress tracking).
+        Raises:
+            NotImplementedError: This method must be implemented by subclasses to define a search strategy.
+        """
+        raise NotImplementedError("The base Tuner does not implement a search strategy, \
+                use one of the child classes.")

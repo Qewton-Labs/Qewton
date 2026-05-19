@@ -14,6 +14,9 @@ from .edges import Edge
 
 
 class Graph:
+    """
+    Represents a directed acyclic graph (DAG) of interconnected nodes.
+    """
 
     def __init__(self):
         self.nodes: set[Node] = set[Node]()
@@ -36,11 +39,18 @@ class Graph:
     def from_function(
         cls, func: Callable
     ) -> tuple[Graph, list[list[InputPort] | InputPort], list[OutputPort | int]]:
-        """Creates a graph from a function.
-        method of a node.
+        """
+        Creates a graph by tracking the execution of a given function.
 
+        This method allows defining a graph structure programmatically by
+        using `TrackingObject`s as inputs and outputs within the function.
         Args:
-            func (Callable): The function that is used to create the graph.
+            func (Callable): The function whose execution will be tracked to build the
+                graph.
+        Returns:
+            tuple[Graph, list[list[InputPort] | InputPort], list[OutputPort | int]]:
+                A tuple containing the constructed graph, its input ports, and its output
+                ports.
         """
         graph = Graph()
         sig = inspect.signature(func)
@@ -97,7 +107,8 @@ class Graph:
             for known_node in self.nodes:
                 if known_node.node_id == node.node_id:
                     raise ValueError(
-                        f"Node {node.name} and ID: {node.node_id} already exists in this graph!"
+                        f"Node {node.name} and ID: {node.node_id} already exists in this\
+                            graph!"
                     )
         self.nodes.add(node)
         if not node in self.incoming_edges:
@@ -116,6 +127,12 @@ class Graph:
     #     self.outgoing_edges.pop(node)
 
     def sort(self):
+        """
+        Sorts the nodes in the graph topologically (Kahn's algorithm) to determine the
+        execution order.
+        Raises:
+            ValueError: If a cycle is detected in the graph.
+        """
         in_degree = {node: 0 for node in self.nodes}
         outgoing_connections = {node: [] for node in self.nodes}
         for node in self.nodes:
@@ -151,19 +168,18 @@ class Graph:
         from_: Node | OutputPort,
         to_: Node | InputPort,
     ) -> None:
-        """Connect two nodes (which are automatically added to the graph, if they
-        are not part of it). When evaluating the graph data will be
-        exchanged between connected nodes.
+        """
+        Connects two nodes or ports within the graph.
 
+        If nodes are passed directly, it assumes a single output from `from_`
+        and a single input to `to_`. It adds nodes to the graph if they are not
+        already present and unifies their data configurations.
         Args:
-            from_ (Node, Port): The output port of a node, yielding the data. If the
-                node is passed in directly, it should only have one output port. Else
-                the desired port should be passed in via node[node.OutputKeys.].
-            to_ (Node, Port): The input port of a node, expecting the data. The
-                same node logic as for the first input holds.
-
+            from_ (Node | OutputPort): The source node or output port.
+            to_ (Node | InputPort): The destination node or input port.
         Raises:
-            ValueError: The ports of both nodes are not compatible.
+            ValueError: If the number of ports do not match or an input port is already connected.
+            DataConfigMismatchError: If the data configurations of the connected ports are incompatible.
         """
         self._check_graph_was_sorted()
 
@@ -261,6 +277,11 @@ class Graph:
         return updated_ports
 
     def _check_graph_was_sorted(self):
+        """
+        Checks if the graph has already been sorted.
+        If it has, a warning is issued because adding new edges might invalidate the
+        current sort order.
+        """
         if self.graph_was_sorted:
             warn(
                 "The graph was already sorted. Inputting a new edge may change the "
@@ -268,17 +289,37 @@ class Graph:
             )
 
     def _check_port_is_free(self, to_node: Node, input_port: InputPort) -> None:
+        """
+        Checks if a given input port of a node is already connected.
+        Args:
+            to_node (Node): The node whose input port is being checked.
+            input_port (InputPort): The specific input port to check.
+        Raises:
+            ValueError: If the input port is already connected.
+        """
         if to_node in self.incoming_edges:
             for e in self.incoming_edges[to_node]:
                 if e.to_port == input_port:
                     raise ValueError(
-                        f"Input port '{input_port.name}' of node '{to_node.name}' is already \
-                            connected!"
+                        f"Input port '{input_port.name}' of node '{to_node.name}' is \
+                            already connected!"
                     )
 
     def _check_connect(
         self, user_input: InputPort | OutputPort | Node, check_input: bool = True
     ) -> InputPort | OutputPort:
+        """
+        Helper method to extract a single port from a user input (Node or Port).
+        Args:
+            user_input (InputPort | OutputPort | Node): The input provided by the user.
+            check_input (bool, optional): If True, checks input ports; otherwise, checks
+                output ports. Defaults to True.
+        Returns:
+            InputPort | OutputPort: The extracted single port.
+        Raises:
+            ValueError: If a Node with multiple ports is provided and a specific port i
+                not specified.
+        """
         if isinstance(user_input, (InputPort, OutputPort)):
             return user_input
         ports = user_input.input_ports if check_input else user_input.output_ports
@@ -362,6 +403,15 @@ class Graph:
         self.update_data_configurations(from_node, from_port, unified_from_config)
 
     def _check_external_node_in_config_dict(self, port: Port, node: Node):
+        """
+        Ensures that an external node and its port have an entry in the dynamic
+        data configurations.
+        This is crucial when connecting to or from nodes that are not formally part
+        of `self.nodes`.
+        Args:
+            port (Port): The port of the external node.
+            node (Node): The external node.
+        """
         if node not in self.dynamic_data_configs:
             self.dynamic_data_configs[node] = node.copy_data_configs()
         if port not in self.dynamic_data_configs[node]:
@@ -391,7 +441,12 @@ class Graph:
     #             return
 
     def validate(self) -> None:
-        """Validate that all required input ports of each node are connected."""
+        """
+        Validates the graph structure.
+        Checks if all required input ports of every node in the graph are connected.
+        Raises:
+            ValueError: If a required input port is found to be unconnected.
+        """
         for node in self.nodes:
             for port in node.input_ports:
                 throw_err = True
@@ -413,8 +468,8 @@ class Graph:
         self.sort()
 
     def run(self, mode: EvaluationPhase = EvaluationPhase.ALWAYS):
-        """Run the graph. The data will be passed through the graph according to
-        the connections and the computations of the nodes will be executed.
+        """
+        Runs the graph execution by iterating through the topologically sorted nodes.
         """
         for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
             node.set_mode(mode)
@@ -428,7 +483,11 @@ class Graph:
             edge.to_port.set_value(edge.from_port.value)
 
     def collect_trainable_parameters(self):
-        """Collect all trainable parameters from the nodes in this graph."""
+        """
+        Collects all trainable parameters from all nodes within the graph.
+        Returns:
+            TrainableParametersCollection: A collection of all trainable parameters.
+        """
         params_collection = TrainableParametersCollection()
         for node in self.nodes:
             p = node._trainable_parameters
@@ -438,6 +497,17 @@ class Graph:
 
     @contextmanager
     def tracker(self, n_tracking_vars=1):
+        """
+        A context manager for tracking graph construction.
+
+        When active, nodes will record connections and data flow, allowing a graph
+        to be built implicitly from function calls.
+        Args:
+            n_tracking_vars (int, optional): The number of tracking variables to yield.
+                Defaults to 1.
+        Yields:
+            TrackingObject | tuple[TrackingObject, ...]: One or more tracking objects.
+        """
         if len(self.nodes) > 0:
             raise RuntimeError(
                 "Graph tracking can only be used on an empty graph. Please create a new\
@@ -463,7 +533,9 @@ class Graph:
 
 class SequentialGraph(Graph):
     """
-    A graph that is initialized as a sequence of nodes.
+    A graph specifically designed to represent a linear sequence of nodes.
+
+    Nodes are connected in the order they are provided during initialization.
     """
 
     def __init__(self, *nodes: Node):
@@ -481,6 +553,12 @@ class SequentialGraph(Graph):
 # region: Tracking
 class TrackingObject:
     current_graph_tracked: Graph | None = None
+    """
+    A special object used during graph tracking to represent data flow.
+
+    When nodes are called with `TrackingObject`s as inputs, the graph
+    automatically records the connections.
+    """
 
     def __init__(self, last_output_port: OutputPort | None = None):
         self.last_output_port: OutputPort | None = last_output_port
@@ -495,6 +573,12 @@ class TrackingObject:
         add_node = Add()
         return add_node(self, other)
 
+    def __radd__(self, other):
+        from ..algorithms.building_blocks.math import Add
+
+        add_node = Add()
+        return add_node(other, self)
+
     def __matmul__(self, other):
         from ..algorithms.building_blocks.math import MatMul
 
@@ -507,11 +591,23 @@ class TrackingObject:
         subtract_node = Subtract()
         return subtract_node(self, other)
 
+    def __rsub__(self, other):
+        from ..algorithms.building_blocks.math import Subtract
+
+        subtract_node = Subtract()
+        return subtract_node(other, self)
+
     def __mul__(self, other):
         from ..algorithms.building_blocks.math import Multiply
 
         multiply_node = Multiply()
         return multiply_node(self, other)
+
+    def __rmul__(self, other):
+        from ..algorithms.building_blocks.math import Multiply
+
+        multiply_node = Multiply()
+        return multiply_node(other, self)
 
     def __pow__(self, other):
         from ..algorithms.building_blocks.math import Power
@@ -519,11 +615,23 @@ class TrackingObject:
         power_node = Power()
         return power_node(self, other)
 
+    def __rpow__(self, other):
+        from ..algorithms.building_blocks.math import Power
+
+        power_node = Power()
+        return power_node(other, self)
+
     def __truediv__(self, other):
         from ..algorithms.building_blocks.math import Divide
 
         divide_node = Divide()
         return divide_node(self, other)
+
+    def __rtruediv__(self, other):
+        from ..algorithms.building_blocks.math import Divide
+
+        divide_node = Divide()
+        return divide_node(other, self)
 
     def __abs__(self):
         from ..algorithms.building_blocks.math import Abs
