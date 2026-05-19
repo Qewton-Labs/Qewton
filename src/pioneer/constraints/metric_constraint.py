@@ -10,18 +10,21 @@ from ..graphs.graphs import Graph
 from ..graphs.control_nodes.graph_node import GraphNode
 from ..config.backend import DEFAULT_DL_BACKEND
 from ..algorithms.building_blocks.math import Subtract, Square, Mean, Divide, Sum
+from ..optim.base import EvaluationPhase
 
 
 class MetricConstraint(Constraint):
     def __init__(
         self,
-        input_config: DataConfiguration,
+        input_config: DataConfiguration = DataConfiguration.empty(),
         name="MetricConstraint",
         relative: bool | BooleanHyperparameter = False,
         constraint_type: ConstraintType = ConstraintType.LOSS,
+        evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         weight: float | ContinuousHyperparameter = 1,
         backend=DEFAULT_DL_BACKEND,
         epsilon=1e-8,
+        **kwargs,
     ):
         super().__init__(
             name=name,
@@ -29,13 +32,18 @@ class MetricConstraint(Constraint):
             backend=backend,
             constraint_type=constraint_type,
             objective=ConstraintObjective.MINIMIZE,
+            evaluated_in_mode=evaluated_in_mode,
+            **kwargs,
         )
-        self.input_config = input_config
         self.relative = HyperParameter.from_value(relative, "Relative Constraint")
         self.epsilon = epsilon  # for computation of the relative loss.
 
-        self.input_1 = InputPort(self.input_config, self, name="input1")
-        self.input_2 = InputPort(self.input_config, self, name="input2")
+        if len(self._input_ports) == 0:
+            self._build_input_ports(input_config)
+
+    def _build_input_ports(self, input_config: DataConfiguration):
+        self.input_1 = InputPort(input_config, self, name="input1")
+        self.input_2 = InputPort(input_config, self, name="input2")
         self._input_ports = [self.input_1, self.input_2]
 
 
@@ -44,16 +52,14 @@ class MSEConstraint(MetricConstraint, GraphNode):
 
     def __init__(
         self,
-        input_config: DataConfiguration,
         name="MSEConstraint",
         relative: bool | BooleanHyperparameter = False,
+        constraint_type: ConstraintType = ConstraintType.LOSS,
+        evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         weight: float | ContinuousHyperparameter = 1,
         backend=DEFAULT_DL_BACKEND,
         epsilon=1e-8,
     ):
-        super().__init__(
-            input_config, name, relative, weight, backend=backend, epsilon=epsilon
-        )
         self.subtract_node = Subtract(backend=backend)
         self.sum_node = Sum(backend=backend, axis=-1)
         self.square_node = Square(backend=backend)
@@ -64,11 +70,30 @@ class MSEConstraint(MetricConstraint, GraphNode):
 
         self.mean_node = Mean(backend=backend)
 
-    def _build_graph(self):
+        new_graph, in_ports, out_ports = self._build_graph(
+            relative.value if isinstance(relative, BooleanHyperparameter) else relative
+        )
+
+        super().__init__(
+            graph=new_graph,
+            weight=weight,
+            relative=relative,
+            constraint_type=constraint_type,
+            input_ports=in_ports,
+            output_ports=out_ports,
+            name=name,
+            backend=backend,
+            epsilon=epsilon,
+            evaluated_in_mode=evaluated_in_mode,
+        )
+
+        self._graph.setup()
+
+    def _build_graph(self, use_relative: bool):
         new_graph = Graph()
         new_graph.connect(self.subtract_node, self.square_node)
         new_graph.connect(self.square_node, self.sum_node)
-        if self.relative.value:
+        if use_relative:
             new_graph.connect(self.square_node_relative, self.sum_node_relative)
             new_graph.connect(self.sum_node_relative, self.divide_node.input_ports[1])
             new_graph.connect(self.sum_node, self.divide_node.input_ports[0])
@@ -76,19 +101,17 @@ class MSEConstraint(MetricConstraint, GraphNode):
         else:
             new_graph.connect(self.sum_node, self.mean_node)
 
-        in_ports = [
-            self.subtract_node.input_ports[0],
-            self.subtract_node.input_ports[1],
-            self.square_node_relative.input_ports[0],
-        ]
+        self._build_input_ports(self.subtract_node.input_ports[0].data_configuration)
+
+        in_ports = {
+            self.input_1: [self.subtract_node.input_ports[0]],
+            self.input_2: [self.subtract_node.input_ports[1]],
+        }
+        if use_relative:
+            in_ports[self.input_2].append(self.square_node_relative.input_ports[0])
 
         return new_graph, in_ports, self.mean_node.output_ports
 
     def setup(self):
-        new_graph, in_ports, out_ports = self._build_graph()
-
-        self.setup_graph(
-            new_graph,
-            input_ports=in_ports,
-            output_ports=out_ports,
-        )
+        new_graph, in_ports, out_ports = self._build_graph(self.relative.value)
+        self.setup_graph(new_graph, input_ports=in_ports, output_ports=out_ports)
