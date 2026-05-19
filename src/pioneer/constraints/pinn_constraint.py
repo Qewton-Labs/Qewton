@@ -24,7 +24,7 @@ class PINNConstraint(Constraint, GraphNode):
     def __init__(
         self,
         residual,
-        reduction=MSN(),
+        reduction=None,
         name="PINNConstraint",
         weight: float | HyperParameter = 1,
         objective: ConstraintObjective = ConstraintObjective.MINIMIZE,
@@ -32,6 +32,8 @@ class PINNConstraint(Constraint, GraphNode):
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
+        if reduction is None:
+            reduction = MSN()
         # construct residual node
         if isinstance(residual, Node):
             self.residual_node = residual

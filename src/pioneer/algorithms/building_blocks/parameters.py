@@ -33,7 +33,7 @@ class TorchParameter(_InternalParameter):
         if tensor is not None:
             assert isinstance(
                 tensor, torch.Tensor
-            ), "Torch can only work with torch.Tensors, but got "
+            ), "Torch can only work with torch.Tensors, but got {type(tensor)} instead."
             self.param = torch.nn.Parameter(tensor)
         elif shape is not None:
             # TODO: We need some kind of initialization for these parameters
@@ -77,6 +77,10 @@ class ParameterNode(Node):
     def setup(self) -> None:
         if self.state == NodeState.UNINITIALIZED:
             if self.initial_value is not None:
+                if not hasattr(self.initial_value, "shape"):
+                    raise ValueError(
+                        f"initial_value must have a 'shape' attribute, got {type(self.initial_value)}"
+                    )
                 self.implementation = self.implementation_class(
                     self.initial_value.shape, self.initial_value
                 )

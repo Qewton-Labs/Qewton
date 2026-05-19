@@ -55,11 +55,15 @@ class Variable(OrderedDict):
         slc = []
         for variable_k, variable_v in variable.items():
             prev_dims = 0
+            found = False
             for k, v in self.items():
                 if k == variable_k:
                     slc.extend(list(range(prev_dims, prev_dims + variable_v)))
+                    found = True
                     break
                 prev_dims += v
+            if not found:
+                raise KeyError(f"Variable key '{variable_k}' not found in {self.keys()}")
         return slc
 
     def is_empty(self) -> bool:
@@ -118,12 +122,6 @@ class Variable(OrderedDict):
         result = Variable.from_dict(self)
         for k, v in other.items():
             result[k] = v
-        for v in result.values():
-            if isinstance(v, tuple):
-                raise ValueError(
-                    "Can not combine variables with tuple dimensions. \
-                        Please flatten the dimensions."
-                )
         return result
 
     def __add__(self, other: Variable) -> Variable:

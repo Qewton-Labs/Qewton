@@ -15,8 +15,8 @@ class HyperParameterDAG:
         for hp in hyperparameters:
             if hp.name in name_list:
                 raise ValueError(
-                    f"Found at least two HyperParameters with the name '{hp.name}'.\
-                        Can not uniquely carry out the tuning process."
+                    f"Found at least two HyperParameters with the name '{hp.name}'. "
+                    "Can not uniquely carry out the tuning process."
                 )
             name_list.append(hp.name)
 
@@ -70,21 +70,18 @@ class HyperParameterDAG:
         for hp in self.sorted_nodes:
             hp_grids.append(hp.tuning_grid)
         total_param_grid = list(product(*hp_grids))
-        # Resample the grid if the above division yielded to many points.
+        # Resample the grid if the above division yielded too many points.
         # This of course will lead to some "holes" in the grid.
         if len(total_param_grid) > n_samples:
             total_param_grid = random.sample(total_param_grid, n_samples)
         elif len(total_param_grid) < n_samples:
             warnings.warn(
-                f"""Defined tuning grids in given HyperParameters only yield 
-                {len(total_param_grid)} combinations. To sample {n_samples}
-                combinations, increase the 'default_grid' in the
-                HyperParameters."""
+                f"Defined tuning grids in given HyperParameters only yield "
+                f"{len(total_param_grid)} combinations. To sample {n_samples} "
+                f"combinations, increase the 'default_grid' in the HyperParameters."
             )
-        # This are all possible combinations from HyperParameters,
-        # but some may not be valid, since they are only active when
         # specific conditions are fulfilled, check this now.
-        grid_samples = []
+        # These are all possible combinations from HyperParameters,
         for current_params in total_param_grid:
             config = {}
             for j, hp in enumerate(self.sorted_nodes):

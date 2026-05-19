@@ -73,7 +73,9 @@ class Linear(GraphNode, Generic[TensorType]):
         name="linear",
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
-        self.ellipsis_axes: EllipsisAxes
+        self.ellipsis_axes: (
+            EllipsisAxes  # defined in x_data_config to allow usage in multiple graphs
+        )
         self.weight = ParameterNode(
             (in_neurons, out_neurons), name="weight", backend=backend
         )

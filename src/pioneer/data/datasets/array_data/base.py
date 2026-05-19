@@ -60,6 +60,8 @@ class ArrayLikeDataSet(DataSet):
                 raise ValueError("Too few axes in data configuration for the given data.")
 
     def __len__(self) -> int:
+        if not self._data:
+            return 0
         return int(self._data[0].shape[0])
 
     def __getitem__(self, idx):
@@ -98,4 +100,8 @@ class ArrayLikeDataSet(DataSet):
 
     def __getattr__(self, name):
         """Delegate attribute access to the primary data object if not found on this class."""
-        return getattr(self._data, name)
+        if not self._data:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            )
+        return getattr(self._data[0], name)

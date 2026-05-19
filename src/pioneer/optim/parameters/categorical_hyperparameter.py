@@ -24,7 +24,7 @@ class CategoricalHyperparameter(HyperParameter):
             active_when=active_when,
             default_grid=list(categories),
         )
-        self.current_value = self.current_value
+        # For tuning, some backends want objects to be serializable.
         # For tuning, some backends want objects to be serializable.
         # Hence we create here a string mapping:
         self._registry = {}
@@ -37,10 +37,13 @@ class CategoricalHyperparameter(HyperParameter):
 
             self._registry[key] = choice
 
+    _key_counter = 0
+
     def _make_key(self, obj):
         if isinstance(obj, type):
             return obj.__name__
-        return f"{obj.__class__.__name__}"
+        CategoricalHyperparameter._key_counter += 1
+        return f"{obj.__class__.__name__}_{CategoricalHyperparameter._key_counter}"
 
     @property
     def categories(self):
@@ -62,7 +65,8 @@ class CategoricalHyperparameter(HyperParameter):
         return seq[:n]
 
     def sample_from_unit(self, x: float):
-        return self.parameter_range[int(x * len(self.parameter_range))]
+        index = min(int(x * len(self.parameter_range)), len(self.parameter_range) - 1)
+        return self.parameter_range[index]
 
 
 class BooleanHyperparameter(CategoricalHyperparameter):
