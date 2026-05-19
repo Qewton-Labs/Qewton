@@ -11,6 +11,15 @@ class ProgressBarCallback(Callback):
         self.progress_bar: tqdm
         self.phase_counter = 0
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop("progress_bar", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.progress_bar: tqdm
+
     def on_optimization_phases_start(self, state: TrainerState):
         self.phase_counter += 1
         self.progress_bar = tqdm(

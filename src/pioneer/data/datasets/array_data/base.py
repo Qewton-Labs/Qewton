@@ -96,6 +96,6 @@ class ArrayLikeDataSet(DataSet):
                 return self._data[i][v_slice]
         raise ValueError(f"No such variable {variable} in the data.")
 
-    def __getattr__(self, name):
-        """Delegate attribute access to the primary data object if not found on this class."""
-        return getattr(self._data, name)
+    # def __getattr__(self, name):
+    #     """Delegate attribute access to the primary data object if not found on this class."""
+    #     return getattr(self._data, name)

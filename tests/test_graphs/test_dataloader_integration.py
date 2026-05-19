@@ -23,11 +23,7 @@ def test_dataloader_to_algorithm_flow():
     # 3. Create Dataset and DataLoader
     dataset = ArrayLikeDataSet(raw_data, data_config)
     dataloader = DataLoader(
-        data_set=dataset,
-        batch_size=batch_size,
-        shuffle_data=True,
-        shuffle_seed=42,
-        backend=None,
+        data_set=dataset, batch_size=batch_size, shuffle_data=True, shuffle_seed=42
     )
 
     # 4. Create Algorithm Node
@@ -74,11 +70,7 @@ def test_dataloader_tracking_flow():
     # 3. Create Dataset and DataLoader
     dataset = ArrayLikeDataSet(raw_data, data_config)
     dataloader = DataLoader(
-        data_set=dataset,
-        batch_size=batch_size,
-        shuffle_data=True,
-        shuffle_seed=42,
-        backend=None,
+        data_set=dataset, batch_size=batch_size, shuffle_data=True, shuffle_seed=42
     )
 
     # 4. Create Algorithm Node

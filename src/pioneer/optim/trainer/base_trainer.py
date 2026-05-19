@@ -23,13 +23,14 @@ class Trainer:
         hyperparameters: set[HyperParameter],
         device="cpu",
         save_path: str = "train_results",
-        progress_bar: ProgressBarCallback = ProgressBarCallback(),
+        progress_bar: ProgressBarCallback | None = None,
     ) -> None:
         if isinstance(optimization_phases, OptimizationPhase):
             optimization_phases = [optimization_phases]
         if isinstance(callbacks, Callback):
             callbacks = [callbacks]
-
+        if progress_bar is None:
+            progress_bar = ProgressBarCallback()
         self.optimization_phases = optimization_phases
         self.trainable_parameters: _TrainableParameterBase
         callbacks.append(progress_bar)  # add progress bar by default

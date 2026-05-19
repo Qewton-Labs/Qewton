@@ -1,6 +1,5 @@
 import torch
 import pioneer
-import pickle
 
 x_data = torch.linspace(0, 1, 1000).reshape(-1, 1)
 u_data = x_data**2 + torch.sin(6.0 * x_data)
@@ -32,13 +31,11 @@ model = pioneer.algorithms.FCN(
     in_neurons=1,
     hidden_neurons=50,
     out_neurons=1,
-    n_hidden_layers=8,
+    n_hidden_layers=1,
     activation=pioneer.building_blocks.Tanh,
 )
 
-constraint = pioneer.constraints.MSEConstraint(
-    model.output_ports[0].data_configuration,
-)
+constraint = pioneer.constraints.MSEConstraint()
 
 computation_graph = pioneer.Graph()
 
@@ -68,6 +65,4 @@ trainer = pioneer.optim.GraphBasedTrainer(
     device="cuda:0",
 )
 
-# trainer.run()
-with open("object.pkl", "wb") as f:
-    pickle.dump(trainer, f)
+trainer.run()

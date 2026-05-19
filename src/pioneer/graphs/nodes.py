@@ -203,6 +203,8 @@ class Node(ABC):
 
     @classmethod
     def _set_port_backend(cls, ports: list[Port], backend: type[Backend[TensorType]]):
+        if backend == Backend:
+            return
         for port in ports:
             port.data_configuration.set_dtype(backend.standard_datatype())
 
