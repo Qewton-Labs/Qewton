@@ -13,6 +13,7 @@
         "allclose",
         "arccos",
         "arctan",
+        "broadcastability",
         "broadcastable",
         "keepdim",
         "keepdims",
