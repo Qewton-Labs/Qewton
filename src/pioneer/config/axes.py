@@ -19,10 +19,12 @@ def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
 
     Args:
         inner_type: The type of `AxesDim` to use for unification (e.g., `AxesDim`).
-        start_part (list): A list of `AxesDim` objects, where the first element is an `EllipsisDim`.
-                           Represents the dimensions of a shape with an ellipsis at the beginning.
-        end_part (list): A list of `AxesDim` objects, where the last element is an `EllipsisDim`.
-                         Represents the dimensions of a shape with an ellipsis at the end.
+        start_part (list): A list of `AxesDim` objects, where the first element is
+            an `EllipsisDim`. Represents the dimensions of a shape with an ellipsis
+            at the beginning.
+        end_part (list): A list of `AxesDim` objects, where the last element is an
+            `EllipsisDim`. Represents the dimensions of a shape with an ellipsis
+            at the end.
         ellipsis_type: The class type for ellipsis dimensions (e.g., `EllipsisDim`).
 
     Returns:
@@ -91,7 +93,8 @@ def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
 
 class Axes:
     """
-    Represents a collection of axes (dimensions) for data, including their sizes and types.
+    Represents a collection of axes (dimensions) for data, including their
+    sizes and types.
     """
 
     def __init__(self, *shape: int | AxesDim | EllipsisType):
@@ -170,10 +173,10 @@ class Axes:
         return self.unify_shapes(self.shape, other.shape)
 
     def __str__(self) -> str:
-        return f"{self.__class__.__name__}([{', '.join(str(s) for s in self.shape)}])"
         """
         Returns a string representation of the Axes object.
         """
+        return f"{self.__class__.__name__}([{', '.join(str(s) for s in self.shape)}])"
 
     @classmethod
     def unify_shapes(
@@ -182,21 +185,25 @@ class Axes:
         shape2: tuple[AxesDim, ...],
     ) -> tuple[dict, dict]:
         """
-        Unifies two shapes, `shape1` and `shape2`, to find a common compatible representation.
+        Unifies two shapes, `shape1` and `shape2`, to find a common compatible
+        representation.
 
-        This method attempts to match dimensions from both the start and the end of the shapes.
-        It specifically handles `EllipsisDim` to allow for flexible matching of intermediate dimensions.
+        This method attempts to match dimensions from both the start and the end
+        of the shapes. It specifically handles `EllipsisDim` to allow for
+        flexible matching of intermediate dimensions.
 
         Args:
             shape1 (tuple[AxesDim, ...]): The first shape to unify.
             shape2 (tuple[AxesDim, ...]): The second shape to unify.
 
         Returns:
-            tuple[dict, dict]: A tuple of two dictionaries. The first maps dimensions from `shape1`
-                               to their unified counterparts, and the second maps dimensions from `shape2`.
+            tuple[dict, dict]: A tuple of two dictionaries. The first maps dimensions
+                from `shape1` to their unified counterparts, and the second maps
+                dimensions from `shape2`.
 
         Raises:
-            DataConfigMismatchError: If the shapes are not compatible and cannot be unified.
+            DataConfigMismatchError: If the shapes are not compatible and cannot
+            be unified.
 
         The unification process involves:
         1. Matching dimensions from the end of both shapes.
@@ -241,12 +248,15 @@ class Axes:
         Matches dimensions between two shapes from their respective starting points.
 
         This helper method iterates through the dimensions of `shape1` and `shape2`
-        (or their reversed versions) and attempts to unify corresponding `AxesDim` objects.
+        (or their reversed versions) and attempts to unify corresponding `AxesDim`
+        objects.
+
         Args:
             shape1 (Iterable[AxesDim]): The first sequence of dimensions.
             shape2 (Iterable[AxesDim]): The second sequence of dimensions.
         Returns:
-            tuple[dict, dict]: Dictionaries mapping original dimensions to their unified forms.
+            tuple[dict, dict]: Dictionaries mapping original dimensions to their
+                unified forms.
         """
         matching_dims_1 = {}
         matching_dims_2 = {}
@@ -277,7 +287,8 @@ class Axes:
             remaining_middle1 (tuple[AxesDim, ...]): The middle part of the first shape.
             remaining_middle2 (tuple[AxesDim, ...]): The middle part of the second shape.
         Returns:
-            tuple[dict, dict]: Dictionaries mapping original middle dimensions to their unified forms.
+            tuple[dict, dict]: Dictionaries mapping original middle dimensions to their
+                unified forms.
         """
         # If one shape only is an ellipsis we are done:
         if len(remaining_middle1) == 1 and isinstance(remaining_middle1[0], EllipsisDim):
@@ -715,8 +726,6 @@ class EllipsisDim(AxesDim):
     number of dimensions.
     """
 
-
-class EllipsisDim(AxesDim):
     def __init__(self, broadcastable=True):
         super().__init__(size=None, broadcastable=broadcastable)
 
