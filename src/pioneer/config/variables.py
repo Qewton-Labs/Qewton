@@ -98,12 +98,11 @@ class Variable(OrderedDict):
     def check(cls, variable_a: Variable, variable_b: Variable, a_key, b_key):
         if variable_a[a_key] is None:
             return variable_b[b_key]
-        elif variable_b[b_key] is None:
+        if variable_b[b_key] is None:
             return variable_a[a_key]
-        elif variable_a[a_key] != variable_b[b_key]:
+        if variable_a[a_key] != variable_b[b_key]:
             raise ValueError("Variable dimensions have to agree for unification.")
-        else:
-            return variable_a[a_key]
+        return variable_a[a_key]
 
     def __mul__(self, other: Variable) -> Variable:
         """Combines two variables to a single object.
