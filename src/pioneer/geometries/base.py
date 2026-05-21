@@ -237,3 +237,26 @@ class Interval(AnalyticGeometry):
     ):
         self.markers[marker] = self.lower
         return super().set_marker(marker, marker_description)
+
+
+####################################
+### Plan:
+# - All geometries have a sampling methods (at least grid and random)
+# - DiscreteGeo. have also a discrete sampling method (only sampling from discretization points)
+# - All geometries can be discretized by create mesh method -> returns MeshGeometry
+# - A geometry has a .boundary property (will be created when first called)
+# - We can mark CAD-geometries via lambda functions, the functions will
+#   be saved internally, and we return the corresponding subdomains for further usage.
+#   The saved markers can be used when creating a mesh.
+# - Union, etc. is only in CADGeometry
+# - Cart. Product not in Geometry
+# - Put CAD into qewton.geometry.cad
+# - Default geo. take TorchPhysics implementation
+# - Start with numpy implementation, switch to nodes etc. maybe later
+
+### Samplers:
+# - A sampler has a flag to either use mesh based or direct sampling
+# - One can still filter points via rejection sampling
+# - Allow products in samplers (passing arguments/outputs between each other)
+# - Return Normals flag, to build output ports / And normalvector compute node
+# - Has backend and device, moves points accordingly
