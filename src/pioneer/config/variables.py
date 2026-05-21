@@ -30,7 +30,7 @@ class Variable(OrderedDict):
 
     @property
     def name(self):
-        return "_".join(str(key) for key in self.keys())
+        return ", ".join(str(key) for key in self.keys())
 
     @classmethod
     def from_dict(cls, var_dict: dict[str, int]) -> Variable:
