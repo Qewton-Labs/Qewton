@@ -43,11 +43,14 @@ class PINNConstraint(Constraint, GraphNode):
 
             sig = inspect.signature(residual).parameters.values()
             for var, p in zip(sig, self.residual_node.input_ports):
-                if isinstance(var, Variable):
+                print(var.annotation)
+                if isinstance(var.annotation, Variable):
                     p.name = var.name
                     p.data_configuration = DataConfiguration(
-                        EllipsisAxes(), FeatureAxes(var)
+                        EllipsisAxes(), FeatureAxes(var.annotation)
                     )
+            Node._set_port_backend(self.residual_node.input_ports, backend)
+
         assert (
             len(self.residual_node.output_ports) == 1
         ), "Residual functions should return a single value."
