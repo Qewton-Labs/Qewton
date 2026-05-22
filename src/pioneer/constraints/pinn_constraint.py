@@ -47,9 +47,10 @@ class PINNConstraint(Constraint, GraphNode):
                 if isinstance(var.annotation, Variable):
                     p.name = var.name
                     p.data_configuration = DataConfiguration(
-                        EllipsisAxes(), FeatureAxes(var.annotation)
+                        EllipsisAxes(),
+                        FeatureAxes(var.annotation),
+                        dtype=backend.default_dtype,
                     )
-            Node._set_port_backend(self.residual_node.input_ports, backend)
 
         assert (
             len(self.residual_node.output_ports) == 1
