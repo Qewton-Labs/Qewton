@@ -213,6 +213,7 @@ class Graph:
 
         # Configurations should match
         for from_port, to_port in zip(from_ports, to_ports):
+            print(from_node, from_port)
             from_config = self.dynamic_data_configs[from_node][from_port]
             to_config = self.dynamic_data_configs[to_node][to_port]
             try:
