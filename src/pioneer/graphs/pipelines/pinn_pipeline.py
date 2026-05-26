@@ -1,5 +1,7 @@
 from typing import Callable
 
+from ...algorithms.building_blocks.array_operations import SplitVariables
+
 from ...config.variables import Variable
 
 from ...config.backend import DEFAULT_DL_BACKEND
@@ -9,7 +11,7 @@ from ...algorithms.building_blocks.derivatives import GradientTracking
 from ...constraints.base import Constraint
 from ...constraints.pinn_constraint import PINNConstraint
 from ...data.dataloaders.base import DataLoader
-from ..nodes import Node, Port
+from ..nodes import Node, OutputPort
 from ..graphs import Graph
 
 ## example functionality:
@@ -37,7 +39,7 @@ class PINNPipeline(Graph):
     Models (which can also be single Parameters) can not depend on outputs
     of another model, but are just executed seperately.
     """
-    
+
     def __init__(
         self,
         sampler: DataLoader,
@@ -55,41 +57,107 @@ class PINNPipeline(Graph):
             constraint = PINNConstraint(
                 residual, reduction, weight=weight, backend=backend
             )
-        
+
+        # first: split and track
+        constraint_input_vars = [
+            p.data_configuration.variables for p in constraint.input_ports
+        ]
+        sampler_out_vars = [p.data_configuration.variables for p in sampler.output_ports]
+
+        # TODO: reduce to the stuff which is provided by the sampler
+        # if a variable is not in the sampler but in
+
+        # Filter constraint variables: remove keys not in sampler.
+        # If no keys remain for a variable, it is omitted entirely.
+        constrained_in_sampler_out = [
+            Variable.from_dict(
+                {k: d for k, d in v.items() if any(k in sv for sv in sampler_out_vars)}
+            )
+            for v in constraint_input_vars
+        ]
+        constrained_in_sampler_out = [
+            v for v in constrained_in_sampler_out if not v.is_empty()
+        ]
+
+        only_model_input_vars = []
+        for model in models:
+            for p in model.input_ports:
+                for k, dim in p.data_configuration.variables.items():
+                    if not any(k in cv for cv in constraint_input_vars):
+                        if not any(k in mv for mv in only_model_input_vars):
+                            only_model_input_vars.append(Variable(k, dim))
+
+        trackable_ports = self.split_and_join(
+            sampler.output_ports, constrained_in_sampler_out + only_model_input_vars
+        )
+
+        print("track", [str(p.data_configuration) for p in trackable_ports])
+
+        for i, p in enumerate(trackable_ports):
+            for model in models:
+                found = False
+                for model_p in model.input_ports:
+                    if any(
+                        [
+                            k in p.data_configuration.variables
+                            for k in model_p.data_configuration.variables
+                        ]
+                    ):
+                        tracking = GradientTracking()
+                        self.connect(p, tracking)
+                        trackable_ports[i] = tracking.output_ports[0]
+                        trackable_ports[i].data_configuration = p.data_configuration
+                        found = True
+                        break
+                if found:
+                    break
+
+        print("track", [str(p.data_configuration) for p in trackable_ports])
+        print(self.dynamic_data_configs)
+
+        # step 2: connect these ports to models where necessary
+        for model in models:
+            model_in_vars = [p.data_configuration.variables for p in model.input_ports]
+            model_in_ports = self.split_and_join(trackable_ports, model_in_vars)
+            for p_in, model_p in zip(model_in_ports, model.input_ports):
+                self.connect(p_in, model_p)
+
+        # step 3: append model outputs
+        for model in models:
+            trackable_ports.extend(model.output_ports)
+
+        # step 4: connect to constraint
+        # TODO: test whether multi-key variables work correctly in constraints
+        out_ports = self.split_and_join(trackable_ports, constraint_input_vars)
+        print([p.data_configuration for p in out_ports])
+        print([p.data_configuration for p in constraint.input_ports])
+        for p_out, p_in in zip(out_ports, constraint.input_ports):
+            self.connect(p_out, p_in)
+
+    def split_and_join(self, from_ports, to_vars) -> list[OutputPort]:
+        from_vars = [p.data_configuration.variables for p in from_ports]
+        print(from_vars)
+        out_ports = []
         split_ports = {}
-        for sampler_port in sampler.output_ports:
-            if len(sampler_port.data_configuration.variables) > 1:
+        for from_p, from_v in zip(from_ports, from_vars):
+            if len(from_v) > 1:
                 split = SplitVariables()
-                self.connect(sampler_port, split)
-                for var in sampler_port.data_configuration.variables:
+                self.connect(from_p, split)
+                for var in from_v:
                     split_ports[var] = split.get_output_port(var)
             else:
-                split_ports[sampler_port.data_configuration.variables.keys()[0]] = sampler_port
-        
-        tracked_vars = []
-        for model in models:
-            for model_in_port in model.input_ports:
-                vars = model_in_port.data_configuration.variables
-                if len(vars) > 1:
-                    join = ConcatVariables(vars)
-                for var in vars:
-                    if var not in tracked_vars:
-                        tracker = GradientTracking()
-                        self.connect(split_ports[var], tracker)
-                        split_ports[var] = tracker.output_ports[0]
-                        tracked_vars.append(var)
-                    if len(vars) > 1:
-                        self.connect(tracker, join.get_input_port(var))
-                if len(vars) > 1:
-                    self.connect(join, model_in_port)
-                else:
-                    self.connect(split_ports[var], model_in_port)
-            
+                split_ports[list(from_v.keys())[0]] = from_p
 
-        
+        print(to_vars)
+        print(split_ports)
+        for to_v in to_vars:
+            if len(to_v) > 1:
+                join = ConcatVariables(to_v)
+                for var in to_v:
+                    self.connect(split_ports[var], join.get_input_port(var))
+                out_ports.append(join.output_ports[0])
+            else:
+                var_name = next(iter(to_v))
+                out_ports.append(split_ports[var_name])
 
-    def _find_common_var_splitting(
-        self, from_ports, to_ports_a, to_ports_b
-    ) -> list[SplitVariablesNode], dict[Port, Port], dict[Port, (Port, Port)]:
-
-        return
+        return out_ports

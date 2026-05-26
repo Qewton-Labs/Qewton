@@ -45,40 +45,40 @@ def residual_fun(u: U, f: F, x: X):  # type: ignore
 constraint = pioneer.constraints.PINNConstraint(residual_fun, name="PINNConstraint")
 grad_tracking = pioneer.algorithms.building_blocks.GradientTracking()
 
-# pipeline = pioneer.graphs.PINNPipeline(constraint / residual_fun, model, sampler)
+computation_graph = pioneer.PINNPipeline(data_loader, [model], constraint)
 
-computation_graph = pioneer.Graph()
+# computation_graph = pioneer.Graph()
 
-with computation_graph.tracker():
-    x, f = data_loader()
-    x = grad_tracking(x)
-    u = model(x)
-    constraint(u, f, x)
+# with computation_graph.tracker():
+#     x, f = data_loader()
+#     x = grad_tracking(x)
+#     u = model(x)
+#     constraint(u, f, x)
 
 # computation_graph.setup()
 
 # Initial data:
-initial_x_data = torch.zeros((1, 1))
+# initial_x_data = torch.zeros((1, 1))
 
-initial_dataset = pioneer.data.ArrayLikeDataSet(
-    data=[initial_x_data], data_configs=[x_config]
-)
-initial_data_loader = pioneer.data.DataLoader(data_set=initial_dataset, batch_size=1)
-
-
-def initial_residual_fun(u: U):  # type: ignore
-    return u
+# initial_dataset = pioneer.data.ArrayLikeDataSet(
+#     data=[initial_x_data], data_configs=[x_config]
+# )
+# initial_data_loader = pioneer.data.DataLoader(data_set=initial_dataset, batch_size=1)
 
 
-initial_constraint = pioneer.constraints.PINNConstraint(
-    initial_residual_fun, name="InitialConstraint"
-)
+# def initial_residual_fun(u: U):  # type: ignore
+#     return u
 
-initial_graph = pioneer.Graph()
-with initial_graph.tracker():
-    x = initial_data_loader()
-    u = model(x)
-    initial_constraint(u)
+
+# initial_constraint = pioneer.constraints.PINNConstraint(
+#     initial_residual_fun, name="InitialConstraint"
+# )
+
+# initial_graph = pioneer.Graph()
+# with initial_graph.tracker():
+#     x = initial_data_loader()
+#     u = model(x)
+#     initial_constraint(u)
 
 ###################################
 
@@ -97,8 +97,8 @@ lbfgs_phase = pioneer.optim.OptimizationPhase(
 
 trainer = pioneer.optim.GraphBasedTrainer(
     optimization_phases=[adam_phase, lbfgs_phase],
-    graphs=[initial_graph, computation_graph],
-    training_constraints=[initial_constraint, constraint],
+    graphs=[computation_graph],
+    training_constraints=[constraint],
     device="cuda:0",
 )
 
@@ -111,5 +111,5 @@ import matplotlib.pyplot as plt
 
 plt.plot(x_data.numpy(), u.detach().numpy(), label="Predicted")
 plt.plot(x_data.numpy(), x_data.numpy() ** 2, label="True", linestyle="dashed")
-plt.show()
-plt.savefig("pinn_result.png")
+# plt.show()
+# plt.savefig("pinn_result.png")
