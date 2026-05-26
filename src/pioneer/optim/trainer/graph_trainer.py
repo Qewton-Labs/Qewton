@@ -141,7 +141,7 @@ class GraphBasedTrainer(Trainer):
             for constraint in constraints:
                 if constraint.constraint_type == ConstraintType.LOSS:
                     self.train_state.losses[eval_phase][constraint.name] = 0.0
-                elif constraint.constraint_type == ConstraintType.METRIC:
+                elif constraint.constraint_type == ConstraintType.MONITOR:
                     self.train_state.metrics[eval_phase][constraint.name] = 0.0
 
     def evaluate_tuning_constraints(self):
@@ -155,7 +155,7 @@ class GraphBasedTrainer(Trainer):
                 self.train_state.losses[EvaluationPhase.TUNE][constraint.name] = (
                     constraint.get_loss(add_weight=False)
                 )
-            elif constraint.constraint_type == ConstraintType.METRIC:
+            elif constraint.constraint_type == ConstraintType.MONITOR:
                 self.train_state.metrics[EvaluationPhase.TUNE][constraint.name] = (
                     constraint.get_loss(add_weight=False)
                 )
