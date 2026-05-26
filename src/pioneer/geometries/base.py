@@ -1,13 +1,9 @@
 from __future__ import annotations
 from types import EllipsisType
-from typing import Any
+from typing import Any, Callable
 
 from ..config.errors import DataConfigMismatchError
 from ..config.variables import Variable
-
-
-# TODO: General domain classes to define underlying geometry, maybe later include again
-# func. such as union, differences,....
 
 
 class Geometry:
@@ -27,6 +23,7 @@ class Geometry:
         if variable is not None and dim is not None:
             assert variable.dim == dim
         self.markers = {}
+        self._user_volume = None
 
     @property
     def dim(self) -> int | None:
@@ -184,12 +181,114 @@ class Geometry:
         raise NotImplementedError()
 
     def set_marker(self, marker, marker_description):
-        raise NotImplementedError()
+        raise NotImplementedError(
+            "General geometries can not be marked, use "
+            "the filter functions in the sampler object instead."
+        )
 
     def get_marker(self, marker):
         if marker in self.markers:
             return self.markers[marker]
         raise KeyError(f"{marker} marker not found.")
+
+    def sample_random_uniform(self, n_points: int) -> Any:
+        raise NotImplementedError()
+
+    def sample_grid(self, n_points: int) -> Any:
+        raise NotImplementedError()
+
+    def __and__(self, other):
+        """Returns the intersection of two domains"""
+        raise NotImplementedError()
+
+    def __add__(self, other):
+        """Returns the union of two domains"""
+        return NotImplementedError()
+
+    def __or__(self, other):
+        """Returns the union of two domains"""
+        raise self + other
+
+    def __sub__(self, other):
+        """Returns the difference of two domains"""
+        raise NotImplementedError()
+
+    def __mul__(self, other):
+        """Returns the product of two domains"""
+        raise NotImplementedError()
+
+    def __contains__(self, points):
+        """Checks for every point in points if it lays inside the domain.
+
+        Parameters
+        ----------
+        points : np.Array
+            The points that should be checked.
+
+        Returns
+        -------
+        np.Array
+            A boolean array of the shape (len(points), 1) where every entry contains
+            true if the point was inside or false if not.
+        """
+        return self._contains(points)
+
+    def _contains(self, points, params=None):
+        raise NotImplementedError()
+
+    def bounding_box(self, params=None):
+        """Computes the bounds of the domain.
+
+        Returns
+        -------
+        array :
+            A np.array with the length of 2*self.dim.
+            It has the form [axis_1_min, axis_1_max, axis_2_min, axis_2_max, ...],
+            where min and max are the minimum and maximum value that the domain
+            reaches in each dimension.
+        """
+        raise NotImplementedError
+
+    def set_volume(self, volume: Callable):
+        """Set the volume of the given domain.
+
+        Parameters
+        ----------
+        volume : number or callable
+            The volume of the domain. Can be a function if the volume changes
+            depending on other variables.
+
+        Notes
+        -----
+        For all basic domains the volume (and surface) are implemented.
+        But if the given domain has a complex shape or is
+        dependent on other variables, the volume can only be approximated.
+        Therefore one can set here a exact expression for the volume, if known.
+        """
+        self._user_volume = volume
+
+    def _get_volume(self, params=None):
+        raise NotImplementedError
+
+    def volume(self, params=None):
+        """Computes the volume of the current domain.
+
+        Parameters
+        ----------
+        params : np.array, optional
+            Additional parameters that are needed to evaluate the domain.
+
+        Returns
+        -------
+        volume: np.array
+            Returns the volume of the domain. If dependent on other parameters,
+            the value will be returned as tensor with the shape (len(params), 1).
+            Where each row corresponds to the volume of the given values in the
+            params row.
+        """
+        if self._user_volume is None:
+            return self._get_volume(params)
+        return self._user_volume(params)
 
 
 class DiscreteGeometry(Geometry):
@@ -212,31 +311,39 @@ class DiscreteGeometry(Geometry):
             return True
         return False
 
-
-class AnalyticGeometry(Geometry):
-    """
-    Base class for geometries defined via the Pioneer backend.
-    """
-
-    pass
-
-
-class Interval(AnalyticGeometry):
-
-    def __init__(self, lower, upper, variable: Variable | None = None):
-        self.lower = lower
-        self.upper = upper
-        super().__init__(variable, 1, (None,))
-
-    def create_mesh(self, max_vertex_distance: float | None = None):
+    def sample_random_uniform_from_discretization(self, n_points: int) -> Any:
         raise NotImplementedError()
 
-    def set_marker(
-        self,
-        marker,
-    ):
-        self.markers[marker] = self.lower
-        return super().set_marker(marker, marker_description)
+    def sample_grid_from_discretization(self, n_points: int) -> Any:
+        raise NotImplementedError()
+
+
+class BoundaryGeometry(Geometry):
+    """The parent class for all built-in boundaries.
+    Can be used just like any other Geometry.
+    """
+
+    def __init__(self, geometry):
+        assert isinstance(geometry, Geometry)
+        if geometry.dim is not None:
+            dim = geometry.dim - 1
+        else:
+            dim = None
+        super().__init__(variable=geometry.variable, dim=dim)
+        self.geometry = geometry
+
+    def bounding_box(self, params=None):
+        return self.geometry.bounding_box(params)
+
+    def normal(self, points, params=None):
+        """Computes the normal vector at each point in points."""
+        raise NotImplementedError()
+
+    def sample_random_uniform(self, n_points: int, return_normals: bool = False) -> Any:
+        raise NotImplementedError()
+
+    def sample_grid(self, n_points: int, return_normals: bool = False) -> Any:
+        raise NotImplementedError()
 
 
 ####################################
