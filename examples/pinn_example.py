@@ -99,7 +99,7 @@ trainer = pioneer.optim.GraphBasedTrainer(
     optimization_phases=[adam_phase, lbfgs_phase],
     graphs=[computation_graph],
     training_constraints=[constraint],
-    device="cuda:0",
+    device="cpu",  # "cuda:0",
 )
 
 trainer.run()
@@ -112,4 +112,4 @@ import matplotlib.pyplot as plt
 plt.plot(x_data.numpy(), u.detach().numpy(), label="Predicted")
 plt.plot(x_data.numpy(), x_data.numpy() ** 2, label="True", linestyle="dashed")
 # plt.show()
-# plt.savefig("pinn_result.png")
+plt.savefig("pinn_result.png")

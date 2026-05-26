@@ -7,7 +7,7 @@ from pioneer.config.backend import DEFAULT_DL_BACKEND
 from ..backend_node import BackendNode
 from ...config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
 from ...config.data_configurations import DataConfiguration
-from ...config.axes import FeatureAxes
+from ...config.axes import EllipsisAxes, FeatureAxes
 from ...config.variables import Variable
 from ...graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort
 
@@ -122,3 +122,70 @@ class SplitVariables(BackendNode[TensorType]):
                 if port.name == name.name:
                     return port
         raise ValueError(f"No output port with name {name} found in node {self.name}.")
+
+
+class ConcatVariables(BackendNode[TensorType]):
+    """
+    Assumes the feature axes are all the last axes.
+    """
+
+    def __init__(
+        self,
+        in_variables,
+        name=None,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(
+            name if name is not None else "SplitVariablesNode", backend=backend
+        )
+
+        self.in_variables = in_variables
+        self.check_unique_var_keys()
+        self.concat_dim = -1
+        self.concat_sections = None
+
+        ellipsis_axes = EllipsisAxes()
+
+        self._input_ports = []
+        for var in self.in_variables:
+            self._input_ports.append(
+                InputPort(
+                    DataConfiguration(
+                        ellipsis_axes,
+                        FeatureAxes(variable=var),
+                        dtype=self.backend.standard_datatype(),
+                    ),
+                    node=self,
+                    name=var.name,
+                )
+            )
+        out_var = Variable()
+        for var in self.in_variables:
+            out_var *= var
+        self._output_ports = [
+            OutputPort(
+                DataConfiguration(
+                    ellipsis_axes,
+                    FeatureAxes(variable=out_var),
+                    dtype=self.backend.standard_datatype(),
+                ),
+                node=self,
+                name=out_var.name,
+            )
+        ]
+
+    def check_unique_var_keys(self):
+        seen_keys = set()
+        for var in self.in_variables:
+            for key in var.keys():
+                if key in seen_keys:
+                    raise ValueError(
+                        f"Variable key '{key}' is not unique across input variables."
+                    )
+                seen_keys.add(key)
+
+    def forward(self, *x):
+        return self.implementation(*x)
+
+    def torch_implementation(self, *x):
+        return self.backend.library.cat(x, dim=self.concat_dim)
