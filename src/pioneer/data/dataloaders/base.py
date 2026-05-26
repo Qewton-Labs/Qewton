@@ -58,6 +58,8 @@ class DataNode(Node):
         self._batch_progress = 0
         self._is_cached = False
         self._device = None
+        if backend is None:
+            backend = Backend
         super().__init__(name, state, backend=backend)
 
     @property
@@ -82,8 +84,6 @@ class DataNode(Node):
 
 class PointSampler(DataNode):
     """Placeholder for sampling individual points from a domain."""
-
-    pass
 
 
 class DataLoader(DataNode):
@@ -132,9 +132,13 @@ class DataLoader(DataNode):
         copy_memo = {}
         for config in self.data_set.data_configs:
             axes = deepcopy(list(config.axes), memo=copy_memo)
-            assert isinstance(axes[0], BatchAxes), "In DataSets, \
+            assert isinstance(
+                axes[0], BatchAxes
+            ), "In DataSets, \
                 the first axes should be the batch axes."
-            assert len(axes[0].shape) == 1, "Multi-dimensional \
+            assert (
+                len(axes[0].shape) == 1
+            ), "Multi-dimensional \
                 batch axes not supported for batching."
             assert (
                 axes[0].shape[0].size >= self.batch_size

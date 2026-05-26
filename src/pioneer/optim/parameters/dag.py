@@ -82,6 +82,7 @@ class HyperParameterDAG:
             )
         # specific conditions are fulfilled, check this now.
         # These are all possible combinations from HyperParameters,
+        grid_samples = []
         for current_params in total_param_grid:
             config = {}
             for j, hp in enumerate(self.sorted_nodes):
