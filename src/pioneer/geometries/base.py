@@ -2,6 +2,8 @@ from __future__ import annotations
 from types import EllipsisType
 from typing import Any, Callable
 
+import numpy as np
+
 from ..config.errors import DataConfigMismatchError
 from ..config.variables import Variable
 
@@ -24,6 +26,16 @@ class Geometry:
             assert variable.dim == dim
         self.markers = {}
         self._user_volume = None
+        self.boundary_object: BoundaryGeometry | None = None
+
+    @property
+    def boundary(self) -> BoundaryGeometry:
+        if self.boundary_object is None:
+            self.boundary_object = self.create_boundary()
+        return self.boundary_object
+
+    def create_boundary(self) -> BoundaryGeometry:
+        raise NotImplementedError()
 
     @property
     def dim(self) -> int | None:
@@ -213,11 +225,7 @@ class Geometry:
         """Returns the difference of two domains"""
         raise NotImplementedError()
 
-    def __mul__(self, other):
-        """Returns the product of two domains"""
-        raise NotImplementedError()
-
-    def __contains__(self, points):
+    def contains(self, points):
         """Checks for every point in points if it lays inside the domain.
 
         Parameters
@@ -231,12 +239,9 @@ class Geometry:
             A boolean array of the shape (len(points), 1) where every entry contains
             true if the point was inside or false if not.
         """
-        return self._contains(points)
-
-    def _contains(self, points, params=None):
         raise NotImplementedError()
 
-    def bounding_box(self, params=None):
+    def bounding_box(self):
         """Computes the bounds of the domain.
 
         Returns
@@ -247,48 +252,39 @@ class Geometry:
             where min and max are the minimum and maximum value that the domain
             reaches in each dimension.
         """
-        raise NotImplementedError
+        raise NotImplementedError()
 
-    def set_volume(self, volume: Callable):
+    def set_volume(self, volume: float):
         """Set the volume of the given domain.
 
         Parameters
         ----------
-        volume : number or callable
+        volume : number
             The volume of the domain. Can be a function if the volume changes
             depending on other variables.
 
         Notes
         -----
         For all basic domains the volume (and surface) are implemented.
-        But if the given domain has a complex shape or is
-        dependent on other variables, the volume can only be approximated.
+        But if the given domain has a complex the volume can only be approximated.
         Therefore one can set here a exact expression for the volume, if known.
         """
         self._user_volume = volume
 
-    def _get_volume(self, params=None):
-        raise NotImplementedError
+    def _get_volume(self):
+        raise NotImplementedError()
 
-    def volume(self, params=None):
+    def volume(self):
         """Computes the volume of the current domain.
-
-        Parameters
-        ----------
-        params : np.array, optional
-            Additional parameters that are needed to evaluate the domain.
 
         Returns
         -------
-        volume: np.array
-            Returns the volume of the domain. If dependent on other parameters,
-            the value will be returned as tensor with the shape (len(params), 1).
-            Where each row corresponds to the volume of the given values in the
-            params row.
+        volume: float
+            Returns the volume of the domain.
         """
         if self._user_volume is None:
-            return self._get_volume(params)
-        return self._user_volume(params)
+            return self._get_volume()
+        return self._user_volume
 
 
 class DiscreteGeometry(Geometry):
@@ -326,23 +322,17 @@ class BoundaryGeometry(Geometry):
     def __init__(self, geometry):
         assert isinstance(geometry, Geometry)
         if geometry.dim is not None:
-            dim = geometry.dim - 1
+            dim = geometry.dim
         else:
             dim = None
         super().__init__(variable=geometry.variable, dim=dim)
         self.geometry = geometry
 
-    def bounding_box(self, params=None):
-        return self.geometry.bounding_box(params)
+    def bounding_box(self):
+        return self.geometry.bounding_box()
 
-    def normal(self, points, params=None):
+    def normal(self, points):
         """Computes the normal vector at each point in points."""
-        raise NotImplementedError()
-
-    def sample_random_uniform(self, n_points: int, return_normals: bool = False) -> Any:
-        raise NotImplementedError()
-
-    def sample_grid(self, n_points: int, return_normals: bool = False) -> Any:
         raise NotImplementedError()
 
 
