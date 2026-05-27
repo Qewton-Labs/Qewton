@@ -42,17 +42,17 @@ class Port:
         self.name = name
         self._value = None
 
-    def __eq__(self, value: object) -> bool:
-        if not isinstance(value, Port):
-            return False
-        return (
-            self.data_configuration == value.data_configuration
-            and self.node == value.node
-            and self.name == value.name
-        )
+    # def __eq__(self, value: object) -> bool:
+    #     if not isinstance(value, Port):
+    #         return False
+    #     return (
+    #         self.data_configuration == value.data_configuration
+    #         and self.node == value.node
+    #         and self.name == value.name
+    #     )
 
-    def __hash__(self) -> int:
-        return hash((self.data_configuration, self.node, self.name))
+    # def __hash__(self) -> int:
+    #     return hash((self.data_configuration, self.node, self.name))
 
     def duplicate_with_new_owner(
         self, new_owner: Node, new_name: str | None = None
@@ -390,9 +390,7 @@ class Node(ABC):
         """
         # First we check if the port that was connected has been changed:
         port_config = dynamic_configs[updated_port]
-        # print(port_config)
         port_config_was_updated = port_config.update_config(config_dict)
-        # print(port_config, port_config_was_updated)
         if not port_config_was_updated:
             # No change -> we are done
             return set()

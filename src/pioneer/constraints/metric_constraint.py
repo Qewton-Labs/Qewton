@@ -42,9 +42,10 @@ class MetricConstraint(Constraint):
             self._build_input_ports(input_config)
 
     def _build_input_ports(self, input_config: DataConfiguration):
-        self.input_1 = InputPort(input_config, self, name="input1")
-        self.input_2 = InputPort(input_config, self, name="input2")
-        self._input_ports = [self.input_1, self.input_2]
+        if not hasattr(self, "_input_ports"):
+            self.input_1 = InputPort(input_config, self, name="input1")
+            self.input_2 = InputPort(input_config, self, name="input2")
+            self._input_ports = [self.input_1, self.input_2]
 
 
 class MSEConstraint(MetricConstraint, GraphNode):
