@@ -391,9 +391,7 @@ class Node(ABC):
         """
         # First we check if the port that was connected has been changed:
         port_config = dynamic_configs[updated_port]
-        # print(port_config)
         port_config_was_updated = port_config.update_config(config_dict)
-        # print(port_config, port_config_was_updated)
         if not port_config_was_updated:
             # No change -> we are done
             return set()

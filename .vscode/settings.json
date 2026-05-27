@@ -13,6 +13,7 @@
         "allclose",
         "arccos",
         "arctan",
+        "bary",
         "broadcastability",
         "broadcastable",
         "keepdim",
@@ -21,12 +22,14 @@
         "linalg",
         "localdata",
         "lowrank",
+        "maxs",
         "optims",
         "PCANN",
         "PINN",
         "popleft",
         "randperm",
         "Sobol",
-        "TUNABLEPARAMS"
+        "TUNABLEPARAMS",
+        "vecs"
     ]
 }
