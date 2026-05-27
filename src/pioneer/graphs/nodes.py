@@ -42,6 +42,7 @@ class Port:
         self.name = name
         self._value = None
 
+    # TODO: is this really necessary?
     # def __eq__(self, value: object) -> bool:
     #     if not isinstance(value, Port):
     #         return False
@@ -51,8 +52,8 @@ class Port:
     #         and self.name == value.name
     #     )
 
-    # def __hash__(self) -> int:
-    #     return hash((self.data_configuration, self.node, self.name))
+    #    def __hash__(self) -> int:
+    #        return hash((self.data_configuration, self.node, self.name))
 
     def duplicate_with_new_owner(
         self, new_owner: Node, new_name: str | None = None
