@@ -79,6 +79,7 @@ class PINNPipeline(Graph):
             v for v in constrained_in_sampler_out if not v.is_empty()
         ]
         # here, still use original data configs since nothing was connected yet
+        # -> nodes were not added to graph yet, so dynamic configs are not available yet
         only_model_input_vars = []
         for model in models:
             for p in model.input_ports:
@@ -105,7 +106,6 @@ class PINNPipeline(Graph):
                     ):
                         tracking = GradientTracking()
                         self.connect(p, tracking)
-                        tracking.output_ports[0].data_configuration = p.data_configuration
                         trackable_ports[i] = tracking.output_ports[0]
                         found = True
                         break
@@ -115,7 +115,9 @@ class PINNPipeline(Graph):
         # step 2: connect these ports to models where necessary
         for model in models:
             model_in_vars = [p.data_configuration.variables for p in model.input_ports]
-            model_in_ports = self.split_and_join(trackable_ports, model_in_vars)
+            model_in_ports = self.split_and_join(
+                trackable_ports, model_in_vars, use_dynamic_data_configs=True
+            )
             for p_in, model_p in zip(model_in_ports, model.input_ports):
                 self.connect(p_in, model_p)
 
@@ -125,17 +127,11 @@ class PINNPipeline(Graph):
 
         # step 4: connect to constraint
         # TODO: test whether multi-key variables work correctly in constraints
-        out_ports = self.split_and_join(trackable_ports, constraint_input_vars)
+        out_ports = self.split_and_join(
+            trackable_ports, constraint_input_vars, use_dynamic_data_configs=True
+        )
         for p_out, p_in in zip(out_ports, constraint.input_ports):
             self.connect(p_out, p_in)
-
-        print(self.incoming_edges)
-        for node, edges in self.incoming_edges.items():
-            print(node.name)
-            for e in edges:
-                print(
-                    f"{e.from_port.node.name}, {e.from_port.name} -> {e.to_port.node.name}, {e.to_port.name}"
-                )
 
     def get_variables(self, port, dynamic=False):
         if dynamic:
@@ -149,7 +145,6 @@ class PINNPipeline(Graph):
         from_vars = [
             self.get_variables(p, dynamic=use_dynamic_data_configs) for p in from_ports
         ]
-        print(from_vars)
         out_ports = []
         split_ports = {}
         for from_p, from_v in zip(from_ports, from_vars):
@@ -161,8 +156,6 @@ class PINNPipeline(Graph):
             else:
                 split_ports[list(from_v.keys())[0]] = from_p
 
-        print(to_vars)
-        print(split_ports)
         for to_v in to_vars:
             if len(to_v) > 1:
                 join = ConcatVariables(

@@ -44,9 +44,9 @@ class Slice(BackendNode[TensorType]):
         super().__init__(name if name is not None else "SliceNode", backend=backend)
 
     def forward(
-        self, x: Annotated[TensorType, DataConfiguration.empty()]
+        self, input: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.implementation(x)
+        return self.implementation(input)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -65,8 +65,8 @@ class Slice(BackendNode[TensorType]):
                 pass
         return updated_ports
 
-    def torch_implementation(self, x):
-        return x[self.slice_config]
+    def torch_implementation(self, input):
+        return input[self.slice_config]
 
 
 class SplitVariables(BackendNode[TensorType]):
@@ -80,11 +80,11 @@ class SplitVariables(BackendNode[TensorType]):
         self.split_dim = None
         self.split_sections = None
 
-    def forward(self, x: Annotated[TensorType, DataConfiguration.empty()]):
-        return self.implementation(x)
+    def forward(self, input: Annotated[TensorType, DataConfiguration.empty()]):
+        return self.implementation(input)
 
-    def torch_implementation(self, x):
-        return self.backend.library.split(x, self.split_sections, dim=self.split_dim)
+    def torch_implementation(self, input):
+        return self.backend.library.split(input, self.split_sections, dim=self.split_dim)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -105,12 +105,16 @@ class SplitVariables(BackendNode[TensorType]):
                 for var_name, var_dim in config_vars.items():
                     self.split_sections.append(var_dim)
                     out_config = deepcopy(dynamic_configs[updated_port], copy_memo)
+                    # since we iterate multiple times over the same config, we need
+                    # to avoid reuse of the previous deepcopy
+                    copy_memo.pop(id(dynamic_configs[updated_port]))
                     out_config.replace_feature_axes(
                         FeatureAxes(variable=Variable(var_name, var_dim))
                     )
                     new_out_port = OutputPort(out_config, self, name=var_name)
                     self.output_ports.append(new_out_port)
                     dynamic_configs[new_out_port] = out_config
+
         return updated_ports
 
     def get_output_port(self, name: str | Variable):
@@ -136,7 +140,7 @@ class ConcatVariables(BackendNode[TensorType]):
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         super().__init__(
-            name if name is not None else "SplitVariablesNode", backend=backend
+            name if name is not None else "ConcatVariablesNode", backend=backend
         )
 
         self.in_variables = in_variables
@@ -184,8 +188,8 @@ class ConcatVariables(BackendNode[TensorType]):
                     )
                 seen_keys.add(key)
 
-    def forward(self, *x):
-        return self.implementation(*x)
+    def forward(self, *input):
+        return self.implementation(*input)
 
-    def torch_implementation(self, *x):
-        return self.backend.library.cat(x, dim=self.concat_dim)
+    def torch_implementation(self, *input):
+        return self.backend.library.cat(input, dim=self.concat_dim)

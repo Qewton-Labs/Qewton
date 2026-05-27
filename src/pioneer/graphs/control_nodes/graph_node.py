@@ -250,11 +250,15 @@ class GraphNode(Node):
         inner_ports = []
         if isinstance(updated_port, InputPort):
             for e in self._graph.edges_from_outside:
+                print(253, e.from_port, updated_port)  # type: ignore
                 if e.from_port == updated_port:
+                    print("equal")
                     inner_ports.append(e.to_port)
         else:
             for e in self._graph.edges_to_outside:
+                print(259, e.to_port, updated_port)  # type: ignore
                 if e.to_port == updated_port:
+                    print("equal")
                     inner_ports.append(e.from_port)
 
         # perform inner update
@@ -305,14 +309,18 @@ class GraphNode(Node):
         dynamic_configs = {}
         for input_port in self.input_ports:
             for e in self._graph.edges_from_outside + self._graph.skip_connections:
+                print(312, e.from_port, input_port)  # type: ignore
                 if e.from_port == input_port:
+                    print("equals")
                     inner_config = self._graph.dynamic_data_configs[e.to_port.node][
                         e.to_port
                     ]
                     dynamic_configs[input_port] = inner_config
         for output_port in self.output_ports:
             for e in self._graph.edges_to_outside + self._graph.skip_connections:
+                print(321, e.to_port, output_port)  # type: ignore
                 if e.to_port == output_port:
+                    print("equals")
                     inner_config = self._graph.dynamic_data_configs[e.from_port.node][
                         e.from_port
                     ]

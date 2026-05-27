@@ -15,13 +15,13 @@ class GradientTracking(BackendNode[TensorType]):
 
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration(ell_axes)],
+        input: Annotated[TensorType, DataConfiguration(ell_axes)],
     ) -> Annotated[TensorType, DataConfiguration(ell_axes)]:
-        return self.implementation(x)
+        return self.implementation(input)
 
-    def torch_implementation(self, x):
-        x.requires_grad = True
-        return x
+    def torch_implementation(self, input):
+        input.requires_grad = True
+        return input
 
 
 class Gradient(BackendNode[TensorType]):

@@ -138,3 +138,49 @@ def test_pinn_pipeline_multi_model_concatenation(simple_adam):
     )
     trainer.run()
     assert trainer.train_state.iteration == 5
+
+
+def test_pinn_pipeline_mixed_split_concat(simple_adam):
+    """
+    Tests a mixed case where:
+    1. Sampler provides XYZ and F.
+    2. Model takes only Y (requires split from XYZ).
+    3. Constraint takes XZ (requires concat of X and Z) and U (model output).
+    """
+    X = Variable("x", 1)
+    Y = Variable("y", 1)
+    Z = Variable("z", 1)
+    U = Variable("u", 1)
+    F = Variable("f", 1)
+    XYZ = X * Y * Z
+    XZ = X * Z
+
+    xyz_data = torch.rand((20, 3))
+    f_data = torch.rand((20, 1))
+
+    xyz_config = DataConfiguration(BatchAxes(AxesDim(None)), FeatureAxes(XYZ))
+    f_config = DataConfiguration(BatchAxes(AxesDim(None)), FeatureAxes(F))
+
+    dataset = ArrayLikeDataSet([xyz_data, f_data], [xyz_config, f_config])
+    data_loader = DataLoader(dataset, batch_size=10)
+
+    # Model takes only Y
+    model = FCN(in_neurons=Y, hidden_neurons=10, out_neurons=U, n_hidden_layers=1)
+
+    # Residual requires combined XZ, model output U, and F
+    def residual_fun(xz: XZ, u: U, f: F):
+        # Accessing X and Z via slicing of the concatenated XZ
+        return xz[X] + xz[Z] + u - f
+
+    constraint = PINNConstraint(residual_fun)
+    pipeline = PINNPipeline(data_loader, [model], constraint)
+    pipeline.setup()
+
+    trainer = GraphBasedTrainer(
+        optimization_phases=[simple_adam],
+        graphs=[pipeline],
+        training_constraints=[constraint],
+        device="cpu",
+    )
+    trainer.run()
+    assert trainer.train_state.iteration == 5
