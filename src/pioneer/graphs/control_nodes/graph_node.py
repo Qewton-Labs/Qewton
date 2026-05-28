@@ -464,6 +464,16 @@ class TrackedNode(FromFunctionNode):
         """
         # todo, this makes this a normal GraphNode and unfreezes it?
 
+    def setup(self) -> None:
+        new_graph, input_ports_dict, output_ports_dict = self._build_graph_from_function(
+            self.forward, backend=self.backend
+        )
+        self.setup_graph(
+            new_graph,
+            input_ports=input_ports_dict,
+            output_ports=output_ports_dict,
+        )
+
 
 class CopiedNode(GraphNode):
     """

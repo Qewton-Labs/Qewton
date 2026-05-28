@@ -4,7 +4,7 @@ import multiprocessing as mp
 from typing import Any, Callable
 import optuna
 
-from .base import Tuner, worker_eval
+from .base import Tuner
 from ..base import EvaluationPhase
 from ..trainer.base_trainer import Trainer
 from ..parameters.categorical_hyperparameter import (

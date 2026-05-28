@@ -1,80 +1,74 @@
 import multiprocessing as mp
+
 import torch
 import pioneer
 
 
-def build_problem():
-    x_data = torch.linspace(0, 1, 1000).reshape(-1, 1)
-    u_data = x_data**2 + torch.sin(6.0 * x_data)
-    torch.cat((x_data, u_data), dim=1)
+x_data = torch.linspace(0, 1, 1000).reshape(-1, 1)
+u_data = x_data**2 + torch.sin(6.0 * x_data)
+torch.cat((x_data, u_data), dim=1)
 
-    X = pioneer.config.Variable("x", 1)
-    U = pioneer.config.Variable("u", 1)
+X = pioneer.config.Variable("x", 1)
+U = pioneer.config.Variable("u", 1)
 
-    input_config = pioneer.config.DataConfiguration(
-        pioneer.config.BatchAxes(1000), pioneer.config.FeatureAxes(X)
-    )
-    output_config = pioneer.config.DataConfiguration(
-        pioneer.config.BatchAxes(1000), pioneer.config.FeatureAxes(U)
-    )
+input_config = pioneer.config.DataConfiguration(
+    pioneer.config.BatchAxes(1000), pioneer.config.FeatureAxes(X)
+)
+output_config = pioneer.config.DataConfiguration(
+    pioneer.config.BatchAxes(1000), pioneer.config.FeatureAxes(U)
+)
 
-    dataset = pioneer.data.ArrayLikeDataSet(
-        data=[x_data, u_data], data_configs=[input_config, output_config]
-    )
+dataset = pioneer.data.ArrayLikeDataSet(
+    data=[x_data, u_data], data_configs=[input_config, output_config]
+)
 
-    data_loader = pioneer.data.DataLoader(
-        data_set=dataset,
-        batch_size=pioneer.optim.DiscreteHyperparameter((100, 1000)),
-        splitting_ratio=(0.9, 0.1, 0.0),
-        shuffle_data=False,
-    )
+data_loader = pioneer.data.DataLoader(
+    data_set=dataset,
+    batch_size=pioneer.optim.DiscreteHyperparameter((100, 1000)),
+    splitting_ratio=(0.9, 0.1, 0.0),
+    shuffle_data=False,
+)
 
-    model = pioneer.algorithms.FCN(
-        in_neurons=1,
-        n_hidden_layers=pioneer.optim.DiscreteHyperparameter((1, 3)),
-        hidden_neurons=pioneer.optim.DiscreteHyperparameter((6, 32)),
-        out_neurons=1,
-        activation=pioneer.optim.CategoricalHyperparameter(
-            [pioneer.building_blocks.Tanh, pioneer.building_blocks.ReLU]
-        ),
-    )
+model = pioneer.algorithms.FCN(
+    in_neurons=1,
+    n_hidden_layers=pioneer.optim.DiscreteHyperparameter((1, 3)),
+    hidden_neurons=pioneer.optim.DiscreteHyperparameter((6, 32)),
+    out_neurons=1,
+    activation=pioneer.optim.CategoricalHyperparameter(
+        [pioneer.building_blocks.Tanh, pioneer.building_blocks.ReLU]
+    ),
+)
 
-    constraint = pioneer.constraints.MSEConstraint()
+constraint = pioneer.constraints.MSEConstraint()
 
-    computation_graph = pioneer.Graph()
+computation_graph = pioneer.Graph()
 
-    computation_graph.connect(data_loader.get_output_port(X), model)
-    computation_graph.connect(model, constraint.input_1)
-    computation_graph.connect(data_loader.get_output_port(U), constraint.input_2)
+computation_graph.connect(data_loader.get_output_port(X), model)
+computation_graph.connect(model, constraint.input_1)
+computation_graph.connect(data_loader.get_output_port(U), constraint.input_2)
 
-    computation_graph.setup()
+computation_graph.setup()
 
-    adam_phase = pioneer.optim.OptimizationPhase(
-        optimizer=pioneer.optim.Adam(),
-        lr=pioneer.optim.ContinuousHyperparameter(
-            (1e-4, 1e-2), scale=pioneer.optim.HyperParameterScale.LOG
-        ),
-        max_iterations=pioneer.optim.CategoricalHyperparameter([500, 1000, 2000]),
-    )
+adam_phase = pioneer.optim.OptimizationPhase(
+    optimizer=pioneer.optim.Adam(),
+    lr=pioneer.optim.ContinuousHyperparameter(
+        (1e-4, 1e-2), scale=pioneer.optim.HyperParameterScale.LOG
+    ),
+    max_iterations=pioneer.optim.CategoricalHyperparameter([500, 1000, 2000]),
+)
 
-    trainer = pioneer.optim.GraphBasedTrainer(
-        optimization_phases=adam_phase,
-        graphs=[computation_graph],
-        training_constraints=[constraint],
-        device="cpu",
-    )
-    trainer.set_tuning_constraints([constraint])
+trainer = pioneer.optim.GraphBasedTrainer(
+    optimization_phases=adam_phase,
+    graphs=[computation_graph],
+    training_constraints=[constraint],
+    device="cpu",
+)
+trainer.set_tuning_constraints([constraint])
 
-    return trainer
-
-
-if __name__ == "__main__":
-    # mp.set_start_method("fork")
-
-    tuner = pioneer.optim.tuner.GridSearchTuner(
-        build_problem,
-        trial_number=20,
-        devices=["cuda:0", "cuda:1"],
-        trials_per_device=2,
-    )
-    tuner.run()
+tuner = pioneer.optim.tuner.GridSearchTuner(
+    trainer,
+    trial_number=20,
+    devices=["cuda:0", "cuda:1"],
+    trials_per_device=2,
+)
+tuner.run()

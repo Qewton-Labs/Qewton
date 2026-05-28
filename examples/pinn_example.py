@@ -42,20 +42,8 @@ def residual_fun(u: U, f: F, x: X):  # type: ignore
     return u.gradient(x) - f
 
 
-constraint = pioneer.constraints.PINNConstraint(residual_fun, name="PINNConstraint")
-grad_tracking = pioneer.algorithms.building_blocks.GradientTracking()
-
+constraint = pioneer.PINNConstraint(residual_fun, name="PINNConstraint")
 computation_graph = pioneer.PINNPipeline(data_loader, [model], constraint)
-
-computation_graph = pioneer.Graph()
-
-with computation_graph.tracker():
-    x, f = data_loader()
-    x = grad_tracking(x)
-    u = model(x)
-    constraint(u, f, x)
-
-computation_graph.setup()
 
 ### Initial data:
 initial_x_data = torch.zeros((1, 1))
@@ -73,13 +61,7 @@ def initial_residual_fun(u: U):  # type: ignore
 initial_constraint = pioneer.constraints.PINNConstraint(
     initial_residual_fun, name="InitialConstraint"
 )
-
-initial_graph = pioneer.Graph()
-with initial_graph.tracker():
-    x = initial_data_loader()
-    u = model(x)
-    initial_constraint(u)
-
+initial_graph = pioneer.PINNPipeline(initial_data_loader, [model], initial_constraint)
 ###################################
 
 adam_phase = pioneer.optim.OptimizationPhase(
@@ -99,10 +81,6 @@ trainer = pioneer.optim.GraphBasedTrainer(
     optimization_phases=[adam_phase, lbfgs_phase],
     graphs=[computation_graph, initial_graph],
     training_constraints=[constraint, initial_constraint],
-    callbacks=[
-        pioneer.optim.CSVLogger("test_log"),
-        pioneer.optim.TensorboardLogger("test_tb_log"),
-    ],
     device="cuda:0",
 )
 

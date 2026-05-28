@@ -8,7 +8,7 @@ class GridSearchTuner(Tuner):
 
     def __init__(
         self,
-        trainer_factory: Callable[[], Trainer],
+        trainer_factory: Trainer,
         trial_number: int = 1,
         devices: str | list[str] = "cpu",
         trials_per_device: int = 1,
@@ -29,7 +29,10 @@ class GridSearchTuner(Tuner):
             )
             self.trial_number = len(self.grid_params)
 
-    def _get_trial_parameters(
-        self, current_trial: int
-    ) -> list[dict[str, dict[str, Any]]]:
-        return self.grid_params[current_trial : current_trial + self.process_number]
+    # def _get_trial_parameters(
+    #     self, current_trial: int
+    # ) -> list[dict[str, dict[str, Any]]]:
+    #     return self.grid_params[current_trial : current_trial + self.process_number]
+
+    def _get_trial_parameters(self) -> list[dict[str, dict[str, Any]]]:
+        return self.grid_params

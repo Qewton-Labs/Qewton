@@ -1,8 +1,12 @@
+from copy import deepcopy
 import csv
 import os
 import math
 import multiprocessing as mp
+import sys
 from typing import Any, Callable, Tuple
+
+import torch
 
 from ..base import EvaluationPhase
 from ..trainer.base_trainer import Trainer
@@ -18,33 +22,58 @@ from ..parameters.dag import HyperParameterDAG
 # TuningCallbacks have access to the TuningState
 
 
-def worker_eval(jobs) -> Tuple[dict[str, Any], TrainerState]:
-    """
-    Worker function to evaluate a single set of hyperparameters in a separate process.
+def worker(trainer, device, task_queue, result_queue):
+    while True:
+        params = task_queue.get()
 
-    This function is designed to be run in a multiprocessing pool. It initializes a trainer,
-    sets hyperparameters, runs the training, and evaluates tuning constraints.
-    Args:
-        jobs (tuple): A tuple containing (trainer_factory, params, device).
-    Returns:
-        Tuple[dict[str, Any], TrainerState]: A tuple of the evaluated parameters and the final trainer state.
-    """
-    trainer_factory, params, device = jobs
-    local_trainer: Trainer = trainer_factory()
-    if isinstance(device, str):
-        local_trainer.set_device(device)
-    local_trainer.set_hyperparameter(params)
-    local_trainer.run(show_progress=False)
-    local_trainer.evaluate_tuning_constraints()
-    local_trainer.train_state.losses = local_trainer.train_state.detach_data(
-        local_trainer.train_state.losses
-    )  # detach data to avoid memory issues
-    return (params, local_trainer.train_state)
+        if params is None:
+            break
+
+        try:
+            local_trainer: Trainer = deepcopy(trainer)
+            if isinstance(device, str):
+                local_trainer.set_device(device)
+
+            local_trainer.set_hyperparameter(params)
+            local_trainer.run(show_progress=False)
+            local_trainer.evaluate_tuning_constraints()
+            local_trainer.train_state.losses = local_trainer.train_state.detach_data(
+                local_trainer.train_state.losses
+            )
+            result_queue.put((params, local_trainer.train_state))
+
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+
+        finally:
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
 
 
-# TODO: Implement callbacks for early stopping (loss or time based) and saving
-#       best results
-#
+# def worker_eval(jobs) -> Tuple[dict[str, Any], TrainerState]:
+#     """
+#     Worker function to evaluate a single set of hyperparameters in a separate process.
+
+#     This function is designed to be run in a multiprocessing pool. It initializes a trainer,
+#     sets hyperparameters, runs the training, and evaluates tuning constraints.
+#     Args:
+#         jobs (tuple): A tuple containing (trainer_factory, params, device).
+#     Returns:
+#         Tuple[dict[str, Any], TrainerState]: A tuple of the evaluated parameters and the final trainer state.
+#     """
+#     trainer_factory, params, device = jobs
+#     local_trainer: Trainer = deepcopy(trainer_factory)  # trainer_factory()
+#     if isinstance(device, str):
+#         local_trainer.set_device(device)
+#     local_trainer.set_hyperparameter(params)
+#     local_trainer.run(show_progress=False)
+#     local_trainer.evaluate_tuning_constraints()
+#     local_trainer.train_state.losses = local_trainer.train_state.detach_data(
+#         local_trainer.train_state.losses
+#     )  # detach data to avoid memory issues
+#     return (params, local_trainer.train_state)
+
+
 # TODO: Add constraints for memory usage and speed
 #
 # TODO: Enable to restart tuning from a given point
@@ -68,7 +97,7 @@ class Tuner:
 
     def __init__(
         self,
-        trainer_factory: Callable[[], Trainer],
+        trainer: Trainer,
         trial_number: int = 10,
         devices: str | list[str] = "cpu",
         trials_per_device: int = 1,
@@ -84,7 +113,7 @@ class Tuner:
             trials_per_device (int, optional): The number of trials to run concurrently on each device. Defaults to 1.
             save_path (str, optional): The base directory to save tuning results. Defaults to "tuner_results".
         """
-        self.trainer_factory = trainer_factory
+        self.trainer = trainer
         self.trial_number = trial_number
 
         if isinstance(devices, str):
@@ -94,23 +123,26 @@ class Tuner:
         self.process_number = len(self.devices)
 
         # Check trainer factory and if tuning data is set:
-        trainer_dummy = self.trainer_factory()
-        trainer_dummy.populate_state_dict()
+        self.trainer.populate_state_dict()
         assert (
-            len(trainer_dummy.train_state.losses[EvaluationPhase.TUNE])
-            + len(trainer_dummy.train_state.metrics[EvaluationPhase.TUNE])
+            len(self.trainer.train_state.losses[EvaluationPhase.TUNE])
+            + len(self.trainer.train_state.metrics[EvaluationPhase.TUNE])
             > 0
         ), "The trainer object does not contain any constraints for tuning. \
             Set them via trainer.set_tuning_constraints(...)."
 
         # Find what parameters can be tuned
-        self.hp_dag = self._get_tuneable_parameters(trainer_dummy)
+        self.hp_dag = self._get_tuneable_parameters(self.trainer)
 
         # Build saving path
         self.save_path = save_path
-        self.file_path = self.build_save_path(trainer_dummy)
+        self.file_path = self.build_save_path(self.trainer)
         self.csv_path = os.path.join(self.file_path, "tuning_results.csv")
-        self._setup_csv_file(trainer_dummy.train_state)
+        self._setup_csv_file(self.trainer.train_state)
+
+        # Queues for parallel processing:
+        self.task_queue: mp.Queue
+        self.result_queue: mp.Queue
 
     def build_save_path(self, trainer: Trainer) -> str:
         """
@@ -152,37 +184,87 @@ class Tuner:
         return HyperParameterDAG(tunable_parameters)
 
     def run(self):
-        """
-        Executes the hyperparameter tuning process.
-        """
-        trials = math.ceil(self.trial_number / self.process_number)
-        print("--- Start Tuning ---")
-        for i in range(trials):
-            current_n = self.process_number * i
-            print(f"Running trials {current_n} to {self.process_number + current_n}")
-            current_params = self._get_trial_parameters(current_n)
-            results = self._run_generation(current_params)
-            print("Saving current results")
-            self._write_to_csv(results)
+        if sys.platform == "linux" or sys.platform == "linux2":
+            context_str = "fork"
+        else:
+            context_str = "spawn"
 
-    def _run_generation(self, params):
-        """
-        Runs a generation of trials using multiprocessing.
-        Args:
-            params (list): A list of hyperparameter dictionaries for each trial in the generation.
-        Returns:
-            list: A list of results from each worker process.
-        """
-        # TODO: Using the same pools and not recreating everything would be nice, but:
-        # - Data stays on the GPUs and can only be cleared by backend dependent calls
-        with mp.Pool(
-            processes=self.process_number,
-            # initializer=_init_worker,
-            # initargs=(self.trainer_object,),
-        ) as pool:
-            jobs = [(self.trainer_factory, p, d) for p, d in zip(params, self.devices)]
-            results = list(pool.imap(worker_eval, jobs))
-        return results
+        try:
+            ctx = mp.get_context(context_str)
+
+            self.task_queue = ctx.Queue()
+            self.result_queue = ctx.Queue()
+
+            self.workers = [
+                ctx.Process(
+                    target=worker,
+                    args=(self.trainer, device, self.task_queue, self.result_queue),
+                )
+                for device in self.devices
+            ]
+
+            for w in self.workers:
+                w.start()
+
+            trial_params = self._get_trial_parameters()
+
+            for params in trial_params:
+                self.task_queue.put(params)
+
+            current_results = []
+            for _ in range(len(trial_params)):
+                result = self.result_queue.get()
+                current_results.append(result)
+                if len(current_results) % 10 == 0:
+                    self._write_to_csv(current_results)
+                    current_results = []
+
+            if len(current_results) > 0:
+                self._write_to_csv(current_results)
+
+            for _ in self.workers:
+                self.task_queue.put(None)
+
+        finally:
+            for w in self.workers:
+                if w.is_alive():
+                    w.join(timeout=5.0)
+                    if w.is_alive():
+                        w.terminate()
+                w.join()
+
+    # def run(self):
+    #     """
+    #     Executes the hyperparameter tuning process.
+    #     """
+    #     trials = math.ceil(self.trial_number / self.process_number)
+    #     print("--- Start Tuning ---")
+    #     for i in range(trials):
+    #         current_n = self.process_number * i
+    #         print(f"Running trials {current_n} to {self.process_number + current_n}")
+    #         current_params = self._get_trial_parameters(current_n)
+    #         results = self._run_generation(current_params)
+    #         print("Saving current results")
+    #         self._write_to_csv(results)
+
+    # def _run_generation(self, params):
+    #     """
+    #     Runs a generation of trials using multiprocessing.
+    #     Args:
+    #         params (list): A list of hyperparameter dictionaries for each trial in the generation.
+    #     Returns:
+    #         list: A list of results from each worker process.
+    #     """
+    #     # TODO: Using the same pools and not recreating everything would be nice, but:
+    #     # - Data stays on the GPUs and can only be cleared by backend dependent calls
+    #     with mp.Pool(
+    #         processes=self.process_number,
+    #         # initializer=_init_worker,
+    #         # initargs=(self.trainer_object,),
+    #     ) as pool:
+    #         jobs = [(self.trainer, p, d) for p, d in zip(params, self.devices)]
+    #         results = list(pool.imap(worker_eval, jobs))
+    #     return results
 
     def _setup_csv_file(self, trainer_state_dummy: TrainerState):
         """
@@ -243,9 +325,22 @@ class Tuner:
                 flat_dict[name] = ""
         return flat_dict
 
-    def _get_trial_parameters(
-        self, current_trial: int
-    ) -> list[dict[str, dict[str, Any]]]:
+    # def _get_trial_parameters(
+    #     self, current_trial: int
+    # ) -> list[dict[str, dict[str, Any]]]:
+    #     """
+    #     Abstract method to generate the next set of hyperparameters for trials.
+    #     Args:
+    #         current_trial (int): The current trial number (used for seeding or progress tracking).
+    #     Raises:
+    #         NotImplementedError: This method must be implemented by subclasses to define a search strategy.
+    #     """
+    #     raise NotImplementedError(
+    #         "The base Tuner does not implement a search strategy, \
+    #             use one of the child classes."
+    #     )
+
+    def _get_trial_parameters(self) -> list[dict[str, dict[str, Any]]]:
         """
         Abstract method to generate the next set of hyperparameters for trials.
         Args:
