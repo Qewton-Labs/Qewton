@@ -31,7 +31,7 @@ model = pioneer.algorithms.FCN(
     in_neurons=1,
     hidden_neurons=50,
     out_neurons=1,
-    n_hidden_layers=1,
+    n_hidden_layers=6,
     activation=pioneer.building_blocks.Tanh,
 )
 

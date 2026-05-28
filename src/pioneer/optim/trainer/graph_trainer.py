@@ -24,6 +24,8 @@ class GraphBasedTrainer(Trainer):
         device="cpu",
         save_path: str = "train_results",
         progress_bar: ProgressBarCallback = ProgressBarCallback(),
+        enable_logging=True,
+        log_interval=100,
     ):
         if callbacks is None:
             callbacks = []
@@ -70,6 +72,8 @@ class GraphBasedTrainer(Trainer):
             device=device,
             save_path=save_path,
             progress_bar=progress_bar,
+            enable_logging=enable_logging,
+            log_interval=log_interval,
         )
 
     def _register_graphs(self, constraints: list[Constraint]) -> set[Graph]:

@@ -6,6 +6,7 @@ import pioneer
 def build_problem():
     x_data = torch.linspace(0, 1, 1000).reshape(-1, 1)
     u_data = x_data**2 + torch.sin(6.0 * x_data)
+    torch.cat((x_data, u_data), dim=1)
 
     X = pioneer.config.Variable("x", 1)
     U = pioneer.config.Variable("u", 1)
@@ -68,7 +69,7 @@ def build_problem():
 
 
 if __name__ == "__main__":
-    mp.set_start_method("spawn")
+    # mp.set_start_method("fork")
 
     tuner = pioneer.optim.tuner.GridSearchTuner(
         build_problem,

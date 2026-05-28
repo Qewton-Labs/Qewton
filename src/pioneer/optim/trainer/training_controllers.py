@@ -1,4 +1,5 @@
 from __future__ import annotations
+from dataclasses import dataclass
 from typing import Any, Callable
 import time
 
@@ -15,9 +16,19 @@ from ...config.backend import (
 from ..parameters.hyperparameter_base import HyperParameter
 
 
+@dataclass
+class LogEntry:
+    iteration: int
+    timestamp: float
+    losses: dict[EvaluationPhase, dict[str, float]]
+    metrics: dict[EvaluationPhase, dict[str, float]]
+
+
 class TrainerState:
 
-    def __init__(self, save_path) -> None:
+    def __init__(
+        self, save_path, enable_logging: bool = True, log_interval: int = 100
+    ) -> None:
         self.current_optimization_phase: OptimizationPhase
         self.iteration: int = 0
 
@@ -27,6 +38,10 @@ class TrainerState:
         for eval_phase in EvaluationPhase:
             self.losses[eval_phase] = {}
             self.metrics[eval_phase] = {}
+
+        self.history: list[LogEntry] = []
+        self.enable_logging = enable_logging
+        self.log_interval = log_interval
 
         self.stop_stage: bool = False
         self._stop_training: bool = False
@@ -55,12 +70,34 @@ class TrainerState:
         if stop:
             self.stop_stage = stop
 
-    def detach_data(self):
+    def detach_data(self, data_dict) -> dict[EvaluationPhase, dict[str, float]]:
         # TODO: make this backend independent!
-        for phase_loss in self.losses.values():
+        new_dict = {}
+        for phase_name, phase_loss in data_dict.items():
+            new_dict[phase_name] = {}
             for key, loss in phase_loss.items():
+                new_dict[phase_name][key] = loss
                 if hasattr(loss, "detach"):
-                    phase_loss[key] = loss.detach().cpu().item()  # type: ignore
+                    new_dict[phase_name][key] = loss.detach().cpu().item()  # type: ignore
+        return new_dict
+
+    def log_step(self):
+        if not self.enable_logging:
+            return
+        if self.iteration % self.log_interval != 0:
+            return
+
+        loss_dict = self.detach_data(self.losses)
+        metric_dict = self.detach_data(self.metrics)
+
+        self.history.append(
+            LogEntry(
+                iteration=self.iteration,
+                timestamp=time.time(),
+                losses=loss_dict,
+                metrics=metric_dict,
+            )
+        )
 
 
 class OptimizationPhase:

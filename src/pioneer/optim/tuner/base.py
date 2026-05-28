@@ -10,6 +10,13 @@ from ..trainer.training_controllers import TrainerState
 from ..parameters.hyperparameter_base import HyperParameter
 from ..parameters.dag import HyperParameterDAG
 
+# TODO:
+# Try deepcopy for trainer
+# if that works, move tuning objective into tuner
+# Add tuningcallbacks (Memory, Trainingtime, evaluation time, earlystopping, ...)
+# Add TuningState (saves all TrainerStates (maybe with reduced resolution))
+# TuningCallbacks have access to the TuningState
+
 
 def worker_eval(jobs) -> Tuple[dict[str, Any], TrainerState]:
     """
@@ -29,7 +36,9 @@ def worker_eval(jobs) -> Tuple[dict[str, Any], TrainerState]:
     local_trainer.set_hyperparameter(params)
     local_trainer.run(show_progress=False)
     local_trainer.evaluate_tuning_constraints()
-    local_trainer.train_state.detach_data()  # detach data to avoid memory issues
+    local_trainer.train_state.losses = local_trainer.train_state.detach_data(
+        local_trainer.train_state.losses
+    )  # detach data to avoid memory issues
     return (params, local_trainer.train_state)
 
 
@@ -208,14 +217,16 @@ class Tuner:
             writer.writerows(flat_results)
 
     def _flatten_result_data(self, result: Tuple[dict[str, Any], TrainerState]):
-        flat_dict = {}
-        """
-        Flattens the result data (hyperparameters, losses, metrics) into a single dictionary for CSV writing.
+        """Flattens the result data (hyperparameters, losses, metrics) into a single
+        dictionary for CSV writing.
+
         Args:
-            result (Tuple[dict[str, Any], TrainerState]): A tuple containing the parameters and trainer state for a trial.
+            result (Tuple[dict[str, Any], TrainerState]): A tuple containing
+                the parameters and trainer state for a trial.
         Returns:
             dict: A flattened dictionary suitable for CSV row.
         """
+        flat_dict = {}
         tune_loss = result[1].losses[EvaluationPhase.TUNE]
         tune_metrics = result[1].metrics[EvaluationPhase.TUNE]
         for name in self.csv_columns:
@@ -242,5 +253,7 @@ class Tuner:
         Raises:
             NotImplementedError: This method must be implemented by subclasses to define a search strategy.
         """
-        raise NotImplementedError("The base Tuner does not implement a search strategy, \
-                use one of the child classes.")
+        raise NotImplementedError(
+            "The base Tuner does not implement a search strategy, \
+                use one of the child classes."
+        )

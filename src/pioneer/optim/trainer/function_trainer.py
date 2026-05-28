@@ -24,6 +24,8 @@ class FunctionBasedTrainer(Trainer):
         callbacks: Callback | list[Callback] | None = None,
         device="cpu",
         save_path: str = "train_results",
+        enable_logging=True,
+        log_interval=100,
         progress_bar: ProgressBarCallback = ProgressBarCallback(),
     ) -> None:
         if hyperparameters is None:
@@ -63,6 +65,8 @@ class FunctionBasedTrainer(Trainer):
             device=device,
             save_path=save_path,
             progress_bar=progress_bar,
+            enable_logging=enable_logging,
+            log_interval=log_interval,
         )
 
     def set_tuning_constraints(

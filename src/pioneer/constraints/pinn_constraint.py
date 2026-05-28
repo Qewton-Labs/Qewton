@@ -43,7 +43,6 @@ class PINNConstraint(Constraint, GraphNode):
 
             sig = inspect.signature(residual).parameters.values()
             for var, p in zip(sig, self.residual_node.input_ports):
-                print(var.annotation)
                 if isinstance(var.annotation, Variable):
                     p.name = var.name
                     p.data_configuration = DataConfiguration(

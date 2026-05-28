@@ -24,6 +24,8 @@ class Trainer:
         device="cpu",
         save_path: str = "train_results",
         progress_bar: ProgressBarCallback | None = None,
+        enable_logging=True,
+        log_interval=100,
     ) -> None:
         if isinstance(optimization_phases, OptimizationPhase):
             optimization_phases = [optimization_phases]
@@ -41,7 +43,9 @@ class Trainer:
             self.hyperparameters |= stage.get_hyperparameter()
 
         self.device = device
-        self.train_state = TrainerState(save_path)
+        self.train_state = TrainerState(
+            save_path, enable_logging=enable_logging, log_interval=log_interval
+        )
 
     def set_trainable_parameters(self, parameters: _TrainableParameterBase):
         self.trainable_parameters = parameters
@@ -96,6 +100,8 @@ class Trainer:
             cb.training_step(idx, self.train_state)
 
     def on_training_step_end(self):
+        self.train_state.log_step()
+
         self.train_state.iteration += 1  # global iteration counter
         for cb in self.callbacks:
             cb.on_train_step_end(self.train_state)

@@ -346,9 +346,7 @@ class BoundaryGeometry(Geometry):
 #   be saved internally, and we return the corresponding subdomains for further usage.
 #   The saved markers can be used when creating a mesh.
 # - Union, etc. is only in CADGeometry
-# - Cart. Product not in Geometry
 # - Put CAD into qewton.geometry.cad
-# - Default geo. take TorchPhysics implementation
 # - Start with numpy implementation, switch to nodes etc. maybe later
 
 ### Samplers:
