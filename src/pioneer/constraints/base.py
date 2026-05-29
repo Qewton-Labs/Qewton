@@ -12,11 +12,6 @@ class ConstraintObjective(Enum):
     MAXIMIZE = "maximize"
 
 
-class ConstraintType(Enum):
-    LOSS = "loss"
-    MONITOR = "monitor"
-
-
 class Constraint(Node):
     """
     TODO: These could be become graph nodes as well, but this may be not
@@ -29,7 +24,6 @@ class Constraint(Node):
         self,
         weight: float | HyperParameter = 1.0,
         objective: ConstraintObjective = ConstraintObjective.MINIMIZE,
-        constraint_type: ConstraintType = ConstraintType.LOSS,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         name="Constraint",
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
@@ -37,7 +31,7 @@ class Constraint(Node):
     ):
         self.weight: HyperParameter = HyperParameter.from_value(weight, "Weight")
         self.objective: ConstraintObjective = objective
-        self.constraint_type: ConstraintType = constraint_type
+
         self.evaluated_in_mode = evaluated_in_mode
         super().__init__(name=name, backend=backend, **kwargs)
 
@@ -59,3 +53,8 @@ class Constraint(Node):
 
     def set_evaluation_mode(self, new_mode: EvaluationPhase):
         self.evaluated_in_mode = new_mode
+
+    def run(self) -> None:
+        if self.evaluated_in_mode not in (self.mode, EvaluationPhase.ALWAYS):
+            self.loss_port.set_value(None)
+        return super().run()

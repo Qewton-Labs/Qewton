@@ -81,6 +81,9 @@ class DataNode(Node):
     def cache(self, n_batches=-1):
         pass
 
+    def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
+        return False
+
 
 class PointSampler(DataNode):
     """Placeholder for sampling individual points from a domain."""
@@ -175,7 +178,6 @@ class DataLoader(DataNode):
         self._permutation_splits = {
             EvaluationPhase.TRAIN: self.permutation[0:train_end],
             EvaluationPhase.VALIDATION: self.permutation[train_end:val_end],
-            EvaluationPhase.TUNE: self.permutation[train_end:val_end],
             EvaluationPhase.TEST: self.permutation[val_end:n_samples],
             EvaluationPhase.ALWAYS: self.permutation[0:n_samples],
         }
@@ -244,3 +246,18 @@ class DataLoader(DataNode):
                 if port.name == name.name:
                     return port
         raise ValueError(f"No output port with name {name} found in node {self.name}.")
+
+    def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
+        if phase == EvaluationPhase.TRAIN:
+            return self.splitting_ratio[0] > 0.0
+        if phase == EvaluationPhase.VALIDATION:
+            return self.splitting_ratio[1] > 0.0
+        if phase == EvaluationPhase.TEST:
+            return self.splitting_ratio[2] > 0.0
+        if phase == EvaluationPhase.ALWAYS:
+            return (
+                self.splitting_ratio[0] > 0.0
+                and self.splitting_ratio[1] > 0.0
+                and self.splitting_ratio[2] > 0.0
+            )
+        return False

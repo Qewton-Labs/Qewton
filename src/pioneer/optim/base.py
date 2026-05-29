@@ -12,8 +12,6 @@ class EvaluationPhase(Enum):
         The behavior while testing.
     VALIDATION
         The behavior while validating.
-    TUNE
-        Only evaluated for parameter tuning.
     ALWAYS
         Always evaluated independent of the current phase.
     NEVER
@@ -24,6 +22,5 @@ class EvaluationPhase(Enum):
     TRAIN = 0
     TEST = 1
     VALIDATION = 2
-    TUNE = 3
-    ALWAYS = 4
-    NEVER = 5
+    ALWAYS = 3
+    NEVER = 4

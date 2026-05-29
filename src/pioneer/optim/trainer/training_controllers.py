@@ -7,6 +7,7 @@ import os
 from .optimizers.optim_setups.pytorch_optims import (
     _pytorch_setup_optimizer,
     _pytorch_do_optimization_step,
+    _pytorch_cleanup,
 )
 from .optimizers.optimizers import Optimizer
 from ..base import EvaluationPhase
@@ -21,8 +22,7 @@ from ..parameters.hyperparameter_base import HyperParameter
 class LogEntry:
     iteration: int
     timestamp: float
-    losses: dict[EvaluationPhase, dict[str, float]]
-    metrics: dict[EvaluationPhase, dict[str, float]]
+    losses: dict[EvaluationPhase, dict[str, float | None]]
 
 
 class TrainerState:
@@ -34,11 +34,9 @@ class TrainerState:
         self.iteration: int = 0
 
         self.total_train_loss: float = 0.0
-        self.losses: dict[EvaluationPhase, dict[str, float]] = {}
-        self.metrics: dict[EvaluationPhase, dict[str, float]] = {}
+        self.losses: dict[EvaluationPhase, dict[str, float | None]] = {}
         for eval_phase in EvaluationPhase:
             self.losses[eval_phase] = {}
-            self.metrics[eval_phase] = {}
 
         self.history: list[LogEntry] = []
         self.enable_logging = enable_logging
@@ -58,7 +56,8 @@ class TrainerState:
 
     def stop_training_timer(self, reason: str = ""):
         self.total_train_time += time.time() - self.start_time
-        self.termination_reason = reason
+        if self.termination_reason == "":
+            self.termination_reason = reason
         self.stop_training = True
 
     @property
@@ -71,7 +70,7 @@ class TrainerState:
         if stop:
             self.stop_stage = stop
 
-    def detach_data(self, data_dict) -> dict[EvaluationPhase, dict[str, float]]:
+    def detach_data(self, data_dict) -> dict[EvaluationPhase, dict[str, float | None]]:
         # TODO: make this backend independent!
         new_dict = {}
         for phase_name, phase_loss in data_dict.items():
@@ -81,6 +80,11 @@ class TrainerState:
                 if hasattr(loss, "detach"):
                     new_dict[phase_name][key] = loss.detach().cpu().item()  # type: ignore
         return new_dict
+
+    def clear_data_dict(self):
+        for phase in EvaluationPhase:
+            for k in self.losses[phase]:
+                self.losses[phase][k] = None
 
     def check_file_path(self):
         file_path = self.save_path
@@ -99,15 +103,9 @@ class TrainerState:
             return
 
         loss_dict = self.detach_data(self.losses)
-        metric_dict = self.detach_data(self.metrics)
 
         self.history.append(
-            LogEntry(
-                iteration=self.iteration,
-                timestamp=time.time(),
-                losses=loss_dict,
-                metrics=metric_dict,
-            )
+            LogEntry(iteration=self.iteration, timestamp=time.time(), losses=loss_dict)
         )
 
 
@@ -115,9 +113,15 @@ class OptimizationPhase:
 
     optimizer_setup_fn = {
         TorchBackend: _pytorch_setup_optimizer,
+        TensorflowBackend: None,  # TODO
     }
     optimizer_step_fn = {
         TorchBackend: _pytorch_do_optimization_step,
+        TensorflowBackend: None,  # TODO
+    }
+
+    clean_up_fn = {
+        TorchBackend: _pytorch_cleanup,
         TensorflowBackend: None,  # TODO
     }
 
@@ -130,7 +134,7 @@ class OptimizationPhase:
         lr_scheduler: Any = None,
         lr_scheduler_args: dict | None = None,
     ) -> None:
-        self.optimizer = optimizer
+        self.optimizer: Optimizer = optimizer
         self.optimizer_obj: Any
         self.lr = HyperParameter.from_value(lr, "Learning Rate")
         self.max_iterations = HyperParameter.from_value(max_iterations, "Max Iterations")
@@ -169,3 +173,6 @@ class OptimizationPhase:
         self, eval_function: Callable, step_idx: int, train_state: TrainerState
     ):
         self.step_fn(self, eval_function, step_idx, train_state)
+
+    def clean_up(self):
+        self.clean_up_fn[self.optimizer.backend](self.optimizer.backend)

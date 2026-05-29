@@ -11,7 +11,7 @@ from ..graphs.graphs import Graph
 from ..graphs.control_nodes.graph_node import GraphNode, FromFunctionNode
 
 from ..config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
-from ..constraints.base import ConstraintObjective, ConstraintType
+from ..constraints.base import ConstraintObjective
 from ..optim.base import EvaluationPhase
 from ..optim.parameters.hyperparameter_base import HyperParameter
 from ..graphs.nodes import Node
@@ -28,7 +28,6 @@ class PINNConstraint(Constraint, GraphNode):
         name="PINNConstraint",
         weight: float | HyperParameter = 1,
         objective: ConstraintObjective = ConstraintObjective.MINIMIZE,
-        constraint_type: ConstraintType = ConstraintType.LOSS,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
@@ -76,7 +75,6 @@ class PINNConstraint(Constraint, GraphNode):
             graph=graph,
             weight=weight,
             objective=objective,
-            constraint_type=constraint_type,
             evaluated_in_mode=evaluated_in_mode,
             input_ports=self.residual_node.input_ports,
             output_ports=self.reduction_node.output_ports,

@@ -5,49 +5,58 @@ import multiprocessing as mp
 import sys
 from typing import Any, Tuple
 
-import torch
-
+from .tuning_callbacks.state import TuningState
+from .tuning_callbacks.tuning_callback import TuningCallback
 from ..base import EvaluationPhase
 from ..trainer.base_trainer import Trainer
 from ..trainer.training_controllers import TrainerState
 from ..parameters.hyperparameter_base import HyperParameter
 from ..parameters.dag import HyperParameterDAG
 
-# TODO:
-# if that works, move tuning objective into tuner
-# Add tuningcallbacks (Memory, Trainingtime, evaluation time, earlystopping, ...)
-# Add TuningState (saves all TrainerStates (maybe with reduced resolution))
-# TuningCallbacks have access to the TuningState
 
-
-def worker(trainer, device, task_queue, result_queue):
+def worker(
+    trainer,
+    device,
+    tune_state: TuningState,
+    task_queue,
+    result_queue,
+    stop_event,
+):
     while True:
         params = task_queue.get()
+        local_trainer: None | Trainer = None  # type: ignore
 
-        if params is None:
+        if params is None or stop_event.is_set():
             break
 
         try:
             local_trainer: Trainer = deepcopy(trainer)
             if isinstance(device, str):
                 local_trainer.set_device(device)
+
+            # Dont copy the state of the tuner. Its only set once here
+            # and all processes have the same one.
+            # TODO: This does not work currently, the tune_state is now local
+            # Maybe do a system where the main process has the callbacks and
+            # is coupled to child callbacks that only request information.
+            if tune_state is not None:
+                for cb in local_trainer.callbacks:
+                    if isinstance(cb, TuningCallback):
+                        cb.set_tune_state(tune_state)
+
             local_trainer.set_hyperparameter(params)
             local_trainer.run(show_progress=False)
-            local_trainer.evaluate_tuning_constraints()
             local_trainer.train_state.losses = local_trainer.train_state.detach_data(
                 local_trainer.train_state.losses
             )
             result_queue.put((params, local_trainer.train_state))
 
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+            local_trainer.clean_up()
         finally:
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+            if local_trainer is not None:
+                local_trainer.clean_up()
 
 
-# TODO: Add constraints for memory usage and speed
-#
 # TODO: Enable to restart tuning from a given point
 #
 # TODO: In "devices" also allow for something like "auto" or "all" to automatically
@@ -67,12 +76,17 @@ class Tuner:
     across various devices, and logs the results.
     """
 
+    save_keys = ["Termination Reason", "Training Time [s]", "Save Path"]
+
     def __init__(
         self,
         trainer: Trainer,
+        tuning_objectives: list,
         trial_number: int = 10,
         devices: str | list[str] = "cpu",
         trials_per_device: int = 1,
+        track_tune_state: bool | TuningState = True,
+        tuning_callbacks: list[TuningCallback] | None = None,
         save_path: str = "tuner",
         save_interval: int = 10,
     ) -> None:
@@ -80,14 +94,39 @@ class Tuner:
         Initializes the Tuner.
         Args:
             trainer (Trainer): A callable that returns a new Trainer instance.
-            trial_number (int, optional): The total number of hyperparameter trials to run. Defaults to 10.
-            devices (str | list[str], optional): A single device name (e.g., "cpu", "cuda:0") or a list of device names.
-                                                 Defaults to "cpu".
-            trials_per_device (int, optional): The number of trials to run concurrently on each device. Defaults to 1.
-            save_path (str, optional): The base directory to save tuning results. Defaults to "tuner_results".
+            trial_number (int, optional): The total number of hyperparameter trials
+                to run. Defaults to 10.
+            devices (str | list[str], optional): A single device name (e.g., "cpu",
+                "cuda:0") or a list of device names. Defaults to "cpu".
+            trials_per_device (int, optional): The number of trials to run concurrently
+                on each device. Defaults to 1.
+            save_path (str, optional): The base directory to save tuning results.
+                Defaults to "tuner_results".
         """
+        self.tuning_state = None
+        if isinstance(track_tune_state, TuningState):
+            self.tuning_state = track_tune_state
+        if track_tune_state:
+            self.tuning_state = TuningState(save_path)
+        if not trainer.train_state.enable_logging and self.tuning_state is not None:
+            raise RuntimeError(
+                "Tuner can not log the tuning process, because logging "
+                "is disabled in the trainer."
+            )
+        if tuning_callbacks is None:
+            tuning_callbacks = []
+        if len(tuning_callbacks) > 0 and self.tuning_state is None:
+            raise RuntimeError(
+                "Tuner can not use callbacks to track the tuning process, "
+                "because no TuningState is provided."
+            )
+
+        trainer.callbacks.extend(tuning_callbacks)
+        trainer.check_tuning_constraints_exist(tuning_objectives)
+
         self.trainer = trainer
         self.trial_number = trial_number
+        self.tuning_objectives = tuning_objectives
 
         if isinstance(devices, str):
             devices = [devices]
@@ -98,9 +137,7 @@ class Tuner:
         # Check trainer factory and if tuning data is set:
         self.trainer.populate_state_dict()
         assert (
-            len(self.trainer.train_state.losses[EvaluationPhase.TUNE])
-            + len(self.trainer.train_state.metrics[EvaluationPhase.TUNE])
-            > 0
+            len(tuning_objectives) > 0
         ), "The trainer object does not contain any constraints for tuning. \
             Set them via trainer.set_tuning_constraints(...)."
 
@@ -111,12 +148,13 @@ class Tuner:
         self.save_path = save_path
         self.file_path = self.build_save_path(self.trainer)
         self.csv_path = os.path.join(self.file_path, "study.csv")
-        self._setup_csv_file(self.trainer.train_state)
+        self._setup_csv_file()
 
         # Queues for parallel processing:
         self.save_interval = save_interval
         self.task_queue: mp.Queue
         self.result_queue: mp.Queue
+        self.stop_event: mp.Event  # type: ignore
         self.workers: list[Any]
 
     def build_save_path(self, trainer: Trainer) -> str:
@@ -134,7 +172,7 @@ class Tuner:
 
         while os.path.exists(file_path):
             counter += 1
-            file_path = f"{file_path}_{counter}"
+            file_path = f"{self.save_path}_{counter}"
 
         os.makedirs(file_path, exist_ok=True)
         trainer.train_state.save_path = os.path.join(
@@ -148,7 +186,8 @@ class Tuner:
         Args:
             trainer (Trainer): A dummy trainer instance to inspect its hyperparameters.
         Returns:
-            HyperParameterDAG: A DAG representing the dependencies and structure of tunable hyperparameters.
+            HyperParameterDAG: A DAG representing the dependencies and structure of
+                tunable hyperparameters.
         """
         hyperparameter_set = trainer.hyperparameters
         tunable_parameters = set[HyperParameter]()
@@ -172,11 +211,19 @@ class Tuner:
 
             self.task_queue = ctx.Queue()
             self.result_queue = ctx.Queue()
+            self.stop_event = ctx.Event()
 
             self.workers = [
                 ctx.Process(
                     target=worker,
-                    args=(self.trainer, device, self.task_queue, self.result_queue),
+                    args=(
+                        self.trainer,
+                        device,
+                        self.tuning_state,
+                        self.task_queue,
+                        self.result_queue,
+                        self.stop_event,
+                    ),
                 )
                 for device in self.devices
             ]
@@ -195,6 +242,17 @@ class Tuner:
             for _ in range(len(trial_params)):
                 result = self.result_queue.get()
                 current_results.append(result)
+
+                # Log the current results:
+                if self.tuning_state:
+                    self.tuning_state.finished_trials += 1
+                    self.tuning_state.add_trial_history(result[1].history)
+
+                    if self.tuning_state.stop_tuning:
+                        print("Stopping tuning...")
+                        self.stop_event.set()
+                        break
+
                 if len(current_results) % self.save_interval == 0:
                     self._write_to_csv(current_results)
                     current_results = []
@@ -221,7 +279,7 @@ class Tuner:
         upper_limit = min(done_counter + self.save_interval, len_trial_params)
         print(f"Working on trials {done_counter} - {upper_limit}")
 
-    def _setup_csv_file(self, trainer_state_dummy: TrainerState):
+    def _setup_csv_file(self):
         """
         Sets up the CSV file for logging tuning results, including writing the header.
         Args:
@@ -231,11 +289,9 @@ class Tuner:
             with open(self.csv_path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 param_names = [hp.name for hp in self.hp_dag.sorted_nodes]
-                loss_names = list(trainer_state_dummy.losses[EvaluationPhase.TUNE].keys())
-                metric_names = list(
-                    trainer_state_dummy.metrics[EvaluationPhase.TUNE].keys()
-                )
-                self.csv_columns = param_names + loss_names + metric_names
+                objective_names = [con.name for con in self.tuning_objectives]
+                # TODO: maybe add callback info here?
+                self.csv_columns = param_names + objective_names + self.save_keys
                 writer = csv.DictWriter(f, fieldnames=self.csv_columns)
                 writer.writeheader()
 
@@ -245,8 +301,10 @@ class Tuner:
         """
         Writes the results of a batch of trials to the CSV file.
         Args:
-            results (list[Tuple[dict[str, Any], TrainerState]]): A list of (parameters, trainer_state) tuples.
-            trial (Any | None, optional): Placeholder for potential future trial object. Defaults to None.
+            results (list[Tuple[dict[str, Any], TrainerState]]): A list of (parameters,
+                trainer_state) tuples.
+            trial (Any | None, optional): Placeholder for potential future trial object.
+                Defaults to None.
         """
         flat_results = [self._flatten_result_data(r) for r in results]
         with open(self.csv_path, "a", newline="", encoding="utf-8") as f:
@@ -263,19 +321,36 @@ class Tuner:
         Returns:
             dict: A flattened dictionary suitable for CSV row.
         """
+        result_dict: dict[str, Any] = {}
+        for obj in self.tuning_objectives:
+            phase = obj.evaluated_in_mode
+            if phase == EvaluationPhase.ALWAYS:
+                if obj in result[1].losses[EvaluationPhase.VALIDATION]:
+                    result_dict[obj.name] = result[1].losses[EvaluationPhase.VALIDATION][
+                        obj.name
+                    ]
+                else:
+                    result_dict[obj.name] = result[1].losses[EvaluationPhase.TRAIN][
+                        obj.name
+                    ]
+            else:
+                result_dict[obj.name] = result[1].losses[phase][obj.name]
+
         flat_dict = {}
-        tune_loss = result[1].losses[EvaluationPhase.TUNE]
-        tune_metrics = result[1].metrics[EvaluationPhase.TUNE]
         for name in self.csv_columns:
-            if name in result[0]:
+            if name == self.save_keys[0]:
+                flat_dict[name] = result[1].termination_reason
+            elif name == self.save_keys[1]:
+                flat_dict[name] = result[1].total_train_time
+            elif name == self.save_keys[2]:
+                flat_dict[name] = result[1].save_path
+            elif name in result[0]:
                 if isinstance(result[0][name], type):
                     flat_dict[name] = result[0][name].__name__
                 else:
                     flat_dict[name] = result[0][name]
-            elif name in tune_loss:
-                flat_dict[name] = tune_loss[name]
-            elif name in tune_metrics:
-                flat_dict[name] = tune_metrics[name]
+            elif name in result_dict:
+                flat_dict[name] = result_dict[name]
             else:
                 flat_dict[name] = ""
         return flat_dict
@@ -284,9 +359,11 @@ class Tuner:
         """
         Abstract method to generate the next set of hyperparameters for trials.
         Args:
-            current_trial (int): The current trial number (used for seeding or progress tracking).
+            current_trial (int): The current trial number (used for seeding or progress
+                tracking).
         Raises:
-            NotImplementedError: This method must be implemented by subclasses to define a search strategy.
+            NotImplementedError: This method must be implemented by subclasses to
+                define a search strategy.
         """
         raise NotImplementedError(
             "The base Tuner does not implement a search strategy, \

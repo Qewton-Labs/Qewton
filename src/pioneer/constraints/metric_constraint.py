@@ -1,4 +1,4 @@
-from .base import Constraint, ConstraintObjective, ConstraintType
+from .base import Constraint, ConstraintObjective
 from ..config.data_configurations import DataConfiguration
 from ..optim.parameters.categorical_hyperparameter import (
     HyperParameter,
@@ -19,7 +19,6 @@ class MetricConstraint(Constraint):
         input_config: DataConfiguration = DataConfiguration.empty(),
         name="MetricConstraint",
         relative: bool | BooleanHyperparameter = False,
-        constraint_type: ConstraintType = ConstraintType.LOSS,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         weight: float | ContinuousHyperparameter = 1,
         backend=DEFAULT_DL_BACKEND,
@@ -30,7 +29,6 @@ class MetricConstraint(Constraint):
             name=name,
             weight=weight,
             backend=backend,
-            constraint_type=constraint_type,
             objective=ConstraintObjective.MINIMIZE,
             evaluated_in_mode=evaluated_in_mode,
             **kwargs,
@@ -55,7 +53,6 @@ class MSEConstraint(MetricConstraint, GraphNode):
         self,
         name="MSEConstraint",
         relative: bool | BooleanHyperparameter = False,
-        constraint_type: ConstraintType = ConstraintType.LOSS,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         weight: float | ContinuousHyperparameter = 1,
         backend=DEFAULT_DL_BACKEND,
@@ -79,7 +76,6 @@ class MSEConstraint(MetricConstraint, GraphNode):
             graph=new_graph,
             weight=weight,
             relative=relative,
-            constraint_type=constraint_type,
             input_ports=in_ports,
             output_ports=out_ports,
             name=name,

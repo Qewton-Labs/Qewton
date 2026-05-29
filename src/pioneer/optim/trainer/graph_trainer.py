@@ -9,7 +9,8 @@ from ..parameters.hyperparameter_base import HyperParameter
 from ..base import EvaluationPhase
 from ...graphs import Graph
 from ...graphs.nodes import Node
-from ...constraints.base import Constraint, ConstraintType
+from ...constraints.base import Constraint
+from ...data.dataloaders.base import DataNode
 
 
 class GraphBasedTrainer(Trainer):
@@ -17,8 +18,7 @@ class GraphBasedTrainer(Trainer):
         self,
         optimization_phases: OptimizationPhase | list[OptimizationPhase],
         graphs: list[Graph],
-        training_constraints: list[Constraint],
-        validation_constraints: list[Constraint] | None = None,
+        training_objectives: list[Constraint],
         callbacks: Callback | list[Callback] | None = None,
         validation_interval: int = 100,
         device="cpu",
@@ -29,10 +29,14 @@ class GraphBasedTrainer(Trainer):
     ):
         if callbacks is None:
             callbacks = []
-        if validation_constraints is None:
-            validation_constraints = []
         if isinstance(callbacks, Callback):
             callbacks = [callbacks]
+        for train_obj in training_objectives:
+            assert train_obj.evaluated_in_mode in [
+                EvaluationPhase.TRAIN,
+                EvaluationPhase.ALWAYS,
+            ], f"Train objective {train_obj.name} is in mode \
+                {train_obj.evaluated_in_mode}."
 
         # First find all nodes from all graphs (without duplicates)
         self.graphs = graphs
@@ -42,28 +46,29 @@ class GraphBasedTrainer(Trainer):
                 self.all_nodes.add(node)
 
         # For all constraints check if they belong to some graph and order them
-        self.tune_graphs = set[Graph]()
-        self.training_constraints = training_constraints
-        self.validation_constraints = validation_constraints
-        self.tuning_constraints: list[Constraint] = []
-        self.train_graphs = self._register_graphs(training_constraints)
-        self.validation_graphs = self._register_graphs(validation_constraints)
+        self.training_objectives = training_objectives
+        self.training_constraints: set[Constraint] = set(training_objectives)
+        self.train_graphs = self._find_training_graphs(training_objectives)
+
+        # Now also find all other constraints inside the graphs and
+        # register them as validation constraints.
+        self.validation_graphs = set[Graph]()
+        self.validation_constraints = set[Constraint]()
+        self._find_all_constraints()
 
         # Add callbacks that evaluate the graphs
         train_callback = GraphEvalCallback(
-            self.train_graphs, EvaluationPhase.TRAIN, training_constraints
+            self.train_graphs, EvaluationPhase.TRAIN, self.training_constraints
         )
         callbacks.append(train_callback)
-        if len(validation_constraints) > 0:
+        if len(self.validation_constraints) > 0:
             validation_callback = GraphEvalCallback(
                 self.validation_graphs,
                 EvaluationPhase.VALIDATION,
-                validation_constraints,
+                self.validation_constraints,
                 evaluation_interval=validation_interval,
             )
             callbacks.append(validation_callback)
-        # by default tuning = validation
-        self.set_tuning_constraints(validation_constraints)
 
         super().__init__(
             optimization_phases=optimization_phases,
@@ -76,7 +81,90 @@ class GraphBasedTrainer(Trainer):
             log_interval=log_interval,
         )
 
-    def _register_graphs(self, constraints: list[Constraint]) -> set[Graph]:
+    def _find_all_constraints(self):
+        for graph in self.graphs:
+            constraint_list: list[Constraint] = []
+
+            constraint_modes: dict[EvaluationPhase, bool] = {
+                EvaluationPhase.TRAIN: False,
+                EvaluationPhase.VALIDATION: False,
+                EvaluationPhase.TEST: False,
+                EvaluationPhase.ALWAYS: False,
+                EvaluationPhase.NEVER: False,
+            }
+            data_modes: dict[EvaluationPhase, bool] = {
+                EvaluationPhase.TRAIN: True,
+                EvaluationPhase.VALIDATION: True,
+                EvaluationPhase.TEST: True,
+                EvaluationPhase.ALWAYS: True,
+            }
+
+            for node in graph.nodes:
+                if isinstance(node, Constraint):
+                    constraint_modes[node.evaluated_in_mode] = True
+                    constraint_list.append(node)
+                if isinstance(node, DataNode):
+                    for mode, active in data_modes.items():
+                        data_modes[mode] = active & node.provides_data_in_phase(mode)
+
+            if data_modes[EvaluationPhase.ALWAYS]:
+                # We have data for all phases, so we can evaluate all constraints in
+                # all phases
+                pass
+            else:
+                # We need to check that for each constraint, we have data in the
+                # corresponding phase, otherwise we cannot evaluate this
+                # constraint at all and need to raise an error.
+                phases = [
+                    EvaluationPhase.TRAIN,
+                    EvaluationPhase.VALIDATION,
+                    EvaluationPhase.TEST,
+                ]
+                for eval_phase in phases:
+                    if constraint_modes[eval_phase] and not data_modes[eval_phase]:
+                        raise ValueError(
+                            f"The graph {graph} does not \
+                            provide data for evaluation phase {eval_phase}, \
+                            but there are constraints in this graph that are \
+                            evaluated in this phase."
+                        )
+
+            self._register_constraints(graph, constraint_list, data_modes)
+
+    def _register_constraints(
+        self,
+        graph: Graph,
+        constraint_list: list[Constraint],
+        data_modes: dict[EvaluationPhase, bool],
+    ):
+        for con in constraint_list:
+            phase = con.evaluated_in_mode
+
+            add_train = False
+            add_val = False
+
+            if phase == EvaluationPhase.ALWAYS:
+                if data_modes[EvaluationPhase.ALWAYS]:
+                    add_train = add_val = True
+                else:
+                    add_train = data_modes[EvaluationPhase.TRAIN]
+                    add_val = data_modes[EvaluationPhase.VALIDATION]
+
+            elif phase == EvaluationPhase.TRAIN:
+                add_train = True
+
+            elif phase == EvaluationPhase.VALIDATION:
+                add_val = True
+
+            if add_train:
+                self.training_constraints.add(con)
+                self.train_graphs.add(graph)
+
+            if add_val:
+                self.validation_constraints.add(con)
+                self.validation_graphs.add(graph)
+
+    def _find_training_graphs(self, constraints: list[Constraint]) -> set[Graph]:
         found_constraints = set()
         graph_set = set[Graph]()
         for graph in self.graphs:
@@ -96,9 +184,12 @@ class GraphBasedTrainer(Trainer):
             )
         return graph_set
 
-    def set_tuning_constraints(self, constraints: list[Constraint]):
-        self.tuning_constraints = constraints
-        self.tune_graphs = self._register_graphs(self.tuning_constraints)
+    def check_tuning_constraints_exist(self, constraints: list[Constraint]):
+        for c in constraints:
+            assert (
+                c in self.validation_constraints or c in self.training_constraints
+            ), f"Constraint {c} is not part of the training or validation constraints \
+                  of this trainer."
 
     def collect_graph_hyperparameters(self) -> set[HyperParameter]:
         hyperparameter_set = set[HyperParameter]()
@@ -131,35 +222,11 @@ class GraphBasedTrainer(Trainer):
     def populate_state_dict(self):
         """Collect all relevant loss and metric names into the state dict, to
         know at the start of training which values are to be expected."""
-        constraints_list = [
-            self.training_constraints,
-            self.validation_constraints,
-            self.tuning_constraints,
-        ]
+        constraints_list = [self.training_constraints, self.validation_constraints]
         evaluation_phases = [
             EvaluationPhase.TRAIN,
             EvaluationPhase.VALIDATION,
-            EvaluationPhase.TUNE,
         ]
         for constraints, eval_phase in zip(constraints_list, evaluation_phases):
             for constraint in constraints:
-                if constraint.constraint_type == ConstraintType.LOSS:
-                    self.train_state.losses[eval_phase][constraint.name] = 0.0
-                elif constraint.constraint_type == ConstraintType.MONITOR:
-                    self.train_state.metrics[eval_phase][constraint.name] = 0.0
-
-    def evaluate_tuning_constraints(self):
-        # Evaluate all graphs that have some tuning constraint
-        for graph in self.tune_graphs:
-            graph.run(EvaluationPhase.TUNE)
-
-        # Write out the loss
-        for constraint in self.tuning_constraints:
-            if constraint.constraint_type == ConstraintType.LOSS:
-                self.train_state.losses[EvaluationPhase.TUNE][constraint.name] = (
-                    constraint.get_loss(add_weight=False)
-                )
-            elif constraint.constraint_type == ConstraintType.MONITOR:
-                self.train_state.metrics[EvaluationPhase.TUNE][constraint.name] = (
-                    constraint.get_loss(add_weight=False)
-                )
+                self.train_state.losses[eval_phase][constraint.name] = None

@@ -97,6 +97,8 @@ class Trainer:
             cb.on_optimization_phases_start(self.train_state)
 
     def training_step(self, idx: int):
+        self.train_state.clear_data_dict()
+
         for cb in self.callbacks:
             cb.training_step(idx, self.train_state)
 
@@ -116,7 +118,7 @@ class Trainer:
             cb.on_training_end(self.train_state)
 
         if not self.train_state.stop_training:
-            self.train_state.stop_training_timer()
+            self.train_state.stop_training_timer("Training finished")
 
     def set_hyperparameter(self, param_dict: dict[str, Any]):
         for param in self.hyperparameters:
@@ -126,9 +128,14 @@ class Trainer:
     def set_device(self, device):
         self.device = device
 
-    def evaluate_tuning_constraints(self):
-        pass
+    def check_tuning_constraints_exist(self, constraints):
+        return False
 
     def populate_state_dict(self):
         """Collect all relevant loss and metric names into the state dict, to
         know at the start of training which values are to be expected."""
+
+    def clean_up(self):
+        self.optimization_phases[
+            -1
+        ].clean_up()  # clean up after the last optimization phase
