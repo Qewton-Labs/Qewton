@@ -1,5 +1,3 @@
-import multiprocessing as mp
-
 import torch
 import pioneer
 
@@ -61,6 +59,7 @@ trainer = pioneer.optim.GraphBasedTrainer(
     optimization_phases=adam_phase,
     graphs=[computation_graph],
     training_constraints=[constraint],
+    callbacks=[pioneer.optim.CSVLogger(log_phase=pioneer.optim.EvaluationPhase.TRAIN)],
     device="cpu",
 )
 trainer.set_tuning_constraints([constraint])

@@ -1,10 +1,9 @@
 from copy import deepcopy
 import csv
 import os
-import math
 import multiprocessing as mp
 import sys
-from typing import Any, Callable, Tuple
+from typing import Any, Tuple
 
 import torch
 
@@ -15,7 +14,6 @@ from ..parameters.hyperparameter_base import HyperParameter
 from ..parameters.dag import HyperParameterDAG
 
 # TODO:
-# Try deepcopy for trainer
 # if that works, move tuning objective into tuner
 # Add tuningcallbacks (Memory, Trainingtime, evaluation time, earlystopping, ...)
 # Add TuningState (saves all TrainerStates (maybe with reduced resolution))
@@ -33,7 +31,6 @@ def worker(trainer, device, task_queue, result_queue):
             local_trainer: Trainer = deepcopy(trainer)
             if isinstance(device, str):
                 local_trainer.set_device(device)
-
             local_trainer.set_hyperparameter(params)
             local_trainer.run(show_progress=False)
             local_trainer.evaluate_tuning_constraints()
@@ -44,34 +41,9 @@ def worker(trainer, device, task_queue, result_queue):
 
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
-
         finally:
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
-
-
-# def worker_eval(jobs) -> Tuple[dict[str, Any], TrainerState]:
-#     """
-#     Worker function to evaluate a single set of hyperparameters in a separate process.
-
-#     This function is designed to be run in a multiprocessing pool. It initializes a trainer,
-#     sets hyperparameters, runs the training, and evaluates tuning constraints.
-#     Args:
-#         jobs (tuple): A tuple containing (trainer_factory, params, device).
-#     Returns:
-#         Tuple[dict[str, Any], TrainerState]: A tuple of the evaluated parameters and the final trainer state.
-#     """
-#     trainer_factory, params, device = jobs
-#     local_trainer: Trainer = deepcopy(trainer_factory)  # trainer_factory()
-#     if isinstance(device, str):
-#         local_trainer.set_device(device)
-#     local_trainer.set_hyperparameter(params)
-#     local_trainer.run(show_progress=False)
-#     local_trainer.evaluate_tuning_constraints()
-#     local_trainer.train_state.losses = local_trainer.train_state.detach_data(
-#         local_trainer.train_state.losses
-#     )  # detach data to avoid memory issues
-#     return (params, local_trainer.train_state)
 
 
 # TODO: Add constraints for memory usage and speed
@@ -101,12 +73,13 @@ class Tuner:
         trial_number: int = 10,
         devices: str | list[str] = "cpu",
         trials_per_device: int = 1,
-        save_path: str = "tuner_results",
+        save_path: str = "tuner",
+        save_interval: int = 10,
     ) -> None:
         """
         Initializes the Tuner.
         Args:
-            trainer_factory (Callable[[], Trainer]): A callable that returns a new Trainer instance.
+            trainer (Trainer): A callable that returns a new Trainer instance.
             trial_number (int, optional): The total number of hyperparameter trials to run. Defaults to 10.
             devices (str | list[str], optional): A single device name (e.g., "cpu", "cuda:0") or a list of device names.
                                                  Defaults to "cpu".
@@ -137,31 +110,36 @@ class Tuner:
         # Build saving path
         self.save_path = save_path
         self.file_path = self.build_save_path(self.trainer)
-        self.csv_path = os.path.join(self.file_path, "tuning_results.csv")
+        self.csv_path = os.path.join(self.file_path, "study.csv")
         self._setup_csv_file(self.trainer.train_state)
 
         # Queues for parallel processing:
+        self.save_interval = save_interval
         self.task_queue: mp.Queue
         self.result_queue: mp.Queue
+        self.workers: list[Any]
 
     def build_save_path(self, trainer: Trainer) -> str:
         """
         Constructs a unique save path for the tuning results.
         Args:
-            trainer (Trainer): A dummy trainer instance to get its save_path.
+            trainer (Trainer): A trainer instance to get its save_path.
         Returns:
             str: The unique file path for saving results.
         """
-        base_path = os.path.join(self.save_path, trainer.train_state.save_path)
+        # base_path = os.path.join(self.save_path, trainer.train_state.save_path)
 
-        file_path = base_path
+        file_path = self.save_path
         counter = 0
 
         while os.path.exists(file_path):
             counter += 1
-            file_path = f"{base_path}_{counter}"
+            file_path = f"{file_path}_{counter}"
 
         os.makedirs(file_path, exist_ok=True)
+        trainer.train_state.save_path = os.path.join(
+            file_path, trainer.train_state.save_path
+        )
         return file_path
 
     def _get_tuneable_parameters(self, trainer: Trainer) -> HyperParameterDAG:
@@ -202,26 +180,31 @@ class Tuner:
                 )
                 for device in self.devices
             ]
-
             for w in self.workers:
                 w.start()
 
             trial_params = self._get_trial_parameters()
 
+            print("--- Start Tuning ---")
             for params in trial_params:
                 self.task_queue.put(params)
 
             current_results = []
+            done_counter = 0
+            self.print_update_text(done_counter, len(trial_params))
             for _ in range(len(trial_params)):
                 result = self.result_queue.get()
                 current_results.append(result)
-                if len(current_results) % 10 == 0:
+                if len(current_results) % self.save_interval == 0:
                     self._write_to_csv(current_results)
                     current_results = []
+                    done_counter += self.save_interval
+                    self.print_update_text(done_counter, len(trial_params))
 
             if len(current_results) > 0:
                 self._write_to_csv(current_results)
 
+            print("--- Cleaning up ---")
             for _ in self.workers:
                 self.task_queue.put(None)
 
@@ -232,39 +215,11 @@ class Tuner:
                     if w.is_alive():
                         w.terminate()
                 w.join()
+            print("--- Finished Tuning ---")
 
-    # def run(self):
-    #     """
-    #     Executes the hyperparameter tuning process.
-    #     """
-    #     trials = math.ceil(self.trial_number / self.process_number)
-    #     print("--- Start Tuning ---")
-    #     for i in range(trials):
-    #         current_n = self.process_number * i
-    #         print(f"Running trials {current_n} to {self.process_number + current_n}")
-    #         current_params = self._get_trial_parameters(current_n)
-    #         results = self._run_generation(current_params)
-    #         print("Saving current results")
-    #         self._write_to_csv(results)
-
-    # def _run_generation(self, params):
-    #     """
-    #     Runs a generation of trials using multiprocessing.
-    #     Args:
-    #         params (list): A list of hyperparameter dictionaries for each trial in the generation.
-    #     Returns:
-    #         list: A list of results from each worker process.
-    #     """
-    #     # TODO: Using the same pools and not recreating everything would be nice, but:
-    #     # - Data stays on the GPUs and can only be cleared by backend dependent calls
-    #     with mp.Pool(
-    #         processes=self.process_number,
-    #         # initializer=_init_worker,
-    #         # initargs=(self.trainer_object,),
-    #     ) as pool:
-    #         jobs = [(self.trainer, p, d) for p, d in zip(params, self.devices)]
-    #         results = list(pool.imap(worker_eval, jobs))
-    #     return results
+    def print_update_text(self, done_counter, len_trial_params):
+        upper_limit = min(done_counter + self.save_interval, len_trial_params)
+        print(f"Working on trials {done_counter} - {upper_limit}")
 
     def _setup_csv_file(self, trainer_state_dummy: TrainerState):
         """
@@ -324,21 +279,6 @@ class Tuner:
             else:
                 flat_dict[name] = ""
         return flat_dict
-
-    # def _get_trial_parameters(
-    #     self, current_trial: int
-    # ) -> list[dict[str, dict[str, Any]]]:
-    #     """
-    #     Abstract method to generate the next set of hyperparameters for trials.
-    #     Args:
-    #         current_trial (int): The current trial number (used for seeding or progress tracking).
-    #     Raises:
-    #         NotImplementedError: This method must be implemented by subclasses to define a search strategy.
-    #     """
-    #     raise NotImplementedError(
-    #         "The base Tuner does not implement a search strategy, \
-    #             use one of the child classes."
-    #     )
 
     def _get_trial_parameters(self) -> list[dict[str, dict[str, Any]]]:
         """

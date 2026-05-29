@@ -87,6 +87,7 @@ class Trainer:
         self.on_training_end()
 
     def on_training_start(self):
+        self.train_state.check_file_path()
         self.train_state.start_training_timer()
         for cb in self.callbacks:
             cb.on_training_start(self.train_state)

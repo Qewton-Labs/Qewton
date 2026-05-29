@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 import time
+import os
 
 from .optimizers.optim_setups.pytorch_optims import (
     _pytorch_setup_optimizer,
@@ -80,6 +81,16 @@ class TrainerState:
                 if hasattr(loss, "detach"):
                     new_dict[phase_name][key] = loss.detach().cpu().item()  # type: ignore
         return new_dict
+
+    def check_file_path(self):
+        file_path = self.save_path
+        counter = 0
+        while os.path.exists(file_path):
+            counter += 1
+            file_path = f"{self.save_path}_{counter}"
+
+        os.makedirs(file_path, exist_ok=True)
+        self.save_path = file_path
 
     def log_step(self):
         if not self.enable_logging:
