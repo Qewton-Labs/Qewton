@@ -17,12 +17,8 @@ To simplify their usage, we provide
 
 ### Structure:
 The core structure of Qewton is based on few key components:
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/struktur_dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="images/struktur_light.png">
-  <img alt="Workflow in Qewton" src="images/struktur_light.png" width="400">
-</picture>
-
+![Workflow in Qewton](images/struktur_light.png#gh-light-mode-only)
+![Workflow in Qewton](images/struktur_dark.png#gh-dark-mode-only)
 
 ### About us:
 We are the creators of TorchPhysics, a deep learning library PDEs. With Qewton, we aim to provide a more user-friendly and flexible framework for deep learning in physics and engineering.
