@@ -18,10 +18,9 @@ To simplify their usage, we provide
 ### Structure:
 The core structure of Qewton is based on few key components:
 <picture>
-  <!-- Source for dark mode -->
-  <source media="(prefers-color-scheme: dark)" srcset="/images/struktur_dark.png">
-  <!-- Fallback image for light mode and other clients -->
-  <img alt="Workflow in Qewton" src="/images/struktur_light.png" width="400">
+  <source media="(prefers-color-scheme: dark)" srcset="images/struktur_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/struktur_light.png">
+  <img alt="Workflow in Qewton" src="images/struktur_light.png" width="400">
 </picture>
 
 
