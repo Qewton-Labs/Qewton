@@ -44,21 +44,20 @@ class LogCallback(Callback):
         if state.iteration % self.log_interval == 0:
             pass
 
-    def flatten_log_dict(self, state: TrainerState) -> dict[str, float]:
+    def flatten_log_dict(self, state: TrainerState) -> dict[str, float | None]:
         if len(state.history) == 0:
             return {}
 
         last_entry = state.history[-1]
 
-        logs: dict[str, float] = {
+        logs: dict[str, float | None] = {
             "iteration": last_entry.iteration,
         }
-        for data_dict in [last_entry.losses, last_entry.metrics]:
-            for phase, losses in data_dict.items():
-                if self.log_phase not in (phase, EvaluationPhase.ALWAYS):
-                    continue
-                for name, value in losses.items():
-                    logs[f"{phase.name.lower()}/{name}"] = value
+        for phase, losses in last_entry.losses.items():
+            if self.log_phase not in (phase, EvaluationPhase.ALWAYS):
+                continue
+            for name, value in losses.items():
+                logs[f"{phase.name.lower()}/{name}"] = value
 
         return logs
 

@@ -60,3 +60,8 @@ def _pytorch_closure(
 
     total_loss.backward()  # type: ignore
     return total_loss
+
+
+def _pytorch_cleanup(backend):
+    backend.library.cuda.empty_cache()
+    backend.library.cuda.ipc_collect()

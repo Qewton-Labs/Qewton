@@ -37,7 +37,9 @@ model = pioneer.algorithms.FCN(
     ),
 )
 
-constraint = pioneer.constraints.MSEConstraint()
+constraint = pioneer.constraints.MSEConstraint(
+    evaluated_in_mode=pioneer.optim.EvaluationPhase.TRAIN
+)
 
 computation_graph = pioneer.Graph()
 
@@ -58,16 +60,19 @@ adam_phase = pioneer.optim.OptimizationPhase(
 trainer = pioneer.optim.GraphBasedTrainer(
     optimization_phases=adam_phase,
     graphs=[computation_graph],
-    training_constraints=[constraint],
+    training_objectives=[constraint],
     callbacks=[pioneer.optim.CSVLogger(log_phase=pioneer.optim.EvaluationPhase.TRAIN)],
     device="cpu",
 )
-trainer.set_tuning_constraints([constraint])
 
-tuner = pioneer.optim.tuner.GridSearchTuner(
+tuner = pioneer.optim.tuner.RandomSearchTuner(
     trainer,
-    trial_number=20,
-    devices=["cuda:0", "cuda:1"],
+    tuning_objectives=[constraint],
+    tuning_callbacks=[
+        pioneer.optim.tuner.EarlyStoppingTuneCallback(monitor_constraint=constraint)
+    ],
+    trial_number=150,
+    devices=["cuda:0", "cuda:1", "cuda:2"],
     trials_per_device=2,
 )
 tuner.run()

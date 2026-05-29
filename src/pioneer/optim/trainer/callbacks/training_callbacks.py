@@ -4,7 +4,7 @@ from .base_callback import Callback
 from ..training_controllers import TrainerState
 from ...base import EvaluationPhase
 from ....graphs.graphs import Graph
-from ....constraints.base import Constraint, ConstraintType
+from ....constraints.base import Constraint
 
 
 class GraphEvalCallback(Callback):
@@ -13,7 +13,7 @@ class GraphEvalCallback(Callback):
         self,
         graphs: set[Graph],
         evaluation_phase: EvaluationPhase,
-        constraints: list[Constraint],
+        constraints: list[Constraint] | set[Constraint],
         evaluation_interval=1,
         priority=0,
     ) -> None:
@@ -30,11 +30,7 @@ class GraphEvalCallback(Callback):
 
             for constraint in self.constraints:
                 value = constraint.get_loss()
-
-                if constraint.constraint_type == ConstraintType.LOSS:
-                    state.losses[self.evaluation_phase][constraint.name] = value
-                else:  # ConstraintType.METRIC
-                    state.metrics[self.evaluation_phase][constraint.name] = value
+                state.losses[self.evaluation_phase][constraint.name] = value
 
 
 class FunctionEvalCallback(Callback):

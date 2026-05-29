@@ -69,11 +69,6 @@ class FunctionBasedTrainer(Trainer):
             log_interval=log_interval,
         )
 
-    def set_tuning_constraints(
-        self, constraints: list[Callable[[int, TrainerState], Any]]
-    ):
-        self.tuning_functions = constraints
-
     def on_training_start(self):
         # setup all graphs and then move all nodes to the correct device:
         for node in self.model_nodes:
@@ -101,17 +96,16 @@ class FunctionBasedTrainer(Trainer):
             self.validation_functions,
             self.tuning_functions,
         ]
-        evaluation_phases = [
-            EvaluationPhase.TRAIN,
-            EvaluationPhase.VALIDATION,
-            EvaluationPhase.TUNE,
-        ]
+        evaluation_phases = [EvaluationPhase.TRAIN, EvaluationPhase.VALIDATION]
         for constraints, eval_phase in zip(constraints_list, evaluation_phases):
             for constraint in constraints:
-                self.train_state.losses[eval_phase][constraint.__name__] = 0.0
+                self.train_state.losses[eval_phase][constraint.__name__] = None
 
-    def evaluate_tuning_constraints(self):
-        # Evaluate all graphs that have some tuning constraint
-        for constraint in self.tuning_functions:
-            loss = constraint(0, self.train_state)
-            self.train_state.losses[EvaluationPhase.TUNE][constraint.__name__] = loss
+    def check_tuning_constraints_exist(
+        self, constraints: list[Callable[[int, TrainerState], Any]]
+    ):
+        for c in constraints:
+            assert (
+                c in self.training_functions or c in self.validation_functions
+            ), f"Constraint {c} is not part of the training or validation constraints \
+                  of this trainer."
