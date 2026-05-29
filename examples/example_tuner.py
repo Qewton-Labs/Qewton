@@ -65,14 +65,11 @@ trainer = pioneer.optim.GraphBasedTrainer(
     device="cpu",
 )
 
-tuner = pioneer.optim.tuner.RandomSearchTuner(
+tuner = pioneer.optim.tuner.GridSearchTuner(
     trainer,
     tuning_objectives=[constraint],
-    tuning_callbacks=[
-        pioneer.optim.tuner.EarlyStoppingTuneCallback(monitor_constraint=constraint)
-    ],
-    trial_number=150,
-    devices=["cuda:0", "cuda:1", "cuda:2"],
+    trial_number=50,
+    devices=["cuda:0", "cuda:1"],
     trials_per_device=2,
 )
 tuner.run()

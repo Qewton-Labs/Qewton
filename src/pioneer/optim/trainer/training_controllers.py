@@ -86,7 +86,11 @@ class TrainerState:
             for k in self.losses[phase]:
                 self.losses[phase][k] = None
 
-    def check_file_path(self):
+    def check_file_path(self, callbacks):
+        if not any([cb.saves_data for cb in callbacks]):
+            self.save_path = ""
+            return
+
         file_path = self.save_path
         counter = 0
         while os.path.exists(file_path):

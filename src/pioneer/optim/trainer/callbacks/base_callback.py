@@ -9,6 +9,10 @@ class Callback:
     def __init__(self, priority=0) -> None:
         self.priority = priority
 
+    @property
+    def saves_data(self) -> bool:
+        return False
+
     def on_training_start(self, state: TrainerState):
         pass
 

@@ -52,7 +52,6 @@ class EarlyStoppingTuneCallback(TuningCallback):
 
     def on_training_start(self, state: TrainerState):
         # Check if we have enough trials to start with early stopping
-        print(len(self.tune_state.tune_history))
         if len(self.tune_state.tune_history) < self.history_to_start:  # type: ignore
             return
 
@@ -85,7 +84,6 @@ class EarlyStoppingTuneCallback(TuningCallback):
             else:
                 # Else add a large value so we continue
                 self.early_stopping_history[idx] = 1000000
-        print(len(self.early_stopping_history))
 
     def on_train_step_end(self, state: TrainerState):
         if (

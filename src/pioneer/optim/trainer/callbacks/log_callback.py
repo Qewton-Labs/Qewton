@@ -26,6 +26,10 @@ class LogCallback(Callback):
         self.file_name = file_name
         self.log_phase = log_phase
 
+    @property
+    def saves_data(self) -> bool:
+        return True
+
     def on_training_start(self, state: TrainerState):
         if not state.enable_logging:
             raise RuntimeError(
