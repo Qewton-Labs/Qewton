@@ -1,6 +1,6 @@
 # Qewton: Deep Learning for Physics and Engineering
 
-In Qewton, we provide a powerful but flexible framework for deep learning in physics and engineering. The core of Qewton is a modular architecture that allows users to easily build and customize their own deep learning models for a wide range of applications. We pre-implement methods such as
+In Qewton, the goal is to provide easy-to-use but powerful deep learning tools for physics and engineering to everyone, lowering the barrier to entry the field of AI for simulations in any imaginable application. We pre-implement methods such as
  - Operator Learning (Fourier Neural Operators, PCA-Nets, DeepONets (WIP))
  - Differentiable Physics (WIP)
  - PINNs (Physics-Informed Neural Networks)
@@ -19,7 +19,7 @@ To simplify their usage, we provide
 The core structure of Qewton is based on few key components:
 <picture>
   <!-- Source for dark mode -->
-  <source media="(prefers-color-scheme: dark)" srcset="/images/struktur_dark.png#gh-dark-mode-only">
+  <source media="(prefers-color-scheme: dark)" srcset="/images/struktur_dark.png">
   <!-- Fallback image for light mode and other clients -->
   <img alt="Workflow in Qewton" src="/images/struktur_light.png" width="400">
 </picture>
