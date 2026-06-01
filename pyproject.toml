@@ -13,9 +13,8 @@ authors = [{ name = "Your Name" }]
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.2",
-    "pandas>=2.3",
     "matplotlib>=3.10",
-    "networkx>=3.4",
+    "tqdm>=4.65",
 ]
 
 [tool.setuptools]
