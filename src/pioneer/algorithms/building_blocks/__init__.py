@@ -28,4 +28,13 @@ from .math import (
 )
 
 from .array_operations import SplitVariables, Slice, Narrow
-from .derivatives import GradientTracking, Gradient
+from .derivatives import (
+    GradientTracking,
+    Gradient,
+    Laplacian,
+    NormalDerivative,
+    Divergence,
+    Jacobian,
+    Partial,
+    Hessian,
+)
