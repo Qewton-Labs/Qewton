@@ -64,4 +64,5 @@ def _pytorch_closure(
 
 def _pytorch_cleanup(backend):
     backend.library.cuda.empty_cache()
-    backend.library.cuda.ipc_collect()
+    if backend.library.cuda.is_available():
+        backend.library.cuda.ipc_collect()
