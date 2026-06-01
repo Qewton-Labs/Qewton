@@ -80,3 +80,7 @@ max-positional-arguments = 12
 [tool.pylint.reports]
 reports = false
 score = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["examples", ".*", "build", "dist", "venv"]

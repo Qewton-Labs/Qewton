@@ -14,7 +14,7 @@ run_tests:
     - pip install .[dev]
     - pip install pytest pytest-cov coverage
     - export PYTHONPATH=$PYTHONPATH:$(pwd)/src
-    - pytest --cov=src --cov-report=term --cov-report=xml
+    - pytest tests --cov=src --cov-report=term --cov-report=xml
   artifacts:
     paths:
       - coverage.xml
