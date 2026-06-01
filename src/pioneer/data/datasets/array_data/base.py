@@ -33,6 +33,17 @@ class ArrayLikeDataSet(DataSet):
         self._data_configs = (
             data_configs if isinstance(data_configs, (list, tuple)) else [data_configs]
         )
+        # check that variable names are unique across all configs
+        all_variables = set()
+        for config in self._data_configs:
+            for var in config.variables:
+                if var in all_variables:
+                    raise ValueError(
+                        f"Variable name {var} appears in multiple data configurations.\
+                            Variable names must be unique across all data configs."
+                    )
+                all_variables.add(var)
+
         self.update_configs()
 
     def update_configs(self):

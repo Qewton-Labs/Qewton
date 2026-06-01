@@ -18,6 +18,7 @@ class GridSearchTuner(Tuner):
         track_tune_state: bool | TuningState = True,
         tuning_callbacks: list[TuningCallback] | None = None,
         save_path: str = "tuner_results",
+        use_multiprocessing: bool = True,
     ) -> None:
         super().__init__(
             trainer_factory,
@@ -28,13 +29,12 @@ class GridSearchTuner(Tuner):
             tuning_callbacks=tuning_callbacks,
             track_tune_state=track_tune_state,
             save_path=save_path,
+            use_multiprocessing=use_multiprocessing,
         )
         self.grid_params = self.hp_dag.create_grid_samples(self.trial_number)
         if len(self.grid_params) < self.trial_number:
-            print(
-                f"Hyperparameters yielded only a grid of {len(self.grid_params)} \
-                combinations. The number of trials is reduced accordingly."
-            )
+            print(f"Hyperparameters yielded only a grid of {len(self.grid_params)} \
+                combinations. The number of trials is reduced accordingly.")
             self.trial_number = len(self.grid_params)
 
     def _get_trial_parameters(self) -> list[dict[str, dict[str, Any]]]:

@@ -80,7 +80,7 @@ lbfgs_phase = pioneer.optim.OptimizationPhase(
 trainer = pioneer.optim.GraphBasedTrainer(
     optimization_phases=[adam_phase, lbfgs_phase],
     graphs=[computation_graph, initial_graph],
-    training_constraints=[constraint, initial_constraint],
+    training_objectives=[constraint, initial_constraint],
     device="cuda:0",
 )
 

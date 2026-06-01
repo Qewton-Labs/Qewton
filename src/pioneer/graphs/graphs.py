@@ -64,6 +64,7 @@ class Graph:
             with graph.tracker():
                 out = func()
             input_ports = []
+            tracking_vars = ()
         tracking_vars_idcs = {
             var: i for i, var in enumerate(tracking_vars)  # type: ignore
         }

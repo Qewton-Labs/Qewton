@@ -55,17 +55,23 @@ class BackendNode(Node, Generic[TensorType]):
             TensorflowBackend: BackendNode.tensorflow_implementation,
         }
 
-        # check whether the subclass overrides the method
-        if subclass_methods[self.backend] is not parent_methods[self.backend]:
+        # check whether the subclass overrides the method for supported backends
+        if (
+            self.backend in subclass_methods
+            and subclass_methods[self.backend].__func__
+            is not parent_methods[self.backend]
+        ):
             self.implementation = subclass_methods[self.backend]
+        elif (
+            self.default_implementation.__func__ is not BackendNode.default_implementation
+        ):
+            self.implementation = self.default_implementation
         else:
-            if self.default_implementation is BackendNode.default_implementation:
-                self.implementation = self.default_implementation
-            else:
-                assert (
-                    self.forward is not BackendNode.forward
-                ), "If no specific implementation is provided, the forward method must\
-                    be overridden."
+            self.implementation = None
+            assert (
+                self.forward.__func__ is not BackendNode.forward
+            ), "If no specific implementation is provided, the forward method must\
+                be overridden."
 
     def forward(self, *args, **kwargs):
         raise NotImplementedError(

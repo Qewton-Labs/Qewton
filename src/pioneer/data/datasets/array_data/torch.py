@@ -25,13 +25,14 @@ class TorchDataSet(ArrayLikeDataSet):
                 "TorchDataSet requires 'torch'. Install via pip install torch"
             ) from e
 
-        super().__init__(data, data_configs)
-
-        for item in self._data:
+        items = data if isinstance(data_configs, (list, tuple)) else [data]
+        for item in items:
             if not isinstance(item, torch.Tensor):
                 raise TypeError(
                     f"TorchDataSet only handles torch.Tensor, not {type(item)}."
                 )
+
+        super().__init__(data, data_configs)
 
     @classmethod
     def from_file(cls, path, data_configs, **kwargs):
