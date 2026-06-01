@@ -100,14 +100,17 @@ class SphereBoundary(ContinuousBoundaryGeometry):
         # Surface area
         return 4.0 * np.pi * self.geometry.radius**2
 
-    def sample_random_uniform(self, n_points: int):
+    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
         # sample directions via normal distribution then normalize
         vec = np.random.normal(size=(n_points, 3))
         vec /= np.linalg.norm(vec, axis=1, keepdims=True)
         points = vec * self.geometry.radius + self.geometry.center
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
-    def sample_grid(self, n_points: int):
+    def sample_grid(self, n_points: int, include_normals: bool = False):
         if n_points <= 0:
             return np.empty((0, 3))
         # Fibonacci sphere
@@ -121,7 +124,10 @@ class SphereBoundary(ContinuousBoundaryGeometry):
         points = np.column_stack((x, y, z))
         points *= self.geometry.radius
         points += self.geometry.center
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
     def normal(self, points):
         points = np.asarray(points, dtype=float).reshape(-1, 3)

@@ -64,19 +64,26 @@ class IntervalBoundary(ContinuousBoundaryGeometry):
         close_right = np.isclose(points, self.geometry.upper_bound)
         return np.logical_or(close_left, close_right).reshape(-1, 1)
 
-    def sample_random_uniform(self, n_points: int):
+    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
         rand_side = np.random.rand(n_points, 1)
         random_boundary_index = rand_side < 0.5
         points = np.where(
             random_boundary_index, self.geometry.lower_bound, self.geometry.upper_bound
         )
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
-    def sample_grid(self, n_points: int):
+    def sample_grid(self, n_points: int, include_normals: bool = False):
         lb = self.geometry.lower_bound
         ub = self.geometry.upper_bound
         b_index = np.array([0, 1], dtype=bool).repeat(int(n_points / 2.0) + 1)
-        return np.where(b_index[:n_points], lb, ub)
+        points = np.where(b_index[:n_points], lb, ub)
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
     def normal(self, points):
         close_left = np.isclose(points, self.geometry.lower_bound)
@@ -98,11 +105,19 @@ class IntervalSingleBoundaryPoint(ContinuousBoundaryGeometry):
         inside = np.isclose(points, self.side)
         return inside.reshape(-1, 1)
 
-    def sample_random_uniform(self, n_points: int):
-        return self.side * np.ones((n_points, 1))
+    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
+        points = self.side * np.ones((n_points, 1))
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
-    def sample_grid(self, n_points: int):
-        return self.sample_random_uniform(n_points=n_points)
+    def sample_grid(self, n_points: int, include_normals: bool = False):
+        points = self.sample_random_uniform(n_points=n_points)
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
     def normal(self, points):
         return self.normal_vec * np.ones((len(points), 1))

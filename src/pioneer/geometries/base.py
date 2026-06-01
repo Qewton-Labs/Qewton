@@ -1,8 +1,6 @@
 from __future__ import annotations
 from types import EllipsisType
-from typing import Any, Callable
-
-import numpy as np
+from typing import Any
 
 from ..config.errors import DataConfigMismatchError
 from ..config.variables import Variable
@@ -186,7 +184,9 @@ class Geometry:
         dis_geo.discretization_of = self
         return dis_geo
 
-    def is_discretization_of(self, other_geometry: Geometry) -> bool:
+    def is_discretization_of(
+        self, other_geometry: Geometry  # pylint: disable=unused-argument
+    ) -> bool:
         return False
 
     def create_mesh(self, max_vertex_distance: float | None = None):
@@ -334,6 +334,20 @@ class BoundaryGeometry(Geometry):
     def normal(self, points):
         """Computes the normal vector at each point in points."""
         raise NotImplementedError()
+
+    def sample_grid(
+        self,
+        n_points: int,
+        include_normals: bool = False,  # pylint: disable=unused-argument
+    ) -> Any:
+        return super().sample_grid(n_points)
+
+    def sample_random_uniform(
+        self,
+        n_points: int,
+        include_normals: bool = False,  # pylint: disable=unused-argument
+    ) -> Any:
+        return super().sample_random_uniform(n_points)
 
 
 ####################################

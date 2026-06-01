@@ -74,23 +74,29 @@ class CircleBoundary(ContinuousBoundaryGeometry):
         norm = np.linalg.norm(points - self.geometry.center, axis=1).reshape(-1, 1)
         return np.isclose(norm, self.geometry.radius)
 
-    def sample_random_uniform(self, n_points: int):
+    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
         phi = 2 * np.pi * np.random.rand(n_points, 1).reshape(-1, 1)
         points = np.concat(
             [self.geometry.radius * np.cos(phi), self.geometry.radius * np.sin(phi)],
             axis=-1,
         )
         points += self.geometry.center[None, :]
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
-    def sample_grid(self, n_points: int):
+    def sample_grid(self, n_points: int, include_normals: bool = False):
         phi = np.linspace(0, 2 * np.pi, n_points + 1)[:-1].reshape(-1, 1)
         points = np.concat(
             [self.geometry.radius * np.cos(phi), self.geometry.radius * np.sin(phi)],
             axis=-1,
         )
         points += self.geometry.center[None, :]
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
     def normal(self, points):
         normal = points - self.geometry.center[None, :]

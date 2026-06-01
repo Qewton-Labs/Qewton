@@ -120,15 +120,23 @@ class UnionBoundaryDomain(ContinuousBoundaryGeometry):
         volume_b = self.geometry.geometry_b.boundary.volume()
         return volume_a + volume_b
 
-    def sample_random_uniform(self, n_points: int):
-        return _boundary_random_with_n(
+    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
+        points = _boundary_random_with_n(
             self, self.geometry.geometry_a, self.geometry.geometry_b, n_points
         )
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
-    def sample_grid(self, n_points: int):
-        return _boundary_grid_with_n(
+    def sample_grid(self, n_points: int, include_normals: bool = False):
+        points = _boundary_grid_with_n(
             self, self.geometry.geometry_a, self.geometry.geometry_b, n_points
         )
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
     def normal(self, points):
         a_normals = self.geometry.geometry_a.boundary.normal(points)

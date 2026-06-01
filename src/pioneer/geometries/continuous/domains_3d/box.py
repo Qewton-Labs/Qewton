@@ -153,7 +153,7 @@ class BoxBoundary(ContinuousBoundaryGeometry):
         area_yz = h * d
         return 2 * (area_xy + area_xz + area_yz)
 
-    def sample_random_uniform(self, n_points: int):
+    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
         w = self.geometry.width
         h = self.geometry.height
         d = self.geometry.depth
@@ -197,9 +197,12 @@ class BoxBoundary(ContinuousBoundaryGeometry):
                 current_n += n_half
 
         points += self.geometry.origin
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
-    def sample_grid(self, n_points: int):
+    def sample_grid(self, n_points: int, include_normals: bool = False):
         w = self.geometry.width
         h = self.geometry.height
         d = self.geometry.depth
@@ -283,7 +286,10 @@ class BoxBoundary(ContinuousBoundaryGeometry):
                 break
 
         points += self.geometry.origin
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
     def normal(self, points):
         points = np.asarray(points, dtype=float)

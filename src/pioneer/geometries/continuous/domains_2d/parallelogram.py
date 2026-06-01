@@ -139,7 +139,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry):
         close_to_1 = np.isclose(bary_coord1, 1.0)
         return np.logical_and(np.logical_or(close_to_0, close_to_1), between_0_1)
 
-    def sample_random_uniform(self, n_points: int):
+    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
         origin = self.geometry.origin
         dir_1 = self.geometry.corner_1 - origin
         dir_2 = self.geometry.corner_2 - origin
@@ -174,9 +174,12 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry):
         t = (positions[mask] - breaks[2]) / side_lengths[3]
         points[mask] = self.geometry.corner_2 - t[:, None] * dir_2
 
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
-    def sample_grid(self, n_points: int):
+    def sample_grid(self, n_points: int, include_normals: bool = False):
         origin = self.geometry.origin
         dir_1 = self.geometry.corner_1 - origin
         dir_2 = self.geometry.corner_2 - origin
@@ -211,7 +214,10 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry):
         t = (positions[mask] - breaks[2]) / side_lengths[3]
         points[mask] = self.geometry.corner_2 - t[:, None] * dir_2
 
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
     def normal(self, points):
         points = np.asarray(points, dtype=float).reshape(-1, 2)

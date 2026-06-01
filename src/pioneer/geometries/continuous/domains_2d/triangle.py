@@ -139,7 +139,7 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         )
         return side_length
 
-    def sample_random_uniform(self, n_points: int):
+    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
         # sample uniformly along triangle edges proportional to edge length
         edges = [
             (self.geometry.origin, self.geometry.corner_1),
@@ -158,9 +158,12 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
             a, b = edges[i]
             t = np.random.rand(idx.size, 1)
             points[idx] = a + t * (b - a)
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
-    def sample_grid(self, n_points: int):
+    def sample_grid(self, n_points: int, include_normals: bool = False):
         # distribute roughly equally across edges
         edges = [
             (self.geometry.origin, self.geometry.corner_1),
@@ -186,7 +189,10 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         points = np.vstack(points)
         if len(points) > n_points:
             points = points[:n_points]
-        return points
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
     def normal(self, points):
         points = np.asarray(points, dtype=float).reshape(-1, 2)

@@ -44,9 +44,9 @@ class Slice(BackendNode[TensorType]):
         super().__init__(name if name is not None else "SliceNode", backend=backend)
 
     def forward(
-        self, input: Annotated[TensorType, DataConfiguration.empty()]
+        self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.implementation(input)
+        return self.implementation(inp)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -65,8 +65,8 @@ class Slice(BackendNode[TensorType]):
                 pass
         return updated_ports
 
-    def torch_implementation(self, input):
-        return input[self.slice_config]
+    def torch_implementation(self, inp):
+        return inp[self.slice_config]
 
 
 class SplitVariables(BackendNode[TensorType]):
@@ -80,11 +80,11 @@ class SplitVariables(BackendNode[TensorType]):
         self.split_dim = None
         self.split_sections = None
 
-    def forward(self, input: Annotated[TensorType, DataConfiguration.empty()]):
-        return self.implementation(input)
+    def forward(self, inp: Annotated[TensorType, DataConfiguration.empty()]):
+        return self.implementation(inp)
 
-    def torch_implementation(self, input):
-        return self.backend.library.split(input, self.split_sections, dim=self.split_dim)
+    def torch_implementation(self, inp):
+        return self.backend.library.split(inp, self.split_sections, dim=self.split_dim)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -188,8 +188,8 @@ class ConcatVariables(BackendNode[TensorType]):
                     )
                 seen_keys.add(key)
 
-    def forward(self, *input):
-        return self.implementation(*input)
+    def forward(self, *inp):
+        return self.implementation(*inp)
 
-    def torch_implementation(self, *input):
-        return self.backend.library.cat(input, dim=self.concat_dim)
+    def torch_implementation(self, *inp):
+        return self.backend.library.cat(inp, dim=self.concat_dim)

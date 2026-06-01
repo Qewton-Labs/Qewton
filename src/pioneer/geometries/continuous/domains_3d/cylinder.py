@@ -77,40 +77,24 @@ class Cylinder(ContinuousGeometry):
         return points
 
     def sample_grid(self, n_points: int):
-        # Determine grid distribution: roughly proportional to surface areas
-        # Side surface area: 2πrh
-        # Each cap area: πr²
-        # Total: 2πrh + 2πr²
-        side_area = 2 * np.pi * self.radius * self.height
-        cap_area = np.pi * self.radius**2
-        total_area = side_area + 2 * cap_area
+        # Use a single radial grid and replicate it evenly along the cylinder height.
+        z_min = self.center[2] - self.height / 2.0
+        z_max = self.center[2] + self.height / 2.0
 
-        n_side = max(1, int(n_points * side_area / total_area))
-        n_cap = max(1, int((n_points - n_side) / 2))
+        n_xy = max(1, int(np.ceil(np.sqrt(n_points))))
+        n_layers = max(1, int(np.ceil(n_points / n_xy)))
 
-        points_list = []
+        base_circle = self._sample_grid_circle(n_xy, z_min)
+        xy = base_circle[:, :2]
 
-        # Sample side surface
-        if n_side > 0:
-            side_points = self._sample_grid_side(n_side)
-            points_list.append(side_points)
+        z_vals = np.linspace(z_min, z_max, n_layers)
+        points = []
+        for z in z_vals:
+            layer = np.concatenate([xy, np.full((xy.shape[0], 1), z)], axis=1)
+            points.append(layer)
 
-        # Sample bottom cap
-        if n_cap > 0:
-            bottom_points = self._sample_grid_circle(
-                n_cap, self.center[2] - self.height / 2.0
-            )
-            points_list.append(bottom_points)
-
-        # Sample top cap
-        remaining = n_points - n_side - n_cap
-        if remaining > 0:
-            top_points = self._sample_grid_circle(
-                remaining, self.center[2] + self.height / 2.0
-            )
-            points_list.append(top_points)
-
-        return np.vstack(points_list)
+        points = np.vstack(points)
+        return points[:n_points]
 
     def _sample_grid_circle(self, n_points: int, z_val: float):
         """Sample points on a circle using sunflower arrangement."""
@@ -119,28 +103,6 @@ class Cylinder(ContinuousGeometry):
         z = np.full((n_points, 1), z_val)
         xy += self.center[:2][None, :]
         points = np.concatenate([xy, z], axis=1)
-        return points
-
-    def _sample_grid_side(self, n_points: int):
-        """Sample points on the cylindrical side surface."""
-        # Use a roughly square grid
-        n_phi = max(1, int(np.sqrt(n_points)))
-        n_z = max(1, (n_points + n_phi - 1) // n_phi)
-
-        phi = np.linspace(0, 2 * np.pi, n_phi, endpoint=False)
-        z_vals = np.linspace(
-            self.center[2] - self.height / 2.0, self.center[2] + self.height / 2.0, n_z
-        )
-
-        phi_grid, z_grid = np.meshgrid(phi, z_vals)
-        phi_flat = phi_grid.flatten()[:n_points]
-        z_flat = z_grid.flatten()[:n_points]
-
-        x = self.radius * np.cos(phi_flat) + self.center[0]
-        y = self.radius * np.sin(phi_flat) + self.center[1]
-        z = z_flat
-
-        points = np.column_stack([x, y, z])
         return points
 
     def _equidistant_points_in_circle(self, n_points: int):
@@ -195,7 +157,7 @@ class CylinderBoundary(ContinuousBoundaryGeometry):
 
         return np.logical_or(np.logical_or(on_side, on_bottom), on_top)
 
-    def sample_random_uniform(self, n_points: int):
+    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
         """Sample uniformly from all surfaces (side + bottom + top)."""
         # Surface areas
         side_area = 2 * np.pi * self.geometry.radius * self.geometry.height
@@ -227,9 +189,13 @@ class CylinderBoundary(ContinuousBoundaryGeometry):
             )
             points_list.append(top_points)
 
-        return np.vstack(points_list)
+        points = np.vstack(points_list)
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
-    def sample_grid(self, n_points: int):
+    def sample_grid(self, n_points: int, include_normals: bool = False):
         """Sample on a grid from all surfaces."""
         # Surface areas
         side_area = 2 * np.pi * self.geometry.radius * self.geometry.height
@@ -261,7 +227,11 @@ class CylinderBoundary(ContinuousBoundaryGeometry):
             )
             points_list.append(top_points)
 
-        return np.vstack(points_list)
+        points = np.vstack(points_list)
+        normals = None
+        if include_normals:
+            normals = self.normal(points)
+        return points, normals
 
     def _sample_random_circle(self, n_points: int, z_val: float):
         """Sample random points on a circle."""
