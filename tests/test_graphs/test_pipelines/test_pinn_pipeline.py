@@ -1,6 +1,5 @@
 import pytest
 import torch
-import pioneer
 from pioneer.config import Variable, DataConfiguration, BatchAxes, FeatureAxes, AxesDim
 from pioneer.data import ArrayLikeDataSet, DataLoader
 from pioneer.algorithms import FCN
@@ -35,7 +34,7 @@ def test_pinn_pipeline_basic_execution(simple_adam):
 
     model = FCN(in_neurons=X, hidden_neurons=5, out_neurons=U, n_hidden_layers=1)
 
-    def residual_fun(u: U, f: F, x: X):
+    def residual_fun(u: U, f: F, x: X):  # type: ignore
         return u.gradient(x) - f
 
     constraint = PINNConstraint(residual_fun)
@@ -45,7 +44,7 @@ def test_pinn_pipeline_basic_execution(simple_adam):
     trainer = GraphBasedTrainer(
         optimization_phases=[simple_adam],
         graphs=[pipeline],
-        training_constraints=[constraint],
+        training_objectives=[constraint],
         device="cpu",
     )
     trainer.run()
@@ -76,7 +75,7 @@ def test_pinn_pipeline_with_input_splitting(simple_adam):
     model = FCN(in_neurons=XY, hidden_neurons=10, out_neurons=U, n_hidden_layers=1)
 
     # Residual requires gradients w.r.t X and Y separately
-    def residual_fun(u: U, x: X, y: Y, f: F):
+    def residual_fun(u: U, x: X, y: Y, f: F):  # type: ignore
         return u.gradient(x) + u.gradient(y) - f
 
     constraint = PINNConstraint(residual_fun)
@@ -86,7 +85,7 @@ def test_pinn_pipeline_with_input_splitting(simple_adam):
     trainer = GraphBasedTrainer(
         optimization_phases=[simple_adam],
         graphs=[pipeline],
-        training_constraints=[constraint],
+        training_objectives=[constraint],
         device="cpu",
     )
     trainer.run()
@@ -122,7 +121,7 @@ def test_pinn_pipeline_multi_model_concatenation(simple_adam):
     model_u = FCN(in_neurons=X, out_neurons=U, hidden_neurons=5, n_hidden_layers=1)
     model_v = FCN(in_neurons=Y, out_neurons=V, hidden_neurons=5, n_hidden_layers=1)
 
-    def residual_fun(uv: UV, f: F):
+    def residual_fun(uv: UV, f: F):  # type: ignore
         # Slice node logic: extracting variables from a concatenated input
         return uv[U] + uv[V] - f
 
@@ -133,7 +132,7 @@ def test_pinn_pipeline_multi_model_concatenation(simple_adam):
     trainer = GraphBasedTrainer(
         optimization_phases=[simple_adam],
         graphs=[pipeline],
-        training_constraints=[constraint],
+        training_objectives=[constraint],
         device="cpu",
     )
     trainer.run()
@@ -168,7 +167,7 @@ def test_pinn_pipeline_mixed_split_concat(simple_adam):
     model = FCN(in_neurons=Y, hidden_neurons=10, out_neurons=U, n_hidden_layers=1)
 
     # Residual requires combined XZ, model output U, and F
-    def residual_fun(xz: XZ, u: U, f: F):
+    def residual_fun(xz: XZ, u: U, f: F):  # type: ignore
         # Accessing X and Z via slicing of the concatenated XZ
         return xz[X] + xz[Z] + u - f
 
@@ -179,7 +178,7 @@ def test_pinn_pipeline_mixed_split_concat(simple_adam):
     trainer = GraphBasedTrainer(
         optimization_phases=[simple_adam],
         graphs=[pipeline],
-        training_constraints=[constraint],
+        training_objectives=[constraint],
         device="cpu",
     )
     trainer.run()
