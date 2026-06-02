@@ -97,7 +97,7 @@ def _boundary_random_with_n(main_domain, domain_a, domain_b, n) -> np.ndarray:
     while len(random_points) < n:
         new_points = domains[use_b].boundary.sample_random_uniform(
             n_points=scaled_n[use_b]
-        )
+        )[0]
         index_valid = main_domain.contains(new_points)
         index_valid = np.where(index_valid)[0]
         ith_points = new_points[index_valid]
@@ -128,8 +128,8 @@ def _boundary_grid_with_n(main_domain, domain_a, domain_b, n):
         Additional parameters for the domains.
     """
     # first sample a grid on both boundaries
-    grid_a = domain_a.boundary.sample_grid(n_points=n)
-    grid_b = domain_b.boundary.sample_grid(n_points=n)
+    grid_a = domain_a.boundary.sample_grid(n_points=n)[0]
+    grid_b = domain_b.boundary.sample_grid(n_points=n)[0]
     # check how many points are on the boundary of the operation domain
     on_bound_a, on_bound_b, a_correct, b_correct = _check_points_on_main_boundary(
         main_domain, grid_a, grid_b
@@ -145,8 +145,8 @@ def _boundary_grid_with_n(main_domain, domain_a, domain_b, n):
     approx_surface = a_surface * a_correct / n + b_surface * b_correct / n
     scaled_a = int(n * a_surface / approx_surface) + 1  # round up
     scaled_b = max(int(n * b_surface / approx_surface), 1)  # round to floor, but not 0
-    grid_a = domain_a.boundary.sample_grid(n_points=scaled_a)
-    grid_b = domain_b.boundary.sample_grid(n_points=scaled_b)
+    grid_a = domain_a.boundary.sample_grid(n_points=scaled_a)[0]
+    grid_b = domain_b.boundary.sample_grid(n_points=scaled_b)[0]
     # check again how what points are correct and now just stay with this grid
     # if still some points are missing add random ones.
     on_bound_a, on_bound_b, a_correct, b_correct = _check_points_on_main_boundary(

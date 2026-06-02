@@ -1,6 +1,7 @@
 import numpy as np
 
 from ..base import ContinuousGeometry, ContinuousBoundaryGeometry
+from ...discrete.mesh_domain import MeshGeometry, Mesh
 from ....config.variables import Variable
 
 
@@ -54,6 +55,50 @@ class Parallelogram(ContinuousGeometry):
         mins = np.min(corners, axis=0)
         maxs = np.max(corners, axis=0)
         return np.concatenate((mins[0:1], maxs[0:1], mins[1:2], maxs[1:2]))
+
+    def create_mesh(self, max_vertex_distance: float | None = None):
+        # edge vectors
+        e1 = self.corner_1 - self.origin
+        e2 = self.corner_2 - self.origin
+
+        # choose subdivision count
+        if max_vertex_distance is None:
+            nx = ny = 1
+        else:
+            nx = max(1, int(np.ceil(np.linalg.norm(e1) / max_vertex_distance)))
+            ny = max(1, int(np.ceil(np.linalg.norm(e2) / max_vertex_distance)))
+        # unit-square vertices
+        u = np.linspace(0.0, 1.0, nx + 1)
+        v = np.linspace(0.0, 1.0, ny + 1)
+
+        U, V = np.meshgrid(u, v, indexing="ij")
+
+        # affine map
+        vertices = (self.origin + U[..., None] * e1 + V[..., None] * e2).reshape(-1, 2)
+
+        # triangulation
+        triangles = []
+
+        def idx(i, j):
+            return i * (ny + 1) + j
+
+        for i in range(nx):
+            for j in range(ny):
+                a = idx(i, j)
+                b = idx(i + 1, j)
+                c = idx(i + 1, j + 1)
+                d = idx(i, j + 1)
+
+                triangles.append([a, b, c])
+                triangles.append([a, c, d])
+
+        triangles = np.asarray(triangles)
+
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(vertices=vertices, cells=triangles),
+            discretization_of=self,
+        )
 
     def sample_random_uniform(self, n_points: int):
         bary_coords = np.random.rand(n_points, 2)
@@ -130,6 +175,9 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry):
         side_length1 = np.linalg.norm(dir_1)
         side_length2 = np.linalg.norm(dir_2)
         return 2 * (side_length1 + side_length2)
+
+    def create_mesh(self, max_vertex_distance: float | None = None):
+        return self.geometry.create_mesh(max_vertex_distance=max_vertex_distance).boundary
 
     def _bary_coords_close_to_0_or_1(
         self, bary_coord1: np.ndarray, bary_coord2: np.ndarray

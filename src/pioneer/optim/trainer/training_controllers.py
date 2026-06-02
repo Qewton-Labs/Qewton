@@ -87,7 +87,7 @@ class TrainerState:
                 self.losses[phase][k] = None
 
     def check_file_path(self, callbacks):
-        if not any([cb.saves_data for cb in callbacks]):
+        if not any(cb.saves_data for cb in callbacks):
             self.save_path = ""
             return
 

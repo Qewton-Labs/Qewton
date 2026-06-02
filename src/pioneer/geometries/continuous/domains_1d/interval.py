@@ -1,6 +1,7 @@
 import numpy as np
 
 from ..base import ContinuousGeometry, ContinuousBoundaryGeometry
+from ...discrete.mesh_domain import MeshGeometry, Mesh
 from ....config.variables import Variable
 
 
@@ -17,6 +18,22 @@ class Interval(ContinuousGeometry):
         bigger_then_low = points >= self.lower_bound
         smaller_then_up = points <= self.upper_bound
         return np.logical_and(bigger_then_low, smaller_then_up).reshape(-1, 1)
+
+    def create_mesh(self, max_vertex_distance: float | None = None):
+        size = self.upper_bound - self.lower_bound
+        if max_vertex_distance is None:
+            max_vertex_distance = size
+        vertices = np.linspace(
+            self.lower_bound,
+            self.upper_bound,
+            1 + max(1, np.ceil(size / max_vertex_distance)),
+        )
+        cells = [[i, i + 1] for i in range(len(vertices) - 1)]
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(vertices=vertices, cells=cells),
+            discretization_of=self,
+        )
 
     def sample_random_uniform(self, n_points: int):
         points = np.random.rand(n_points, 1)
@@ -64,6 +81,18 @@ class IntervalBoundary(ContinuousBoundaryGeometry):
         close_right = np.isclose(points, self.geometry.upper_bound)
         return np.logical_or(close_left, close_right).reshape(-1, 1)
 
+    def create_mesh(
+        self, max_vertex_distance: float | None = None  # pylint: disable=unused-argument
+    ):
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(
+                vertices=[self.geometry.lower_bound, self.geometry.upper_bound],
+                cells=[],
+            ),
+            discretization_of=self,
+        )
+
     def sample_random_uniform(self, n_points: int, include_normals: bool = False):
         rand_side = np.random.rand(n_points, 1)
         random_boundary_index = rand_side < 0.5
@@ -104,6 +133,18 @@ class IntervalSingleBoundaryPoint(ContinuousBoundaryGeometry):
     def contains(self, points):
         inside = np.isclose(points, self.side)
         return inside.reshape(-1, 1)
+
+    def create_mesh(
+        self, max_vertex_distance: float | None = None  # pylint: disable=unused-argument
+    ):
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(
+                vertices=[self.side],
+                cells=[],
+            ),
+            discretization_of=self,
+        )
 
     def sample_random_uniform(self, n_points: int, include_normals: bool = False):
         points = self.side * np.ones((n_points, 1))
