@@ -25,14 +25,6 @@ from ...config.data_configurations import DataConfiguration
 from ...graphs.nodes import Node, OutputPort, InputPort
 from ..datasets import DataSet
 
-# DATASET_REGISTRY = []
-
-
-# # TODO: Is this a clean way to register child classes without importing them?
-# def register_dataset(condition: Callable[..., bool], cls_type: type):
-#     """Register a condition to choose the dataset + dataset class"""
-#     DATASET_REGISTRY.append((condition, cls_type))
-
 
 class DataNode(Node):
     """
@@ -84,9 +76,8 @@ class DataNode(Node):
     def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
         return False
 
-
-class PointSampler(DataNode):
-    """Placeholder for sampling individual points from a domain."""
+    def to(self, device):
+        self._device = device
 
 
 class DataLoader(DataNode):
@@ -135,13 +126,9 @@ class DataLoader(DataNode):
         copy_memo = {}
         for config in self.data_set.data_configs:
             axes = deepcopy(list(config.axes), memo=copy_memo)
-            assert isinstance(
-                axes[0], BatchAxes
-            ), "In DataSets, \
+            assert isinstance(axes[0], BatchAxes), "In DataSets, \
                 the first axes should be the batch axes."
-            assert (
-                len(axes[0].shape) == 1
-            ), "Multi-dimensional \
+            assert len(axes[0].shape) == 1, "Multi-dimensional \
                 batch axes not supported for batching."
             assert (
                 axes[0].shape[0].size >= self.batch_size
@@ -201,9 +188,6 @@ class DataLoader(DataNode):
         if new_mode != self.mode:
             self._batch_progress = 0  # reset batch
         self.mode = new_mode
-
-    def to(self, device):
-        self._device = device
 
     def forward(self):
         """Executes the data loading for one batch.

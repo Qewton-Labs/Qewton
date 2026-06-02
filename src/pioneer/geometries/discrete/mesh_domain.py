@@ -28,6 +28,9 @@ class MeshGeometry(DiscreteGeometry):
     def __sub__(self, other):
         raise NotImplementedError("Mesh combinations are not supported yet.")
 
+    def create_mesh(self, max_vertex_distance: float | None = None) -> MeshGeometry:
+        return self
+
     def bounding_box(self):
         bounding_box = []
         for i in range(self.variable.dim):
@@ -180,6 +183,11 @@ class MeshBoundaryGeometry(BoundaryGeometry):
         if len(points) < len(self.mesh.cells):
             return self._contains_point_based_search(points)[0]
         return self._contains_cell_based_search(points)[0]
+
+    def create_mesh(
+        self, max_vertex_distance: float | None = None
+    ) -> MeshBoundaryGeometry:
+        return self
 
     def _contains_point_based_search(self, points):
         point_inside = np.zeros(len(points), dtype=bool)

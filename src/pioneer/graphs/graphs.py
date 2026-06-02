@@ -652,5 +652,35 @@ class TrackingObject:
         grad_node = Gradient()
         return grad_node(self, with_respect_to)
 
+    def normal_derivative(self, with_respect_to, normals):
+        from ..algorithms.building_blocks.derivatives import NormalDerivative
+
+        norm_der_node = NormalDerivative()
+        return norm_der_node(self, with_respect_to, normals)
+
+    def laplacian(self, with_respect_to):
+        from ..algorithms.building_blocks.derivatives import Laplacian
+
+        lap_node = Laplacian()
+        return lap_node(self, with_respect_to)
+
+    def jac(self, with_respect_to):
+        from ..algorithms.building_blocks.derivatives import Jacobian
+
+        jac_node = Jacobian()
+        return jac_node(self, with_respect_to)
+
+    def div(self, with_respect_to):
+        from ..algorithms.building_blocks.derivatives import Divergence
+
+        div_node = Divergence()
+        return div_node(self, with_respect_to)
+
+    def hessian(self, with_respect_to):
+        from ..algorithms.building_blocks.derivatives import Hessian
+
+        hes_node = Hessian()
+        return hes_node(self, with_respect_to)
+
 
 # endregion

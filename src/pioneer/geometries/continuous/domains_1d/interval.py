@@ -154,11 +154,9 @@ class IntervalSingleBoundaryPoint(ContinuousBoundaryGeometry):
         return points, normals
 
     def sample_grid(self, n_points: int, include_normals: bool = False):
-        points = self.sample_random_uniform(n_points=n_points)
-        normals = None
-        if include_normals:
-            normals = self.normal(points)
-        return points, normals
+        return self.sample_random_uniform(
+            n_points=n_points, include_normals=include_normals
+        )
 
     def normal(self, points):
         return self.normal_vec * np.ones((len(points), 1))

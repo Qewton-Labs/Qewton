@@ -10,7 +10,7 @@ from ...algorithms.building_blocks.derivatives import GradientTracking
 
 from ...constraints.base import Constraint
 from ...constraints.pinn_constraint import PINNConstraint
-from ...data.dataloaders.base import DataLoader
+from ...data.dataloaders.base import DataNode
 from ..nodes import Node, OutputPort
 from ..graphs import Graph
 
@@ -42,7 +42,7 @@ class PINNPipeline(Graph):
 
     def __init__(
         self,
-        sampler: DataLoader,
+        sampler: DataNode,
         models: list[Node],
         constraint: Constraint | None = None,
         residual: Callable | None = None,

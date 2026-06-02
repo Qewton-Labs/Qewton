@@ -26,7 +26,7 @@ class FunctionBasedTrainer(Trainer):
         save_path: str = "train_results",
         enable_logging=True,
         log_interval=100,
-        progress_bar: ProgressBarCallback = ProgressBarCallback(),
+        progress_bar: ProgressBarCallback | None = None,
     ) -> None:
         if hyperparameters is None:
             hyperparameters = set[HyperParameter]()

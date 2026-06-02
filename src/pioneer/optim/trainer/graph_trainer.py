@@ -23,7 +23,7 @@ class GraphBasedTrainer(Trainer):
         validation_interval: int = 100,
         device="cpu",
         save_path: str = "train_results",
-        progress_bar: ProgressBarCallback = ProgressBarCallback(),
+        progress_bar: ProgressBarCallback | None = None,
         enable_logging=True,
         log_interval=100,
     ):
@@ -122,12 +122,10 @@ class GraphBasedTrainer(Trainer):
                 ]
                 for eval_phase in phases:
                     if constraint_modes[eval_phase] and not data_modes[eval_phase]:
-                        raise ValueError(
-                            f"The graph {graph} does not \
+                        raise ValueError(f"The graph {graph} does not \
                             provide data for evaluation phase {eval_phase}, \
                             but there are constraints in this graph that are \
-                            evaluated in this phase."
-                        )
+                            evaluated in this phase.")
 
             self._register_constraints(graph, constraint_list, data_modes)
 

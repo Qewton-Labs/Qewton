@@ -3,6 +3,7 @@ from types import EllipsisType
 
 from .variables import Variable
 from .errors import DataConfigMismatchError
+from ..geometries.base import Geometry
 
 
 def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
@@ -97,10 +98,10 @@ class Axes:
     sizes and types.
     """
 
-    def __init__(self, *shape: int | AxesDim | EllipsisType):
+    def __init__(self, *shape: int | AxesDim | None | EllipsisType):
         new_shape = []
         for s in shape:
-            if isinstance(s, int):
+            if isinstance(s, int) or s is None:
                 new_shape.append(AxesDim(size=s))
             elif isinstance(s, EllipsisType):
                 new_shape.append(EllipsisDim())
@@ -388,10 +389,15 @@ class GeometryAxes(Axes):
         if geometry is not None:
             self._geometry = geometry
         elif shape is not None:
-            self._geometry = Geometry(shape)
+            self._geometry = Geometry(
+                shape=tuple(i.size if isinstance(i, AxesDim) else i for i in shape)
+            )
         else:
             raise ValueError("Either geometry or shape must be provided.")
-        super().__init__(*self._geometry.shape)
+        default_shape = (...,)
+        if not isinstance(self._geometry.shape, EllipsisType):
+            default_shape = self._geometry.shape
+        super().__init__(*default_shape)
 
     @property
     def geometry(self):
@@ -448,6 +454,8 @@ class FeatureAxes(Axes):
             super().__init__(*self._variable.shape)
         elif shape is not None:
             super().__init__(*shape)
+        else:
+            super().__init__(None)
 
     @property
     def variables(self):
@@ -731,25 +739,3 @@ class EllipsisDim(AxesDim):
 
     def __str__(self) -> str:
         return "..."
-
-
-class Geometry:
-    """
-    Represents a geometric shape defined by a tuple of `AxesDim` objects.
-    """
-
-    def __init__(self, shape: tuple[int | AxesDim, ...]):
-        self.shape = tuple(AxesDim(size=s) if isinstance(s, int) else s for s in shape)
-
-    def unify_with(self, other: Geometry) -> Geometry:
-        """
-        Unifies this `Geometry` object with another `Geometry` object.
-
-        It uses `Axes.unify_shapes` to find a common compatible shape.
-        Args:
-            other (Geometry): The other `Geometry` object to unify with.
-        Returns:
-            Geometry: A new `Geometry` object representing the unified shape.
-        """
-        unified_shape = Axes.unify_shapes(self.shape, other.shape)
-        return Geometry(tuple(unified_shape[1].values()))
