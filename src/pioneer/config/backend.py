@@ -4,6 +4,9 @@ from typing import Any, Generic, TypeVar
 TensorType = TypeVar("TensorType")
 
 
+# TODO: Wa have standard datatype gives tensors, but what about float, etc.?
+
+
 class Backend(Generic[TensorType]):
     library: Any = None
 
@@ -55,6 +58,20 @@ class Backend(Generic[TensorType]):
             "The moving to a different device is backend dependent."
         )
 
+    @classmethod
+    def from_numpy(cls, data):
+        """Converts a numpy array to the standard datatype of this backend.
+
+        Args:
+            data (np.ndarray): The numpy array to convert.
+
+        Returns:
+            TensorType: The converted data.
+        """
+        raise NotImplementedError(
+            "The from_numpy method must be implemented by subclasses of Backend."
+        )
+
 
 def get_dtype_torch():
     try:
@@ -85,6 +102,10 @@ class TorchBackend(Backend[get_dtype_torch()]):
     def to(cls, data, device):
         return data.to(device)
 
+    @classmethod
+    def from_numpy(cls, data):
+        return cls.library.from_numpy(data).to(dtype=cls.library.float32)
+
 
 def get_dtype_tf():
     try:
@@ -114,6 +135,10 @@ class TensorflowBackend(Backend[get_dtype_tf()]):
     @classmethod
     def to(cls, data, device):
         return data
+
+    @classmethod
+    def from_numpy(cls, data):
+        return cls.library.convert_to_tensor(data)
 
 
 DL_BACKEND_HIERARCHY = [TorchBackend, TensorflowBackend]
