@@ -89,6 +89,7 @@ class Tuner:
         tuning_callbacks: list[TuningCallback] | None = None,
         save_path: str = "tuner",
         save_interval: int = 10,
+        use_multiprocessing: bool = True,
     ) -> None:
         """
         Initializes the Tuner.
@@ -127,6 +128,7 @@ class Tuner:
         self.trainer = trainer
         self.trial_number = trial_number
         self.tuning_objectives = tuning_objectives
+        self.use_multiprocessing = use_multiprocessing
 
         if isinstance(devices, str):
             devices = [devices]
@@ -205,6 +207,49 @@ class Tuner:
             context_str = "fork"
         else:
             context_str = "spawn"
+
+        trial_params = self._get_trial_parameters()
+
+        if not self.use_multiprocessing:
+            print("--- Start Tuning (Sequential) ---")
+            current_results = []
+            done_counter = 0
+            self.print_update_text(done_counter, len(trial_params))
+            for params in trial_params:
+                local_trainer = deepcopy(self.trainer)
+                if self.devices:
+                    local_trainer.set_device(self.devices[0])
+
+                if self.tuning_state is not None:
+                    for cb in local_trainer.callbacks:
+                        if isinstance(cb, TuningCallback):
+                            cb.set_tune_state(self.tuning_state)
+
+                local_trainer.set_hyperparameter(params)
+                local_trainer.run(show_progress=False)
+                local_trainer.train_state.losses = local_trainer.train_state.detach_data(
+                    local_trainer.train_state.losses
+                )
+                result = (params, local_trainer.train_state)
+                current_results.append(result)
+
+                if self.tuning_state:
+                    self.tuning_state.finished_trials += 1
+                    self.tuning_state.add_trial_history(result[1].history)
+                    if self.tuning_state.stop_tuning:
+                        break
+
+                if len(current_results) % self.save_interval == 0:
+                    self._write_to_csv(current_results)
+                    current_results = []
+                    done_counter += self.save_interval
+                    self.print_update_text(done_counter, len(trial_params))
+                local_trainer.clean_up()
+
+            if len(current_results) > 0:
+                self._write_to_csv(current_results)
+            print("--- Finished Tuning ---")
+            return
 
         try:
             ctx = mp.get_context(context_str)
@@ -365,7 +410,5 @@ class Tuner:
             NotImplementedError: This method must be implemented by subclasses to
                 define a search strategy.
         """
-        raise NotImplementedError(
-            "The base Tuner does not implement a search strategy, \
-                use one of the child classes."
-        )
+        raise NotImplementedError("The base Tuner does not implement a search strategy, \
+                use one of the child classes.")

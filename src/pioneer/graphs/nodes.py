@@ -83,7 +83,7 @@ class InputPort(Port):
         data_configuration: DataConfiguration,
         node: Node,
         name: str = "Input",
-        default: Any = NO_DEFAULT(),
+        default: Any = NO_DEFAULT,
     ):
         super().__init__(data_configuration, node, name)
         self.default = default
@@ -91,14 +91,15 @@ class InputPort(Port):
 
     def duplicate_with_new_owner(
         self, new_owner: Node, new_name: str | None = None
-    ) -> Port:
+    ) -> InputPort:
         new_port = super().duplicate_with_new_owner(new_owner, new_name)
         new_port.default = self.default  # type: ignore
-        return new_port
+        new_port.set_value(self.value)  # type: ignore
+        return new_port  # type: ignore
 
     @property
-    def is_required(self):
-        return isinstance(self.default, NO_DEFAULT)
+    def is_required(self) -> bool:
+        return self.default is NO_DEFAULT
 
     def clear_value(self):
         self._value = self.default

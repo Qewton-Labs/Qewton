@@ -14,8 +14,10 @@ class Backend(Generic[TensorType]):
         Returns:
             module: the imported backend library.
         """
+        if cls.library is not None:
+            return cls.library
         raise NotImplementedError(
-            "The import_ method must be implemented by subclasses of Backend."
+            "The import_library method must be implemented by subclasses of Backend."
         )
 
     @classmethod
@@ -23,7 +25,7 @@ class Backend(Generic[TensorType]):
         try:
             cls.import_library()
             return True
-        except ImportError:
+        except (ImportError, NotImplementedError):
             return False
 
     @classmethod

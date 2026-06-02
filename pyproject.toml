@@ -13,6 +13,8 @@ authors = [{ name = "Your Name" }]
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.2",
+    "matplotlib>=3.10",
+    "tqdm>=4.65",
 ]
 
 [tool.setuptools]
@@ -76,3 +78,7 @@ max-positional-arguments = 12
 [tool.pylint.reports]
 reports = false
 score = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["examples", ".*", "build", "dist", "venv"]

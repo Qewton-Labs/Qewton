@@ -19,13 +19,14 @@ class NumpyDataSet(ArrayLikeDataSet):
         Raises:
             TypeError: If the data provided is not a numpy ndarray.
         """
-        super().__init__(data, data_configs)
-
-        for item in self._data:
+        items = data if isinstance(data_configs, (list, tuple)) else [data]
+        for item in items:
             if not isinstance(item, np.ndarray):
                 raise TypeError(
                     f"NumpyDataContainer only handles numpy.ndarray, not {type(item)}."
                 )
+
+        super().__init__(data, data_configs)
 
     @classmethod
     def from_file(cls, path, data_configs, mmap_mode=None):

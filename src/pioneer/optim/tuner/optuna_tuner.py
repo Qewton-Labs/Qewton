@@ -1,5 +1,6 @@
 from copy import deepcopy
 import math
+import queue
 import multiprocessing as mp
 import os
 import sys
@@ -111,6 +112,7 @@ class OptunaTuner(Tuner):
         track_tune_state: bool | TuningState = True,
         tuning_callbacks: list[TuningCallback] | None = None,
         save_path="tuner_results",
+        use_multiprocessing: bool = True,
     ):
         super().__init__(
             trainer,
@@ -121,6 +123,7 @@ class OptunaTuner(Tuner):
             track_tune_state=track_tune_state,
             tuning_callbacks=tuning_callbacks,
             save_path=save_path,
+            use_multiprocessing=use_multiprocessing,
         )
         self.study = optuna_study
         assert len(self.tuning_objectives) == 1, "Currently only one objective supported!"
@@ -130,6 +133,25 @@ class OptunaTuner(Tuner):
 
     def run(self):
         print("--- Start Optuna Tuning ---")
+
+        if not self.use_multiprocessing:
+            res_queue = queue.Queue()
+            self.study.optimize(
+                lambda trial: optuna_objective(
+                    trial,
+                    self.trainer,
+                    self.tuning_objectives[0],
+                    self.hp_dag,
+                    self.devices[0] if self.devices else "cpu",
+                    res_queue,
+                ),
+                n_trials=self.trial_number,
+            )
+            current_results = [res_queue.get() for _ in range(res_queue.qsize())]
+            if current_results:
+                self._write_to_csv(current_results)
+            print("--- Finished Tuning ---")
+            return
 
         if sys.platform == "linux" or sys.platform == "linux2":
             context_str = "fork"
