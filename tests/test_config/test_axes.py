@@ -173,7 +173,7 @@ def test_batch_axes():
 
 
 def test_geometry_axes_init():
-    geo = Geometry((128, 128))
+    geo = Geometry(shape=(128, 128))
     ga = GeometryAxes(geometry=geo)
     assert len(ga.shape) == 2
     assert ga.geometry == geo
@@ -246,11 +246,11 @@ def test_update_axes_no_change():
 
 
 def test_geometry_unify():
-    g1 = Geometry((AxesDim(None), 32))
-    g2 = Geometry((32, 32))
+    g1 = Geometry(shape=(None, 32))
+    g2 = Geometry(shape=(32, 32))
     g3 = g1.unify_with(g2)
-    assert g3.shape[0].size == 32
-    assert g3.shape[1].size == 32
+    assert g3.shape[0] == 32
+    assert g3.shape[1] == 32
 
 
 # --- Edge Cases ---
