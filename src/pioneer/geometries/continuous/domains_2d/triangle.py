@@ -1,6 +1,7 @@
 import numpy as np
 
 from ..base import ContinuousGeometry, ContinuousBoundaryGeometry
+from ...discrete.mesh_domain import MeshGeometry, Mesh
 from ....config.variables import Variable
 
 
@@ -27,6 +28,44 @@ class Triangle(ContinuousGeometry):
         self.corner_1 = self._to_vector(corner_1)
         self.corner_2 = self._to_vector(corner_2)
         super().__init__(variable=variable)
+
+    def create_mesh(self, max_vertex_distance: float | None = None):
+        max_length = np.max(
+            [
+                np.linalg.norm(self.corner_1 - self.origin),
+                np.linalg.norm(self.corner_2 - self.origin),
+                np.linalg.norm(self.corner_1 - self.corner_2),
+            ]
+        ).astype(float)
+        if max_vertex_distance is None:
+            max_vertex_distance = max_length
+        nx = int(np.ceil(max_length / max_vertex_distance))
+
+        vertices = []
+        triangles = []
+        for i in range(nx + 1):
+            u = i / nx
+            for j in range(nx + 1 - i):
+                v = j / nx
+                w = 1 - u - v
+                vertices.append([w * self.origin + v * self.corner_1 + u * self.corner_2])
+
+                if i > 0:
+                    v_count = len(vertices) - 1
+                    triangles.append(
+                        [v_count, v_count - (nx + 1 - i), v_count - (nx + 1 - i) - 1]
+                    )
+                    if j > 0:
+                        triangles.append(
+                            [v_count, v_count - 1, v_count - (nx + 1 - i) - 1]
+                        )
+        vertices = np.array(vertices, dtype=float).reshape(-1, 2)
+        triangles = np.array(triangles, dtype=int).reshape(-1, 3)
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(vertices=vertices, cells=triangles),
+            discretization_of=self,
+        )
 
     def contains(self, points):
         points = np.asarray(points, dtype=float)

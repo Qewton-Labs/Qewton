@@ -245,11 +245,10 @@ class MeshBoundaryGeometry(BoundaryGeometry):
     def sample_random_uniform_from_discretization(
         self, n_points: int, include_normals: bool = False
     ):
-        # TODO: Add normal computations
         points, idx = self.mesh.sample_random_from_vertices(n_points=n_points)
         normals = None
         if include_normals:
-            pass
+            normals = self.geometry.mesh.boundary_normals_at_vertex[idx]
         return points, normals
 
     def sample_grid_from_discretization(
@@ -258,7 +257,7 @@ class MeshBoundaryGeometry(BoundaryGeometry):
         points, idx = self.mesh.sample_grid_from_vertices(n_points=n_points)
         normals = None
         if include_normals:
-            pass
+            normals = self.geometry.mesh.boundary_normals_at_vertex[idx]
         return points, normals
 
     def sample_random_uniform(self, n_points: int, include_normals: bool = False):
@@ -269,12 +268,83 @@ class MeshBoundaryGeometry(BoundaryGeometry):
         return points, normals
 
     def sample_grid(self, n_points: int, include_normals: bool = False):
-        # TODO: Make this a better grid sampling
-        points, idx = self.mesh.sample_grid_from_vertices(n_points=n_points)
+        # Allocate points based on area:
+        n_areas, local_n = self._compute_local_distribution(n_points)
+
+        # Build grid over all faces
+        all_points = []
+        face_idx = []
+        face_vertices = self.mesh.vertices[self.mesh.cells]
+        if face_vertices.shape[1] == 3:
+            grid_fn = self._face_grid
+        elif face_vertices.shape[1] == 2:
+            grid_fn = self._line_grid
+        else:
+            raise NotImplementedError(
+                f"No boundary sampling implemented for dimension {face_vertices.shape[1]}"
+            )
+
+        for area_counter in range(n_areas):
+            new_points = grid_fn(local_n[area_counter], face_vertices[area_counter])
+            all_points.extend(new_points)
+            face_idx.extend([area_counter] * len(new_points))
+
+        points = np.vstack(all_points)
+        face_idx = np.array(face_idx, dtype=int)
+        # Check how many points we have and either cut them or add some more
+        random_normals = None
+        if len(points) > n_points:
+            idx = np.random.permutation(np.arange(len(points)))[:n_points]
+            points = points[idx]
+            face_idx = face_idx[idx]
+        elif len(points) < n_points:
+            missing_n = n_points - len(points)
+            random_points, random_normals = self.sample_random_uniform(
+                missing_n, include_normals=include_normals
+            )
+            points = np.concatenate([points, random_points], axis=0)
+
         normals = None
         if include_normals:
-            pass
+            normals = self.geometry.mesh.boundary_normals[face_idx]
+            if random_normals is not None:
+                normals = np.concatenate([normals, random_normals], axis=0)
         return points, normals
+
+    def _compute_local_distribution(self, n_points):
+        total_area = self.volume()
+        local_area: np.ndarray = self.mesh.cell_volumes  # type: ignore
+        n_areas = len(local_area)
+        local_n = np.maximum(1, np.round(local_area / total_area * n_points)).astype(int)
+        # check if we have enough points or not:
+        diff = n_points - np.sum(local_n)
+        if diff != 0:
+            # Fix number by adding or removing points, starting from the biggest area
+            idx = np.argsort(local_area)[::-1]
+            for i in range(abs(diff)):
+                local_n[idx[i % n_areas]] += np.sign(diff)
+        return n_areas, local_n
+
+    def _face_grid(self, n_points: int, face_vertices):
+        n_i = int(np.ceil(np.sqrt(2 * n_points)))
+        all_points = []
+        for i in range(n_i):
+            for j in range(n_i - i):
+                u = (i + 1) / (n_i + 2)  # dont include 1 and 0
+                v = (j + 1) / (n_i + 2)
+                w = 1 - u - v
+                point = u * face_vertices[0] + v * face_vertices[1] + w * face_vertices[2]
+                all_points.append(point)
+        return all_points
+
+    def _line_grid(self, n_points: int, face_vertices):
+        all_points = []
+        for i in range(n_points):
+            u = (i + 1) / (n_points + 2)
+            v = 1 - u
+            point = u * face_vertices[0] + v * face_vertices[1]
+            all_points.append(point)
+        return all_points
 
     def normal(self, points):
         if self.face_bbox_min is None or self.face_bbox_max is None:

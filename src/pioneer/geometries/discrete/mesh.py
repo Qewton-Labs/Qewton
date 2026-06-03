@@ -20,13 +20,16 @@ class Mesh:
         self.faces = np.asarray(faces, dtype=np.int32) if faces is not None else None
         self.face_markers = np.asarray(face_markers) if face_markers is not None else None
 
-        self.topological_dim = len(cells[0])
-        self._find_boundary_facets()
-
+        # Data for normals and volumes that are only computed once
         self.cell_volumes: np.ndarray | None = None
         self.cell_probability_weights: np.ndarray | None = None
-
         self.boundary_normals: np.ndarray = np.empty((0, self.vertices.shape[1]))
+        self.boundary_normals_at_vertex: np.ndarray = np.empty(
+            (0, self.vertices.shape[1])
+        )
+
+        self.topological_dim = len(cells[0])
+        self._find_boundary_facets()
 
     @property
     def vertex_count(self) -> int:
@@ -98,6 +101,21 @@ class Mesh:
         )
         normals[flip] *= -1
         self.boundary_normals = normals
+        # Compute also the normals at the vertices (take the average of the
+        # adjacent faces)
+        vertex_ids = self.boundary_faces.ravel()
+        num_vertices = vertex_ids.max() + 1
+        self.boundary_normals_at_vertex = np.zeros(
+            (num_vertices, self.boundary_normals.shape[1])
+        )
+        np.add.at(
+            self.boundary_normals_at_vertex,
+            vertex_ids,
+            np.repeat(normals, self.boundary_normals.shape[1], axis=0),
+        )
+        self.boundary_normals_at_vertex /= np.linalg.norm(
+            self.boundary_normals_at_vertex, axis=1, keepdims=True
+        )
 
     @classmethod
     def load_mesh(

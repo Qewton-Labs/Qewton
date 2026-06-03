@@ -42,6 +42,9 @@ class ContinuousBoundaryGeometry(BoundaryGeometry):
         super().__init__(geometry)
         self.geometry: ContinuousGeometry = geometry
 
+    def create_mesh(self, max_vertex_distance: float | None = None):
+        return self.geometry.create_mesh(max_vertex_distance=max_vertex_distance).boundary
+
     def __add__(self, other):
         from .domain_operations.union import UnionGeometry
 

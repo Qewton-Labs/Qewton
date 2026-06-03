@@ -56,7 +56,7 @@ class Parallelogram(ContinuousGeometry):
         maxs = np.max(corners, axis=0)
         return np.concatenate((mins[0:1], maxs[0:1], mins[1:2], maxs[1:2]))
 
-    def create_mesh(self, max_vertex_distance: float | None = None):
+    def create_mesh(self, max_vertex_distance: float | None = None) -> MeshGeometry:
         # edge vectors
         e1 = self.corner_1 - self.origin
         e2 = self.corner_2 - self.origin
@@ -175,9 +175,6 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry):
         side_length1 = np.linalg.norm(dir_1)
         side_length2 = np.linalg.norm(dir_2)
         return 2 * (side_length1 + side_length2)
-
-    def create_mesh(self, max_vertex_distance: float | None = None):
-        return self.geometry.create_mesh(max_vertex_distance=max_vertex_distance).boundary
 
     def _bary_coords_close_to_0_or_1(
         self, bary_coord1: np.ndarray, bary_coord2: np.ndarray

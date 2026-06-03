@@ -1,6 +1,7 @@
 import numpy as np
 
 from ..base import ContinuousGeometry, ContinuousBoundaryGeometry
+from ...discrete.mesh_domain import MeshGeometry, Mesh
 from ....config.variables import Variable
 
 
@@ -20,6 +21,56 @@ class Circle(ContinuousGeometry):
         self.center: np.ndarray = center
         self.radius = radius
         super().__init__(variable=variable)
+
+    def create_mesh(self, max_vertex_distance: float | None = None) -> MeshGeometry:
+        if max_vertex_distance is None:
+            power_n = 4
+            n = 16
+        else:
+            power_n = int(np.ceil(np.log2(2 * np.pi * self.radius / max_vertex_distance)))
+            n = int(max(4, 2**power_n))
+        vertices = []
+        triangles = []
+        while_counter = 0
+        while n >= 4:
+            current_radius = ((power_n - while_counter) / power_n) ** 1.3 * self.radius
+            for i in range(n):
+                angle = 2 * np.pi * i / n
+                vertices.append(
+                    [current_radius * np.cos(angle), current_radius * np.sin(angle)]
+                )
+            # connect inner ring to outside:
+            #   O---O---O
+            #   |  / \  |
+            #   | /   \ |
+            #   |/     \|
+            #   o-------o
+            v_c = len(vertices) - 1
+            if while_counter > 0:
+                for i in range(n - 1):
+                    triangles.append([v_c - i, v_c - 2 * i - n, v_c - 2 * i - n - 1])
+                    triangles.append([v_c - i, v_c - 2 * i - n - 1, v_c - 2 * i - n - 2])
+                    triangles.append([v_c - i, v_c - i - 1, v_c - 2 * i - n - 2])
+                # Last point is a bit more tricky since have connect to the period jump
+                triangles.append([v_c - n + 1, v_c - 3 * n + 2, v_c - 3 * n + 1])
+                triangles.append([v_c - n + 1, v_c - n, v_c - 3 * n + 1])
+                triangles.append([v_c, v_c - n + 1, v_c - n])
+            # Reduce number of points in next layer
+            n //= 2
+            while_counter += 1
+
+        v_count = len(vertices) - 1
+        triangles.append([v_count, v_count - 1, v_count - 2])
+        triangles.append([v_count, v_count - 2, v_count - 3])
+
+        triangles = np.asarray(triangles)
+        vertices = np.asarray(vertices)
+
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(vertices=vertices, cells=triangles),
+            discretization_of=self,
+        )
 
     def contains(self, points):
         norm = np.linalg.norm(points - self.center, axis=1).reshape(-1, 1)
