@@ -1,12 +1,13 @@
 from .algorithms import *
-from .algorithms import building_blocks as building_blocks
+from .algorithms import building_blocks as bb
 from .config import *
 from .data import *
-from .geometries import *
+
 from .graphs import *
-from .optim import *
+from .optim.parameters import *
+from . import optim
 from .constraints import *
 
-# from .optim.trainer import *
-# from .optim.tuner import *
-from .visualization import *
+from . import visualization as viz
+
+from . import geometries
