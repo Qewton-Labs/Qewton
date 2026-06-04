@@ -1,13 +1,13 @@
 from typing import Annotated, Generic
 
-from .math import MatMul, Add
-from .parameters import ParameterNode
-from ...config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
-from ...config.data_configurations import DataConfiguration as DC
-from ...config.axes import EllipsisAxes, FeatureAxes, AxesDim
-from ...optim.parameters.hyperparameter_base import HyperParameter
-from ...graphs.graphs import Graph
-from ...graphs.control_nodes.graph_node import GraphNode
+from qewton.algorithms.building_blocks.math import MatMul, Add
+from qewton.algorithms.building_blocks.parameters import ParameterNode
+from qewton.config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.config.data_configurations import DataConfiguration as DC
+from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.graphs.graphs import Graph
+from qewton.graphs.control_nodes.graph_node import GraphNode
 
 
 class FunctionalLinear(GraphNode, Generic[TensorType]):

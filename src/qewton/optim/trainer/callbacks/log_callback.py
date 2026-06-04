@@ -2,9 +2,9 @@ import os
 import csv
 from pathlib import Path
 
-from .base_callback import Callback
-from ..training_controllers import TrainerState
-from ...base import EvaluationPhase
+from qewton.optim.trainer.callbacks.base_callback import Callback
+from qewton.optim.trainer.training_controllers import TrainerState
+from qewton.optim.base import EvaluationPhase
 
 
 class LogCallback(Callback):

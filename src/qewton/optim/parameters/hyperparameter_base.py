@@ -1,7 +1,7 @@
 from __future__ import annotations
 import operator
 
-from .helpers import HyperParameterState, HyperParameterCondition
+from qewton.optim.parameters.helpers import HyperParameterState, HyperParameterCondition
 
 
 class HyperParameter:
@@ -58,11 +58,11 @@ class HyperParameter:
 
         assert name is not None, "Name must be provided to create a HyperParameter."
 
-        from .categorical_hyperparameter import (  # pylint: disable=import-outside-toplevel
+        from qewton.categorical_hyperparameter import (  # pylint: disable=import-outside-toplevel
             BooleanHyperparameter,
             CategoricalHyperparameter,
         )
-        from .number_hyperparameter import (  # pylint: disable=import-outside-toplevel
+        from qewton.number_hyperparameter import (  # pylint: disable=import-outside-toplevel
             DiscreteHyperparameter,
             ContinuousHyperparameter,
         )

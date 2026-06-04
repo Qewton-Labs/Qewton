@@ -5,13 +5,13 @@ import multiprocessing as mp
 import sys
 from typing import Any, Tuple
 
-from .tuning_callbacks.state import TuningState
-from .tuning_callbacks.tuning_callback import TuningCallback
-from ..base import EvaluationPhase
-from ..trainer.base_trainer import Trainer
-from ..trainer.training_controllers import TrainerState
-from ..parameters.hyperparameter_base import HyperParameter
-from ..parameters.dag import HyperParameterDAG
+from qewton.optim.tuner.tuning_callbacks.state import TuningState
+from qewton.optim.tuner.tuning_callbacks.tuning_callback import TuningCallback
+from qewton.optim.base import EvaluationPhase
+from qewton.optim.trainer.base_trainer import Trainer
+from qewton.optim.trainer.training_controllers import TrainerState
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.parameters.dag import HyperParameterDAG
 
 
 def worker(

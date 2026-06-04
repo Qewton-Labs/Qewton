@@ -5,12 +5,12 @@ import inspect
 from typing import Callable
 from warnings import warn
 
-from ..config.data_configurations import DataConfiguration
-from ..config.errors import DataConfigMismatchError
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.errors import DataConfigMismatchError
 
-from .nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
-from ..optim.parameters.trainable_parameters import TrainableParametersCollection
-from .edges import Edge
+from qewton.graphs.nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
+from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
+from qewton.graphs.edges import Edge
 
 
 class Graph:
@@ -571,115 +571,115 @@ class TrackingObject:
         self.to_ports.append(port)
 
     def __add__(self, other):
-        from ..algorithms.building_blocks.math import Add
+        from qewton.algorithms.building_blocks.math import Add
 
         add_node = Add()
         return add_node(self, other)
 
     def __radd__(self, other):
-        from ..algorithms.building_blocks.math import Add
+        from qewton.algorithms.building_blocks.math import Add
 
         add_node = Add()
         return add_node(other, self)
 
     def __matmul__(self, other):
-        from ..algorithms.building_blocks.math import MatMul
+        from qewton.algorithms.building_blocks.math import MatMul
 
         matmul_node = MatMul()
         return matmul_node(self, other)
 
     def __sub__(self, other):
-        from ..algorithms.building_blocks.math import Subtract
+        from qewton.algorithms.building_blocks.math import Subtract
 
         subtract_node = Subtract()
         return subtract_node(self, other)
 
     def __rsub__(self, other):
-        from ..algorithms.building_blocks.math import Subtract
+        from qewton.algorithms.building_blocks.math import Subtract
 
         subtract_node = Subtract()
         return subtract_node(other, self)
 
     def __mul__(self, other):
-        from ..algorithms.building_blocks.math import Multiply
+        from qewton.algorithms.building_blocks.math import Multiply
 
         multiply_node = Multiply()
         return multiply_node(self, other)
 
     def __rmul__(self, other):
-        from ..algorithms.building_blocks.math import Multiply
+        from qewton.algorithms.building_blocks.math import Multiply
 
         multiply_node = Multiply()
         return multiply_node(other, self)
 
     def __pow__(self, other):
-        from ..algorithms.building_blocks.math import Power
+        from qewton.algorithms.building_blocks.math import Power
 
         power_node = Power()
         return power_node(self, other)
 
     def __rpow__(self, other):
-        from ..algorithms.building_blocks.math import Power
+        from qewton.algorithms.building_blocks.math import Power
 
         power_node = Power()
         return power_node(other, self)
 
     def __truediv__(self, other):
-        from ..algorithms.building_blocks.math import Divide
+        from qewton.algorithms.building_blocks.math import Divide
 
         divide_node = Divide()
         return divide_node(self, other)
 
     def __rtruediv__(self, other):
-        from ..algorithms.building_blocks.math import Divide
+        from qewton.algorithms.building_blocks.math import Divide
 
         divide_node = Divide()
         return divide_node(other, self)
 
     def __abs__(self):
-        from ..algorithms.building_blocks.math import Abs
+        from qewton.algorithms.building_blocks.math import Abs
 
         abs_node = Abs()
         return abs_node(self)
 
     def __getitem__(self, key):
-        from ..algorithms.building_blocks.array_operations import Slice
+        from qewton.algorithms.building_blocks.array_operations import Slice
 
         slice_node = Slice(key)
         return slice_node(self)
 
     def gradient(self, with_respect_to):
-        from ..algorithms.building_blocks.derivatives import Gradient
+        from qewton.algorithms.building_blocks.derivatives import Gradient
 
         grad_node = Gradient()
         return grad_node(self, with_respect_to)
 
     def normal_derivative(self, with_respect_to, normals):
-        from ..algorithms.building_blocks.derivatives import NormalDerivative
+        from qewton.algorithms.building_blocks.derivatives import NormalDerivative
 
         norm_der_node = NormalDerivative()
         return norm_der_node(self, with_respect_to, normals)
 
     def laplacian(self, with_respect_to):
-        from ..algorithms.building_blocks.derivatives import Laplacian
+        from qewton.algorithms.building_blocks.derivatives import Laplacian
 
         lap_node = Laplacian()
         return lap_node(self, with_respect_to)
 
     def jac(self, with_respect_to):
-        from ..algorithms.building_blocks.derivatives import Jacobian
+        from qewton.algorithms.building_blocks.derivatives import Jacobian
 
         jac_node = Jacobian()
         return jac_node(self, with_respect_to)
 
     def div(self, with_respect_to):
-        from ..algorithms.building_blocks.derivatives import Divergence
+        from qewton.algorithms.building_blocks.derivatives import Divergence
 
         div_node = Divergence()
         return div_node(self, with_respect_to)
 
     def hessian(self, with_respect_to):
-        from ..algorithms.building_blocks.derivatives import Hessian
+        from qewton.algorithms.building_blocks.derivatives import Hessian
 
         hes_node = Hessian()
         return hes_node(self, with_respect_to)

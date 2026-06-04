@@ -1,18 +1,18 @@
 from abc import abstractmethod
 import numpy as np
 
-from ..base import DataNode
-from ....geometries.base import Geometry, BoundaryGeometry
-from ....graphs.nodes import NodeState, OutputPort
-from ....config.backend import Backend, DEFAULT_DL_BACKEND
-from ....config.data_configurations import DataConfiguration
-from ....config.axes import BatchAxes, AxesDim, FeatureAxes, GeometryAxes
-from ....config.variables import Variable
-from ....optim.base import EvaluationPhase
-from ....optim.parameters.number_hyperparameter import (
+from qewton.data.dataloaders.base import DataNode
+from qewton.geometries.base import Geometry, BoundaryGeometry
+from qewton.graphs.nodes import NodeState, OutputPort
+from qewton.config.backend import Backend, DEFAULT_DL_BACKEND
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.axes import BatchAxes, AxesDim, FeatureAxes, GeometryAxes
+from qewton.config.variables import Variable
+from qewton.optim.base import EvaluationPhase
+from qewton.optim.parameters.number_hyperparameter import (
     DiscreteHyperparameter,
 )
-from ....optim.parameters.categorical_hyperparameter import (
+from qewton.optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
 

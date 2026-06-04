@@ -5,10 +5,10 @@ Handles data that supports slicing and has a .shape property.
 
 from typing import Any
 
-from ....config.axes import EllipsisAxes, EllipsisDim
-from ....config import DataConfiguration
+from qewton.config.axes import EllipsisAxes, EllipsisDim
+from qewton.config import DataConfiguration
 
-from ..base import DataSet
+from qewton.data.datasets.base import DataSet
 
 
 class ArrayLikeDataSet(DataSet):

@@ -1,8 +1,8 @@
 import warnings
 import numpy as np
 
-from ..base import ContinuousGeometry, ContinuousBoundaryGeometry
-from .sampler_helper import (
+from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.domain_operations.sampler_helper import (
     _boundary_grid_with_n,
     _inside_grid_with_n,
     _inside_random_with_n,

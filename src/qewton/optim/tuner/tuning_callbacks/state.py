@@ -1,4 +1,4 @@
-from ...trainer.training_controllers import LogEntry
+from qewton.optim.trainer.training_controllers import LogEntry
 
 
 class TuningState:

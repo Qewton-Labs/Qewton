@@ -1,9 +1,9 @@
-# from .pipeline import Pipeline
-# from ..constraints.metric_constraint import MetricConstraint, MSEConstraint
-# from ..data.datasets.base import DataSet
-# from .nodes.operations.slice_nodes import SliceNode
-# from .nodes.operations.normalization import NormalizationNode, InverseNormalizationNode
-# from ..optim.parameters.categorical_hyperparameter import BooleanHyperparameter
+# from qewton.pipeline import Pipeline
+# from qewton.constraints.metric_constraint import MetricConstraint, MSEConstraint
+# from qewton.data.datasets.base import DataSet
+# from qewton.nodes.operations.slice_nodes import SliceNode
+# from qewton.nodes.operations.normalization import NormalizationNode, InverseNormalizationNode
+# from qewton.optim.parameters.categorical_hyperparameter import BooleanHyperparameter
 
 
 # class MSEDataPipeline(Pipeline):

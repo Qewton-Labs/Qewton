@@ -1,10 +1,10 @@
 from enum import Enum
 
-from ..config.backend import TensorType, Backend, DEFAULT_DL_BACKEND
+from qewton.config.backend import TensorType, Backend, DEFAULT_DL_BACKEND
 
-from ..optim.base import EvaluationPhase
-from ..optim.parameters.hyperparameter_base import HyperParameter
-from ..graphs.nodes import Node, OutputPort
+from qewton.optim.base import EvaluationPhase
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.graphs.nodes import Node, OutputPort
 
 
 class ConstraintObjective(Enum):

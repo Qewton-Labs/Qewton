@@ -1,7 +1,7 @@
 from tqdm import tqdm
 
-from .base_callback import Callback
-from ..training_controllers import TrainerState
+from qewton.optim.trainer.callbacks.base_callback import Callback
+from qewton.optim.trainer.training_controllers import TrainerState
 
 
 class ProgressBarCallback(Callback):

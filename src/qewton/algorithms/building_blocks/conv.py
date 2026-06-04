@@ -1,5 +1,5 @@
-# from ..base import LayerNode
-# from ..implementation import TorchImplementation, DEFAULT_DL_BACKEND
+# from qewton.base import LayerNode
+# from qewton.implementation import TorchImplementation, DEFAULT_DL_BACKEND
 
 
 # class TorchConv2d(TorchImplementation):

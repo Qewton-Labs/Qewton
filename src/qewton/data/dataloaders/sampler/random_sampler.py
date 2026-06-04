@@ -1,4 +1,4 @@
-from .point_sampler import PointSampler
+from qewton.data.dataloaders.sampler.point_sampler import PointSampler
 
 
 class RandomUniformSampler(PointSampler):

@@ -1,15 +1,15 @@
 from typing import Annotated, Generic
 
-from ..building_blocks.linear import Linear
-from ..building_blocks.activation_functions import ReLU
-from ...config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
-from ...config.data_configurations import DataConfiguration
-from ...config.variables import Variable
-from ...config.axes import FeatureAxes, EllipsisAxes
-from ...graphs.graphs import SequentialGraph
-from ...graphs.nodes import Node, NodeState
-from ...graphs.control_nodes.graph_node import GraphNode
-from ...optim.parameters.hyperparameter_base import HyperParameter
+from qewton.algorithms.building_blocks.linear import Linear
+from qewton.algorithms.building_blocks.activation_functions import ReLU
+from qewton.config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.variables import Variable
+from qewton.config.axes import FeatureAxes, EllipsisAxes
+from qewton.graphs.graphs import SequentialGraph
+from qewton.graphs.nodes import Node, NodeState
+from qewton.graphs.control_nodes.graph_node import GraphNode
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class FCN(GraphNode, Generic[TensorType]):

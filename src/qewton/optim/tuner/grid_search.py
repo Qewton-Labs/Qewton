@@ -1,9 +1,9 @@
 from typing import Any
 
-from .base import Tuner
-from .tuning_callbacks.state import TuningState
-from .tuning_callbacks.tuning_callback import TuningCallback
-from ...optim.trainer.base_trainer import Trainer
+from qewton.optim.tuner.base import Tuner
+from qewton.optim.tuner.tuning_callbacks.state import TuningState
+from qewton.optim.tuner.tuning_callbacks.tuning_callback import TuningCallback
+from qewton.optim.trainer.base_trainer import Trainer
 
 
 class GridSearchTuner(Tuner):

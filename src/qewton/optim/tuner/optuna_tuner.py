@@ -7,22 +7,22 @@ import sys
 from typing import Any
 import optuna
 
-from .base import Tuner
-from .tuning_callbacks.state import TuningState
-from .tuning_callbacks.tuning_callback import TuningCallback
-from ..base import EvaluationPhase
-from ..trainer.base_trainer import Trainer
-from ..parameters.categorical_hyperparameter import (
+from qewton.optim.tuner.base import Tuner
+from qewton.optim.tuner.tuning_callbacks.state import TuningState
+from qewton.optim.tuner.tuning_callbacks.tuning_callback import TuningCallback
+from qewton.optim.base import EvaluationPhase
+from qewton.optim.trainer.base_trainer import Trainer
+from qewton.optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
     BooleanHyperparameter,
 )
-from ..parameters.number_hyperparameter import (
+from qewton.optim.parameters.number_hyperparameter import (
     DiscreteHyperparameter,
     ContinuousHyperparameter,
     HyperParameterScale,
 )
-from ..parameters.dag import HyperParameterDAG
-from ...constraints.base import Constraint
+from qewton.optim.parameters.dag import HyperParameterDAG
+from qewton.constraints.base import Constraint
 
 # TODO: Just a first version to try this out
 

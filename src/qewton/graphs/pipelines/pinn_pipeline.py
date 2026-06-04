@@ -1,18 +1,18 @@
 from typing import Callable
 
-from ...algorithms.building_blocks.array_operations import SplitVariables, ConcatVariables
+from qewton.algorithms.building_blocks.array_operations import SplitVariables, ConcatVariables
 
-from ...config.variables import Variable
+from qewton.config.variables import Variable
 
-from ...config.backend import DEFAULT_DL_BACKEND
+from qewton.config.backend import DEFAULT_DL_BACKEND
 
-from ...algorithms.building_blocks.derivatives import GradientTracking
+from qewton.algorithms.building_blocks.derivatives import GradientTracking
 
-from ...constraints.base import Constraint
-from ...constraints.pinn_constraint import PINNConstraint
-from ...data.dataloaders.base import DataNode
-from ..nodes import Node, OutputPort
-from ..graphs import Graph
+from qewton.constraints.base import Constraint
+from qewton.constraints.pinn_constraint import PINNConstraint
+from qewton.data.dataloaders.base import DataNode
+from qewton.graphs.nodes import Node, OutputPort
+from qewton.graphs import Graph
 
 
 class PINNPipeline(Graph):

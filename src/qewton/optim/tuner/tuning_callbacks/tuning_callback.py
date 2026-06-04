@@ -1,5 +1,5 @@
-from .state import TuningState
-from ...trainer.callbacks.base_callback import Callback
+from qewton.optim.tuner.tuning_callbacks.state import TuningState
+from qewton.optim.trainer.callbacks.base_callback import Callback
 
 
 class TuningCallback(Callback):

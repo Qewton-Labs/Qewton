@@ -7,11 +7,11 @@ from typing import Annotated, get_type_hints, get_origin, get_args
 import inspect
 import warnings
 
-from ..config.data_configurations import DataConfiguration
-from ..config.backend import Backend, TensorType
-from ..optim.parameters.hyperparameter_base import HyperParameter
-from ..optim.base import EvaluationPhase
-from ..optim.parameters.trainable_parameters import (
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.backend import Backend, TensorType
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.base import EvaluationPhase
+from qewton.optim.parameters.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )
@@ -288,7 +288,7 @@ class Node(ABC):
         """Track the data passed through this node. This can be used to implement
         graph tracking for debugging or visualization purposes.
         """
-        from .graphs import TrackingObject
+        from qewton.graphs import TrackingObject
 
         for i, tracking_object in enumerate(args):
             if isinstance(tracking_object, TrackingObject):
@@ -424,6 +424,6 @@ class Node(ABC):
         """Creates a copy of this node, with the same inner operations, parameters
         etc., but with new input and output ports.
         """
-        from .control_nodes.graph_node import CopiedNode
+        from qewton.control_nodes.graph_node import CopiedNode
 
         return CopiedNode(self)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from .axes import Axes, EllipsisAxes, EllipsisDim, _match_remainder, FeatureAxes, AxesDim
-from .errors import DataConfigMismatchError
+from qewton.config.axes import Axes, EllipsisAxes, EllipsisDim, _match_remainder, FeatureAxes, AxesDim
+from qewton.config.errors import DataConfigMismatchError
 
 
 class DataConfiguration:

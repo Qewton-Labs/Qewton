@@ -1,19 +1,19 @@
 from copy import deepcopy
 from typing import Annotated
 
-from ...config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
-from ..backend_node import BackendNode
+from qewton.config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
+from qewton.algorithms.backend_node import BackendNode
 
-from ...config.data_configurations import DataConfiguration as DC
-from ...config.errors import DataConfigMismatchError
-from ...config.axes import (
+from qewton.config.data_configurations import DataConfiguration as DC
+from qewton.config.errors import DataConfigMismatchError
+from qewton.config.axes import (
     EllipsisAxes,
     AxesDim,
     EllipsisDim,
     FeatureAxes,
     MinimumDim,
 )
-from ...graphs.nodes import InputPort, Port
+from qewton.graphs.nodes import InputPort, Port
 
 # The following classes represent basic mathematical operations.
 # They are designed to work with different operations and one only needs to pass

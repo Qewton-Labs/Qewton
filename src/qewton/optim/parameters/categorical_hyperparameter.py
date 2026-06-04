@@ -1,7 +1,7 @@
 import random
 
-from .helpers import HyperParameterState, HyperParameterCondition
-from .hyperparameter_base import HyperParameter
+from qewton.optim.parameters.helpers import HyperParameterState, HyperParameterCondition
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class CategoricalHyperparameter(HyperParameter):

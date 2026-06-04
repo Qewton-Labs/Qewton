@@ -1,9 +1,9 @@
 from __future__ import annotations
 from types import EllipsisType
 
-from .variables import Variable
-from .errors import DataConfigMismatchError
-from ..geometries.base import Geometry
+from qewton.config.variables import Variable
+from qewton.config.errors import DataConfigMismatchError
+from qewton.geometries.base import Geometry
 
 
 def _match_remainder(inner_type, start_part, end_part, ellipsis_type):

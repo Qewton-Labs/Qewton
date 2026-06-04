@@ -1,7 +1,7 @@
-from .tuning_callback import TuningCallback
-from ...base import EvaluationPhase
-from ...trainer.training_controllers import TrainerState
-from ....constraints.base import Constraint
+from qewton.optim.tuner.tuning_callbacks.tuning_callback import TuningCallback
+from qewton.optim.base import EvaluationPhase
+from qewton.optim.trainer.training_controllers import TrainerState
+from qewton.constraints.base import Constraint
 
 
 class EarlyStoppingTuneCallback(TuningCallback):

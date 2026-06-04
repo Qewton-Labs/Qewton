@@ -1,14 +1,14 @@
 from typing import Any, Callable
 
-from .base_trainer import Trainer
-from .training_controllers import TrainerState
-from .callbacks.base_callback import Callback
-from .callbacks.training_callbacks import FunctionEvalCallback
-from .callbacks.progressbar_callback import ProgressBarCallback
-from .training_controllers import OptimizationPhase
-from ..parameters.hyperparameter_base import HyperParameter
-from ..base import EvaluationPhase
-from ...graphs.nodes import Node
+from qewton.optim.trainer.base_trainer import Trainer
+from qewton.optim.trainer.training_controllers import TrainerState
+from qewton.optim.trainer.callbacks.base_callback import Callback
+from qewton.optim.trainer.callbacks.training_callbacks import FunctionEvalCallback
+from qewton.optim.trainer.callbacks.progressbar_callback import ProgressBarCallback
+from qewton.optim.trainer.training_controllers import OptimizationPhase
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.base import EvaluationPhase
+from qewton.graphs.nodes import Node
 
 
 class FunctionBasedTrainer(Trainer):

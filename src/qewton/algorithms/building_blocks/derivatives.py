@@ -1,10 +1,10 @@
 from typing import Annotated
 
 
-from ...config.axes import EllipsisAxes, FeatureAxes, AxesDim
-from ...config.backend import TensorType
-from ...config.data_configurations import DataConfiguration as DC
-from ..backend_node import BackendNode
+from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
+from qewton.config.backend import TensorType
+from qewton.config.data_configurations import DataConfiguration as DC
+from qewton.algorithms.backend_node import BackendNode
 
 # TODO: Add Jax and Tensorflow implementations
 
@@ -31,7 +31,7 @@ class Gradient(BackendNode[TensorType]):
         self,
         u: Annotated[
             TensorType,
-            DC(EllipsisAxes(), FeatureAxes(shape=(1,))),
+            DC(ell_axes, FeatureAxes(shape=(1,)))
         ],
         x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))],
     ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))]:

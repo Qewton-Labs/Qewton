@@ -1,7 +1,7 @@
 from types import EllipsisType
 
-from ...config.variables import Variable
-from ..base import Geometry, BoundaryGeometry
+from qewton.config.variables import Variable
+from qewton.geometries.base import Geometry, BoundaryGeometry
 
 
 class ContinuousGeometry(Geometry):
@@ -17,19 +17,19 @@ class ContinuousGeometry(Geometry):
         return ContinuousBoundaryGeometry(self)
 
     def __add__(self, other):
-        from .domain_operations.union import UnionGeometry
+        from qewton.domain_operations.union import UnionGeometry
 
         assert isinstance(other, ContinuousGeometry)
         return UnionGeometry(self, other)
 
     def __sub__(self, other):
-        from .domain_operations.cut import CutGeometry
+        from qewton.domain_operations.cut import CutGeometry
 
         assert isinstance(other, ContinuousGeometry)
         return CutGeometry(self, other)
 
     def __and__(self, other):
-        from .domain_operations.intersection import IntersectionGeometry
+        from qewton.domain_operations.intersection import IntersectionGeometry
 
         assert isinstance(other, ContinuousGeometry)
         return IntersectionGeometry(self, other)
@@ -46,19 +46,19 @@ class ContinuousBoundaryGeometry(BoundaryGeometry):
         return self.geometry.create_mesh(max_vertex_distance=max_vertex_distance).boundary
 
     def __add__(self, other):
-        from .domain_operations.union import UnionGeometry
+        from qewton.domain_operations.union import UnionGeometry
 
         assert isinstance(other, ContinuousBoundaryGeometry)
         return UnionGeometry(self.geometry, other.geometry).boundary
 
     def __sub__(self, other):
-        from .domain_operations.cut import CutGeometry
+        from qewton.domain_operations.cut import CutGeometry
 
         assert isinstance(other, ContinuousBoundaryGeometry)
         return CutGeometry(self.geometry, other.geometry).boundary
 
     def __and__(self, other):
-        from .domain_operations.intersection import IntersectionGeometry
+        from qewton.domain_operations.intersection import IntersectionGeometry
 
         assert isinstance(other, ContinuousBoundaryGeometry)
         return IntersectionGeometry(self.geometry, other.geometry).boundary

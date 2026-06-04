@@ -1,8 +1,8 @@
 from __future__ import annotations
 import numpy as np
 
-from ..base import Geometry, DiscreteGeometry, BoundaryGeometry
-from .mesh import Mesh
+from qewton.geometries.base import Geometry, DiscreteGeometry, BoundaryGeometry
+from qewton.geometries.discrete.mesh import Mesh
 
 
 class MeshGeometry(DiscreteGeometry):

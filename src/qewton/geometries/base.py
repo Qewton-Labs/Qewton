@@ -2,8 +2,8 @@ from __future__ import annotations
 from types import EllipsisType
 from typing import Any
 
-from ..config.errors import DataConfigMismatchError
-from ..config.variables import Variable
+from qewton.config.errors import DataConfigMismatchError
+from qewton.config.variables import Variable
 
 
 class Geometry:

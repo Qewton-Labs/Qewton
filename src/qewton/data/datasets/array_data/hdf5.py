@@ -1,4 +1,4 @@
-from .base import ArrayLikeDataSet
+from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 
 
 class HDF5DataSet(ArrayLikeDataSet):

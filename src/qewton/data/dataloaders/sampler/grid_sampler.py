@@ -1,13 +1,13 @@
 import numpy as np
 
-from ....config.backend import DEFAULT_DL_BACKEND, Backend
-from ....config.variables import Variable
-from ....geometries.base import Geometry
-from ....graphs.nodes import NodeState
-from ....optim.parameters.categorical_hyperparameter import CategoricalHyperparameter
-from ....optim.parameters.number_hyperparameter import DiscreteHyperparameter
+from qewton.config.backend import DEFAULT_DL_BACKEND, Backend
+from qewton.config.variables import Variable
+from qewton.geometries.base import Geometry
+from qewton.graphs.nodes import NodeState
+from qewton.optim.parameters.categorical_hyperparameter import CategoricalHyperparameter
+from qewton.optim.parameters.number_hyperparameter import DiscreteHyperparameter
 
-from .point_sampler import PointSampler
+from qewton.data.dataloaders.sampler.point_sampler import PointSampler
 
 
 class GridSampler(PointSampler):

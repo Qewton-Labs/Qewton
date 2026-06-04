@@ -8,22 +8,22 @@ from abc import abstractmethod
 
 import numpy as np
 
-from ...graphs.nodes import NodeState
-from ...config.backend import Backend, DEFAULT_DL_BACKEND
-from ...config.variables import Variable
+from qewton.graphs.nodes import NodeState
+from qewton.config.backend import Backend, DEFAULT_DL_BACKEND
+from qewton.config.variables import Variable
 
-from ...optim.base import EvaluationPhase
-from ...optim.parameters.hyperparameter_base import HyperParameter
-from ...optim.parameters.number_hyperparameter import (
+from qewton.optim.base import EvaluationPhase
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.parameters.number_hyperparameter import (
     DiscreteHyperparameter,
 )
-from ...optim.parameters.categorical_hyperparameter import (
+from qewton.optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
-from ...config.axes import BatchAxes, AxesDim
-from ...config.data_configurations import DataConfiguration
-from ...graphs.nodes import Node, OutputPort, InputPort
-from ..datasets import DataSet
+from qewton.config.axes import BatchAxes, AxesDim
+from qewton.config.data_configurations import DataConfiguration
+from qewton.graphs.nodes import Node, OutputPort, InputPort
+from qewton.data.datasets import DataSet
 
 
 class DataNode(Node):

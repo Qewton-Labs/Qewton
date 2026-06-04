@@ -4,7 +4,7 @@ from typing import Any
 from abc import ABC, abstractmethod
 
 
-from ...config.data_configurations import DataConfiguration
+from qewton.config.data_configurations import DataConfiguration
 
 
 class DataSet(ABC):

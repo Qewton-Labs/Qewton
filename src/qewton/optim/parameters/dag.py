@@ -4,7 +4,7 @@ from itertools import product
 import warnings
 import random
 
-from .hyperparameter_base import HyperParameter
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class HyperParameterDAG:

@@ -7,7 +7,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-from ...optim.tuner.base import TunerLoggingKeys
+from qewton.optim.tuner.base import TunerLoggingKeys
 
 
 class TuningAnalyzer:

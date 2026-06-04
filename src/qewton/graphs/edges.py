@@ -1,4 +1,4 @@
-from .nodes import Port
+from qewton.graphs.nodes import Port
 
 
 class Edge:

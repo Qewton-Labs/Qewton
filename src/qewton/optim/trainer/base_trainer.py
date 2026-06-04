@@ -1,10 +1,10 @@
 from typing import Any
 
-from .callbacks.base_callback import Callback
-from .callbacks.progressbar_callback import ProgressBarCallback
-from .training_controllers import OptimizationPhase, TrainerState
-from ..parameters.trainable_parameters import _TrainableParameterBase
-from ..parameters.hyperparameter_base import HyperParameter
+from qewton.optim.trainer.callbacks.base_callback import Callback
+from qewton.optim.trainer.callbacks.progressbar_callback import ProgressBarCallback
+from qewton.optim.trainer.training_controllers import OptimizationPhase, TrainerState
+from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 ###############################

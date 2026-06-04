@@ -1,22 +1,22 @@
 import inspect
 
-from ..algorithms.building_blocks.norms import MSN
+from qewton.algorithms.building_blocks.norms import MSN
 
-from ..config.axes import FeatureAxes, EllipsisAxes
-from ..config.data_configurations import DataConfiguration
-from ..config.variables import Variable
+from qewton.config.axes import FeatureAxes, EllipsisAxes
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.variables import Variable
 
-from ..graphs.graphs import Graph
+from qewton.graphs.graphs import Graph
 
-from ..graphs.control_nodes.graph_node import GraphNode, FromFunctionNode
+from qewton.graphs.control_nodes.graph_node import GraphNode, FromFunctionNode
 
-from ..config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
-from ..constraints.base import ConstraintObjective
-from ..optim.base import EvaluationPhase
-from ..optim.parameters.hyperparameter_base import HyperParameter
-from ..graphs.nodes import Node
+from qewton.config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.constraints.base import ConstraintObjective
+from qewton.optim.base import EvaluationPhase
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.graphs.nodes import Node
 
-from .base import Constraint
+from qewton.constraints.base import Constraint
 
 
 class PINNConstraint(Constraint, GraphNode):

@@ -1,8 +1,7 @@
 from numpy import ndarray
 
-from ....config.variables import Variable
-
-from .parallelogram import Parallelogram
+from qewton.config.variables import Variable
+from qewton.geometries.continuous.domains_2d.parallelogram import Parallelogram
 
 
 class Square(Parallelogram):

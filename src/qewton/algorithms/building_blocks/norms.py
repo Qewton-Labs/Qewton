@@ -1,8 +1,8 @@
-from ...graphs.control_nodes.graph_node import GraphNode
-from ...config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
-from ...graphs.graphs import SequentialGraph
+from qewton.graphs.control_nodes.graph_node import GraphNode
+from qewton.config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.graphs.graphs import SequentialGraph
 
-from .math import Mean, Square, Sum
+from qewton.algorithms.building_blocks.math import Mean, Square, Sum
 
 
 class MSN(GraphNode):

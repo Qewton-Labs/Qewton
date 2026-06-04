@@ -1,8 +1,8 @@
 from typing import Annotated
 
-from ...config.data_configurations import DataConfiguration
-from ...config.axes import EllipsisAxes
-from ..backend_node import BackendNode, TensorType
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.axes import EllipsisAxes
+from qewton.algorithms.backend_node import BackendNode, TensorType
 
 
 class ReLU(BackendNode[TensorType]):

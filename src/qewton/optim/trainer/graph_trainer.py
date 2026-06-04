@@ -1,16 +1,16 @@
 import warnings
 
-from .base_trainer import Trainer
-from .callbacks.base_callback import Callback
-from .callbacks.progressbar_callback import ProgressBarCallback
-from .callbacks.training_callbacks import GraphEvalCallback
-from .training_controllers import OptimizationPhase
-from ..parameters.hyperparameter_base import HyperParameter
-from ..base import EvaluationPhase
-from ...graphs import Graph
-from ...graphs.nodes import Node
-from ...constraints.base import Constraint
-from ...data.dataloaders.base import DataNode
+from qewton.optim.trainer.base_trainer import Trainer
+from qewton.optim.trainer.callbacks.base_callback import Callback
+from qewton.optim.trainer.callbacks.progressbar_callback import ProgressBarCallback
+from qewton.optim.trainer.callbacks.training_callbacks import GraphEvalCallback
+from qewton.optim.trainer.training_controllers import OptimizationPhase
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.base import EvaluationPhase
+from qewton.graphs import Graph
+from qewton.graphs.nodes import Node
+from qewton.constraints.base import Constraint
+from qewton.data.dataloaders.base import DataNode
 
 
 class GraphBasedTrainer(Trainer):

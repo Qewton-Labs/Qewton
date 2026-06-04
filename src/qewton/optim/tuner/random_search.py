@@ -1,6 +1,6 @@
 from typing import Any
 
-from .base import Tuner
+from qewton.optim.tuner.base import Tuner
 
 
 class RandomSearchTuner(Tuner):

@@ -4,18 +4,18 @@ from typing import Any, Callable
 import time
 import os
 
-from .optimizers.optim_setups.pytorch_optims import (
+from qewton.optim.trainer.optimizers.optim_setups.pytorch_optims import (
     _pytorch_setup_optimizer,
     _pytorch_do_optimization_step,
     _pytorch_cleanup,
 )
-from .optimizers.optimizers import Optimizer
-from ..base import EvaluationPhase
-from ...config.backend import (
+from qewton.optim.trainer.optimizers.optimizers import Optimizer
+from qewton.optim.base import EvaluationPhase
+from qewton.config.backend import (
     TorchBackend,
     TensorflowBackend,
 )
-from ..parameters.hyperparameter_base import HyperParameter
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 @dataclass

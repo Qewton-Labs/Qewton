@@ -1,12 +1,12 @@
 from typing import Annotated, Any
 
-from .math import Mean, Std
-from .parameters import ParameterNode
-from ...config.backend import DEFAULT_DL_BACKEND, Backend
-from ...config.data_configurations import DataConfiguration
-from ...data.dataloaders.base import DataSet
-from ...graphs.control_nodes.graph_node import TrackedNode
-from ...graphs.nodes import NodeState
+from qewton.algorithms.building_blocks.math import Mean, Std
+from qewton.algorithms.building_blocks.parameters import ParameterNode
+from qewton.config.backend import DEFAULT_DL_BACKEND, Backend
+from qewton.config.data_configurations import DataConfiguration
+from qewton.data.datasets.base import DataSet
+from qewton.graphs.control_nodes.graph_node import TrackedNode
+from qewton.graphs.nodes import NodeState
 
 
 class StdNormalizationNode(TrackedNode):

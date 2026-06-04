@@ -1,2 +1,2 @@
-from .mesh_domain import MeshGeometry
-from .mesh import Mesh
+from qewton.geometries.discrete.mesh_domain import MeshGeometry
+from qewton.geometries.discrete.mesh import Mesh

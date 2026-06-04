@@ -1,12 +1,12 @@
 from __future__ import annotations
 from typing import Any, Annotated
 
-from ...config.backend import Backend, DEFAULT_DL_BACKEND, TorchBackend
-from ...optim.parameters.hyperparameter_base import HyperParameter
-from ...optim.parameters.trainable_parameters import TrainableParameters
-from ...config.data_configurations import DataConfiguration
-from ...config.axes import EllipsisAxes, FeatureAxes
-from ...graphs.nodes import Node, NodeState
+from qewton.config.backend import Backend, DEFAULT_DL_BACKEND, TorchBackend
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.parameters.trainable_parameters import TrainableParameters
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.axes import EllipsisAxes, FeatureAxes
+from qewton.graphs.nodes import Node, NodeState
 
 
 class _InternalParameter:

@@ -3,12 +3,12 @@ from typing import get_origin, get_args, Annotated, Callable
 import inspect
 
 
-from ..nodes import InputPort, Node, OutputPort, Port
-from ..graphs import Graph
-from ...config.data_configurations import DataConfiguration
-from ...config.backend import Backend, TensorType
-from ...optim.parameters.hyperparameter_base import HyperParameter
-from ...optim.parameters.trainable_parameters import _TrainableParameterBase
+from qewton.graphs.nodes import InputPort, Node, OutputPort, Port
+from qewton.graphs import Graph
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.backend import Backend, TensorType
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
 
 
 class GraphNode(Node):

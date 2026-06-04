@@ -2,12 +2,12 @@ from copy import deepcopy
 from types import EllipsisType
 from typing import Annotated
 
-from ..backend_node import BackendNode
-from ...config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
-from ...config.data_configurations import DataConfiguration
-from ...config.axes import EllipsisAxes, FeatureAxes
-from ...config.variables import Variable
-from ...graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort
+from qewton.algorithms.backend_node import BackendNode
+from qewton.config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.axes import EllipsisAxes, FeatureAxes
+from qewton.config.variables import Variable
+from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort
 
 
 class Narrow(BackendNode[TensorType]):

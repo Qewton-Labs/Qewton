@@ -1,6 +1,6 @@
 """DataSet implementation for PyTorch tensors."""
 
-from .base import ArrayLikeDataSet
+from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 
 
 class TorchDataSet(ArrayLikeDataSet):

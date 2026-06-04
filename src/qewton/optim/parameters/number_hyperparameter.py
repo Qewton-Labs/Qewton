@@ -2,8 +2,8 @@ from __future__ import annotations
 import random
 import math
 
-from .helpers import HyperParameterScale, HyperParameterState, HyperParameterCondition
-from .hyperparameter_base import HyperParameter
+from qewton.optim.parameters.helpers import HyperParameterScale, HyperParameterState, HyperParameterCondition
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class ContinuousHyperparameter(HyperParameter):

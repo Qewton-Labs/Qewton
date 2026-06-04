@@ -1,1 +1,1 @@
-from .pinn_pipeline import PINNPipeline
+from qewton.graphs.pipelines.pinn_pipeline import PINNPipeline

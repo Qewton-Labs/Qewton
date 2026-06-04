@@ -1,7 +1,7 @@
 import numpy as np
 
-from ..base import ContinuousGeometry, ContinuousBoundaryGeometry
-from ....config.variables import Variable
+from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.config.variables import Variable
 
 
 class Sphere(ContinuousGeometry):

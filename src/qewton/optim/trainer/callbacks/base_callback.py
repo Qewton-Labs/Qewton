@@ -1,4 +1,4 @@
-from ..training_controllers import TrainerState
+from qewton.optim.trainer.training_controllers import TrainerState
 
 
 class Callback:

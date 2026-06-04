@@ -1,10 +1,10 @@
 from typing import Any, Callable
 
-from .base_callback import Callback
-from ..training_controllers import TrainerState
-from ...base import EvaluationPhase
-from ....graphs.graphs import Graph
-from ....constraints.base import Constraint
+from qewton.optim.trainer.callbacks.base_callback import Callback
+from qewton.optim.trainer.training_controllers import TrainerState
+from qewton.optim.base import EvaluationPhase
+from qewton.graphs.graphs import Graph
+from qewton.constraints.base import Constraint
 
 
 class GraphEvalCallback(Callback):

@@ -1,6 +1,6 @@
 from typing import Callable
 
-from ....base import EvaluationPhase
+from qewton.optim.base import EvaluationPhase
 
 # File contains how each backend should setup the optimizers and do the optimization step.
 # This is then used in the training controller to do the optimization step for each

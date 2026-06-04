@@ -1,4 +1,4 @@
-from ..building_blocks.math import (
+from qewton.algorithms.building_blocks.math import (
     Flatten,
     Transpose,
     Subtract,
@@ -8,15 +8,15 @@ from ..building_blocks.math import (
     MatMul,
     Multiply,
 )
-from ..building_blocks.normalizations import StdNormalizationNode, InverseStdNormalization
-from ..building_blocks.array_operations import Narrow
-from ...config.backend import DEFAULT_DL_BACKEND, Backend
-from ...config.data_configurations import DataConfiguration
-from ...data.dataloaders.base import DataSet
-from ...graphs.graphs import Graph
-from ...graphs.control_nodes.graph_node import GraphNode
-from ...graphs.nodes import Node, InputPort, OutputPort
-from ...optim.parameters.hyperparameter_base import HyperParameter
+from qewton.algorithms.building_blocks.normalizations import StdNormalizationNode, InverseStdNormalization
+from qewton.algorithms.building_blocks.array_operations import Narrow
+from qewton.config.backend import DEFAULT_DL_BACKEND, Backend
+from qewton.config.data_configurations import DataConfiguration
+from qewton.data.datasets.base import DataSet
+from qewton.graphs.graphs import Graph
+from qewton.graphs.control_nodes.graph_node import GraphNode
+from qewton.graphs.nodes import Node, InputPort, OutputPort
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class PCA(GraphNode):

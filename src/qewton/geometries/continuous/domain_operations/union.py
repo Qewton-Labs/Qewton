@@ -1,7 +1,7 @@
 import numpy as np
 
-from ..base import ContinuousGeometry, ContinuousBoundaryGeometry
-from .sampler_helper import _boundary_grid_with_n, _boundary_random_with_n
+from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.domain_operations.sampler_helper import _boundary_grid_with_n, _boundary_random_with_n
 
 
 class UnionGeometry(ContinuousGeometry):

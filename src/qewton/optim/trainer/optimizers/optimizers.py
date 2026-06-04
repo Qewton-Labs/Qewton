@@ -1,6 +1,6 @@
 from typing import Any
 
-from ....config.backend import (
+from qewton.config.backend import (
     Backend,
     TorchBackend,
     TensorflowBackend,

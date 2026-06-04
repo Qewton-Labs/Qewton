@@ -1,8 +1,8 @@
 from __future__ import annotations
 from typing import Generic
 
-from ..graphs.nodes import Node, NodeState
-from ..config.backend import (
+from qewton.graphs.nodes import Node, NodeState
+from qewton.config.backend import (
     DEFAULT_DL_BACKEND,
     Backend,
     TorchBackend,

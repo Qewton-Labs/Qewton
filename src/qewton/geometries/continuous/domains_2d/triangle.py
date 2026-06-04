@@ -1,8 +1,8 @@
 import numpy as np
 
-from ..base import ContinuousGeometry, ContinuousBoundaryGeometry
-from ...discrete.mesh_domain import MeshGeometry, Mesh
-from ....config.variables import Variable
+from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.discrete.mesh_domain import MeshGeometry, Mesh
+from qewton.config.variables import Variable
 
 
 class Triangle(ContinuousGeometry):

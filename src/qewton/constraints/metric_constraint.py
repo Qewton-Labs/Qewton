@@ -1,16 +1,16 @@
-from .base import Constraint, ConstraintObjective
-from ..config.data_configurations import DataConfiguration
-from ..optim.parameters.categorical_hyperparameter import (
+from qewton.constraints.base import Constraint, ConstraintObjective
+from qewton.config.data_configurations import DataConfiguration
+from qewton.optim.parameters.categorical_hyperparameter import (
     HyperParameter,
     BooleanHyperparameter,
 )
-from ..optim.parameters.number_hyperparameter import ContinuousHyperparameter
-from ..graphs.nodes import InputPort
-from ..graphs.graphs import Graph
-from ..graphs.control_nodes.graph_node import GraphNode
-from ..config.backend import DEFAULT_DL_BACKEND
-from ..algorithms.building_blocks.math import Subtract, Square, Mean, Divide, Sum
-from ..optim.base import EvaluationPhase
+from qewton.optim.parameters.number_hyperparameter import ContinuousHyperparameter
+from qewton.graphs.nodes import InputPort
+from qewton.graphs.graphs import Graph
+from qewton.graphs.control_nodes.graph_node import GraphNode
+from qewton.config.backend import DEFAULT_DL_BACKEND
+from qewton.algorithms.building_blocks.math import Subtract, Square, Mean, Divide, Sum
+from qewton.optim.base import EvaluationPhase
 
 
 class MetricConstraint(Constraint):
