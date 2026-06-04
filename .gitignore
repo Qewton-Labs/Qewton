@@ -5,6 +5,7 @@ __pycache__/
 **data_generation/
 **test_code/
 build/
+api/
 dist/
 *.egg-info/
 .eggs/
