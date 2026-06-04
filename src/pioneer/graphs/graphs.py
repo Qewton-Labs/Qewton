@@ -179,8 +179,10 @@ class Graph:
             from_ (Node | OutputPort): The source node or output port.
             to_ (Node | InputPort): The destination node or input port.
         Raises:
-            ValueError: If the number of ports do not match or an input port is already connected.
-            DataConfigMismatchError: If the data configurations of the connected ports are incompatible.
+            ValueError: If the number of ports do not match or an input port is
+                already connected.
+            DataConfigMismatchError: If the data configurations of the connected
+                ports are incompatible.
         """
         self._check_graph_was_sorted()
 

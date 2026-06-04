@@ -1,5 +1,4 @@
 from abc import abstractmethod
-from types import EllipsisType
 import numpy as np
 
 from ..base import DataNode
@@ -101,7 +100,6 @@ class PointSampler(DataNode):
         the appropriate device.
         """
         points, normals = self.sample_points()
-
         # Transform data to backend format
         points = self.backend.from_numpy(points)
         # Move batch to device if backend is specified
@@ -113,5 +111,4 @@ class PointSampler(DataNode):
             if self._device is not None and self.backend is not None:
                 normals = self.backend.to(normals, self._device)
             return points, normals
-
         return points
