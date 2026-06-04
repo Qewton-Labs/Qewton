@@ -28,6 +28,7 @@ jobs:
       - name: Install package and docs dependencies
         run: |
           pip install -e .
+          pip install furo
           pip install sphinx sphinx-autoapi
 
       - name: Build docs

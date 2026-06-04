@@ -288,7 +288,7 @@ class Node(ABC):
         """Track the data passed through this node. This can be used to implement
         graph tracking for debugging or visualization purposes.
         """
-        from qewton.graphs import TrackingObject
+        from qewton.graphs.graphs import TrackingObject
 
         for i, tracking_object in enumerate(args):
             if isinstance(tracking_object, TrackingObject):
@@ -424,6 +424,6 @@ class Node(ABC):
         """Creates a copy of this node, with the same inner operations, parameters
         etc., but with new input and output ports.
         """
-        from qewton.control_nodes.graph_node import CopiedNode
+        from qewton.graphs.control_nodes.graph_node import CopiedNode
 
         return CopiedNode(self)
