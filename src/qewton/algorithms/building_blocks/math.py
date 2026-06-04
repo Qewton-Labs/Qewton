@@ -1,9 +1,7 @@
 from copy import deepcopy
 from typing import Annotated
 
-from pioneer.config.backend import DEFAULT_DL_BACKEND, Backend
-
-from ...config.backend import DEFAULT_DL_BACKEND, TensorType
+from ...config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
 from ..backend_node import BackendNode
 
 from ...config.data_configurations import DataConfiguration as DC

@@ -1,25 +1,25 @@
 import torch
-import pioneer
+import qewton
 
 x_data = torch.linspace(0, 1, 1000).reshape(-1, 1)
 u_data = x_data**2 + torch.sin(6.0 * x_data)
 data = torch.column_stack((x_data, u_data))
 
-X = pioneer.config.Variable("x", 1)
-U = pioneer.config.Variable("u", 1)
+X = qewton.config.Variable("x", 1)
+U = qewton.config.Variable("u", 1)
 
-input_config = pioneer.config.DataConfiguration(
-    pioneer.config.BatchAxes(1000), pioneer.config.FeatureAxes(X)
+input_config = qewton.config.DataConfiguration(
+    qewton.config.BatchAxes(1000), qewton.config.FeatureAxes(X)
 )
-output_config = pioneer.config.DataConfiguration(
-    pioneer.config.BatchAxes(1000), pioneer.config.FeatureAxes(U)
+output_config = qewton.config.DataConfiguration(
+    qewton.config.BatchAxes(1000), qewton.config.FeatureAxes(U)
 )
 
-dataset = pioneer.data.ArrayLikeDataSet(
+dataset = qewton.data.ArrayLikeDataSet(
     data=[x_data, u_data], data_configs=[input_config, output_config]
 )
 
-data_loader = pioneer.data.DataLoader(
+data_loader = qewton.data.DataLoader(
     data_set=dataset,
     batch_size=1000,
     splitting_ratio=(1.0, 0.0, 0.0),
@@ -27,17 +27,17 @@ data_loader = pioneer.data.DataLoader(
 )
 
 
-model = pioneer.algorithms.FCN(
+model = qewton.algorithms.FCN(
     in_neurons=1,
     hidden_neurons=50,
     out_neurons=1,
     n_hidden_layers=6,
-    activation=pioneer.building_blocks.Tanh,
+    activation=qewton.building_blocks.Tanh,
 )
 
-constraint = pioneer.constraints.MSEConstraint()
+constraint = qewton.constraints.MSEConstraint()
 
-computation_graph = pioneer.Graph()
+computation_graph = qewton.Graph()
 
 computation_graph.connect(data_loader.get_output_port(X), model)
 computation_graph.connect(model, constraint.input_1)
@@ -45,20 +45,20 @@ computation_graph.connect(data_loader.get_output_port(U), constraint.input_2)
 
 computation_graph.setup()
 
-adam_phase = pioneer.optim.OptimizationPhase(
-    optimizer=pioneer.optim.Adam(),
+adam_phase = qewton.optim.OptimizationPhase(
+    optimizer=qewton.optim.Adam(),
     lr=0.001,
     max_iterations=2000,
 )
 
-lbfgs_phase = pioneer.optim.OptimizationPhase(
-    optimizer=pioneer.optim.LBFGS(),
+lbfgs_phase = qewton.optim.OptimizationPhase(
+    optimizer=qewton.optim.LBFGS(),
     lr=0.1,
     max_iterations=50,
     optimizer_args={"max_eval": 10},
 )
 
-trainer = pioneer.optim.GraphBasedTrainer(
+trainer = qewton.optim.GraphBasedTrainer(
     optimization_phases=[adam_phase, lbfgs_phase],
     graphs=[computation_graph],
     training_objectives=[constraint],

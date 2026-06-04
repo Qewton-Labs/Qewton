@@ -1,5 +1,5 @@
 import pytest
-from pioneer.config.axes import (
+from qewton.config.axes import (
     Axes,
     AxesDim,
     EllipsisDim,
@@ -11,8 +11,8 @@ from pioneer.config.axes import (
     EllipsisAxes,
     Geometry,
 )
-from pioneer.config.variables import Variable
-from pioneer.config.errors import DataConfigMismatchError
+from qewton.config.variables import Variable
+from qewton.config.errors import DataConfigMismatchError
 
 # --- AxesDim Tests ---
 

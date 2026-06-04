@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from pioneer.algorithms.building_blocks.math import (
+from qewton.algorithms.building_blocks.math import (
     Add,
     Subtract,
     Mod,
@@ -29,9 +29,9 @@ from pioneer.algorithms.building_blocks.math import (
     Flatten,
     Transpose,
 )
-from pioneer.config.backend import Backend
-from pioneer.config.data_configurations import DataConfiguration as DC
-from pioneer.config.axes import EllipsisAxes
+from qewton.config.backend import Backend
+from qewton.config.data_configurations import DataConfiguration as DC
+from qewton.config.axes import EllipsisAxes
 
 
 class MockBackend(Backend):
@@ -116,7 +116,7 @@ class TestMathNodes(unittest.TestCase):
 
         # Test update_data_configs
         with patch(
-            "pioneer.algorithms.building_blocks.math.deepcopy",
+            "qewton.algorithms.building_blocks.math.deepcopy",
             return_value=mock_in_config,
         ):
             node.update_data_configs(
@@ -138,7 +138,7 @@ class TestMathNodes(unittest.TestCase):
         }
 
         with patch(
-            "pioneer.algorithms.building_blocks.math.deepcopy",
+            "qewton.algorithms.building_blocks.math.deepcopy",
             return_value=mock_in_config,
         ):
             # Should return None/Empty set if ellipsis makes index counting impossible

@@ -2,15 +2,15 @@ import math
 import random
 import pytest
 
-from pioneer.optim.parameters.hyperparameter_base import (
+from qewton.optim.parameters.hyperparameter_base import (
     HyperParameter,
     HyperParameterState,
 )
-from pioneer.optim.parameters.categorical_hyperparameter import (
+from qewton.optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
     BooleanHyperparameter,
 )
-from pioneer.optim.parameters.number_hyperparameter import (
+from qewton.optim.parameters.number_hyperparameter import (
     DiscreteHyperparameter,
     ContinuousHyperparameter,
     HyperParameterScale,

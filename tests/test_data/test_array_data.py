@@ -5,11 +5,11 @@ import os
 import sys
 import numpy as np
 
-from pioneer.data.datasets.array_data.base import ArrayLikeDataSet
-from pioneer.data.datasets.array_data.hdf5 import HDF5DataSet
-from pioneer.data.datasets.array_data.numpy import NumpyDataSet
-from pioneer.data.datasets.array_data.torch import TorchDataSet
-from pioneer.config import (
+from qewton.data.datasets.array_data.base import ArrayLikeDataSet
+from qewton.data.datasets.array_data.hdf5 import HDF5DataSet
+from qewton.data.datasets.array_data.numpy import NumpyDataSet
+from qewton.data.datasets.array_data.torch import TorchDataSet
+from qewton.config import (
     DataConfiguration,
     Variable,
     BatchAxes,
@@ -312,7 +312,7 @@ class TestTorchDataSet(unittest.TestCase):
             # this is a bit of a synthetic check for the raise logic.
             with self.assertRaises(ImportError):
                 # Force a re-import attempt inside the constructor logic
-                import pioneer.data.datasets.array_data.torch as torch_mod
+                import qewton.data.datasets.array_data.torch as torch_mod
 
                 importlib = __import__("importlib")
                 importlib.reload(torch_mod)

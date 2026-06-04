@@ -1,8 +1,8 @@
 import random
 import pytest
 
-from pioneer.optim.parameters.dag import HyperParameterDAG
-from pioneer.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.parameters.dag import HyperParameterDAG
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class DummyHP(HyperParameter):

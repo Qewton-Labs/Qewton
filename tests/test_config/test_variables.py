@@ -1,5 +1,5 @@
 import pytest
-from pioneer.config.variables import Variable
+from qewton.config.variables import Variable
 
 
 def test_variable_init_default():

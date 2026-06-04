@@ -1,9 +1,9 @@
 import pytest
 from typing import Annotated, Any
-from pioneer.graphs.graphs import Graph
-from pioneer.graphs.nodes import Node
-from pioneer.config.data_configurations import DataConfiguration
-from pioneer.config.axes import (
+from qewton.graphs.graphs import Graph
+from qewton.graphs.nodes import Node
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.axes import (
     BatchAxes,
     FeatureAxes,
     EllipsisAxes,
@@ -11,7 +11,7 @@ from pioneer.config.axes import (
     EllipsisDim,
     GeometryAxes,
 )
-from pioneer.config.errors import DataConfigMismatchError
+from qewton.config.errors import DataConfigMismatchError
 
 
 class MockNode(Node):
@@ -252,7 +252,7 @@ class TestGraphConfigPropagation:
         Main Graph: n_start (Batch, ...) -> graph_node (encapsulating inner_n1 (...) -> inner_n2 (Batch, Feature(10))) -> n_end
         Expected: All relevant ports should resolve to (Batch, Feature(10)).
         """
-        from pioneer.graphs.control_nodes.graph_node import GraphNode
+        from qewton.graphs.control_nodes.graph_node import GraphNode
 
         g_main = Graph()
 

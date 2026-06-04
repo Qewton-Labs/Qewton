@@ -8,13 +8,13 @@ try:
 except ImportError:
     torch = None
 
-import pioneer
-from pioneer.config import Variable, DataConfiguration, BatchAxes, FeatureAxes, AxesDim
-from pioneer.data import ArrayLikeDataSet, DataLoader
-from pioneer.algorithms import FCN
-from pioneer.constraints import MSEConstraint, PINNConstraint
-from pioneer.graphs.pipelines import PINNPipeline
-from pioneer.optim import OptimizationPhase, Adam, GraphBasedTrainer, EvaluationPhase
+import qewton
+from qewton.config import Variable, DataConfiguration, BatchAxes, FeatureAxes, AxesDim
+from qewton.data import ArrayLikeDataSet, DataLoader
+from qewton.algorithms import FCN
+from qewton.constraints import MSEConstraint, PINNConstraint
+from qewton.graphs.pipelines import PINNPipeline
+from qewton.optim import OptimizationPhase, Adam, GraphBasedTrainer, EvaluationPhase
 
 
 @unittest.skipIf(torch is None, "PyTorch is required for integration workflow tests.")
@@ -50,7 +50,7 @@ class TestGeneralWorkflow(unittest.TestCase):
         model = FCN(in_neurons=1, hidden_neurons=2, out_neurons=1, n_hidden_layers=1)
         constraint = MSEConstraint()
 
-        graph = pioneer.Graph()
+        graph = qewton.Graph()
         graph.connect(data_loader.get_output_port(self.X), model)
         graph.connect(model, constraint.input_1)
         graph.connect(data_loader.get_output_port(self.U), constraint.input_2)
@@ -113,13 +113,13 @@ class TestGeneralWorkflow(unittest.TestCase):
         )
 
         # Use a DiscreteHyperparameter for batch size
-        batch_hp = pioneer.optim.DiscreteHyperparameter((5, 10))
+        batch_hp = qewton.optim.DiscreteHyperparameter((5, 10))
         data_loader = DataLoader(dataset, batch_size=batch_hp)
 
         model = FCN(in_neurons=1, hidden_neurons=2, out_neurons=1, n_hidden_layers=1)
         constraint = MSEConstraint()
 
-        graph = pioneer.Graph()
+        graph = qewton.Graph()
         graph.connect(data_loader.get_output_port(self.X), model)
         graph.connect(model, constraint.input_1)
         graph.connect(data_loader.get_output_port(self.U), constraint.input_2)
@@ -134,7 +134,7 @@ class TestGeneralWorkflow(unittest.TestCase):
             save_path=os.path.join(self.tmp_dir, "trainer"),
         )
 
-        tuner = pioneer.optim.tuner.GridSearchTuner(
+        tuner = qewton.optim.tuner.GridSearchTuner(
             trainer,
             tuning_objectives=[constraint],
             trial_number=1,

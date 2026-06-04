@@ -1,11 +1,11 @@
 import numpy as np
 
-from pioneer.config.backend import DEFAULT_DL_BACKEND, Backend
-from pioneer.config.variables import Variable
-from pioneer.geometries.base import Geometry
-from pioneer.graphs.nodes import NodeState
-from pioneer.optim.parameters.categorical_hyperparameter import CategoricalHyperparameter
-from pioneer.optim.parameters.number_hyperparameter import DiscreteHyperparameter
+from ....config.backend import DEFAULT_DL_BACKEND, Backend
+from ....config.variables import Variable
+from ....geometries.base import Geometry
+from ....graphs.nodes import NodeState
+from ....optim.parameters.categorical_hyperparameter import CategoricalHyperparameter
+from ....optim.parameters.number_hyperparameter import DiscreteHyperparameter
 
 from .point_sampler import PointSampler
 

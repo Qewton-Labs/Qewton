@@ -14,25 +14,6 @@ from ...data.dataloaders.base import DataNode
 from ..nodes import Node, OutputPort
 from ..graphs import Graph
 
-## example functionality:
-
-# def residual_fun(u: U, f: F, x: X):  # type: ignore
-#     return u.gradient(x) - f
-
-
-# constraint = pioneer.constraints.PINNConstraint(residual_fun, name="PINNConstraint")
-# grad_tracking = pioneer.algorithms.building_blocks.GradientTracking()
-
-# # pipeline = pioneer.graphs.PINNPipeline(constraint / residual_fun, model, sampler)
-
-# computation_graph = pioneer.Graph()
-
-# with computation_graph.tracker():
-#     x, f = data_loader()
-#     x = grad_tracking(x)
-#     u = model(x)
-#     constraint(u, f, x)
-
 
 class PINNPipeline(Graph):
     """
@@ -46,6 +27,7 @@ class PINNPipeline(Graph):
         models: list[Node],
         constraint: Constraint | None = None,
         residual: Callable | None = None,
+        residual_name: str | None = None,
         reduction: Callable | None = None,
         weight=1.0,
         backend=DEFAULT_DL_BACKEND,
@@ -54,8 +36,10 @@ class PINNPipeline(Graph):
 
         if constraint is None:
             assert residual is not None, "Either constraint or residual must be provided."
+            if residual_name is None:
+                residual_name = "PINNConstraint"
             constraint = PINNConstraint(
-                residual, reduction, weight=weight, backend=backend
+                residual, reduction, weight=weight, backend=backend, name=residual_name
             )
 
         # first: split and track

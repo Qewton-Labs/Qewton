@@ -1,6 +1,6 @@
 from numpy import ndarray
 
-from pioneer.config.variables import Variable
+from ....config.variables import Variable
 
 from .parallelogram import Parallelogram
 

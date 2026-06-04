@@ -1,11 +1,11 @@
 import pytest
 import torch
-from pioneer.config import Variable, DataConfiguration, BatchAxes, FeatureAxes, AxesDim
-from pioneer.data import ArrayLikeDataSet, DataLoader
-from pioneer.algorithms import FCN
-from pioneer.constraints import PINNConstraint
-from pioneer.graphs.pipelines import PINNPipeline
-from pioneer.optim import OptimizationPhase, Adam, GraphBasedTrainer
+from qewton.config import Variable, DataConfiguration, BatchAxes, FeatureAxes, AxesDim
+from qewton.data import ArrayLikeDataSet, DataLoader
+from qewton.algorithms import FCN
+from qewton.constraints import PINNConstraint
+from qewton.graphs.pipelines import PINNPipeline
+from qewton.optim import OptimizationPhase, Adam, GraphBasedTrainer
 
 
 @pytest.fixture

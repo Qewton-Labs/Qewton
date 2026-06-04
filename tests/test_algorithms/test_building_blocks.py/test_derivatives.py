@@ -1,8 +1,8 @@
 import torch
 
 
-from pioneer.config.backend import TorchBackend
-from pioneer.algorithms.building_blocks.derivatives import (
+from qewton.config.backend import TorchBackend
+from qewton.algorithms.building_blocks.derivatives import (
     Gradient,
     Laplacian,
     Divergence,

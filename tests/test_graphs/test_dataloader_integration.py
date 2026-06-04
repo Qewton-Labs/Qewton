@@ -1,10 +1,10 @@
 import torch
-from pioneer.config.axes import BatchAxes, FeatureAxes, AxesDim
-from pioneer.config.data_configurations import DataConfiguration
-from pioneer.data.datasets.array_data.base import ArrayLikeDataSet
-from pioneer.algorithms.building_blocks.math import Square
-from pioneer.data.dataloaders.base import DataLoader
-from pioneer.graphs.graphs import Graph
+from qewton.config.axes import BatchAxes, FeatureAxes, AxesDim
+from qewton.config.data_configurations import DataConfiguration
+from qewton.data.datasets.array_data.base import ArrayLikeDataSet
+from qewton.algorithms.building_blocks.math import Square
+from qewton.data.dataloaders.base import DataLoader
+from qewton.graphs.graphs import Graph
 
 
 def test_dataloader_to_algorithm_flow():
@@ -95,7 +95,7 @@ def test_dataloader_tracking_flow():
     assert output_value.shape == (batch_size, n_features)
 
     input_batch = dataloader.output_ports[0].value
-    assert torch.allclose(output_value, input_batch**2)  # type:ignore
+    assert torch.allclose(output_value, input_batch**2)  # type: ignore
 
     print("Tracking integration test passed successfully!")
 

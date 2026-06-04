@@ -2,8 +2,6 @@ from copy import deepcopy
 from types import EllipsisType
 from typing import Annotated
 
-from pioneer.config.backend import DEFAULT_DL_BACKEND
-
 from ..backend_node import BackendNode
 from ...config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
 from ...config.data_configurations import DataConfiguration

@@ -2,14 +2,14 @@ import unittest
 from unittest.mock import MagicMock
 from typing import Annotated
 
-from pioneer.graphs.nodes import Node, Port, InputPort, OutputPort, NodeState
-from pioneer.graphs.edges import Edge
-from pioneer.graphs.graphs import Graph, SequentialGraph, TrackingObject
-from pioneer.config.data_configurations import DataConfiguration
-from pioneer.config.backend import Backend
-from pioneer.optim.base import EvaluationPhase
-from pioneer.optim.parameters.hyperparameter_base import HyperParameter
-from pioneer.optim.parameters.trainable_parameters import TrainableParameters
+from qewton.graphs.nodes import Node, Port, InputPort, OutputPort, NodeState
+from qewton.graphs.edges import Edge
+from qewton.graphs.graphs import Graph, SequentialGraph, TrackingObject
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.backend import Backend
+from qewton.optim.base import EvaluationPhase
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.parameters.trainable_parameters import TrainableParameters
 
 
 class MockNode(Node):
