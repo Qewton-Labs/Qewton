@@ -58,11 +58,11 @@ class HyperParameter:
 
         assert name is not None, "Name must be provided to create a HyperParameter."
 
-        from qewton.categorical_hyperparameter import (  # pylint: disable=import-outside-toplevel
+        from .categorical_hyperparameter import (  # pylint: disable=import-outside-toplevel
             BooleanHyperparameter,
             CategoricalHyperparameter,
         )
-        from qewton.number_hyperparameter import (  # pylint: disable=import-outside-toplevel
+        from .number_hyperparameter import (  # pylint: disable=import-outside-toplevel
             DiscreteHyperparameter,
             ContinuousHyperparameter,
         )

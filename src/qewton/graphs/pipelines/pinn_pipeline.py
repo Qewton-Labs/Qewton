@@ -18,7 +18,7 @@ from qewton.graphs import Graph
 class PINNPipeline(Graph):
     """
     Models (which can also be single Parameters) can not depend on outputs
-    of another model, but are just executed seperately.
+    of another model, but are just executed separately.
     """
 
     def __init__(
@@ -38,13 +38,15 @@ class PINNPipeline(Graph):
             assert residual is not None, "Either constraint or residual must be provided."
             if residual_name is None:
                 residual_name = "PINNConstraint"
-            constraint = PINNConstraint(
+            self.constraint = PINNConstraint(
                 residual, reduction, weight=weight, backend=backend, name=residual_name
             )
+        else:
+            self.constraint = constraint
 
         # first: split and track
         constraint_input_vars = [
-            p.data_configuration.variables for p in constraint.input_ports
+            p.data_configuration.variables for p in self.constraint.input_ports
         ]
         sampler_out_vars = [p.data_configuration.variables for p in sampler.output_ports]
 
@@ -114,7 +116,7 @@ class PINNPipeline(Graph):
         out_ports = self.split_and_join(
             trackable_ports, constraint_input_vars, use_dynamic_data_configs=True
         )
-        for p_out, p_in in zip(out_ports, constraint.input_ports):
+        for p_out, p_in in zip(out_ports, self.constraint.input_ports):
             self.connect(p_out, p_in)
 
     def get_variables(self, port, dynamic=False):
