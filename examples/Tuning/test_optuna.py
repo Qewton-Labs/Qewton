@@ -31,9 +31,7 @@ model = qewton.algorithms.FCN(
     n_hidden_layers=qewton.optim.DiscreteHyperparameter((1, 3)),
     hidden_neurons=qewton.optim.DiscreteHyperparameter((6, 32)),
     out_neurons=1,
-    activation=qewton.optim.CategoricalHyperparameter(
-        [qewton.building_blocks.Tanh, qewton.building_blocks.ReLU]
-    ),
+    activation=qewton.optim.CategoricalHyperparameter([qewton.bb.Tanh, qewton.bb.ReLU]),
 )
 
 constraint = qewton.constraints.MSEConstraint()

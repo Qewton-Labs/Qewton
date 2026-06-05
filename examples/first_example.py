@@ -32,7 +32,7 @@ model = qewton.algorithms.FCN(
     hidden_neurons=50,
     out_neurons=1,
     n_hidden_layers=6,
-    activation=qewton.building_blocks.Tanh,
+    activation=qewton.bb.Tanh,
 )
 
 constraint = qewton.constraints.MSEConstraint()

@@ -2,6 +2,7 @@
 __pycache__/
 .pytest_cache/
 **tuner_results/
+**examples/Tuning/results/**
 **data_generation/
 **test_code/
 build/
