@@ -4,6 +4,10 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes
 from qewton.graphs.nodes import Node
 from qewton.backends import TensorType
+from qewton.algorithms.building_blocks.utility import Cast
+from qewton.algorithms.building_blocks.complex import ReIm
+from qewton.backends import Backend, DEFAULT_DL_BACKEND
+from qewton.graphs.control_nodes.graph_node import TrackedNode, CopiedNode
 
 
 class ReLU(Node[TensorType]):
@@ -122,3 +126,62 @@ class GELU(Node[TensorType]):
                 same shape and dtype as input.
         """
         return self.backend.library.gelu(x)
+
+
+class CGELU(TrackedNode):
+    """"Complex Gaussian Error Linear Unit (CGELU) activation function.
+
+    Applies the GELU activation function independently to the real and
+    imaginary parts of a complex-valued input tensor, then recombines
+    the activated components into a complex-valued output tensor.
+
+    Attributes:
+        ellipsis_axes (EllipsisAxes): Configuration for tensor axes handling.
+
+    Examples:
+        >>> cgelu = CGELU(backend)
+        >>> x = backend.library.array([[-2 + 1j, 0 + 2j], [2 - 1j, 4 + 3j]])
+        >>> output = cgelu.forward(x)
+        >>> # output: GELU applied separately to real and imaginary parts
+
+    """
+    ellipsis_axes = EllipsisAxes()
+
+    def __init__(
+        self,
+        name: str = "cgelu",
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        """Initialize the Complex GELU activation function.
+
+        Args:
+            name: Name of the Node. Defaults to "cgelu".
+            backend: Backend used for computation.
+                Defaults to DEFAULT_DL_BACKEND.
+        """
+
+        self.reim = ReIm(backend=backend)
+        self.cast = Cast(backend=backend)
+        self.cast2 = CopiedNode(self.cast)
+        self.gelu = GELU(backend=backend)
+        self.gelu2 = CopiedNode(self.gelu)
+        super().__init__(name, backend)
+
+    def forward(
+        self,
+        x: Number[TensorType, DataConfiguration(ellipsis_axes)],
+    ) -> Number[TensorType, DataConfiguration(ellipsis_axes)]:
+        """Forward pass of Complex GELU activation.
+
+        Args:
+            x: Complex-valued input tensor of any shape.
+
+        Returns:
+            TensorType: Complex-valued tensor with GELU applied independently
+                to the real and imaginary parts, same shape as input.
+        """
+
+        re, im = self.reim(x)
+        return self.cast(self.gelu(re), "complex64") + 1j * self.cast2(
+            self.gelu2(im), "complex64"
+        )
