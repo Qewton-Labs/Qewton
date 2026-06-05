@@ -28,7 +28,8 @@ jobs:
       - name: Install package and docs dependencies
         run: |
           pip install -e .
-          pip install furo; m2r2
+          pip install furo
+          pip install m2r2
           pip install sphinx sphinx-autoapi
 
       - name: Build docs
