@@ -110,7 +110,6 @@ extensions = [
     "sphinx.ext.ifconfig",
     "sphinx.ext.mathjax",
     "sphinx.ext.napoleon",
-    "myst_parser",
 ]
 
 autosummary_generate = True
