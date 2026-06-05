@@ -5,6 +5,20 @@ from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class CategoricalHyperparameter(HyperParameter):
+    """A HyperParameter that represents any general value
+
+    Args:
+        categories (tuple | list): A list or tuple of all possible values.
+        initial_value (float | None, optional): An initial value. Defaults to None.
+        state (HyperParameterState, optional): If this parameter is fixed or
+            should be optimized. Defaults to HyperParameterState.OPTIMIZE.
+        name (str, optional): The name of the parameter. Defaults to "".
+        active_when (None | HyperParameterCondition, optional): A condition that
+            specifies when this Hyperparameter should be active. The condition
+            depends on the values of other Hyperparameters. Accordingly this
+            parameters is only sampled/set when the condition is fulfilled.
+    """
+
     def __init__(
         self,
         categories: tuple | list,
@@ -24,7 +38,6 @@ class CategoricalHyperparameter(HyperParameter):
             active_when=active_when,
             default_grid=list(categories),
         )
-        # For tuning, some backends want objects to be serializable.
         # For tuning, some backends want objects to be serializable.
         # Hence we create here a string mapping:
         self._registry = {}
@@ -70,6 +83,8 @@ class CategoricalHyperparameter(HyperParameter):
 
 
 class BooleanHyperparameter(CategoricalHyperparameter):
+    """Represents a boolean HyperParameter."""
+
     def __init__(
         self,
         initial_value: bool,

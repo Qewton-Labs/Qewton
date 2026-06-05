@@ -14,6 +14,30 @@ from qewton.data.dataloaders.base import DataNode
 
 
 class GraphBasedTrainer(Trainer):
+    """A trainer that runs graphs to train a model.
+
+    Args:
+        optimization_phases (OptimizationPhase | list[OptimizationPhase]):
+            One or more optimization phases defining the training workflow.
+        graphs (list[Graph]): A list of graphs, containing all graphs that should
+            be considered by this trainer. Will automatically detect what kind
+            of conditions are present in each graph and only evaluate the
+            graph accordingly (e.g. a graph with only validation constraints
+            is only used in the validation phase).
+        training_objectives (list[Constraint]): The objectives that should be used
+            to compute the loss in training.
+        callbacks (Callback | list[Callback] | None, optional): Additional
+            callbacks that should be applied. Defaults to None.
+        validation_interval (int, optional): The interval for validation.
+            Defaults to 100.
+        device (str): Target device string for training, e.g. "cpu" or "cuda".
+        save_path (str): Directory or file path where training results are stored.
+        progress_bar (ProgressBarCallback | None, optional): Optional progress bar
+            callback instance. If omitted, a default ProgressBarCallback is added.
+        enable_logging (bool): Whether training logs should be recorded.
+        log_interval (int): Interval in iterations for logging output.
+    """
+
     def __init__(
         self,
         optimization_phases: OptimizationPhase | list[OptimizationPhase],

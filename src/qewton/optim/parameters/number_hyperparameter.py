@@ -25,6 +25,10 @@ class ContinuousHyperparameter(HyperParameter):
             Defaults to HyperParameterScale.LINEAR.
         power (float, optional): The power if power scaling law is used.
             Defaults to 2.0.
+        active_when (None | HyperParameterCondition, optional): A condition that
+            specifies when this Hyperparameter should be active. The condition
+            depends on the values of other Hyperparameters. Accordingly this
+            parameters is only sampled/set when the condition is fulfilled.
         default_grid (int | list, optional): The grid used for a GridSearchTuning.
             Either an int can be provided to build the grid automatically,
             or the grid itself can be passed. Defaults to 5.

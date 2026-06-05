@@ -12,6 +12,33 @@ from qewton.graphs.nodes import Node
 
 
 class FunctionBasedTrainer(Trainer):
+    """A trainer that evaluates user defined functions to train a model.
+
+    Args:
+        optimization_phases (OptimizationPhase | list[OptimizationPhase]):
+            One or more optimization phases defining the training workflow.
+        training_functions (list[Callable[[int, TrainerState], Any]]): A list
+            of functions that should be evaluated during training. They should
+            get the current iteration index and train state as an input and return
+            exactly one value (the loss)
+        model_nodes (list[Node]): List of all models that should be trained
+            by this trainer.
+        hyperparameters (set[HyperParameter] | None, optional): All HyperParameters
+            that appear in the problem. Defaults to None.
+        validation_functions (list[Callable[[int, TrainerState], Any]] | None, optional):
+            Additional functions that are used to validate the trainings results.
+            Defaults to None.
+        callbacks (Callback | list[Callback] | None, optional): Additional
+            callbacks that should be applied. Defaults to None.
+        validation_interval (int, optional): The interval for validation.
+            Defaults to 100.
+        device (str): Target device string for training, e.g. "cpu" or "cuda".
+        save_path (str): Directory or file path where training results are stored.
+        progress_bar (ProgressBarCallback | None, optional): Optional progress bar
+            callback instance. If omitted, a default ProgressBarCallback is added.
+        enable_logging (bool): Whether training logs should be recorded.
+        log_interval (int): Interval in iterations for logging output.
+    """
 
     def __init__(
         self,

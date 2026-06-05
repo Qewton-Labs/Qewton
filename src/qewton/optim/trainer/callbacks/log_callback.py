@@ -8,6 +8,20 @@ from qewton.optim.base import EvaluationPhase
 
 
 class LogCallback(Callback):
+    """Parent class for all logging callbacks.
+
+
+    Args:
+        file_name (str, optional): The file where to save the logs to.
+            Defaults to "training_logs".
+        log_phase (EvaluationPhase, optional): What data to log.
+            Defaults to EvaluationPhase.ALWAYS, saving all data.
+        log_interval (int, optional): How often to save the logs to disk.
+            Defaults to -1, leading to saving whenever the trainer state
+            is updating its internal logs.
+        priority (int, optional): Priority of this callback. Defaults to -100.
+    """
+
     def __init__(
         self,
         file_name: str = "training_logs",
@@ -15,12 +29,6 @@ class LogCallback(Callback):
         log_interval=-1,
         priority=-100,
     ):
-        """
-        If log_interval is -1 will use the same interval as used for the history saving
-        in the trainer.
-        Args:
-            log_interval (int) :
-        """
         super().__init__(priority)
         self.log_interval = log_interval
         self.file_name = file_name
@@ -38,11 +46,9 @@ class LogCallback(Callback):
         if self.log_interval <= 0:
             self.log_interval = state.log_interval
         if self.log_interval < state.log_interval:
-            print(
-                "Note: A smaller log interval in the callback will save duplicate data \
+            print("Note: A smaller log interval in the callback will save duplicate data \
                 points. Increase the log interval of this callback or decrease the interval \
-                of the trainer."
-            )
+                of the trainer.")
 
     def on_train_step_end(self, state: TrainerState):
         if state.iteration % self.log_interval == 0:
@@ -67,6 +73,7 @@ class LogCallback(Callback):
 
 
 class CSVLogger(LogCallback):
+    """Saves the log to a CSV file"""
 
     def __init__(
         self,
@@ -109,6 +116,7 @@ class CSVLogger(LogCallback):
 
 
 class TensorboardLogger(LogCallback):
+    """Creates a tensorboard logging file."""
 
     def __init__(
         self,

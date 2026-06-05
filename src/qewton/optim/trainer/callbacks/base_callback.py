@@ -4,6 +4,11 @@ from qewton.optim.trainer.training_controllers import TrainerState
 class Callback:
     """
     Base class for callbacks. Override the hooks you need.
+
+    Args:
+        priority (int, optional): Priority of this callback. Defaults to 0.
+            If multiple callbacks are called at the same time, they will be
+            ordered accordingly to their priority.
     """
 
     def __init__(self, priority=0) -> None:

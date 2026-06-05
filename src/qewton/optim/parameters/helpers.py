@@ -34,11 +34,27 @@ class HyperParameterScale(Enum):
 
 
 class HyperParameterCondition:
+    """A condition that describes when HyperParameters should be active.
+
+    Args:
+        func (Callable) : The function obtains a config dictionary of
+            HyperParameter names and current values and returns true
+            if some condition is fulfilled.
+        deps (set[HyperParameter]) : All HyperParameters that this condition
+            depends on.
+    """
+
     def __init__(self, func, deps: set):
         self.func = func
         self.deps = deps
 
-    def evaluate(self, config) -> bool:
+    def evaluate(self, config: dict) -> bool:
+        """Evaluates the condition.
+
+        Args:
+            config (dict) : A config dictionary of HyperParameter names
+                and current values
+        """
         if config is not None:
             for node in self.deps:
                 if not node.name in config:

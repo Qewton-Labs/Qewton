@@ -5,6 +5,7 @@ from qewton.optim.trainer.training_controllers import TrainerState
 
 
 class ProgressBarCallback(Callback):
+    """Creates a progress bar for showing the training progress."""
 
     def __init__(self, priority=-100) -> None:
         super().__init__(priority)
