@@ -7,6 +7,11 @@ from typing import Optional
 class Variable(OrderedDict):
     """Creates a variable of the given problem. Helps for a natural
     implementation of the problem and internal tracking.
+
+    Args:
+        name (str | None, optional): The name of the variable. Defaults to None.
+        dim (int | tuple[int, ...] | None, optional): The dimension of the variable.
+        Defaults to None.
     """
 
     def __init__(
@@ -14,22 +19,18 @@ class Variable(OrderedDict):
         name: Optional[str] = None,
         dim: int | tuple[int, ...] | None = None,
     ):
-        """
-        Args:
-            name (str | None, optional): The name of the variable. Defaults to None.
-            dim (int | tuple[int, ...] | None, optional): The dimension of the variable.
-            Defaults to None.
-
-        Raises:
-            ValueError: _description_
-        """
         super().__init__()
         if name is not None:
             self[name] = dim
         self.has_multiple_axes = isinstance(dim, tuple)
 
     @property
-    def name(self):
+    def name(self) -> str:
+        """Returns the variable keys split by ", ".
+
+        Returns:
+            str: The variable keys as a string.
+        """
         return ", ".join(str(key) for key in self.keys())
 
     @classmethod
@@ -49,7 +50,21 @@ class Variable(OrderedDict):
             v[name] = dim
         return v
 
-    def get_slice(self, variable) -> tuple[slice, ...] | list[int]:
+    def get_slice(self, variable: Variable) -> tuple[slice, ...] | list[int]:
+        """Computes a slice index for the variable provided in this main
+        variable. The provided variable has to be included in this
+        variable
+
+        Args:
+            variable (Variable): The variable for which to compute the slice.
+
+        Raises:
+            KeyError: If the provided variable contains keys that are not present
+                in this variable.
+
+        Returns:
+            tuple[slice, ...] | list[int]: The slice indices.
+        """
         if self.has_multiple_axes:
             return tuple([slice(None)] * len(list(self.values())[0]))
         slc = []
@@ -79,7 +94,12 @@ class Variable(OrderedDict):
         a new variable containing the information from both original variables.
 
         Args:
-            other (Variable): The other variable to unify with."""
+            other (Variable): The other variable to unify with.
+
+        Raises:
+            ValueError: If the variables have multiple axes.
+            ValueError: If the variable names do not agree for unification.
+        """
         if self.is_empty():
             return other
         if other.is_empty():

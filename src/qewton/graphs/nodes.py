@@ -22,7 +22,19 @@ class NO_DEFAULT:
 
 
 class Port:
-    """Denotes the expected data shape of a node."""
+    """Represents an input or output connection of a node. Ports can be connected
+    in a graph to create a computation graph structure.
+    Each port has a data configuration that denotes the expected shape of the data
+    that is passed through this port. This can be used to check the consistency of
+    the graph and to automatically update the data configurations of other ports in
+    the graph when one port is updated.
+
+    Args:
+        data_configuration (DataConfiguration): The configuration denoting the
+            expected shape of the data
+        owner (Node): The parent node.
+        name (str): A name for this port.
+    """
 
     def __init__(
         self,
@@ -30,34 +42,24 @@ class Port:
         node: Node,
         name: str,
     ) -> None:
-        """
-        Args:
-            data_configuration (DataConfiguration): The configuration denoting the
-                expected shape of the data
-            owner (Node): The parent node.
-            name (str): A name for this port.
-        """
         self.data_configuration = data_configuration
         self.node = node
         self.name = name
         self._value = None
 
-    # # TODO: is this really necessary?
-    # def __eq__(self, value: object) -> bool:
-    #     if not isinstance(value, Port):
-    #         return False
-    #     return (
-    #         self.data_configuration == value.data_configuration
-    #         and self.node == value.node
-    #         and self.name == value.name
-    #     )
-
-    # def __hash__(self) -> int:
-    #     return hash((self.data_configuration, self.node, self.name))
-
     def duplicate_with_new_owner(
         self, new_owner: Node, new_name: str | None = None
     ) -> Port:
+        """Copies this port information and transfers to a new node.
+
+        Args:
+            new_owner (Node): The new owner of the copied port.
+            new_name (str | None, optional): A new name. Defaults to None
+                and just copied the name of this port.
+
+        Returns:
+            Port: The new port.
+        """
         return type(self)(
             data_configuration=self.data_configuration,
             node=new_owner,
@@ -68,15 +70,33 @@ class Port:
         self._value = None
 
     def set_value(self, value):
+        """Stores a value inside this port to pass through information in
+        the graph. Other nodes/ports can access this value if they are
+        connected via edges.
+
+        Args:
+            value (_type_): The value to be stored in this port.
+        """
         self._value = value
 
     @property
     def value(self):
+        """Returns the value stored in this port."""
         return self._value
 
 
 class InputPort(Port):
-    """Denotes an input port of a node."""
+    """Denotes an input port of a node.
+
+    Args:
+        data_configuration (DataConfiguration): The configuration denoting the
+            expected shape of the data
+        owner (Node): The parent node.
+        name (str): A name for this port.
+        default (any, optional): A default value for this port.
+            If no value is passed, will use a placeholder NO_DEFAULT to denote
+            that no default value is provided.
+    """
 
     def __init__(
         self,
@@ -115,6 +135,19 @@ class OutputPort(Port):
 
 
 class NodeState(Enum):
+    """Denotes different states a node can be in.
+
+    FIXED
+        The node has some fixed behavior that never changes.
+    UNINITIALIZED
+        The node needs to be initialized before it can be used, e.g.
+        by calling .setup().
+    INITIALIZED
+        The node is ready to be used and can be trained.
+    TRAINED
+        The node has been trained and is ready to be used for inference.
+    """
+
     FIXED = 1
     UNINITIALIZED = 2
     INITIALIZED = 3
@@ -124,24 +157,24 @@ class NodeState(Enum):
 class Node(ABC):
     """Base class for all nodes to create a graph.
 
-    TODO: How about save and load methods?
+    Args:
+        name (str, optional): The name of the node. Defaults to "Node".
+        state (NodeState, optional): The state of the node.
+            Defaults to NodeState.FIXED.
+        backend (type[Backend[TensorType]], optional): What backend the node
+            should use for computations, parameters, etc. Defaults to Backend.
     """
 
     _node_id_counter = 0
     _tracking_phase: bool = False
 
+    # TODO: Save and load methods
     def __init__(
         self,
         name: str = "Node",
         state: NodeState = NodeState.FIXED,
         backend: type[Backend[TensorType]] = Backend,
     ) -> None:
-        """
-        Args:
-            name (str, optional): The name of this node. Defaults to "Node".
-            state (NodeState, optional): The initial state of this node.
-                Defaults to NodeState.FIXED.
-        """
         super().__init__()
         self.name = name
         self._state = state
@@ -163,6 +196,10 @@ class Node(ABC):
     def _build_ports(
         cls, func: Callable, owner: Node, backend: type[Backend[TensorType]]
     ) -> tuple[list[InputPort], list[OutputPort]]:
+        """Automatically builds input and output ports for this node based
+        on the signature of the forward function and the type hints of its
+        parameters and return value.
+        """
         call_sig = inspect.signature(func)
         type_hints = get_type_hints(func, include_extras=True)
 
@@ -265,6 +302,11 @@ class Node(ABC):
         return self._output_ports
 
     def run(self) -> None:
+        """Evaluates the node in the graph run. This will read all the
+        values from the ports connected to the input port of this node,
+        pass them to the call-method of this node and write the outputs
+        into the output ports.
+        """
         input_data = [in_port.value for in_port in self.input_ports]
         output_data = self(*input_data)
         if len(self.output_ports) == 1:
@@ -274,11 +316,15 @@ class Node(ABC):
                 out_port.set_value(output_data[i])
 
     def __call__(self, *args, **kwargs) -> Any:
+        """Apply this node to the provided inputs."""
         if self._tracking_phase:
             return self._track(*args, **kwargs)
         return self.forward(*args, **kwargs)
 
     def forward(self, *args, **kwargs):
+        """Implements the main functionality of this node. This method
+        needs to be implemented in the subclasses
+        """
         raise NotImplementedError(
             "The default node can not be called, "
             "this method needs to be overwritten in the subclasses."
@@ -408,13 +454,35 @@ class Node(ABC):
                     updated_ports.add(c_port)
         return updated_ports
 
-    def get_input_port(self, name):
+    def get_input_port(self, name: str) -> InputPort:
+        """Returns the input port with the given name
+
+        Args:
+            name (str): The name we are looking for.
+
+        Raises:
+            ValueError: If no input port with the given name is found.
+
+        Returns:
+            InputPort: The port with the corresponding name.
+        """
         for port in self.input_ports:
             if port.name == name:
                 return port
         raise ValueError(f"No input port with name {name} found in node {self.name}.")
 
-    def get_output_port(self, name):
+    def get_output_port(self, name: str) -> OutputPort:
+        """Returns the output port with the given name.
+
+        Args:
+            name (str): The name we are looking for.
+
+        Raises:
+            ValueError: If no output port with the given name is found.
+
+        Returns:
+            OutputPort: The port with the corresponding name.
+        """
         for port in self.output_ports:
             if port.name == name:
                 return port
@@ -423,7 +491,10 @@ class Node(ABC):
     def copy(self):
         """Creates a copy of this node, with the same inner operations, parameters
         etc., but with new input and output ports.
+
+        Returns
+            CopiedNode: A copy of this node.
         """
-        from qewton.graphs.control_nodes.graph_node import CopiedNode
+        from .control_nodes.graph_node import CopiedNode
 
         return CopiedNode(self)

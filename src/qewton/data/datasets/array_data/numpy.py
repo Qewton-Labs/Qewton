@@ -6,19 +6,17 @@ from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 
 
 class NumpyDataSet(ArrayLikeDataSet):
-    """Data container specialized for NumPy ndarrays."""
+    """Data container specialized for NumPy ndarrays.
+
+    Args:
+        data (np.ndarray | list[np.ndarray]): The raw numpy data.
+        data_configs (DataConfiguration | list[DataConfiguration]): Axis metadata.
+
+    Raises:
+        TypeError: If the data provided is not a numpy ndarray.
+    """
 
     def __init__(self, data, data_configs):
-        """
-        Initializes the NumpyDataSet.
-
-        Args:
-            data (np.ndarray | list[np.ndarray]): The raw numpy data.
-            data_configs (DataConfiguration | list[DataConfiguration]): Axis metadata.
-
-        Raises:
-            TypeError: If the data provided is not a numpy ndarray.
-        """
         items = data if isinstance(data_configs, (list, tuple)) else [data]
         for item in items:
             if not isinstance(item, np.ndarray):

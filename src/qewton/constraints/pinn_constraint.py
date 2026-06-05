@@ -20,6 +20,31 @@ from qewton.constraints.base import Constraint
 
 
 class PINNConstraint(Constraint, GraphNode):
+    """Represents a physics informed constraint, which is defined by a
+    residual function. The residual function takes the necessary data as input
+    and computes the residual of the PDE, which is then reduced to a
+    single value by a reduction function, e.g. the mean squared error of
+    the residual.
+
+    The residual function should use variables as a type annotation for its
+    arguments, which will be used to automatically construct the input
+    ports of this constraint and to feed the correct data into the residual
+    function. E.g.
+
+        def residual(x: Variable("x"), u: Variable("u")):
+            return u.gradient(x) - f(x)
+
+    Args:
+        residual (Callable): The residual function, which computes the
+            residual of the physics conditions.
+        reduction (_type_, optional): A custom reduction function.
+            Defaults to None and the MSE.
+
+    Raises:
+        AssertionError: If the residual function does not return a single value.
+        AssertionError: If the reduction function does not take a single input.
+        AssertionError: If the reduction function does not return a single value.
+    """
 
     def __init__(
         self,

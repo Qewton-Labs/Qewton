@@ -1,20 +1,20 @@
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
 from qewton.config.variables import Variable
 
 
 class Sphere(ContinuousGeometry):
-    """Class for spheres (NumPy-only, simplified).
+    """Class for spheres.
 
-    Parameters
-    ----------
-    variable : Variable
-        The variable representing the underlying 3D space.
-    center : array_like
-        The center of the sphere, e.g. [0, 0, 0].
-    radius : float
-        The radius of the sphere.
+    Args:
+        variable (Variable): The variable associated with the sphere, must be 3D.
+        center (np.ndarray | list[float] | tuple[float, float, float]):
+            The center of the sphere, e.g. [0, 0, 0].
+        radius (float): The radius of the sphere.
     """
 
     def __init__(

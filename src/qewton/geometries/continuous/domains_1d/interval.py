@@ -1,12 +1,23 @@
+from __future__ import annotations
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
 from qewton.geometries.discrete.mesh_domain import MeshGeometry, Mesh
 from qewton.config.variables import Variable
 
 
 class Interval(ContinuousGeometry):
-    """Interval class"""
+    """Interval class representing a 1D interval domain defined by a lower and
+    upper bound.
+
+    Args:
+        variable (Variable): The variable associated with the interval, must be 1D.
+        lower_bound (float): The lower bound of the interval.
+        upper_bound (float): The upper bound of the interval.
+    """
 
     def __init__(self, variable: Variable, lower_bound, upper_bound):
         assert variable.dim == 1
@@ -55,14 +66,14 @@ class Interval(ContinuousGeometry):
         return IntervalBoundary(self)
 
     @property
-    def boundary_left(self):
+    def boundary_left(self) -> IntervalSingleBoundaryPoint:
         """Returns only the left boundary value, useful for the definition
         of initial conditions.
         """
         return IntervalSingleBoundaryPoint(self, side=self.lower_bound)
 
     @property
-    def boundary_right(self):
+    def boundary_right(self) -> IntervalSingleBoundaryPoint:
         """Returns only the left boundary value, useful for the definition
         of end conditions.
         """

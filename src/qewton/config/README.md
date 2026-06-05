@@ -22,6 +22,3 @@ Example: `DataConfiguration(BatchAxes(...), GeometryAxes(image_grid), FeatureAxe
 
 ## Axis Logic
 The module supports symbolic relationships between dimensions, such as `AddedDim` or `ProductDim`, allowing the system to understand that an output dimension is the sum or product of specific inputs.
-
-## TODO:
-- could we simplify the config passing to use common AxesDim objects nearly around the whole graph? this would allow for less passing operations and less objects.

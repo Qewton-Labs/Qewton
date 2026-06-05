@@ -1,19 +1,25 @@
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
 from qewton.geometries.discrete.mesh_domain import MeshGeometry, Mesh
 from qewton.config.variables import Variable
 
 
 class Triangle(ContinuousGeometry):
-    """Class for triangles (NumPy-only, simplified).
+    """Class for triangles.
 
-    Parameters
-    ----------
-    variable : Variable
-        The variable representing the underlying 2D space.
-    origin, corner_1, corner_2 : array_like
-        The three corners of the triangle in counter-clockwise order.
+    Args:
+        variable (Variable): The variable representing the underlying 2D space,
+            must be 2D.
+        origin (np.ndarray | list[float] | tuple[float, float]):
+            The origin of the triangle (first corner).
+        corner_1 (np.ndarray | list[float] | tuple[float, float]):
+            The second corner of the triangle.
+        corner_2 (np.ndarray | list[float] | tuple[float, float]):
+            The third corner of the triangle.
     """
 
     def __init__(

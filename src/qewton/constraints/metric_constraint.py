@@ -14,6 +14,23 @@ from qewton.optim.base import EvaluationPhase
 
 
 class MetricConstraint(Constraint):
+    """A metric constraint is a constraint that computes a metric
+    between two inputs, e.g. the MSE between the output of the model
+    and some target data. The metric can be computed in a relative way,
+    i.e. the MSE is divided by the variance of the target data,
+    to make it scale invariant.
+
+    Args:
+        input_config (DataConfiguration, optional): The expected data shape.
+            Defaults to DataConfiguration.empty().
+        name (str, optional): A name of the constraint.
+            Defaults to "MetricConstraint".
+        relative (bool | BooleanHyperparameter, optional): If a relative loss
+            should be computed. Defaults to False.
+        epsilon (_type_, optional): A small tolerance added to the relative
+            loss to avoid dividing by zero. Defaults to 1e-8.
+    """
+
     def __init__(
         self,
         input_config: DataConfiguration = DataConfiguration.empty(),
@@ -47,6 +64,8 @@ class MetricConstraint(Constraint):
 
 
 class MSEConstraint(MetricConstraint, GraphNode):
+    """A constraint that computes the mean squared error between two inputs"""
+
     # TODO: Add different kind of norms
 
     def __init__(

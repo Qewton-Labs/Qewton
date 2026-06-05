@@ -11,7 +11,19 @@ from qewton.data.dataloaders.sampler.point_sampler import PointSampler
 
 
 class GridSampler(PointSampler):
-    """Samples points in a grid-like fashion from a geometry."""
+    """Samples points in a grid-like fashion from a geometry.
+
+    Args:
+        geometry (Geometry): The geometry in which points should be sampled.
+        n_points (int | Hyperparameter): The number of points that should be sampled.
+        compute_normals (bool, optional): Whether to compute normals to each sampled
+            points. This is only possible for BoundaryGeometries. Defaults to False.
+        normal_name (str | Variable): The name for the output port of the normals.
+            Defaults to "normals".
+        name (str, optional): The name of the node. Defaults to "PointSampler".
+        state (NodeState, optional): The state of the node.
+            Defaults to NodeState.FIXED.
+    """
 
     def __init__(
         self,
@@ -31,6 +43,7 @@ class GridSampler(PointSampler):
         self.normal_cache: np.ndarray | None = None
 
     def sample_points(self):
+        """Samples points from the geometry in a grid-like fashion."""
         if self.point_cache is not None:
             return self.point_cache, self.normal_cache
         if self.is_boundary_geometry:

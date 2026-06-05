@@ -2,20 +2,20 @@ from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 
 
 class HDF5DataSet(ArrayLikeDataSet):
-    """Data container for HDF5 files."""
+    """Data container for HDF5 files.
+
+    Args:
+        dataset (h5py.Dataset): The data from the HDF5 file that should be
+            contained in this class.
+        file_handle (h5py.File): The file where the data originates from.
+
+    Notes:
+        Reading a file via h5py can be done via
+            file_handle = h5py.File(file_path, "r")
+            dataset = f[dataset_key]
+    """
 
     def __init__(self, dataset, file_handle, data_configs):
-        """
-        Args:
-            dataset (h5py.Dataset): The data from the HDF5 file that should be
-                contained in this class.
-            file_handle (h5py.File): The file where the data originates from.
-
-        Notes:
-            Reading a file via h5py can be done via
-                file_handle = h5py.File(file_path, "r")
-                dataset = f[dataset_key]
-        """
         # TODO: should we automatically split up the data somehow?
         self._file = file_handle  # keep handle alive
         super().__init__(dataset, data_configs)

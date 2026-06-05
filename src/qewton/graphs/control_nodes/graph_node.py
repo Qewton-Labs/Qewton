@@ -19,6 +19,26 @@ class GraphNode(Node):
     Input and output ports of the inner graph are mapped to the input and output
     ports of this `GraphNode`, allowing a complete graph to be used as a single
     node within a larger graph structure.
+
+    Args:
+        graph (Graph): The graph to be encapsulated by this node.
+        input_ports (list[InputPort] | dict[InputPort, list[InputPort]]):
+            Defines how the input ports of this GraphNode map to the input ports of
+            the inner graph.
+            If a list, new input ports for this node are created, and inner graph
+            inputs are mapped by order.
+            If a dict, keys are this GraphNode's input ports, values are lists of
+            corresponding inner graph input ports.
+        output_ports (list[OutputPort] | dict[OutputPort, Port]):
+            Defines how the output ports of this GraphNode map to the output ports of
+            the inner graph.
+            If a list, new output ports for this node are created, and inner graph
+            outputs are mapped by order.
+            If a dict, keys are this GraphNode's output ports, values are
+            corresponding inner graph output ports.
+        name (str, optional): The name of this node. Defaults to "GraphNode".
+        backend (type[Backend[TensorType]], optional): The backend type for tensor
+            operations. Defaults to Backend.
     """
 
     def __init__(
@@ -30,29 +50,6 @@ class GraphNode(Node):
         backend: type[Backend[TensorType]] = Backend,
         **kwargs,
     ) -> None:
-        """
-        Initializes a GraphNode.
-
-        Args:
-            graph (Graph): The graph to be encapsulated by this node.
-            input_ports (list[InputPort] | dict[InputPort, list[InputPort]]):
-                Defines how the input ports of this GraphNode map to the input ports of
-                the inner graph.
-                If a list, new input ports for this node are created, and inner graph
-                inputsare mapped by order.
-                If a dict, keys are this GraphNode's input ports, values are lists of
-                corresponding inner graph input ports.
-            output_ports (list[OutputPort] | dict[OutputPort, Port]):
-                Defines how the output ports of this GraphNode map to the output ports of
-                the inner graph.
-                If a list, new output ports for this node are created, and inner graph
-                outputs are mapped by order.
-                If a dict, keys are this GraphNode's output ports, values are
-                corresponding inner graph output ports.
-            name (str, optional): The name of this node. Defaults to "GraphNode".
-            backend (type[Backend[TensorType]], optional): The backend type for tensor
-                operations. Defaults to Backend.
-        """
         super().__init__(name=name, backend=backend)
 
         self._graph = graph
@@ -112,6 +109,7 @@ class GraphNode(Node):
 
         This method is typically used during graph setup establish how external inputs
         connect to the encapsulated graph.
+
         Args:
             new_input_ports (list[InputPort] | dict[InputPort, list[InputPort]]): The
                 new input port configuration.
@@ -161,6 +159,7 @@ class GraphNode(Node):
         """
         Collects and returns all trainable parameters from the nodes within the
         encapsulated graph.
+
         Returns:
             _TrainableParameterBase: A collection of trainable parameters from the inner
                 graph.
@@ -172,6 +171,7 @@ class GraphNode(Node):
         """
         Internal method to return trainable parameters, delegating to the graph's
         collection method.
+
         Returns:
             _TrainableParameterBase: A collection of trainable parameters.
         """
@@ -184,9 +184,11 @@ class GraphNode(Node):
         Input values provided to this `GraphNode` are set on its input ports,
         which then propagate to the inner graph. The inner graph is run, and
         its output values are collected from this `GraphNode`'s output ports.
+
         Args:
             *args: Positional arguments corresponding to the GraphNode's input ports.
             **kwargs: Keyword arguments corresponding to the GraphNode's input ports.
+
         Returns:
             Any: The output of the encapsulated graph, either a single value or a
                 tuple of values.
@@ -213,6 +215,7 @@ class GraphNode(Node):
 
         This method is intended to be called during the `setup` phase of the node,
         not during initialization, to allow for dynamic graph construction.
+
         Args:
             graph (Graph): The graph to encapsulate.
             input_ports (list[InputPort] | dict[InputPort, list[InputPort]]): Input port
@@ -233,6 +236,7 @@ class GraphNode(Node):
         If the GraphNode's configurations are defined in its `forward` method,
         it delegates to the superclass's `update_data_configs`. Otherwise, it infers
         updates from the inner graph's data configuration changes.
+
         Args:
             updated_port (Port): The port that triggered the update.
             config_dict (dict): A dictionary containing configuration updates.
@@ -323,6 +327,7 @@ class GraphNode(Node):
         """
         Checks if the data configurations for the GraphNode's ports were explicitly
         defined using `Annotated` type hints in its `forward` method.
+
         Returns:
             bool: True if configurations were defined in `forward`, False otherwise.
         """
@@ -369,6 +374,7 @@ class GraphNode(Node):
         """
         Moves all nodes within the encapsulated graph to a specified device (e.g.,
         GPU, CPU).
+
         Args:
             device: The target device.
         """
@@ -424,7 +430,14 @@ class FromFunctionNode(GraphNode):
     flow of a provided function.
 
     This node automatically builds an internal graph based on how `TrackingObject`s
-    are used within the given function."""
+    are used within the given function.
+
+    Args:
+        function (Callable): The function to analyze for building the graph.
+        name (str, optional): The name of this node. Defaults to "FromFunctionNode".
+        backend (type[Backend[TensorType]], optional): The backend type for tensor
+            operations. Defaults to Backend.
+    """
 
     def __init__(
         self,
@@ -443,8 +456,13 @@ class FromFunctionNode(GraphNode):
 
 class TrackedNode(FromFunctionNode):
     """
-    A GraphNode where the internal graph is automatically built by tracking the `forward`
-    method's execution.
+    A GraphNode where the internal graph is automatically built by tracking the
+    `forward` method's execution.
+
+    Args:
+        name (str, optional): The name of this node. Defaults to "TrackedNode".
+        backend (type[Backend[TensorType]], optional): The backend type for tensor
+            operations. Defaults to Backend.
     """
 
     def __init__(self, name="TrackedNode", backend: type[Backend[TensorType]] = Backend):
@@ -481,14 +499,12 @@ class CopiedNode(GraphNode):
 
     This allows for creating instances of existing nodes within a single graph context
     without directly modifying the original node.
+
+    Args:
+        node_to_copy (Node): The node to be copied and encapsulated.
     """
 
     def __init__(self, node_to_copy: Node) -> None:
-        """
-        Initializes a CopiedNode.
-        Args:
-            node_to_copy (Node): The node to be copied and encapsulated.
-        """
         self.copied_node = node_to_copy
         super().__init__(
             Graph(), self.copied_node.input_ports, self.copied_node.output_ports
@@ -501,5 +517,4 @@ class CopiedNode(GraphNode):
 
         This prevents infinite recursion if `copy` is called on an already copied node.
         """
-        # avoid iterative copying if copy is called multiple times
         return CopiedNode(self.copied_node)

@@ -1,7 +1,10 @@
 import warnings
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
 from qewton.geometries.continuous.domain_operations.sampler_helper import (
     _boundary_grid_with_n,
     _inside_grid_with_n,
@@ -12,13 +15,13 @@ from qewton.geometries.continuous.domain_operations.sampler_helper import (
 
 class IntersectionGeometry(ContinuousGeometry):
     """Implements the logical intersection of two geometries.
+    The intersection is implemented via "on time sampling" and does not
+    have an explicit representation. When points are sampled they are
+    filtered using logical operations.
 
-    Parameters
-    ----------
-    geometry_a : ContinuousGeometry
-        The first geometry.
-    geometry_b : ContinuousGeometry
-        The second geometry.
+    Args:
+        geometry_a (ContinuousGeometry): The first geometry.
+        geometry_b (ContinuousGeometry): The second geometry.
     """
 
     def __init__(
@@ -62,12 +65,10 @@ class IntersectionGeometry(ContinuousGeometry):
         )
 
     def _get_volume(self):
-        warnings.warn(
-            """Exact volume of this intersection is not known,
+        warnings.warn("""Exact volume of this intersection is not known,
             will use the estimate: volume = geometry_a.volume.
             If you need the exact volume for sampling,
-            use geometry.set_volume()"""
-        )
+            use geometry.set_volume()""")
         return self.geometry_a.volume()
 
     def create_boundary(self):
@@ -91,12 +92,10 @@ class IntersectionBoundaryGeometry(ContinuousBoundaryGeometry):
         return np.logical_or(on_a_part, on_b_part)
 
     def _get_volume(self):
-        warnings.warn(
-            """Exact volume of this intersection-boundary is not known,
+        warnings.warn("""Exact volume of this intersection-boundary is not known,
             will use the estimate: volume = boundary_a + boundary_b.
             If you need the exact volume for sampling,
-            use geometry.set_volume()"""
-        )
+            use geometry.set_volume()""")
         volume_a = self.geometry.geometry_a.create_boundary().volume()
         volume_b = self.geometry.geometry_b.create_boundary().volume()
         return volume_a + volume_b

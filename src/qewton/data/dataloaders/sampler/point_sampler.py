@@ -19,7 +19,19 @@ from qewton.optim.parameters.categorical_hyperparameter import (
 
 # TODO: Add static sampling and caching
 class PointSampler(DataNode):
-    """Parent class for sampling individual points from a geometry."""
+    """Parent class for sampling individual points from a geometry.
+
+    Args:
+        geometry (Geometry): The geometry in which points should be sampled.
+        n_points (int | Hyperparameter): The number of points that should be sampled.
+        compute_normals (bool, optional): Whether to compute normals to each sampled
+            points. This is only possible for BoundaryGeometries. Defaults to False.
+        normal_name (str | Variable): The name for the output port of the normals.
+            Defaults to "normals".
+        name (str, optional): The name of the node. Defaults to "PointSampler".
+        state (NodeState, optional): The state of the node.
+            Defaults to NodeState.FIXED.
+    """
 
     def __init__(
         self,
@@ -31,18 +43,6 @@ class PointSampler(DataNode):
         state: NodeState = NodeState.FIXED,
         backend: type[Backend] | None = DEFAULT_DL_BACKEND,
     ) -> None:
-        """
-        Args:
-            geometry (Geometry): The geometry in which points should be sampled.
-            n_points (int | Hyperparameter): The number of points that should be sampled.
-            compute_normals (bool, optional): Whether to compute normals to each sampled
-                points. This is only possible for BoundaryGeometries. Defaults to False.
-            normal_name (str | Variable): The name for the output port of the normals.
-                Defaults to "normals".
-            name (str, optional): The name of the node. Defaults to "PointSampler".
-            state (NodeState, optional): The state of the node.
-                Defaults to NodeState.FIXED.
-        """
         self.geometry = geometry
         self.compute_normals = compute_normals
         self.is_boundary_geometry = isinstance(geometry, BoundaryGeometry)

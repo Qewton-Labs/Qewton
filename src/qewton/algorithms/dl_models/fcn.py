@@ -13,7 +13,24 @@ from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class FCN(GraphNode, Generic[TensorType]):
-    """Fully Connected Network (FCN) implementation."""
+    """Fully Connected Network (FCN) implementation.
+
+    Args:
+        in_neurons (int | HyperParameter | Variable): The number of input neurons
+            or a variable representing it.
+        hidden_neurons (int | HyperParameter): The number of neurons in
+            each hidden layer.
+        out_neurons (int | HyperParameter | Variable): The number of output
+            neurons or a variable representing it.
+        n_hidden_layers (int | HyperParameter): Number of hidden layers.
+        bias (bool | HyperParameter, optional): If a bias should be included.
+            Defaults to True.
+        activation (type[Node] | HyperParameter, optional): The activation
+            function in each layer. Defaults to ReLU.
+        name (str, optional): Name of the model. Defaults to "fcn".
+        backend (type[Backend[TensorType]], optional): What backend this
+            model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
+    """
 
     def __init__(
         self,
@@ -84,6 +101,9 @@ class FCN(GraphNode, Generic[TensorType]):
         return SequentialGraph(*nodes)
 
     def setup(self):
+        """Initializes the neural network itself for the current
+        set of parameters.
+        """
         new_graph = self._build_network(self.backend)
         self.setup_graph(
             new_graph,
@@ -103,6 +123,12 @@ class FCN(GraphNode, Generic[TensorType]):
         ]
 
     def x_data_config(self):
+        """Build the expected input data configuration based on the
+        input variable or number of input neurons.
+
+        Returns:
+            DataConfiguration: The input data configuration for the FCN.
+        """
         self.ellipsis_axes = EllipsisAxes()
         if self.input_var is not None:
             return DataConfiguration(
@@ -117,6 +143,12 @@ class FCN(GraphNode, Generic[TensorType]):
         )
 
     def out_data_config(self):
+        """Build the expected output data configuration based on the
+        output variable or number of output neurons.
+
+        Returns:
+            DataConfiguration: The output data configuration for the FCN.
+        """
         b_end = self.backend.standard_datatype()
         if self.output_var is not None:
             return DataConfiguration(

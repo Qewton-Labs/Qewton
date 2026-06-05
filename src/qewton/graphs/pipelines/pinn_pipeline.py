@@ -1,6 +1,9 @@
 from typing import Callable
 
-from qewton.algorithms.building_blocks.array_operations import SplitVariables, ConcatVariables
+from qewton.algorithms.building_blocks.array_operations import (
+    SplitVariables,
+    ConcatVariables,
+)
 
 from qewton.config.variables import Variable
 
@@ -16,9 +19,30 @@ from qewton.graphs import Graph
 
 
 class PINNPipeline(Graph):
-    """
+    """Automatically builds the computation graph for a PINN training pipeline
+    based on the provided sampler, models, and constraint. The pipeline handles
+    the necessary splitting and joining of variables, as well as tracking gradients
+    for the computation of derivatives.
+
     Models (which can also be single Parameters) can not depend on outputs
     of another model, but are just executed separately.
+
+    Args:
+        sampler (DataNode): The data node that provides the input data for the PINN.
+        models (list[Node]): A list of models that should be trained
+        constraint (Constraint | None, optional): The constraint that describes
+            the physics constrained that should be trained. If none
+            is provided, a residual should be given instead. Defaults to None.
+        residual (Callable | None, optional): The residual function to build
+            a PINNConstraint from, if not constraint is provided.
+            Defaults to None.
+        residual_name (str | None, optional): A name for the constraint.
+            Defaults to None.
+        reduction (Callable | None, optional): A function that is coupled
+            to the residual function to build the PINNConstraint. Defaults to None.
+        weight (float, optional): A weight for the constraint. Defaults to 1.0.
+        backend (_type_, optional): In which backend to build this graph in.
+            Defaults to DEFAULT_DL_BACKEND.
     """
 
     def __init__(

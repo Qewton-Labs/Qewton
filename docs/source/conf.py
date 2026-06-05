@@ -1,10 +1,41 @@
 import os
 import sys
 import shutil
+from pathlib import Path
+from m2r2 import convert
 
 __location__ = os.path.dirname(__file__)
 
 sys.path.insert(0, os.path.abspath("../../src"))
+
+
+def insert_readme_as_module_doc(app, what, name, obj, options, lines):
+    """
+    Replace module docstring with README.md if it exists.
+    """
+    if what != "module":
+        return
+
+    try:
+        module_path = Path(obj.__file__).parent
+        readme = module_path / "README.md"
+        if Path(obj.__file__).stem != "__init__":
+            return
+
+        if readme.exists():
+            lines.clear()  # remove __init__.py docstring
+            readme_text = readme.read_text(encoding="utf-8")
+            rst_text = convert(readme_text)
+            lines.extend(rst_text.splitlines())
+            # lines += readme.read_text(encoding="utf-8").splitlines()
+
+    except Exception:
+        pass
+
+
+def setup(app):
+    app.connect("autodoc-process-docstring", insert_readme_as_module_doc)
+
 
 # ---- auto-generate API ----
 try:
@@ -18,11 +49,36 @@ try:
     except FileNotFoundError:
         pass
 
-    apidoc.main([
-        "-f",
-        "-o", output_dir,
-        module_dir
-    ])
+    apidoc.main(["-f", "-o", output_dir, module_dir])
+
+    # Put read me in the front:
+    for rst_file in Path(output_dir).glob("*.rst"):
+        text = rst_file.read_text(encoding="utf-8")
+
+        marker = "Module contents\n---------------"
+        if marker not in text:
+            continue
+
+        # Remove the "Module contents" title
+        # text = text.replace("Module contents\n---------------\n\n", "")
+
+        # Extract module contents section
+        before, module_section = text.split(marker, 1)
+
+        # Put it right after the title
+        lines = before.splitlines()
+
+        title_end = 2  # title + underline
+        new_text = (
+            "\n".join(lines[: title_end + 1])
+            + "\n\n"
+            + marker
+            + module_section
+            + "\n"
+            + "\n".join(lines[title_end + 1 :])
+        )
+
+        rst_file.write_text(new_text, encoding="utf-8")
 
 except Exception as e:
     print("apidoc failed:", e)
@@ -53,7 +109,8 @@ extensions = [
     "sphinx.ext.doctest",
     "sphinx.ext.ifconfig",
     "sphinx.ext.mathjax",
-    "sphinx.ext.napoleon"
+    "sphinx.ext.napoleon",
+    "myst_parser",
 ]
 
 autosummary_generate = True

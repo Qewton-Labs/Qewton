@@ -4,20 +4,18 @@ from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 
 
 class TorchDataSet(ArrayLikeDataSet):
-    """Data container specialized for PyTorch Tensors."""
+    """Data container specialized for PyTorch Tensors.
+
+    Args:
+        data (torch.Tensor | list[torch.Tensor]): The raw torch data.
+        data_configs (DataConfiguration | list[DataConfiguration]): Axis metadata.
+
+    Raises:
+        ImportError: If torch is not installed.
+        TypeError: If the data provided is not a torch.Tensor.
+    """
 
     def __init__(self, data, data_configs):
-        """
-        Initializes the TorchDataSet.
-
-        Args:
-            data (torch.Tensor | list[torch.Tensor]): The raw torch data.
-            data_configs (DataConfiguration | list[DataConfiguration]): Axis metadata.
-
-        Raises:
-            ImportError: If torch is not installed.
-            TypeError: If the data provided is not a torch.Tensor.
-        """
         try:
             import torch
         except ImportError as e:

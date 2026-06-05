@@ -15,19 +15,17 @@ class ArrayLikeDataSet(DataSet):
     """A data container that handles "array-like" or dense "data". This
     includes for example data such as np.array, torch.tensor, or hdf5 data.
     The concrete data containers are implemented via subclasses.
+
+    Args:
+        data (Any): Data objects that allow for slicing via [:] and
+            have a shape property (.shape) returning a tuple of integers.
+        data_configs (DataConfiguration | list[DataConfiguration]): Configuration
+            mapping the data dimensions to semantic axes.
     """
 
     def __init__(
         self, data: Any, data_configs: DataConfiguration | list[DataConfiguration]
     ):
-        """Initialize the dataset.
-
-        Args:
-            data (Any): Data objects that allow for slicing via [:] and
-                have a shape property (.shape) returning a tuple of integers.
-            data_configs (DataConfiguration | list[DataConfiguration]): Configuration
-                mapping the data dimensions to semantic axes.
-        """
         # Normalize data and configs to lists to support multi-input/output datasets
         self._data = data if isinstance(data_configs, (list, tuple)) else [data]
         self._data_configs = (

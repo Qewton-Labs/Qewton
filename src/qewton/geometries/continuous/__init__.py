@@ -4,7 +4,7 @@ from .domains_1d.interval import Interval
 
 from .domains_2d.circle import Circle
 from .domains_2d.parallelogram import Parallelogram
-from .domains_2d.square import Square
+from .domains_2d.rectangle import Rectangle
 from .domains_2d.triangle import Triangle
 
 from .domains_3d.box import Box

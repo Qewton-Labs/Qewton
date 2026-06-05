@@ -7,8 +7,16 @@ from qewton.config.variables import Variable
 
 
 class Geometry:
-    """
-    Represents a geometric shape.
+    """Represents a geometric shape for sampling points, computing normal
+    vectors, plotting, etc.
+
+    Args:
+        variable (Variable | None, optional): The variable that belongs to this
+                geometry. Defaults to None.
+        dim (int | None, optional): The dimension of the geometry.
+            Defaults to None.
+        shape (tuple[int  |  None, ...] | EllipsisType, optional): A discrete
+            shape. Defaults to ....
     """
 
     def __init__(
@@ -28,6 +36,11 @@ class Geometry:
 
     @property
     def boundary(self) -> BoundaryGeometry:
+        """Returns the boundary of this geometry as a new Geometry object.
+
+        Returns:
+            BoundaryGeometry: The boundary of this geometry.
+        """
         if self.boundary_object is None:
             self.boundary_object = self.create_boundary()
         return self.boundary_object
@@ -154,6 +167,24 @@ class Geometry:
         discretization_points: Any | None = None,
         discretization_shape: tuple[int, ...] | None = None,
     ) -> DiscreteGeometry:
+        """Discretizes this geometry into a `DiscreteGeometry` object.
+        The discretization can be defined by providing either the
+        discretization points or the shape of the discretization.
+
+        Args:
+            discretization_points (Any | None, optional): The points for the
+                discrete geometry. Defaults to None.
+            discretization_shape (tuple[int, ...] | None, optional): The shape of
+                discretization. Defaults to None.
+
+        Raises:
+            ValueError: If both or neither of discretization_points and
+                discretization_shape are provided, or if the provided information
+                is inconsistent.
+
+        Returns:
+            DiscreteGeometry: The discretized geometry as a DiscreteGeometry object.
+        """
         if discretization_points is not None:
             shape = discretization_points.shape[:-1]
             if discretization_shape is not None:
@@ -187,26 +218,64 @@ class Geometry:
     def is_discretization_of(
         self, other_geometry: Geometry  # pylint: disable=unused-argument
     ) -> bool:
+        """Check if this geometry is a discretization of the provided one.
+
+        Args:
+            other_geometry (Geometry, optional): The geometry to compare to.
+                Defaults to unused-argument.
+
+        Returns:
+            bool: If this geometry is a discretization of the provided one.
+        """
         return False
 
     def create_mesh(self, max_vertex_distance: float | None = None):
+        """Meshes this geometry into a `MeshGeometry` object. The meshing can be
+        controlled by providing a maximum vertex distance, which determines the
+        fineness of the mesh.
+
+        Args:
+            max_vertex_distance (float | None, optional): How fine the mesh
+                should be. Defaults to None.
+
+        Raises:
+            NotImplementedError: By default meshing is not provided.
+        """
         raise NotImplementedError()
 
     def set_marker(self, marker, marker_description):
+        # TODO!!!
         raise NotImplementedError(
             "General geometries can not be marked, use "
             "the filter functions in the sampler object instead."
         )
 
     def get_marker(self, marker):
+        # TODO!!!
         if marker in self.markers:
             return self.markers[marker]
         raise KeyError(f"{marker} marker not found.")
 
     def sample_random_uniform(self, n_points: int) -> Any:
+        """Samples random uniform points inside this domain.
+
+        Args:
+            n_points (int): The number of points that should be sampled.
+
+        Returns:
+            array: An array of shape (n_points, dim) containing the sampled points.
+        """
         raise NotImplementedError()
 
     def sample_grid(self, n_points: int) -> Any:
+        """Samples grid points inside this domain.
+
+        Args:
+            n_points (int): The number of points that should be sampled.
+
+        Returns:
+            array: An array of shape (n_points, dim) containing the sampled points.
+        """
         raise NotImplementedError()
 
     def __and__(self, other):
@@ -288,6 +357,19 @@ class Geometry:
 
 
 class DiscreteGeometry(Geometry):
+    """A discrete geometry represents a geometry that includes a number of
+    discretized points and concrete discretization shape.
+
+    Args:
+        shape (tuple[int, ...]): The shape of the discretization, e.g. the
+            number of points in each dimension. Used for predicting the shape
+            of a GeometryAxes.
+        variable (Variable | None, optional): The variable connected to this
+            geometry. Defaults to None.
+        dim (int | None, optional): The dimension of this geometry. Defaults to None.
+        discretization_points (Any | None, optional): Discrete points that
+            make up this geometry. Defaults to None.
+    """
 
     def __init__(
         self,
@@ -308,15 +390,41 @@ class DiscreteGeometry(Geometry):
         return False
 
     def sample_random_uniform_from_discretization(self, n_points: int) -> Any:
+        """Samples random points from the discretization_points saved
+        in this geometry.
+
+        Args:
+            n_points (int): How many points should be sampled from the
+                discretization. If n_points is larger than the number of
+                discretization points, duplicates will be returned.
+
+        Returns:
+            array: An array of shape (n_points, dim) containing the sampled points.
+        """
         raise NotImplementedError()
 
     def sample_grid_from_discretization(self, n_points: int) -> Any:
+        """Samples points from the discretization_points, the n_points
+        will be equally distributed over the number of all points, such
+        that every point is returned the same amount.
+
+        Args:
+            n_points (int): How many points should be sampled from the
+                discretization. If n_points is larger than the number of
+                discretization points, duplicates will be returned.
+
+        Returns:
+            Any: An array of shape (n_points, dim) containing the sampled points.
+        """
         raise NotImplementedError()
 
 
 class BoundaryGeometry(Geometry):
-    """The parent class for all built-in boundaries.
-    Can be used just like any other Geometry.
+    """The parent class for all built-in boundaries. Can be used just like
+    any other Geometry.
+
+    Args:
+        geometry (Geometry): The geometry for which this is the boundary of.
     """
 
     def __init__(self, geometry):
@@ -331,8 +439,20 @@ class BoundaryGeometry(Geometry):
     def bounding_box(self):
         return self.geometry.bounding_box()
 
+    def create_boundary(self) -> BoundaryGeometry:
+        raise NotImplementedError("Boundary of a boundary geometry is not defined.")
+
     def normal(self, points):
-        """Computes the normal vector at each point in points."""
+        """Computes the normal vector at each point in points.
+
+        Args:
+            points (array): An array of shape (n_points, dim) containing the points
+                at which the normal vector should be computed.
+
+        Returns:
+            array: An array of shape (n_points, dim) containing the normal vectors
+                at the given points.
+        """
         raise NotImplementedError()
 
     def sample_grid(
@@ -340,6 +460,17 @@ class BoundaryGeometry(Geometry):
         n_points: int,
         include_normals: bool = False,  # pylint: disable=unused-argument
     ) -> Any:
+        """Samples a grid along the boundary.
+
+        Args:
+            n_points (int): The number of points.
+            include_normals (bool, optional): Wether also the normal vectors at
+                each point should be returned. Defaults to False.
+
+        Returns:
+            tuple(array, array | None): The points and normal vectors at the
+                points if include_normals is True, otherwise None.
+        """
         return super().sample_grid(n_points)
 
     def sample_random_uniform(
@@ -347,6 +478,17 @@ class BoundaryGeometry(Geometry):
         n_points: int,
         include_normals: bool = False,  # pylint: disable=unused-argument
     ) -> Any:
+        """Samples random uniform points along the boundary.
+
+        Args:
+            n_points (int): The number of points.
+            include_normals (bool, optional): Wether also the normal vectors at
+                each point should be returned. Defaults to False.
+
+        Returns:
+            tuple(array, array | None): The points and normal vectors at the
+                points if include_normals is True, otherwise None.
+        """
         return super().sample_random_uniform(n_points)
 
 

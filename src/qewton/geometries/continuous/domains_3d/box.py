@@ -1,20 +1,23 @@
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
 from qewton.config.variables import Variable
 
 
 class Box(ContinuousGeometry):
-    """Class for three-dimensional boxes (NumPy-only, simplified).
+    """Class for three-dimensional boxes.
 
-    Parameters
-    ----------
-    variable : Variable
-        The variable representing the underlying 3D space.
-    origin : array_like
-        One corner of the box.
-    width, height, depth : float
-        The size of the box in the three space dimensions.
+    Args:
+        variable (Variable): The variable associated with the box, must be 3D.
+        origin (np.ndarray | list[float] | tuple[float, float, float]):
+            The origin of the box (one corner).
+        width (float): The width of the box.
+        height (float): The height of the box.
+        depth (float): The depth of the box.
+
     """
 
     def __init__(

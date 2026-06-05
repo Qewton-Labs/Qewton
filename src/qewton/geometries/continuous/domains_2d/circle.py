@@ -1,12 +1,22 @@
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
 from qewton.geometries.discrete.mesh_domain import MeshGeometry, Mesh
 from qewton.config.variables import Variable
 
 
 class Circle(ContinuousGeometry):
-    """Class for circles."""
+    """Class for circles represented by center and radius.
+
+    Args:
+        variable (Variable): The variable associated with the circle, must be 2D.
+        center (np.ndarray | list[float] | tuple[float, float]):
+            The center of the circle.
+        radius (float): The radius of the circle.
+    """
 
     def __init__(
         self,

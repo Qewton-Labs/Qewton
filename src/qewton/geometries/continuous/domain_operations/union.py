@@ -1,18 +1,24 @@
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
-from qewton.geometries.continuous.domain_operations.sampler_helper import _boundary_grid_with_n, _boundary_random_with_n
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
+from qewton.geometries.continuous.domain_operations.sampler_helper import (
+    _boundary_grid_with_n,
+    _boundary_random_with_n,
+)
 
 
 class UnionGeometry(ContinuousGeometry):
-    """Implements the logical union of two domains.
+    """Implements the logical union of two geometries. The union is implemented via
+    "on time sampling" and does not have an explicit representation. When points
+    are sampled they are filtered using logical operations.
 
-    Parameters
-    ----------
-    geometry_a : geometry
-        The first geometry.
-    geometry_b : geometry
-        The second geometry.
+    Args:
+        geometry_a (ContinuousGeometry): The first geometry.
+        geometry_b (ContinuousGeometry): The second geometry.
+        contained (bool): Whether geometry_b is fully contained within geometry_a.
     """
 
     def __init__(self, geometry_a: ContinuousGeometry, geometry_b: ContinuousGeometry):

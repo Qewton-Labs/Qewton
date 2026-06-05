@@ -13,11 +13,26 @@ class ConstraintObjective(Enum):
 
 
 class Constraint(Node):
-    """
-    TODO: These could be become graph nodes as well, but this may be not
-    so nice for end user if they want to just implement there own constraint.
+    """A constraint represents a condition/loss/metric that should be fulfilled or
+    monitored. A constraint can be optimized during training or just be tracked
+    for validation/testing. Constraints can be used to implement problem specific
+    regularization, e.g. physics informed losses, symmetries, data constraints etc.
 
-    problem constraints, e.g. data, PDE, symmetries etc...
+    A constraint usually has one output port that represents the value of
+    the constraint, which can be used to compute the loss for optimization
+    or just for monitoring. The constraint can have any number of input ports,
+    which can be used to feed in the necessary data for computing the constraint.
+
+    Args:
+        weight (float | HyperParameter, optional): An additional weight for
+            this constraint. Defaults to 1.0.
+        objective (ConstraintObjective, optional): Wether to minimize of maximize
+            this constraint. Defaults to ConstraintObjective.MINIMIZE.
+        evaluated_in_mode (EvaluationPhase, optional): When this constraint should
+            be evaluated. Defaults to EvaluationPhase.ALWAYS.
+        name (str, optional): A name for this constraint. Defaults to "Constraint".
+        backend (type[Backend[TensorType]], optional): What backend to use.
+            Defaults to DEFAULT_DL_BACKEND.
     """
 
     def __init__(
@@ -37,9 +52,27 @@ class Constraint(Node):
 
     @property
     def loss_port(self) -> OutputPort:
+        """The output port in which the current loss value will be written.
+
+        Returns:
+            OutputPort: The output port in which the current loss value
+                will be written.
+        """
         return self.output_ports[0]
 
     def get_loss(self, add_weight: bool = True):
+        """Return the current loss value of this constraint,
+        multiplied by the weight if add_weight is True.
+
+        Args:
+            add_weight (bool, optional): If to add the weight. Defaults to True.
+
+        Raises:
+            ValueError: If the loss value is not computed yet.
+
+        Returns:
+            Number: The current loss value of this constraint.
+        """
         if self.loss_port.value is None:
             raise ValueError(
                 "Loss value is not computed yet. Make sure to run the forward pass of the\
@@ -52,6 +85,12 @@ class Constraint(Node):
         return [self.weight] + super().hyperparameters
 
     def set_evaluation_mode(self, new_mode: EvaluationPhase):
+        """Set the evaluation mode of this constraint. This determines in which
+        phase this constraint will be evaluated.
+
+        Args:
+            new_mode (EvaluationPhase): The new evaluation mode for this constraint.
+        """
         self.evaluated_in_mode = new_mode
 
     def run(self) -> None:

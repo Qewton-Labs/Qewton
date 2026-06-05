@@ -3,9 +3,8 @@ Base classes for data loading and node-based data sampling in the graph.
 """
 
 from copy import deepcopy
-import math
 from abc import abstractmethod
-
+import math
 import numpy as np
 
 from qewton.graphs.nodes import NodeState
@@ -25,11 +24,23 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.graphs.nodes import Node, OutputPort, InputPort
 from qewton.data.datasets import DataSet
 
+# TODO: Add caching functionality
+
 
 class DataNode(Node):
     """
-    A Node that loads or samples data. Has only output ports in the graph,
-    no input ports.
+    Creates a DataNode which task is to generate/load data for evaluation
+    in the graph. This is a base class and should be subclassed for
+    specific data loading implementations.
+
+    Args:
+        batch_size (int | DiscreteHyperparameter | CategoricalHyperparameter):
+            Number of samples per batch.
+        name (str, optional): Display name of the node. Defaults to "DataNode".
+        state (NodeState, optional): Initial state of the node.
+            Defaults to NodeState.FIXED.
+        backend (type[Backend] | None, optional): Computing backend
+            (e.g., TorchBackend). Defaults to DEFAULT_DL_BACKEND.
     """
 
     def __init__(
@@ -39,13 +50,6 @@ class DataNode(Node):
         state: NodeState = NodeState.FIXED,
         backend: type[Backend] | None = DEFAULT_DL_BACKEND,
     ) -> None:
-        """
-        Args:
-            batch_size: Number of samples per batch.
-            name: Display name of the node.
-            state: Initial state of the node.
-            backend: Computing backend (e.g., TorchBackend).
-        """
         self._batch_size = HyperParameter.from_value(batch_size, name="batch_size")
         self._batch_progress = 0
         self._is_cached = False
@@ -70,13 +74,31 @@ class DataNode(Node):
     def hyperparameters(self) -> list[HyperParameter]:
         return [self._batch_size]
 
-    def cache(self, n_batches=-1):
+    def cache(self, n_batches: int = -1):
         pass
 
-    def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
+    def provides_data_in_phase(
+        self, phase: EvaluationPhase  # pylint: disable=unused-argument
+    ) -> bool:
+        """Checks whether this node can provide data in the EvaluationPhase.
+
+        Args:
+            phase (EvaluationPhase): The evaluation phase to check for
+                data provision capability.
+
+        Returns:
+            bool: If True, the node can provide data in the specified phase,
+                otherwise, False.
+        """
         return False
 
-    def to(self, device):
+    def to(self, device: str):
+        """Move the data node to the specified device.
+
+        Args:
+            device (str): The device to move the data node to
+                (e.g., 'cpu', 'cuda').
+        """
         self._device = device
 
 
@@ -103,12 +125,17 @@ class DataLoader(DataNode):
         """
         Args:
             data_set (DataSet): The source dataset.
-            batch_size: Number of samples per batch.
-            splitting_ratio: Proportions for (Train, Validation, Test) splits.
-            shuffle_data: Whether to shuffle the indices at the start of an epoch.
-            shuffle_seed: Random seed for reproducibility.
-            backend: The backend used for data types and device transfers.
-            name: Node name.
+            batch_size (int | DiscreteHyperparameter | CategoricalHyperparameter):
+                Number of samples per batch.
+            splitting_ratio (tuple[float, float, float], optional): Proportions
+                for (Train, Validation, Test) splits. Defaults to (1.0, 0.0, 0.0).
+            shuffle_data (bool | CategoricalHyperparameter, optional): Whether
+                to shuffle the indices at the start of an epoch.. Defaults to True.
+            shuffle_seed (int | None, optional): Random seed for reproducibility.
+                Defaults to None.
+            backend (type[Backend] | None, optional): The backend used for data
+                types and device transfers.. Defaults to DEFAULT_DL_BACKEND.
+            name (str, optional): Name of this data loader. Defaults to "DataLoader".
         """
         self.data_set = data_set
         self.splitting_ratio = splitting_ratio
@@ -117,7 +144,7 @@ class DataLoader(DataNode):
         self._rng = np.random.default_rng(self.shuffle_seed)
         self.permutation = []
         self._permutation_splits = {}
-        self.setup_iteration()
+        self._setup_iteration()
 
         super().__init__(batch_size=batch_size, name=name, backend=backend)
 
@@ -145,17 +172,19 @@ class DataLoader(DataNode):
                 )
             )
 
-    def set_permutation(self):
+    def _set_permutation(self):
         """Resets the data permutation based on shuffling settings."""
         if self.shuffle_data.value:
             self.permutation = self._rng.permutation(len(self.data_set))
         else:
             self.permutation = np.arange(len(self.data_set))
 
-    def setup_iteration(self):
-        """Calculates index splits for different evaluation phases (Train, Val, Test)."""
+    def _setup_iteration(self):
+        """Calculates index splits for different evaluation phases
+        (Train, Val, Test).
+        """
         self._batch_progress = 0
-        self.set_permutation()
+        self._set_permutation()
         n_samples = len(self.permutation)
         r_train, r_val, _ = self.splitting_ratio
 

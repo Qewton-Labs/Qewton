@@ -1,7 +1,10 @@
 import warnings
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
 from qewton.geometries.continuous.domain_operations.sampler_helper import (
     _boundary_grid_with_n,
     _inside_grid_with_n,
@@ -11,16 +14,14 @@ from qewton.geometries.continuous.domain_operations.sampler_helper import (
 
 
 class CutGeometry(ContinuousGeometry):
-    """Implements the logical cut of two geometries.
+    """Implements the logical cut of two geometries. The cut is implemented via
+    "on time sampling" and does not have an explicit representation. When points
+    are sampled they are filtered using logical operations.
 
-    Parameters
-    ----------
-    geometry_a : ContinuousGeometry
-        The first geometry.
-    geometry_b : ContinuousGeometry
-        The second geometry.
-    contained : bool
-        Whether geometry_b is fully contained within geometry_a.
+    Args:
+        geometry_a (ContinuousGeometry): The first geometry.
+        geometry_b (ContinuousGeometry): The second geometry.
+        contained (bool): Whether geometry_b is fully contained within geometry_a.
     """
 
     def __init__(
@@ -61,12 +62,10 @@ class CutGeometry(ContinuousGeometry):
 
     def _get_volume(self):
         if not self.contained:
-            warnings.warn(
-                """Exact volume of this cut is not known, will use the
+            warnings.warn("""Exact volume of this cut is not known, will use the
                 estimate: volume = geometry_a.volume.
                 If you need the exact volume for sampling,
-                use geometry.set_volume()"""
-            )
+                use geometry.set_volume()""")
             return self.geometry_a.volume()
         volume_a = self.geometry_a.volume()
         volume_b = self.geometry_b.volume()
@@ -95,13 +94,11 @@ class CutBoundaryGeometry(ContinuousBoundaryGeometry):
 
     def _get_volume(self):
         if not self.geometry.contained:
-            warnings.warn(
-                """Exact volume of this boundary is not known, 
+            warnings.warn("""Exact volume of this boundary is not known, 
                 will use the estimate: 
                 volume = geometry_a.boundary.volume + geometry_b.boundary.volume.
                 If you need the exact volume for sampling,
-                use geometry.set_volume()."""
-            )
+                use geometry.set_volume().""")
         volume_a = self.geometry.geometry_a.boundary.volume()
         volume_b = self.geometry.geometry_b.boundary.volume()
         return volume_a + volume_b

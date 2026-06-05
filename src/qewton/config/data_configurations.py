@@ -1,10 +1,34 @@
 from __future__ import annotations
 
-from qewton.config.axes import Axes, EllipsisAxes, EllipsisDim, _match_remainder, FeatureAxes, AxesDim
+from qewton.config.axes import (
+    Axes,
+    EllipsisAxes,
+    EllipsisDim,
+    _match_remainder,
+    FeatureAxes,
+    AxesDim,
+)
 from qewton.config.errors import DataConfigMismatchError
+from qewton.config.variables import Variable
+
+## TODO: could we simplify the config passing to use common AxesDim
+# objects nearly around the whole graph? this would allow for less
+# passing operations and less objects.
 
 
 class DataConfiguration:
+    """A *DataConfiguration* describes the expected structure of the data,
+    including the axes and their dimensions, as well as the data type.
+    It is used to ensure that the data being passed through the graph
+    matches the expected format for different methods/algorithms.
+
+    Args:
+        *axes (Axes | EllipsisAxes): The axes that describe the
+            structure of the data.
+        dtype (_type_, optional): The datatype used in this
+            configuration. Defaults to None.
+    """
+
     def __init__(self, *axes: Axes | EllipsisAxes, dtype=None):
         self.axes = axes
         self.dtype = dtype
@@ -14,10 +38,23 @@ class DataConfiguration:
 
     @classmethod
     def empty(cls):
+        """Builds an empty data configuration with only an ellipsis axis.
+        This can be used as a placeholder when no specific data configuration
+        is needed or when the data structure is completely flexible.
+
+        Returns:
+            DataConfiguration: The empty data configuration.
+        """
         return DataConfiguration(EllipsisAxes())
 
     @property
     def variables(self):
+        """Returns all variables defined in the feature axes of this
+        data configuration.
+
+        Returns:
+            list[Variables]: The list of variables.
+        """
         for axes in self.axes:
             if isinstance(axes, FeatureAxes):
                 return axes.variables
@@ -25,22 +62,45 @@ class DataConfiguration:
 
     @property
     def variable_name(self):
+        """Returns the name of the variable defined in the feature axes of
+        this data configuration.
+        Returns:
+            str: The name of the variable, or an empty string
+                if no variable is defined.
+        """
         for axes in self.axes:
             if isinstance(axes, FeatureAxes):
                 return axes.variables.name
         return ""
 
     def __str__(self):
+        """Returns a readable representation of the configuration.
+
+        Returns:
+            str: A string representation of the data configuration.
+        """
         return f"DataConfig([{', '.join(str(a) for a in self.axes)}])"
 
     @property
-    def feature_axes(self):
+    def feature_axes(self) -> FeatureAxes | None:
+        """Returns the feature axes of this configuration.
+
+        Returns:
+            FeatureAxes | None: The feature axes if defined, otherwise None.
+        """
         for axes in self.axes:
             if isinstance(axes, FeatureAxes):
                 return axes
         return None
 
     def replace_feature_axes(self, new_feature_axes: FeatureAxes):
+        """Replaces the feature axes in this configuration with new feature axes.
+        This happens inplace.
+
+        Args:
+            new_feature_axes (FeatureAxes): The new feature axes to replace the
+                existing ones.
+        """
         new_axes = []
         for axes in self.axes:
             if isinstance(axes, FeatureAxes):
@@ -51,6 +111,14 @@ class DataConfiguration:
 
     @property
     def feature_idx(self) -> int:
+        """Returns the index of the feature axes in the configuration.
+        If no feature axes is present, or if the feature axes can not be
+        uniquely identified due to the presence of ellipsis, returns -1.
+
+        Returns:
+            int: The index of the feature axes, or -1 if it can not be uniquely
+                identified.
+        """
         counter = 0
         for axes in self.axes:
             if isinstance(axes, EllipsisAxes):
@@ -69,7 +137,19 @@ class DataConfiguration:
         # TODO: Any checkes needed here?
         self.dtype = new_dtype
 
-    def get_axes_and_dim(self, idx) -> tuple[Axes | None, AxesDim | None]:
+    def get_axes_and_dim(self, idx: int) -> tuple[Axes | None, AxesDim | None]:
+        """Returns the axes object and corresponding axes dimension at a
+        given shape index.
+
+        Args:
+            idx (int): The index of the shape dimension for which to retrieve
+            the axes and dimension.
+
+        Returns:
+            tuple[Axes | None, AxesDim | None]: The axes object and corresponding
+                axes dimension at the given index, or None if they can not be
+                uniquely identified due to the presence of ellipsis.
+        """
         counter = 0
         for axes in self.axes:
             if isinstance(axes, EllipsisAxes):
@@ -85,6 +165,13 @@ class DataConfiguration:
         return None, None
 
     def remove_dim(self, axis: Axes, dim: AxesDim):
+        """Removes the dimension from an axis. If the axis is empty
+        afterwards, the axis will also be removed.
+
+        Args:
+            axis (Axes): The axis from which to remove the dimension.
+            dim (AxesDim): The dimension to remove from the axis.
+        """
         for axes in self.axes:
             if axes == axis:
                 axes.remove_dim(dim)
@@ -95,7 +182,15 @@ class DataConfiguration:
                 return
 
     def matches(self, other: DataConfiguration) -> bool:
-        """Check if both data configurations describe the same data."""
+        """Check if both data configurations describe the same data.
+
+        Args:
+            other (DataConfiguration): Other data configuration to compare with.
+
+        Returns:
+            bool: Whether the data configurations match,
+                meaning they describe the same data structure and type.
+        """
         if len(self.axes) != len(other.axes):
             return False
         for a1, a2 in zip(self.axes, other.axes):
@@ -104,6 +199,22 @@ class DataConfiguration:
         return True
 
     def unify_with(self, other: DataConfiguration) -> tuple[dict, dict]:
+        """Combine two DataConfigurations, two exchange information between.
+        Both configurations can make the other one more specific. Ellipsis,
+        Axes and AxesDim can be concretized by this process.
+
+        Args:
+            other (DataConfiguration): The other data configuration to unify with.
+
+        Raises:
+            DataConfigMismatchError: If the data configurations can not be
+                unified due to incompatible axes, data types, or dimensions.
+
+        Returns:
+            tuple[dict, dict]: Two dictionaries containing the axes and dimensions
+                from both original configurations as keys, and the unified axes
+                and dimensions as values.
+        """
         if self.dtype != other.dtype:
             raise DataConfigMismatchError(
                 f"Found different data types {self.dtype} and {other.dtype}."
@@ -195,7 +306,7 @@ class DataConfiguration:
     ) -> bool:
         """Updates the current config inplace. Returns whether anything has changed.
 
-        Parameters:
+        Args:
             new_config_dict (dict[Axes, Axes | dict | tuple[Axes, ...]): A dictionary
                 containing for each original axis how it should be changed/updated.
 
@@ -236,7 +347,18 @@ class DataConfiguration:
         self.axes = tuple(new_axes_list)
         return changed_config
 
-    def get_variable_slice(self, variable):
+    def get_variable_slice(self, variable: Variable) -> tuple:
+        """Computes the slice indices to obtain the variables along
+        the current configuration.
+
+        Args:
+            variable (Variable): The variable for which to compute the
+                slice indices.
+
+        Returns:
+            tuple: The slice indices to obtain the variable along the
+                current configuration.
+        """
         slc: list = []
         feature_slice = None
         for axes in self.axes:

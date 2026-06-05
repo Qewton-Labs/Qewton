@@ -5,6 +5,14 @@ from qewton.geometries.base import Geometry, BoundaryGeometry
 
 
 class ContinuousGeometry(Geometry):
+    """The parent class for all built-in continuous geometries.
+    Can be used just like any other Geometry. They are allow for
+    operations like union, intersection and cut with other continuous geometries.
+    The are essentially Constructive Solid Geometry (CSG) objects, only defined
+    by a small amount of parameters.
+
+    A continuous geometry can be discretized by creating a mesh.
+    """
 
     def __init__(
         self,
@@ -17,19 +25,19 @@ class ContinuousGeometry(Geometry):
         return ContinuousBoundaryGeometry(self)
 
     def __add__(self, other):
-        from qewton.domain_operations.union import UnionGeometry
+        from .domain_operations.union import UnionGeometry
 
         assert isinstance(other, ContinuousGeometry)
         return UnionGeometry(self, other)
 
     def __sub__(self, other):
-        from qewton.domain_operations.cut import CutGeometry
+        from .domain_operations.cut import CutGeometry
 
         assert isinstance(other, ContinuousGeometry)
         return CutGeometry(self, other)
 
     def __and__(self, other):
-        from qewton.domain_operations.intersection import IntersectionGeometry
+        from .domain_operations.intersection import IntersectionGeometry
 
         assert isinstance(other, ContinuousGeometry)
         return IntersectionGeometry(self, other)
@@ -46,19 +54,13 @@ class ContinuousBoundaryGeometry(BoundaryGeometry):
         return self.geometry.create_mesh(max_vertex_distance=max_vertex_distance).boundary
 
     def __add__(self, other):
-        from qewton.domain_operations.union import UnionGeometry
-
         assert isinstance(other, ContinuousBoundaryGeometry)
-        return UnionGeometry(self.geometry, other.geometry).boundary
+        return (self.geometry + other.geometry).boundary
 
     def __sub__(self, other):
-        from qewton.domain_operations.cut import CutGeometry
-
         assert isinstance(other, ContinuousBoundaryGeometry)
-        return CutGeometry(self.geometry, other.geometry).boundary
+        return (self.geometry - other.geometry).boundary
 
     def __and__(self, other):
-        from qewton.domain_operations.intersection import IntersectionGeometry
-
         assert isinstance(other, ContinuousBoundaryGeometry)
-        return IntersectionGeometry(self.geometry, other.geometry).boundary
+        return (self.geometry & other.geometry).boundary

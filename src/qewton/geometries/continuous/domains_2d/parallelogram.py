@@ -1,6 +1,9 @@
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
 from qewton.geometries.discrete.mesh_domain import MeshGeometry, Mesh
 from qewton.config.variables import Variable
 
@@ -8,16 +11,14 @@ from qewton.config.variables import Variable
 class Parallelogram(ContinuousGeometry):
     """Class for parallelograms in 2D.
 
-    Parameters
-    ----------
-    variable : Variable
-        The variable representing the underlying space.
-    origin : array_like
-        One corner of the parallelogram.
-    corner_1 : array_like
-        A second corner adjacent to `origin`.
-    corner_2 : array_like
-        A third corner adjacent to `origin`.
+    Args:
+        variable (Variable): The variable representing the underlying space.
+        origin (np.ndarray | list[float] | tuple[float, float]):
+            One corner of the parallelogram.
+        corner_1 (np.ndarray | list[float] | tuple[float, float]):
+            A second corner adjacent to `origin`.
+        corner_2 (np.ndarray | list[float] | tuple[float, float]):
+            A third corner adjacent to `origin`.
     """
 
     def __init__(

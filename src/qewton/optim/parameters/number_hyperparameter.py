@@ -2,14 +2,40 @@ from __future__ import annotations
 import random
 import math
 
-from qewton.optim.parameters.helpers import HyperParameterScale, HyperParameterState, HyperParameterCondition
+from qewton.optim.parameters.helpers import (
+    HyperParameterScale,
+    HyperParameterState,
+    HyperParameterCondition,
+)
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class ContinuousHyperparameter(HyperParameter):
+    """Represents a continuous HyperParameter given in the interval.
+
+    Args:
+        parameter_range (tuple | list): A tuple or list of two floats.
+        initial_value (float | None, optional): An initial value.
+            Defaults to None.
+        state (HyperParameterState, optional): If this parameter is fixed or
+            should be optimized. Defaults to HyperParameterState.OPTIMIZE.
+        name (str, optional): The name of the parameter. Defaults to "".
+        scale (HyperParameterScale, optional): If some special scaling should
+            be applied for optimizing this parameter.
+            Defaults to HyperParameterScale.LINEAR.
+        power (float, optional): The power if power scaling law is used.
+            Defaults to 2.0.
+        default_grid (int | list, optional): The grid used for a GridSearchTuning.
+            Either an int can be provided to build the grid automatically,
+            or the grid itself can be passed. Defaults to 5.
+
+    Raises:
+        ValueError: If the parameters range has more than two values.
+    """
+
     def __init__(
         self,
-        parameter_range: tuple | list,
+        parameter_range: tuple[float, float] | list[float],
         initial_value: float | None = None,
         state: HyperParameterState = HyperParameterState.OPTIMIZE,
         name: str = "",
@@ -83,9 +109,31 @@ class ContinuousHyperparameter(HyperParameter):
 
 
 class DiscreteHyperparameter(ContinuousHyperparameter):
+    """Represents a discrete HyperParameter given in the interval.
+
+    Args:
+        parameter_range (tuple | list): A tuple or list of two ints.
+        initial_value (float | None, optional): An initial value.
+            Defaults to None.
+        state (HyperParameterState, optional): If this parameter is fixed or
+            should be optimized. Defaults to HyperParameterState.OPTIMIZE.
+        name (str, optional): The name of the parameter. Defaults to "".
+        scale (HyperParameterScale, optional): If some special scaling should
+            be applied for optimizing this parameter.
+            Defaults to HyperParameterScale.LINEAR.
+        power (float, optional): The power if power scaling law is used.
+            Defaults to 2.0.
+        default_grid (int | list, optional): The grid used for a GridSearchTuning.
+            Either an int can be provided to build the grid automatically,
+            or the grid itself can be passed. Defaults to 5.
+
+    Raises:
+        ValueError: If the parameters range has more than two values.
+    """
+
     def __init__(
         self,
-        parameter_range: tuple | list,
+        parameter_range: tuple[int, int] | list[int],
         initial_value: int | None = None,
         state: HyperParameterState = HyperParameterState.OPTIMIZE,
         name: str = "",
@@ -102,7 +150,7 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
 
         super().__init__(
             state=state,
-            parameter_range=parameter_range,
+            parameter_range=parameter_range,  # type: ignore
             initial_value=initial_value,
             name=name,
             scale=scale,

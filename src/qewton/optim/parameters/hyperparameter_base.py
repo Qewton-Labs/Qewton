@@ -5,7 +5,20 @@ from qewton.optim.parameters.helpers import HyperParameterState, HyperParameterC
 
 
 class HyperParameter:
-    """Abstract HyperParameter class that represents tunable parameters."""
+    """Abstract HyperParameter class that represents tunable parameters.
+
+    Args:
+        parameter_range (tuple | list): Allowed range of values for this parameter.
+        initial_value (_type_): Initial value for this parameter.
+        state (HyperParameterState, optional): If this value should be fixed or be
+            optimized. Defaults to HyperParameterState.OPTIMIZE.
+        name (str, optional): Internal name of this parameter. Defaults to "".
+        active_when (HyperParameterCondition, optional): A condition that specifies
+            when this Hyperparameter should be active. The condition depends on the
+            values of other Hyperparameters. Accordingly this parameters is only
+            sampled/set when the condition is fulfilled. See both
+            HyperParameterCondition and HyperParameterDAG.
+    """
 
     def __init__(
         self,
@@ -16,19 +29,6 @@ class HyperParameter:
         active_when: None | HyperParameterCondition = None,
         default_grid: int | list = 0,
     ):
-        """
-        Args:
-            parameter_range (tuple | list): Allowed range of values for this parameter.
-            initial_value (_type_): Initial value for this parameter.
-            state (HyperParameterState, optional): If this value should be fixed or be
-                optimized. Defaults to HyperParameterState.OPTIMIZE.
-            name (str, optional): Internal name of this parameter. Defaults to "".
-            active_when (HyperParameterCondition, optional): A condition that specifies
-                when this Hyperparameter should be active. The condition depends on the
-                values of other Hyperparameters. Accordingly this parameters is only
-                sampled/set when the condition is fulfilled. See both
-                HyperParameterCondition and HyperParameterDAG.
-        """
         self.state = state
         self.parameter_range = parameter_range
         self.current_value = initial_value
@@ -84,20 +84,34 @@ class HyperParameter:
         )
 
     @property
-    def is_fixed(self):
+    def is_fixed(self) -> bool:
+        """
+        Returns:
+            bool: Whether this parameter is fixed or should be optimized.
+        """
         return self.state == HyperParameterState.FIXED
 
     @property
     def value(self):
+        """
+        Returns:
+            _type_: The current value of this HyperParameter.
+        """
         return self.current_value
 
     @property
     def tuning_grid(self) -> list:
+        """Returns a grid of values for tuning this parameter."""
         if isinstance(self.default_grid, list):
             return self.default_grid
         return self.sample_parameter_grid(self.default_grid)
 
     def is_active(self, config=None):
+        """Checks whether this HyperParameter is active under the
+        given configuration. This is the case if there is some connection to
+        HyperParameters. The concrete values of the Parameters are provided in
+        the config.
+        """
         return True if self.condition is None else self.condition.evaluate(config)
 
     def set_value(self, new_value):

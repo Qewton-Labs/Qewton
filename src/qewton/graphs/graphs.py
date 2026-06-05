@@ -44,9 +44,11 @@ class Graph:
 
         This method allows defining a graph structure programmatically by
         using `TrackingObject`s as inputs and outputs within the function.
+
         Args:
             func (Callable): The function whose execution will be tracked to build the
                 graph.
+
         Returns:
             tuple[Graph, list[list[InputPort] | InputPort], list[OutputPort | int]]:
                 A tuple containing the constructed graph, its input ports, and its output
@@ -117,20 +119,11 @@ class Graph:
             self.outgoing_edges[node] = list[Edge]()
             self.dynamic_data_configs[node] = node.copy_data_configs()
 
-    # def remove_node(self, node: Node) -> None:
-    #     """Deletes a given node from this graph.
-
-    #     Args:
-    #         node (Node): The node that should be deleted.
-    #     """
-    #     self.nodes.remove(node)
-    #     self.incoming_edges.pop(node)
-    #     self.outgoing_edges.pop(node)
-
     def sort(self):
         """
         Sorts the nodes in the graph topologically (Kahn's algorithm) to determine the
         execution order.
+
         Raises:
             ValueError: If a cycle is detected in the graph.
         """
@@ -175,9 +168,11 @@ class Graph:
         If nodes are passed directly, it assumes a single output from `from_`
         and a single input to `to_`. It adds nodes to the graph if they are not
         already present and unifies their data configurations.
+
         Args:
             from_ (Node | OutputPort): The source node or output port.
             to_ (Node | InputPort): The destination node or input port.
+
         Raises:
             ValueError: If the number of ports do not match or an input port is
                 already connected.
@@ -294,9 +289,11 @@ class Graph:
     def _check_port_is_free(self, to_node: Node, input_port: InputPort) -> None:
         """
         Checks if a given input port of a node is already connected.
+
         Args:
             to_node (Node): The node whose input port is being checked.
             input_port (InputPort): The specific input port to check.
+
         Raises:
             ValueError: If the input port is already connected.
         """
@@ -313,12 +310,15 @@ class Graph:
     ) -> InputPort | OutputPort:
         """
         Helper method to extract a single port from a user input (Node or Port).
+
         Args:
             user_input (InputPort | OutputPort | Node): The input provided by the user.
             check_input (bool, optional): If True, checks input ports; otherwise, checks
                 output ports. Defaults to True.
+
         Returns:
             InputPort | OutputPort: The extracted single port.
+
         Raises:
             ValueError: If a Node with multiple ports is provided and a specific port i
                 not specified.
@@ -411,6 +411,7 @@ class Graph:
         data configurations.
         This is crucial when connecting to or from nodes that are not formally part
         of `self.nodes`.
+
         Args:
             port (Port): The port of the external node.
             node (Node): The external node.
@@ -436,17 +437,11 @@ class Graph:
             to_node
         ][to_port]
 
-    # def disconnect(self, port: InputPort) -> None:
-    #     """Remove an edge from this graph"""
-    #     for edge in self.incoming_edges[port.node]:
-    #         if edge.to_port == port:
-    #             self.incoming_edges[port.node].remove(edge)
-    #             return
-
     def validate(self) -> None:
         """
         Validates the graph structure.
         Checks if all required input ports of every node in the graph are connected.
+
         Raises:
             ValueError: If a required input port is found to be unconnected.
         """
@@ -488,6 +483,7 @@ class Graph:
     def collect_trainable_parameters(self):
         """
         Collects all trainable parameters from all nodes within the graph.
+
         Returns:
             TrainableParametersCollection: A collection of all trainable parameters.
         """
@@ -505,9 +501,11 @@ class Graph:
 
         When active, nodes will record connections and data flow, allowing a graph
         to be built implicitly from function calls.
+
         Args:
             n_tracking_vars (int, optional): The number of tracking variables to yield.
                 Defaults to 1.
+
         Yields:
             TrackingObject | tuple[TrackingObject, ...]: One or more tracking objects.
         """

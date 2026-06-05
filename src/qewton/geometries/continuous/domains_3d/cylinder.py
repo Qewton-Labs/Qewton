@@ -1,24 +1,23 @@
 import numpy as np
 
-from qewton.geometries.continuous.base import ContinuousGeometry, ContinuousBoundaryGeometry
+from qewton.geometries.continuous.base import (
+    ContinuousGeometry,
+    ContinuousBoundaryGeometry,
+)
 from qewton.config.variables import Variable
 
 
 class Cylinder(ContinuousGeometry):
-    """Class for cylinders (NumPy-only, simplified).
+    """Class for cylinders.
 
-    The cylinder is axis-aligned along the z-direction.
+    The cylinder is axis-aligned along the upwards dirction.
 
-    Parameters
-    ----------
-    variable : Variable
-        The variable representing the underlying 3D space.
-    center : array_like
-        The center of the cylinder, e.g. [0, 0, 0].
-    radius : float
-        The radius of the cylinder in the x-y plane.
-    height : float
-        The height of the cylinder along the z-axis.
+    Args:
+        variable (Variable): The variable associated with the cylinder, must be 3D.
+        center (np.ndarray | list[float] | tuple[float, float, float]):
+            The center of the cylinder, e.g. [0, 0, 0].
+        radius (float): The radius of the cylinder.
+        height (float): The height of the cylinder.
     """
 
     def __init__(

@@ -120,6 +120,7 @@ class Axes:
     def is_empty(self):
         """
         Checks if the axes collection is empty.
+
         Returns:
             bool: True if the shape has no dimensions, False otherwise.
         """
@@ -128,6 +129,7 @@ class Axes:
     def remove_dim(self, dim):
         """
         Removes a specific dimension from the axes.
+
         Args:
             dim (AxesDim): The dimension to remove.
         """
@@ -137,8 +139,10 @@ class Axes:
         """
         Checks if these axes exactly match another `Axes` object in terms of
         number of dimensions, type, and size.
+
         Args:
             other (Axes): The other `Axes` object to compare with.
+
         Returns:
             bool: True if the axes match, False otherwise.
         """
@@ -156,12 +160,15 @@ class Axes:
     def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
         """
         Unifies these axes with another `Axes` object, finding a common compatible shape.
+
         Args:
             other (Axes): The other `Axes` object to unify with.
+
         Returns:
             tuple[dict, dict]: A tuple of two dictionaries. The first maps dimensions
                 from `self` to the unified dimensions, and the second maps dimensions
                 from `other`.
+
         Raises:
             DataConfigMismatchError: If the axes are of different types or cannot be
                 unified.
@@ -176,6 +183,10 @@ class Axes:
     def __str__(self) -> str:
         """
         Returns a string representation of the Axes object.
+
+        Returns:
+            str: A string representation of the Axes, showing the class name and
+                the shape.
         """
         return f"{self.__class__.__name__}([{', '.join(str(s) for s in self.shape)}])"
 
@@ -255,6 +266,7 @@ class Axes:
         Args:
             shape1 (Iterable[AxesDim]): The first sequence of dimensions.
             shape2 (Iterable[AxesDim]): The second sequence of dimensions.
+
         Returns:
             tuple[dict, dict]: Dictionaries mapping original dimensions to their
                 unified forms.
@@ -284,9 +296,11 @@ class Axes:
         Matches the middle parts of two shapes, specifically handling `EllipsisDim`.
 
         This method is called after matching the start and end parts of shapes.
+
         Args:
             remaining_middle1 (tuple[AxesDim, ...]): The middle part of the first shape.
             remaining_middle2 (tuple[AxesDim, ...]): The middle part of the second shape.
+
         Returns:
             tuple[dict, dict]: Dictionaries mapping original middle dimensions to their
                 unified forms.
@@ -319,12 +333,13 @@ class Axes:
         """
         Updates the dimensions of these axes based on a provided dictionary of new
         dimensions.
-
         This method allows for dynamic modification of the axes, including replacing
         ellipsis dimensions with concrete sequences of dimensions.
+
         Args:
             new_axes_dict (dict[AxesDim, AxesDim | tuple[AxesDim, ...]]): A dictionary
                 mapping existing `AxesDim` objects to their new forms.
+
         Returns:
             bool: True if any axes were changed, False otherwise.
         """
@@ -383,6 +398,20 @@ class GeometryAxes(Axes):
         geometry: Geometry | None = None,
         shape: tuple[int | AxesDim, ...] | None = None,
     ):
+        """Represents geometry-specific axes, typically used for
+        spatial dimensions.
+
+        Args:
+            geometry (Geometry | None, optional): The geometry encoded in
+                this axes object. Defaults to None.
+            shape (tuple[int  |  AxesDim, ...] | None, optional): The expected shape
+                the axes represents. Will create a dummy geometry, if no
+                geometry is provided. Defaults to None.
+
+        Raises:
+            ValueError: Only one geometry or shape can be provided, not both.
+            ValueError: Either geometry or shape must be provided.
+        """
         self._geometry: Geometry
         if geometry is not None and shape is not None:
             raise ValueError("Only one of geometry or shape can be provided.")
@@ -403,6 +432,9 @@ class GeometryAxes(Axes):
     def geometry(self):
         """
         Returns the encapsulated `Geometry` object.
+
+        Returns:
+            Geometry: The geometry associated with these axes.
         """
         return self._geometry
 
@@ -412,11 +444,14 @@ class GeometryAxes(Axes):
 
         It specifically checks for `GeometryAxes` type and delegates the unification
         to the underlying `Geometry` objects.
+
         Args:
             other (Axes): The other `Axes` object to unify with.
+
         Returns:
             tuple[dict, dict]: Dictionaries mapping original dimensions to unified
                 dimensions.
+
         Raises:
             DataConfigMismatchError: If the other object is not `GeometryAxes` or
                 unification fails.
@@ -471,8 +506,10 @@ class FeatureAxes(Axes):
         """
         Retrieves a slice corresponding to a specific variable from the encapsulated
         `Variable` object.
+
         Args:
             variable: The variable for which to get the slice.
+
         Returns:
             Any: The slice corresponding to the variable.
         """
@@ -484,11 +521,14 @@ class FeatureAxes(Axes):
 
         It specifically checks for `FeatureAxes` type and ensures compatibility
         of underlying `Variable` objects if they exist.
+
         Args:
             other (Axes): The other `Axes` object to unify with.
+
         Returns:
             tuple[dict, dict]: Dictionaries mapping original dimensions to unified
                 dimensions.
+
         Raises:
             DataConfigMismatchError: If the other object is not `FeatureAxes` or
                 variables do not match.
@@ -552,6 +592,7 @@ class AxesDim:
     def update_size(self, new_size):
         """
         Updates the size of this dimension.
+
         Args:
             new_size (int | None): The new size for the dimension.
         """
@@ -561,6 +602,9 @@ class AxesDim:
     def size(self):
         """
         Returns the size of the dimension.
+
+        Returns:
+            int | None: The size of the dimension, or None if it is not set.
         """
         return self._size
 
@@ -572,8 +616,10 @@ class AxesDim:
         Unifies this `AxesDim` with another `AxesDim`.
 
         It determines a common size, considering broadcastability.
+
         Args:
             other (AxesDim): The other dimension to unify with.
+
         Returns:
             tuple[AxesDim, AxesDim]: A tuple where both elements are the unified
                 `AxesDim`.
@@ -593,13 +639,16 @@ class AxesDim:
     ):
         """
         Unifies two integer dimensions, potentially allowing singleton broadcasting.
+
         Args:
             dim1 (int | None): The first dimension size.
             dim2 (int | None): The second dimension size.
             broadcast_singleton (bool, optional): If True, a dimension of size 1 can be
                 broadcast to match another dimension's size. Defaults to False.
+
         Returns:
             int | None: The unified dimension size, or None if one of the inputs was None.
+
         Raises:
             DataConfigMismatchError: If the dimensions cannot be unified.
         """
@@ -619,8 +668,10 @@ class AxesDim:
     def __add__(self, other: AxesDim) -> AxesDim:
         """
         Defines addition for `AxesDim` objects, resulting in an `AddedDim`.
+
         Args:
             other (AxesDim): The other dimension to add.
+
         Returns:
             AddedDim: A new dimension representing the sum of the two.
         """
@@ -630,8 +681,10 @@ class AxesDim:
         """
         Updates the properties (size and broadcastability) of this dimension with those
         of `new_dim`.
+
         Args:
             new_dim (AxesDim): The dimension whose properties will be copied.
+
         Returns:
             bool: True if the dimension's properties were changed, False otherwise.
         """
