@@ -682,5 +682,23 @@ class TrackingObject:
         hes_node = Hessian()
         return hes_node(self, with_respect_to)
 
+    def sym_grad(self, with_respect_to):
+        from qewton.algorithms.building_blocks.derivatives import SymmetricGradient
+
+        sym_grad_node = SymmetricGradient()
+        return sym_grad_node(self, with_respect_to)
+
+    def rot(self, with_respect_to):
+        from qewton.algorithms.building_blocks.derivatives import Rotation
+
+        rot_node = Rotation()
+        return rot_node(self, with_respect_to)
+
+    def matrix_div(self, with_respect_to):
+        from qewton.algorithms.building_blocks.derivatives import MatrixDivergence
+
+        matrix_div_node = MatrixDivergence()
+        return matrix_div_node(self, with_respect_to)
+
 
 # endregion

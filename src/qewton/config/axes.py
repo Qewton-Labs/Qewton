@@ -222,7 +222,6 @@ class Axes:
         2. Matching dimensions from the start of both shapes.
         3. Handling any remaining middle parts, especially if they contain `EllipsisDim`.
         """
-
         # First we check if they match from the end
         matching_end_1, matching_end_2 = cls._match_shapes(
             reversed(shape1), reversed(shape2)
@@ -245,6 +244,7 @@ class Axes:
             raise DataConfigMismatchError(
                 f"Shapes {shape1} and {shape2} do not match and can not be unified."
             )
+        print("but not here")
         matching_middle_1, matching_middle_2 = cls._match_middle_shape(
             remaining_middle1, remaining_middle2
         )

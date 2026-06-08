@@ -31,6 +31,8 @@ class Mesh:
         self.topological_dim = len(cells[0])
         self._find_boundary_facets()
 
+        # TODO: Add names <-> marker connection
+
     @property
     def vertex_count(self) -> int:
         return len(self.vertices)
@@ -78,12 +80,12 @@ class Mesh:
                 boundary_missing_vertex_ids,
             ]
         ]
-        if b_vertex.shape[1] == 3:
+        if self.boundary_faces.shape[1] == 3:
             normals = np.cross(
                 b_vertex[:, 1] - b_vertex[:, 0], b_vertex[:, 2] - b_vertex[:, 0]
             )
             normals /= np.linalg.norm(normals, axis=1, keepdims=True)
-        elif b_vertex.shape[1] == 2:
+        elif self.boundary_faces.shape[1] == 2:
             normals = b_vertex[:, 1] - b_vertex[:, 0]
             normals_save = normals[:, 0].copy()
             normals[:, 0] = normals[:, 1]
@@ -108,11 +110,14 @@ class Mesh:
         self.boundary_normals_at_vertex = np.zeros(
             (num_vertices, self.boundary_normals.shape[1])
         )
-        np.add.at(
-            self.boundary_normals_at_vertex,
-            vertex_ids,
-            np.repeat(normals, self.boundary_normals.shape[1], axis=0),
-        )
+        for f, verts in enumerate(self.boundary_faces):
+            self.boundary_normals_at_vertex[verts[0]] += normals[f]
+            self.boundary_normals_at_vertex[verts[1]] += normals[f]
+        # np.add.at(
+        #     self.boundary_normals_at_vertex,
+        #     vertex_ids,
+        #     np.repeat(normals, self.boundary_normals.shape[1], axis=0),
+        # )
         self.boundary_normals_at_vertex /= np.linalg.norm(
             self.boundary_normals_at_vertex, axis=1, keepdims=True
         )
@@ -138,7 +143,7 @@ class Mesh:
                 break
         # Check for markers of the cells and facets.
         cells, cell_markers, faces, face_markers = cls._read_markers_from_file(
-            msh, marker_key, default_cell_tags, p_key, priority[key_idx - 1]
+            msh, marker_key, default_cell_tags, p_key, priority[key_idx + 1]
         )
         return cls(
             vertices=msh.points,
@@ -253,6 +258,28 @@ class Mesh:
             vertices=boundary_vertices,
             cells=remapped_faces,
             cell_markers=mapped_face_markers,
+        )
+
+    def get_submesh(self, marker: int) -> Mesh:
+        if self.cell_markers is None:
+            raise ValueError("No markers in mesh available.")
+        mask = self.cell_markers == marker
+        if not np.any(mask):
+            raise ValueError(f"Marker {marker} not found in mesh. \
+                Available markers: {np.unique(self.cell_markers)}")
+
+        new_cells = self.cells[mask]
+        remaining_indices = np.unique(new_cells.flatten())
+        remaining_vertices = self.vertices[remaining_indices]
+
+        inverse_map = np.full(self.vertices.shape[0], -1, dtype=int)
+        inverse_map[remaining_indices] = np.arange(len(remaining_indices))
+        new_cells = inverse_map[new_cells]
+
+        return Mesh(
+            vertices=remaining_vertices,
+            cells=new_cells,
+            cell_markers=self.cell_markers[mask],
         )
 
     def sample_random_from_vertices(self, n_points: int) -> tuple[np.ndarray, np.ndarray]:

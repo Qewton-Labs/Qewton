@@ -468,6 +468,7 @@ class BoundaryGeometry(Geometry):
                 each point should be returned. Defaults to False.
 
         Returns:
+            TODO: Make normals really optional
             tuple(array, array | None): The points and normal vectors at the
                 points if include_normals is True, otherwise None.
         """

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import numpy as np
 
+from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, DiscreteGeometry, BoundaryGeometry
 from qewton.geometries.discrete.mesh import Mesh
 
@@ -21,6 +22,10 @@ class MeshGeometry(DiscreteGeometry):
         self.bbox_min: np.ndarray | None = None  # bounding box of each simplex
         self.bbox_max: np.ndarray | None = None
         self.contains_tol = 1.0e-5
+
+    @classmethod
+    def load_mesh(cls, variable: Variable, file_path: str) -> MeshGeometry:
+        return cls(variable=variable, mesh=Mesh.load_mesh(file_path))
 
     def __and__(self, other):
         raise NotImplementedError("Mesh combinations are not supported yet.")
@@ -43,6 +48,10 @@ class MeshGeometry(DiscreteGeometry):
     def _get_volume(self):
         cell_volumes = self.mesh.compute_cell_volumes()
         return np.sum(cell_volumes)
+
+    @property
+    def boundary(self) -> MeshBoundaryGeometry:
+        return super().boundary  # type: ignore
 
     def create_boundary(self) -> MeshBoundaryGeometry:
         return MeshBoundaryGeometry(self)
@@ -157,6 +166,13 @@ class MeshGeometry(DiscreteGeometry):
             )
             point_inside[idx[bary_mask]] = True
         return point_inside
+
+    def get_submesh(self, marker: int) -> MeshGeometry:
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=self.mesh.get_submesh(marker),
+            discretization_of=self.discretization_of,
+        )
 
 
 class MeshBoundaryGeometry(BoundaryGeometry):
@@ -359,3 +375,8 @@ class MeshBoundaryGeometry(BoundaryGeometry):
         normals = np.zeros_like(points)
         normals[point_found] = self.geometry.mesh.boundary_normals[cell_idx[point_found]]
         return normals
+
+    def get_submesh(self, marker: int) -> MeshBoundaryGeometry:
+        sub_mesh_geo = MeshBoundaryGeometry(self.geometry)
+        sub_mesh_geo.mesh = self.mesh.get_submesh(marker)
+        return sub_mesh_geo

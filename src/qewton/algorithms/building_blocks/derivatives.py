@@ -29,10 +29,7 @@ class Gradient(BackendNode[TensorType]):
 
     def forward(
         self,
-        u: Annotated[
-            TensorType,
-            DC(ell_axes, FeatureAxes(shape=(1,)))
-        ],
+        u: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(1,)))],
         x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))],
     ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))]:
         return self.implementation(u, x)
@@ -213,3 +210,105 @@ class Hessian(BackendNode[TensorType]):
         hessian = torch.stack(hessian_rows, dim=-2)
 
         return hessian
+
+
+class MatrixDivergence(BackendNode[TensorType]):
+    """Computes the row-wise divergence of a matrix-valued field.
+
+    The output is a vector containing the divergence of each row of the
+    matrix field with respect to the spatial input.
+    """
+
+    ell_axes = EllipsisAxes()
+    u_dim = AxesDim(None)
+    x_dim = AxesDim(None)
+
+    def forward(
+        self,
+        u: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(u_dim, x_dim)))],
+        x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))],
+    ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(u_dim,)))]:
+        return self.implementation(u, x)
+
+    def torch_implementation(self, u, x):
+        torch = self.backend.library
+
+        matrix_div = torch.zeros((*u.shape[:-2], u.shape[-2], 1), device=u.device)
+
+        for i in range(u.shape[-2]):
+            row = u[..., i, :]
+            row_div = torch.zeros((*row.shape[:-1], 1), device=u.device)
+
+            for j in range(row.shape[-1]):
+                grad_ij = torch.autograd.grad(row[..., j].sum(), x, create_graph=True)[0]
+                row_div += grad_ij[..., j : j + 1]
+
+            matrix_div[..., i : i + 1] = row_div
+
+        return matrix_div
+
+
+class Rotation(BackendNode[TensorType]):
+    """Computes the curl/rotation of a 3D vector field."""
+
+    ell_axes = EllipsisAxes()
+    x_dim = AxesDim(None)
+
+    def forward(
+        self,
+        u: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(3,)))],
+        x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(3,)))],
+    ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(3,)))]:
+        return self.implementation(u, x)
+
+    def torch_implementation(self, u, x):
+        torch = self.backend.library
+
+        if u.shape[-1] != 3 or x.shape[-1] != 3:
+            raise ValueError("Rotation requires 3-dimensional field and input.")
+
+        jac_rows = [
+            torch.autograd.grad(u[..., i].sum(), x, create_graph=True)[0]
+            for i in range(3)
+        ]
+        jacobian = torch.stack(jac_rows, dim=-2)
+
+        rotation = torch.stack(
+            [
+                jacobian[..., 2, 1] - jacobian[..., 1, 2],
+                jacobian[..., 0, 2] - jacobian[..., 2, 0],
+                jacobian[..., 1, 0] - jacobian[..., 0, 1],
+            ],
+            dim=-1,
+        )
+
+        return rotation
+
+
+class SymmetricGradient(BackendNode[TensorType]):
+    """Computes the symmetric gradient 0.5 * (∇u + (∇u)^T)."""
+
+    ell_axes = EllipsisAxes()
+    u_dim = AxesDim(None)
+    x_dim = AxesDim(None)
+
+    def forward(
+        self,
+        u: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(u_dim,)))],
+        x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))],
+    ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(u_dim, x_dim)))]:
+        return self.implementation(u, x)
+
+    def torch_implementation(self, u, x):
+        torch = self.backend.library
+
+        jac_rows = [
+            torch.autograd.grad(u[..., i].sum(), x, create_graph=True)[0]
+            for i in range(u.shape[-1])
+        ]
+        jacobian = torch.stack(jac_rows, dim=-2)
+
+        return 0.5 * (jacobian + jacobian.transpose(-2, -1))
+
+
+# ...existing code...
