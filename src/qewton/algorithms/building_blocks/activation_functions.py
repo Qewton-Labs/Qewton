@@ -161,7 +161,7 @@ class CGELU(TrackedNode):
         """
 
         self.reim = ReIm(backend=backend)
-        self.cast = Cast(backend=backend)
+        self.cast = Cast("complex64", backend=backend)
         self.cast2 = CopiedNode(self.cast)
         self.gelu = GELU(backend=backend)
         self.gelu2 = CopiedNode(self.gelu)
@@ -182,6 +182,4 @@ class CGELU(TrackedNode):
         """
 
         re, im = self.reim(x)
-        return self.cast(self.gelu(re), "complex64") + 1j * self.cast2(
-            self.gelu2(im), "complex64"
-        )
+        return self.cast(self.gelu(re)) + 1j * self.cast2(self.gelu2(im))

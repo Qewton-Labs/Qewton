@@ -52,7 +52,7 @@ class ComplexValued(TrackedNode):
         self.fr2 = CopiedNode(module)
         self.fi2 = CopiedNode(module)
         self.reim = ReIm(backend=backend)
-        self.cast = Cast(backend=backend)
+        self.cast = Cast("complex64", backend=backend)
         self.cast2 = CopiedNode(self.cast)
         super().__init__(name, backend)
 
@@ -62,10 +62,5 @@ class ComplexValued(TrackedNode):
         re, im = self.reim(x)
 
         return self.cast2(
-            self.cast(
-                self.fr(re) - self.fi(im),
-                "complex64",
-            )
-            + 1j * (self.fr2(im) + self.fi2(re)),
-            "complex64",
+            self.cast(self.fr(re) - self.fi(im)) + 1j * (self.fr2(im) + self.fi2(re))
         )
