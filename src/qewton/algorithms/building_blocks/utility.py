@@ -1,8 +1,5 @@
 from typing import Annotated
 
-import tensorflow as tf
-import torch
-
 from qewton.algorithms.backend_node import BackendNode, TensorType
 from qewton.config.backend import (
     DEFAULT_DL_BACKEND,
@@ -17,11 +14,12 @@ class Cast(BackendNode[TensorType]):
 
     def __init__(
         self,
+        dtype_name: str,
         name: str = "complex_valued",
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
         super().__init__(name, backend)
-        self.dtype_dict = {
+        self.dtype = {
             "bfloat16": backend.library.bfloat16,
             "float16": backend.library.float16,
             "half": backend.library.float16,
@@ -44,17 +42,16 @@ class Cast(BackendNode[TensorType]):
             "int32": backend.library.int32,
             "int64": backend.library.int64,
             "bool": backend.library.bool,
-        }
+        }[dtype_name]
 
     def forward(
         self,
         x: Annotated[TensorType, DataConfiguration(ellipsis_axes)],
-        dtype_name: Annotated[str, DataConfiguration.empty()],
     ) -> Annotated[TensorType, DataConfiguration(ellipsis_axes)]:
-        return self.implementation(x, self.dtype_dict[dtype_name])
+        return self.implementation(x)
 
-    def torch_implementation(self, x: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
-        return x.type(dtype)
+    def torch_implementation(self, x):
+        return x.type(self.dtype)
 
-    def tensorflow_implementation(self, x: tf.Tensor, dtype: tf.DType) -> tf.Tensor:
-        return self.backend.cast(x, dtype)
+    def tensorflow_implementation(self, x):
+        return self.backend.cast(x, self.dtype)
