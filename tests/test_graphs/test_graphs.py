@@ -6,7 +6,7 @@ from qewton.graphs.nodes import Node, Port, InputPort, OutputPort, NodeState
 from qewton.graphs.edges import Edge
 from qewton.graphs.graphs import Graph, SequentialGraph, TrackingObject
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.backend import Backend
+from qewton.backends import Backend
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import TrainableParameters

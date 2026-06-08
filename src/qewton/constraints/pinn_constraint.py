@@ -10,7 +10,7 @@ from qewton.graphs.graphs import Graph
 
 from qewton.graphs.control_nodes.graph_node import GraphNode, FromFunctionNode
 
-from qewton.config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.constraints.base import ConstraintObjective
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter

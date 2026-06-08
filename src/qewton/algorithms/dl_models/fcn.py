@@ -2,7 +2,7 @@ from typing import Annotated, Generic
 
 from qewton.algorithms.building_blocks.linear import Linear
 from qewton.algorithms.building_blocks.activation_functions import ReLU
-from qewton.config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.config.axes import FeatureAxes, EllipsisAxes

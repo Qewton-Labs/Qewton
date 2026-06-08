@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any, Annotated
 
-from qewton.config.backend import Backend, DEFAULT_DL_BACKEND, TorchBackend
+from qewton.backends import Backend, DEFAULT_DL_BACKEND
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import TrainableParameters
 from qewton.config.data_configurations import DataConfiguration

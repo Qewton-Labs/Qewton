@@ -3,7 +3,7 @@ from types import EllipsisType
 from typing import Annotated
 
 from qewton.algorithms.backend_node import BackendNode
-from qewton.config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, TensorType, Backend
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes, FeatureAxes
 from qewton.config.variables import Variable

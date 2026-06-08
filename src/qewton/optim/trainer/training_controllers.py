@@ -11,7 +11,7 @@ from qewton.optim.trainer.optimizers.optim_setups.pytorch_optims import (
 )
 from qewton.optim.trainer.optimizers.optimizers import Optimizer
 from qewton.optim.base import EvaluationPhase
-from qewton.config.backend import (
+from qewton.backends import (
     TorchBackend,
     TensorflowBackend,
 )

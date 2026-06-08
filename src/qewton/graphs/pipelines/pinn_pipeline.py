@@ -1,10 +1,13 @@
 from typing import Callable
 
-from qewton.algorithms.building_blocks.array_operations import SplitVariables, ConcatVariables
+from qewton.algorithms.building_blocks.array_operations import (
+    SplitVariables,
+    ConcatVariables,
+)
 
 from qewton.config.variables import Variable
 
-from qewton.config.backend import DEFAULT_DL_BACKEND
+from qewton.backends import DEFAULT_DL_BACKEND
 
 from qewton.algorithms.building_blocks.derivatives import GradientTracking
 

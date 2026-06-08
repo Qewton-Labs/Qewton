@@ -4,7 +4,7 @@ import numpy as np
 from qewton.data.dataloaders.base import DataNode
 from qewton.geometries.base import Geometry, BoundaryGeometry
 from qewton.graphs.nodes import NodeState, OutputPort
-from qewton.config.backend import Backend, DEFAULT_DL_BACKEND
+from qewton.backends import Backend, DEFAULT_DL_BACKEND
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import BatchAxes, AxesDim, FeatureAxes, GeometryAxes
 from qewton.config.variables import Variable

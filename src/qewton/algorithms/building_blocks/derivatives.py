@@ -2,7 +2,7 @@ from typing import Annotated
 
 
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
-from qewton.config.backend import TensorType
+from qewton.backends import TensorType
 from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.algorithms.backend_node import BackendNode
 
@@ -29,10 +29,7 @@ class Gradient(BackendNode[TensorType]):
 
     def forward(
         self,
-        u: Annotated[
-            TensorType,
-            DC(ell_axes, FeatureAxes(shape=(1,)))
-        ],
+        u: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(1,)))],
         x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))],
     ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))]:
         return self.implementation(u, x)

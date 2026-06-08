@@ -1,5 +1,5 @@
 from qewton.graphs.control_nodes.graph_node import GraphNode
-from qewton.config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.graphs.graphs import SequentialGraph
 
 from qewton.algorithms.building_blocks.math import Mean, Square, Sum

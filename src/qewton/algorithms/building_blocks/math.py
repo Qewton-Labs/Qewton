@@ -1,7 +1,7 @@
 from copy import deepcopy
 from typing import Annotated
 
-from qewton.config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, TensorType, Backend
 from qewton.algorithms.backend_node import BackendNode
 
 from qewton.config.data_configurations import DataConfiguration as DC

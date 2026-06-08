@@ -2,7 +2,7 @@ from typing import Annotated, Generic
 
 from qewton.algorithms.building_blocks.math import MatMul, Add
 from qewton.algorithms.building_blocks.parameters import ParameterNode
-from qewton.config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.optim.parameters.hyperparameter_base import HyperParameter

@@ -9,7 +9,7 @@ from abc import abstractmethod
 import numpy as np
 
 from qewton.graphs.nodes import NodeState
-from qewton.config.backend import Backend, DEFAULT_DL_BACKEND
+from qewton.backends import Backend, DEFAULT_DL_BACKEND
 from qewton.config.variables import Variable
 
 from qewton.optim.base import EvaluationPhase
