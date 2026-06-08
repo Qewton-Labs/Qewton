@@ -224,8 +224,9 @@ class Node(ABC, Generic[TensorType]):
 
         input_ports = []
         output_ports = []
+        input_ports_already_created = hasattr(owner, "_input_ports")
         # Build input ports:
-        for name, param in call_sig.parameters.items():
+        for i, (name, param) in enumerate(call_sig.parameters.items()):
             hint = type_hints.get(name, param.annotation)
             config, _ = cls._unwrap_annotated(hint, owner, backend)
             input_ports.append(

@@ -52,12 +52,11 @@ class GraphNode(Node[TensorType]):
 
         self._graph = graph
 
-        self._input_ports = []
+        # self._input_ports = []
 
         self.configs_defined_in_forward = self._configs_were_defined_in_forward()
-        in_forward_ports, out_forward_ports = self._build_ports(
-            self.forward, self, backend
-        )
+        in_forward_ports, out_forward_ports = self._input_ports, self._output_ports
+        self._input_ports = []
         for i, p in enumerate(input_ports):
             if isinstance(input_ports, dict):
                 self._input_ports.append(p)
@@ -65,16 +64,16 @@ class GraphNode(Node[TensorType]):
                     self._graph.connect_from_outside_of_graph(p, inner_port)
             else:
                 if self.configs_defined_in_forward:
-                    port_config = in_forward_ports[i].data_configuration
+                    self._input_ports.append(in_forward_ports[i])
                 else:
                     port_config = p.data_configuration
-                self._input_ports.append(
-                    InputPort(
-                        data_configuration=port_config,
-                        node=self,
-                        name=p.name,
+                    self._input_ports.append(
+                        InputPort(
+                            data_configuration=port_config,
+                            node=self,
+                            name=p.name,
+                        )
                     )
-                )
                 self._graph.connect_from_outside_of_graph(self._input_ports[-1], p)
 
         self._output_ports = []
@@ -376,7 +375,6 @@ class GraphNode(Node[TensorType]):
     def _build_graph_from_function(self, function, backend):
         graph, input_ports, output_ports = Graph.from_function(function)
         outer_input_ports, outer_output_ports = Node._build_ports(function, self, backend)
-
         # Outputs that are integers are automatically mapped to the
         # corresponding input ports.
         output_ports_remapped = []
