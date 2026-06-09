@@ -55,7 +55,7 @@ class Cast(BackendNode[TensorType]):
         return x.type(self.dtype)
 
     def tensorflow_implementation(self, x):
-        return self.backend.cast(x, self.dtype)
+        return self.backend.library.cast(x, self.dtype)
 
 
 class GetShape(BackendNode[TensorType]):
