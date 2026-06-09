@@ -46,7 +46,7 @@ class ComplexValued(TrackedNode):
         module: Node,
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
         name: str = "complex_valued",
-    ):
+    ) -> None:
         self.fr = CopiedNode(module)
         self.fi = CopiedNode(module)
         self.fr2 = CopiedNode(module)
