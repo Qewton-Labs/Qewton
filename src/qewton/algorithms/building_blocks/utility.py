@@ -55,3 +55,33 @@ class Cast(BackendNode[TensorType]):
 
     def tensorflow_implementation(self, x):
         return self.backend.cast(x, self.dtype)
+
+
+class GetShape(BackendNode[TensorType]):
+    def __init__(
+        self,
+        name: str = "get_shape",
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        super().__init__(name, backend)
+
+    def forward(
+        self, x: Annotated[TensorType, DataConfiguration.empty()]
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        return tuple(x.shape)
+
+
+class Reshape(BackendNode[TensorType]):
+    def __init__(
+        self,
+        name: str = "view",
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        super().__init__(name, backend)
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DataConfiguration.empty()],
+        shape: Annotated[TensorType, DataConfiguration.empty()],
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        return self.backend.library.reshape(x, shape)
