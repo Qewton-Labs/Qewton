@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from qewton.algorithms.backend_node import BackendNode, TensorType
+from qewton.config.axes import EllipsisAxes
 from qewton.config.backend import (
     DEFAULT_DL_BACKEND,
     Backend,
