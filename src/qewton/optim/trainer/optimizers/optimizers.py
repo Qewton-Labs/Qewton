@@ -1,11 +1,7 @@
 from typing import Any
 
-from qewton.backends import (
-    Backend,
-    TorchBackend,
-    TensorflowBackend,
-    DEFAULT_DL_BACKEND,
-)
+from qewton.backends import DEFAULT_DL_BACKEND
+from qewton.backends.base import DeepLearningBackend
 
 
 class Optimizer:
@@ -16,10 +12,9 @@ class Optimizer:
     for different deep learning backends (e.g., PyTorch, TensorFlow).
     """
 
-    existing_implementations = {}
     requires_closure = False
 
-    def __init__(self, backend: Backend = DEFAULT_DL_BACKEND) -> None:
+    def __init__(self, backend: DeepLearningBackend = DEFAULT_DL_BACKEND) -> None:
         """
         Initializes the Optimizer with a specified backend.
         Args:
@@ -27,7 +22,6 @@ class Optimizer:
                                          Defaults to DEFAULT_DL_BACKEND.
         """
         self.backend = backend
-        _ = self.backend.import_library()
 
     def build_optimizer(self):
         """
@@ -51,7 +45,6 @@ class Optimizer:
 # Also add some documentation.
 
 
-# TODO: Maybe we need some ordering of the inputs again between different backends?
 class Adam(Optimizer):
     """
     Adam optimizer implementation for various backends.
@@ -65,13 +58,7 @@ class Adam(Optimizer):
         Raises:
             NotImplementedError: If Adam is not implemented for the current backend.
         """
-        if self.backend == TorchBackend:
-            return self.backend.library.optim.Adam
-        if self.backend == TensorflowBackend:
-            return self.backend.library.keras.optimizers.Adam
-        raise NotImplementedError(
-            f"No implementation of Adam exists for backend {self.backend}."
-        )
+        return self.backend.optim.adam
 
 
 class SGD(Optimizer):
@@ -87,13 +74,7 @@ class SGD(Optimizer):
         Raises:
             NotImplementedError: If SGD is not implemented for the current backend.
         """
-        if self.backend == TorchBackend:
-            return self.backend.library.optim.SGD
-        if self.backend == TensorflowBackend:
-            return self.backend.library.keras.optimizers.SGD
-        raise NotImplementedError(
-            f"No implementation of SGD exists for backend {self.backend}."
-        )
+        return self.backend.optim.sgd
 
 
 class LBFGS(Optimizer):
@@ -109,10 +90,6 @@ class LBFGS(Optimizer):
         Raises:
             NotImplementedError: If L-BFGS is not implemented for the current backend.
         """
-        if self.backend == TorchBackend:
-            return self.backend.library.optim.LBFGS
-        raise NotImplementedError(
-            f"No implementation of LBFGS exists for backend {self.backend}."
-        )
+        return self.backend.optim.lbfgs
 
     requires_closure = True

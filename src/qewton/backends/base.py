@@ -1,11 +1,16 @@
 from __future__ import annotations
-from typing import Generic, TypeVar, ClassVar
+from typing import Generic, TypeVar, ClassVar, TYPE_CHECKING
 
 from qewton.config import dtypes as qt_dtypes
-from qewton.backends.grad import GradBackend
-from qewton.backends.math import MathBackend
-from qewton.backends.optim import OptimBackend
-from qewton.backends.nn import NNBackend
+
+if TYPE_CHECKING:
+    from qewton.backends.param import ParameterBackend
+    from qewton.backends.grad import GradBackend
+    from qewton.backends.math import MathBackend
+    from qewton.backends.optim import OptimBackend
+    from qewton.backends.nn import NNBackend
+    from qewton.backends.linalg import LinAlgBackend
+
 
 TensorType = TypeVar("TensorType")
 
@@ -32,6 +37,8 @@ class DeepLearningBackend(Backend[TensorType]):
     grad: ClassVar[type[GradBackend]]
     optim: ClassVar[type[OptimBackend]]
     nn: ClassVar[type[NNBackend]]
+    linalg: ClassVar[type[LinAlgBackend]]
+    param: ClassVar[type[ParameterBackend]]
 
     default_dtype: ClassVar[type[TensorType]]  # type: ignore
 
@@ -85,7 +92,7 @@ class DeepLearningBackend(Backend[TensorType]):
         )
 
     @classmethod
-    def from_numpy(cls, data):
+    def from_numpy(cls, data, dtype=qt_dtypes.Float32):
         """Converts a numpy array to the standard datatype of this backend.
 
         Args:

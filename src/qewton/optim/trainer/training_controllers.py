@@ -4,17 +4,9 @@ from typing import Any, Callable
 import time
 import os
 
-from qewton.optim.trainer.optimizers.optim_setups.pytorch_optims import (
-    _pytorch_setup_optimizer,
-    _pytorch_do_optimization_step,
-    _pytorch_cleanup,
-)
 from qewton.optim.trainer.optimizers.optimizers import Optimizer
 from qewton.optim.base import EvaluationPhase
-from qewton.backends import (
-    TorchBackend,
-    TensorflowBackend,
-)
+
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
@@ -115,20 +107,6 @@ class TrainerState:
 
 class OptimizationPhase:
 
-    optimizer_setup_fn = {
-        TorchBackend: _pytorch_setup_optimizer,
-        TensorflowBackend: None,  # TODO
-    }
-    optimizer_step_fn = {
-        TorchBackend: _pytorch_do_optimization_step,
-        TensorflowBackend: None,  # TODO
-    }
-
-    clean_up_fn = {
-        TorchBackend: _pytorch_cleanup,
-        TensorflowBackend: None,  # TODO
-    }
-
     def __init__(
         self,
         optimizer: Optimizer,
@@ -149,13 +127,9 @@ class OptimizationPhase:
         )
 
         # Find correct function for the optimizer type
-        self.setup_fn: Callable
-        self.step_fn: Callable
-        if optimizer.backend in self.optimizer_setup_fn:
-            self.setup_fn = self.optimizer_setup_fn[optimizer.backend]
-            self.step_fn = self.optimizer_step_fn[optimizer.backend]
-        else:
-            raise ValueError(f"Unsupported optimizer type: {optimizer.backend}")
+        self.setup_fn: Callable = optimizer.backend.optim.setup_optimizer
+        self.step_fn: Callable = optimizer.backend.optim.do_optimization_step
+        self.clean_up_fn: Callable = optimizer.backend.optim._cleanup
 
     def get_hyperparameter(self) -> set[HyperParameter]:
         hp_set = set[HyperParameter]()
@@ -179,4 +153,4 @@ class OptimizationPhase:
         self.step_fn(self, eval_function, step_idx, train_state)
 
     def clean_up(self):
-        self.clean_up_fn[self.optimizer.backend](self.optimizer.backend)
+        self.clean_up_fn(self.optimizer.backend)

@@ -419,6 +419,11 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
+    def slice(x: Any, slice_config: Any) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
     def expm1(x: Any) -> TensorType:
         pass
 
@@ -1104,7 +1109,9 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def sum(x: Any, axis: Any = None, keepdims: bool = False) -> TensorType:
+    def sum(
+        x: Any, axis: Any = None, keepdims: bool = False
+    ) -> TensorType:  # Removed dtype for consistency
         pass
 
     @staticmethod
@@ -1173,4 +1180,9 @@ class MathBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def dsplit(x: Any, indices_or_sections: Any) -> list[TensorType]:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def flatten(x: Any, start_dim: int = 0, end_dim: int = -1) -> TensorType:
         pass

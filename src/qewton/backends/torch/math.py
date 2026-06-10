@@ -15,6 +15,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     power = torch.pow
     mod = torch.remainder
     fmod = torch.fmod
+    # Unary operations
     negative = torch.neg
     square = torch.square
     sqrt = torch.sqrt
@@ -26,6 +27,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     exp = torch.exp
     exp2 = torch.exp2
     expm1 = torch.expm1
+    # Logarithmic
     log = torch.log
     log2 = torch.log2
     log10 = torch.log10
@@ -151,6 +153,11 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
 
     # Array Manipulation
     reshape = torch.reshape
+
+    @staticmethod
+    def flatten(x: Any, start_dim: int = 0, end_dim: int = -1) -> torch.Tensor:
+        return torch.flatten(x, start_dim=start_dim, end_dim=end_dim)
+
     squeeze = torch.squeeze
     ravel = torch.ravel
     moveaxis = torch.moveaxis
@@ -166,6 +173,10 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     vstack = torch.vstack
     hstack = torch.hstack
     dstack = torch.dstack
+
+    @staticmethod
+    def slice(x: Any, slice_config: Any) -> torch.Tensor:
+        return x[slice_config]
 
     @staticmethod
     def expand_dims(x: Any, axis: Any) -> torch.Tensor:

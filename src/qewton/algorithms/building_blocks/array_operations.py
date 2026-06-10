@@ -42,7 +42,7 @@ class Slice(BackendNode[TensorType]):
     def forward(
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.implementation(inp)
+        return self.backend.math.slice(inp, self.slice_config)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -60,9 +60,6 @@ class Slice(BackendNode[TensorType]):
                 # Could raise an assertion error if config is not concrete enough yet
                 pass
         return updated_ports
-
-    def torch_implementation(self, inp):
-        return inp[self.slice_config]
 
 
 class SplitVariables(BackendNode[TensorType]):

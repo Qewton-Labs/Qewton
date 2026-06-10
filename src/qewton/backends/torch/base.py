@@ -1,6 +1,5 @@
-from typing import Annotated
-
 import torch
+
 from qewton.config.dtypes import (
     BFloat16,
     Bool,
@@ -25,6 +24,8 @@ from qewton.backends.torch.grad import TorchGradBackend
 from qewton.backends.torch.math import TorchMathBackend
 from qewton.backends.torch.nn import TorchNNBackend
 from qewton.backends.torch.optim import TorchOptimBackend
+from qewton.backends.torch.linalg import TorchLinAlgBackend
+from qewton.backends.torch.param import TorchParameterBackend
 
 
 class TorchBackend(DeepLearningBackend[torch.Tensor]):
@@ -32,6 +33,8 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     nn = TorchNNBackend
     grad = TorchGradBackend
     optim = TorchOptimBackend
+    linalg = TorchLinAlgBackend
+    param = TorchParameterBackend
 
     default_dtype = torch.Tensor
 
@@ -60,5 +63,5 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
         return data.to(device)
 
     @classmethod
-    def from_numpy(cls, data, dtype: Annotated = Float32):
+    def from_numpy(cls, data, dtype=Float32):
         return torch.from_numpy(data).to(dtype=cls.dtypes[dtype])
