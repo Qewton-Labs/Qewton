@@ -135,7 +135,7 @@ class DataLoader(DataNode):
             ), "Batch can not be larger than dataset size."
             axes[0] = BatchAxes(AxesDim(self.batch_size))
             new_config = DataConfiguration(
-                *axes, dtype=backend.standard_datatype() if backend else None
+                *axes, dtype=backend.default_dtype if backend else None
             )
             self._output_ports.append(
                 OutputPort(

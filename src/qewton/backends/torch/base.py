@@ -1,14 +1,35 @@
 from typing import Annotated
 
 import torch
-from qewton.config.dtypes import *
-from qewton.backendss.base import Backend, DeepLearningBackend, MathBackend
-from qewton.backendss.torch.grad import TorchGradBackend
-from qewton.backendss.torch.math import TorchMathBackend
+from qewton.config.dtypes import (
+    BFloat16,
+    Bool,
+    Complex128,
+    Complex32,
+    Complex64,
+    Float16,
+    Float32,
+    Float64,
+    Int16,
+    Int32,
+    Int64,
+    Int8,
+    Number,
+    UInt16,
+    UInt32,
+    UInt64,
+    UInt8,
+)
+from qewton.backends.base import DeepLearningBackend
+from qewton.backends.torch.grad import TorchGradBackend
+from qewton.backends.torch.math import TorchMathBackend
+from qewton.backends.torch.nn import TorchNNBackend
+from qewton.backends.torch.optim import TorchOptimBackend
 
 
 class TorchBackend(DeepLearningBackend[torch.Tensor]):
     math = TorchMathBackend
+    nn = TorchNNBackend
     grad = TorchGradBackend
     optim = TorchOptimBackend
 

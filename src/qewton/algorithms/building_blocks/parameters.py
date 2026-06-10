@@ -95,7 +95,7 @@ class ParameterNode(Node):
         return DataConfiguration(
             EllipsisAxes(),
             FeatureAxes(shape=int_shape),
-            dtype=self.backend.standard_datatype(),  # type: ignore
+            dtype=self.backend.default_dtype,  # type: ignore
         )
 
     def run(self) -> None:

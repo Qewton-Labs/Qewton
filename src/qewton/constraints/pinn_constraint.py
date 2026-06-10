@@ -47,7 +47,7 @@ class PINNConstraint(Constraint, GraphNode):
                     p.data_configuration = DataConfiguration(
                         EllipsisAxes(),
                         FeatureAxes(var.annotation),
-                        dtype=backend.standard_datatype(),
+                        dtype=backend.default_dtype,
                     )
 
         assert (

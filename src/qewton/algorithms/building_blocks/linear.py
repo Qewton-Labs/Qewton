@@ -103,14 +103,14 @@ class Linear(GraphNode, Generic[TensorType]):
         return DC(
             self.ellipsis_axes,
             FeatureAxes(shape=(self.weight.shape[0].value,)),
-            dtype=self.weight.backend.standard_datatype(),
+            dtype=self.weight.backend.default_dtype,
         )
 
     def out_data_config(self):
         return DC(
             self.ellipsis_axes,
             FeatureAxes(shape=(self.weight.shape[1].value,)),
-            dtype=self.weight.backend.standard_datatype(),
+            dtype=self.weight.backend.default_dtype,
         )
 
     def forward(

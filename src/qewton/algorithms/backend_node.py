@@ -1,12 +1,10 @@
 from __future__ import annotations
 from typing import Generic
 
+from qewton.backends.base import DeepLearningBackend
 from qewton.graphs.nodes import Node, NodeState
 from qewton.backends import (
     DEFAULT_DL_BACKEND,
-    Backend,
-    TorchBackend,
-    TensorflowBackend,
     TensorType,
 )
 
@@ -29,66 +27,20 @@ from qewton.backends import (
 
 
 class BackendNode(Node, Generic[TensorType]):
-    """A node representing an operation, which is a type of algorithm that takes
-    input data and produces output data without any trainable parameters.
-
-    This class is built to easily wrap functions from backends.
+    """A node that has a DeepLearningBackend.
+    Can be used e.g. for all basic building blocks to define only the forward method.
     """
 
     def __init__(
-        self, name=None, backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND
+        self,
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         name = name if name is not None else self.__class__.__name__
         super().__init__(name=name, state=NodeState.FIXED, backend=backend)
-        _ = backend.import_library()
-        self.backend: type[Backend[TensorType]] = self.backend
-        self.choose_implementation()
-
-    def choose_implementation(self):
-        subclass_methods = {
-            TorchBackend: self.torch_implementation,
-            TensorflowBackend: self.tensorflow_implementation,
-        }
-
-        parent_methods = {
-            TorchBackend: BackendNode.torch_implementation,
-            TensorflowBackend: BackendNode.tensorflow_implementation,
-        }
-
-        # check whether the subclass overrides the method for supported backends
-        if (
-            self.backend in subclass_methods
-            and subclass_methods[self.backend].__func__
-            is not parent_methods[self.backend]
-        ):
-            self.implementation = subclass_methods[self.backend]
-        elif (
-            self.default_implementation.__func__ is not BackendNode.default_implementation
-        ):
-            self.implementation = self.default_implementation
-        else:
-            self.implementation = None
-            assert (
-                self.forward.__func__ is not BackendNode.forward
-            ), "If no specific implementation is provided, the forward method must\
-                be overridden."
+        self.backend: type[DeepLearningBackend[TensorType]] = self.backend
 
     def forward(self, *args, **kwargs):
         raise NotImplementedError(
             "The forward method must be implemented by subclasses of BackendNode."
-        )
-
-    def default_implementation(self, *args, **kwargs):
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not have a default implementation."
-        )
-
-    def torch_implementation(self, *args, **kwargs):
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not have a Torch implementation."
-        )
-
-    def tensorflow_implementation(self, *args, **kwargs):
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not have a Tensorflow implementation."
         )

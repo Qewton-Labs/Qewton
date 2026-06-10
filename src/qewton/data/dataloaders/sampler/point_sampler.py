@@ -72,7 +72,7 @@ class PointSampler(DataNode):
             OutputPort(
                 DataConfiguration(
                     *axes,
-                    dtype=self.backend.standard_datatype() if self.backend else None,
+                    dtype=self.backend.default_dtype if self.backend else None,
                 ),
                 node=self,
                 name=variable.name,

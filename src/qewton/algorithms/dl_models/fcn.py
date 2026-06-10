@@ -108,16 +108,16 @@ class FCN(GraphNode, Generic[TensorType]):
             return DataConfiguration(
                 self.ellipsis_axes,
                 FeatureAxes(variable=self.input_var),
-                dtype=self.backend.standard_datatype(),
+                dtype=self.backend.default_dtype,
             )
         return DataConfiguration(
             self.ellipsis_axes,
             FeatureAxes(shape=(self.in_neurons.value,)),
-            dtype=self.backend.standard_datatype(),
+            dtype=self.backend.default_dtype,
         )
 
     def out_data_config(self):
-        b_end = self.backend.standard_datatype()
+        b_end = self.backend.default_dtype
         if self.output_var is not None:
             return DataConfiguration(
                 self.ellipsis_axes,

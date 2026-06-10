@@ -208,7 +208,7 @@ class Node(ABC):
         if backend == Backend:
             return
         for port in ports:
-            port.data_configuration.set_dtype(backend.standard_datatype())
+            port.data_configuration.set_dtype(backend.default_dtype)
 
     @classmethod
     def _unwrap_annotated(cls, type_hint, owner):
