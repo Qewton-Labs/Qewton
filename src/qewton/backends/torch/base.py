@@ -63,5 +63,9 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
         return data.to(device)
 
     @classmethod
+    def load(cls, path, **kwargs):
+        return torch.load(path, **kwargs)
+
+    @classmethod
     def from_numpy(cls, data, dtype=Float32):
         return torch.from_numpy(data).to(dtype=cls.dtypes[dtype])

@@ -1,15 +1,23 @@
+from typing import Callable
 import torch
 
-from typing import Callable
 from qewton.backends.optim import OptimBackend
 
 
 class TorchOptimBackend(OptimBackend[torch.Tensor]):
     """Torch implementations of optimization algorithms."""
 
-    adam = torch.optim.Adam
-    sgd = torch.optim.SGD
-    lbfgs = torch.optim.LBFGS
+    @staticmethod
+    def adam(*args, **kwargs):
+        return torch.optim.Adam(*args, **kwargs)
+
+    @staticmethod
+    def sgd(*args, **kwargs):
+        return torch.optim.SGD(*args, **kwargs)
+
+    @staticmethod
+    def lbfgs(*args, **kwargs):
+        return torch.optim.LBFGS(*args, **kwargs)
 
     # File contains how each backend should setup the optimizers and do the
     # optimization step.

@@ -5,6 +5,7 @@ Handles data that supports slicing and has a .shape property.
 
 from typing import Any
 
+from qewton.backends.base import Backend, DeepLearningBackend
 from qewton.config.axes import EllipsisAxes, EllipsisDim
 from qewton.config import DataConfiguration
 
@@ -108,3 +109,43 @@ class ArrayLikeDataSet(DataSet):
                 v_slice = config.get_variable_slice(variable)
                 return self._data[i][v_slice]
         raise ValueError(f"No such variable {variable} in the data.")
+
+
+class BackendDataSet(ArrayLikeDataSet):
+    def __init__(
+        self,
+        data: Any,
+        data_configs: DataConfiguration | list[DataConfiguration],
+        backend: type[Backend],
+    ):
+        self.backend = backend
+        items = data if isinstance(data_configs, (list, tuple)) else [data]
+        for item in items:
+            if not isinstance(item, self.backend.default_dtype):
+                raise TypeError(f"{self.backend.__name__} only handles \
+                        {self.backend.default_dtype.__name__}, not {type(item)}.")
+
+        super().__init__(data, data_configs)
+
+    @classmethod
+    def from_file(cls, path, data_configs, backend, **kwargs):
+        """Load a Backend dataset from a file using the provided backend load.
+
+        Args:
+            path (str): Path to the saved tensors.
+            data_configs: The configuration for the data being loaded.
+            **kwargs: Additional arguments passed e.g. to torch.load.
+
+        Returns:
+            DataSet: Initialized dataset instance.
+        """
+        data = backend.load(path, **kwargs)
+        return cls(data, data_configs, backend)
+
+    def to(self, device):
+        """Move tensor to device (cpu/cuda)."""
+        if hasattr(self.backend, "to"):
+            self._data = [self.backend.to(t, device) for t in self._data]
+        else:
+            raise NotImplementedError(f"{self.backend} does not provide device changes.")
+        return self

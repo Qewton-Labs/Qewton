@@ -18,6 +18,7 @@ class OptimBackend(Backend[TensorType]):
     def _closure():
         raise NotImplementedError
 
+    # optim creators
     @staticmethod
     def adam():
         raise NotImplementedError

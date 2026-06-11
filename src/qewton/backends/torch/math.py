@@ -1,7 +1,6 @@
 from typing import Any
 import torch
 from qewton.backends.math import MathBackend
-from qewton.backends.base import TensorType
 
 
 class TorchMathBackend(MathBackend[torch.Tensor]):

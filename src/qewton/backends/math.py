@@ -9,6 +9,8 @@ class MathBackend(Backend[TensorType]):
     method selection inspired by numpy and Keras.
     """
 
+    # TODO: check these, currently only generated stuff
+
     @staticmethod
     @abstractmethod
     def add(x1: Any, x2: Any, /) -> TensorType:
