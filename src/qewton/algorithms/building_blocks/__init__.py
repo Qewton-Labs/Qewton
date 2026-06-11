@@ -27,7 +27,7 @@ from .math import (
     Mean,
 )
 
-from .array_operations import SplitVariables, Slice, Narrow
+from .array_operations import SplitVariables, Slice, Narrow, Squeeze, Unsqueeze
 from .derivatives import (
     GradientTracking,
     Gradient,

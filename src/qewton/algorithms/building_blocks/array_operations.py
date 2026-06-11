@@ -5,7 +5,7 @@ from typing import Annotated
 from qewton.algorithms.backend_node import BackendNode
 from qewton.config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.axes import EllipsisAxes, FeatureAxes
+from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.config.variables import Variable
 from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort
 
@@ -191,3 +191,91 @@ class ConcatVariables(BackendNode[TensorType]):
 
     def torch_implementation(self, *inp):
         return self.backend.library.cat(inp, dim=self.concat_dim)
+
+
+class Squeeze(BackendNode[TensorType]):
+
+    def __init__(
+        self,
+        dim: int,
+        name=None,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(name if name is not None else "SqueezeNode", backend=backend)
+        self.dim = dim
+
+    def forward(
+        self, inp: Annotated[TensorType, DataConfiguration.empty()]
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        return self.implementation(inp)
+
+    def update_data_configs(
+        self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
+    ):
+        updated_ports = super().update_data_configs(
+            updated_port, config_dict, dynamic_configs
+        )
+        if isinstance(updated_port, InputPort):
+            axes, index_dim = dynamic_configs[updated_port].get_axes_and_dim(self.dim)
+            if axes is not None and index_dim is not None:
+                new_output_config = deepcopy(dynamic_configs[updated_port])
+                new_output_config.remove_dim(axes, index_dim)
+                old_output_config = dynamic_configs[self.output_ports[0]]
+                unify_config = old_output_config.unify_with(new_output_config)[0]
+                output_changed = old_output_config.update_config(unify_config)
+                if output_changed:
+                    updated_ports.add(self.output_ports[0])
+        return updated_ports
+
+    def torch_implementation(self, inp):
+        return self.backend.library.squeeze(inp, dim=self.dim)
+
+    def tensorflow_implementation(self, inp):
+        return self.backend.library.keras.backend.squeeze(inp, axis=self.dim)
+
+
+class Unsqueeze(BackendNode[TensorType]):
+
+    def __init__(
+        self,
+        dim: int,
+        name=None,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(name if name is not None else "UnsqueezeNode", backend=backend)
+        self.dim = dim
+
+    def forward(
+        self, inp: Annotated[TensorType, DataConfiguration.empty()]
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        return self.implementation(inp)
+
+    def update_data_configs(
+        self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
+    ):
+        updated_ports = super().update_data_configs(
+            updated_port, config_dict, dynamic_configs
+        )
+        if isinstance(updated_port, InputPort):
+            axes, index_dim = dynamic_configs[updated_port].get_axes_and_dim(self.dim)
+            if axes is not None and index_dim is not None:
+                # Build new config and add a dimension
+                new_output_config = deepcopy(dynamic_configs[updated_port])
+                new_axes, new_dim = new_output_config.get_axes_and_dim(self.dim)
+                dim_idx = new_axes.get_dim_idx(new_dim)  # type: ignore
+                new_axes.add_dim(AxesDim(1), dim_idx + 1)  # type: ignore
+                print(new_output_config)
+                # Check if the old config is the same anyway
+                old_output_config = dynamic_configs[self.output_ports[0]]
+                unify_config = old_output_config.unify_with(new_output_config)[0]
+                output_changed = old_output_config.update_config(unify_config)
+                # If something changed we have to pass this through the graph
+                if output_changed:
+                    updated_ports.add(self.output_ports[0])
+        return updated_ports
+
+    def torch_implementation(self, inp):
+        return self.backend.library.unsqueeze(inp, dim=self.dim)
+
+    def tensorflow_implementation(self, inp):
+        return self.backend.library.keras.backend.unsqueeze(inp, axis=self.dim)

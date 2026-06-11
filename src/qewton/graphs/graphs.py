@@ -646,6 +646,24 @@ class TrackingObject:
         slice_node = Slice(key)
         return slice_node(self)
 
+    def dot(self, other):
+        from qewton.algorithms.building_blocks.math import Dot
+
+        dot_node = Dot()
+        return dot_node(self, other)
+
+    def squeeze(self, dim):
+        from qewton.algorithms.building_blocks.array_operations import Squeeze
+
+        squeeze_node = Squeeze(dim)
+        return squeeze_node(self)
+
+    def unsqueeze(self, dim):
+        from qewton.algorithms.building_blocks.array_operations import Unsqueeze
+
+        unsqueeze_node = Unsqueeze(dim)
+        return unsqueeze_node(self)
+
     def gradient(self, with_respect_to):
         from qewton.algorithms.building_blocks.derivatives import Gradient
 

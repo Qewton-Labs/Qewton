@@ -233,8 +233,7 @@ class MatrixDivergence(BackendNode[TensorType]):
     def torch_implementation(self, u, x):
         torch = self.backend.library
 
-        matrix_div = torch.zeros((*u.shape[:-2], u.shape[-2], 1), device=u.device)
-
+        matrix_div = torch.zeros((*u.shape[:-2], u.shape[-2]), device=u.device)
         for i in range(u.shape[-2]):
             row = u[..., i, :]
             row_div = torch.zeros((*row.shape[:-1], 1), device=u.device)
@@ -242,7 +241,6 @@ class MatrixDivergence(BackendNode[TensorType]):
             for j in range(row.shape[-1]):
                 grad_ij = torch.autograd.grad(row[..., j].sum(), x, create_graph=True)[0]
                 row_div += grad_ij[..., j : j + 1]
-
             matrix_div[..., i : i + 1] = row_div
 
         return matrix_div

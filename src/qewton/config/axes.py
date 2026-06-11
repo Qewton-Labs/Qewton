@@ -135,6 +135,30 @@ class Axes:
         """
         self._shape = tuple(d for d in self._shape if d != dim)
 
+    def get_dim_idx(self, dim):
+        """
+        Returns the index of a specific dimension in the axes.
+
+        Args:
+            dim (AxesDim): The dimension to find.
+
+        Returns:
+            int: The index of the dimension, or None if not found.
+        """
+        try:
+            return self._shape.index(dim)
+        except ValueError:
+            return None
+
+    def add_dim(self, new_dim, index):
+        """Adds a new dimension to the axes at a specific index.
+
+        Args:
+            new_dim (AxesDim): The dimension to add.
+            index (int): The index at which to add the dimension.
+        """
+        self._shape = self._shape[:index] + (new_dim,) + self._shape[index:]
+
     def matches(self, other: Axes) -> bool:
         """
         Checks if these axes exactly match another `Axes` object in terms of
@@ -244,7 +268,6 @@ class Axes:
             raise DataConfigMismatchError(
                 f"Shapes {shape1} and {shape2} do not match and can not be unified."
             )
-        print("but not here")
         matching_middle_1, matching_middle_2 = cls._match_middle_shape(
             remaining_middle1, remaining_middle2
         )

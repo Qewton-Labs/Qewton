@@ -351,13 +351,14 @@ class Minimum(BackendNode[TensorType]):
 class MatMul(BackendNode[TensorType]):
     ell_ax = EllipsisAxes()
     dim_1 = AxesDim(None)
+    dim_ellipsis = EllipsisDim()
     dim_2 = AxesDim(None)
 
     def forward(
         self,
-        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_ellipsis, dim_1)))],
         y: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1, dim_2)))],
-    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2,)))]:
+    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_ellipsis, dim_2)))]:
         return self.backend.library.matmul(x, y)
 
 
@@ -383,6 +384,21 @@ class SVD(BackendNode[TensorType]):
     def tensorflow_implementation(self, x):
         s, u, v = self.backend.library.linalg.svd(x)
         return u, s, v
+
+
+class Dot(BackendNode[TensorType]):
+    dim_1 = AxesDim(None)
+    ell_ax = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+        y: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(1,)))]:
+        return self.implementation(x, y)
+
+    def torch_implementation(self, x, y):
+        return self.backend.library.inner(x, y)
 
 
 # endregion

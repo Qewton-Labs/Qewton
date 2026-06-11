@@ -65,7 +65,7 @@ class PointSampler(DataNode):
     def _build_port(self, variable: Variable):
         axes = [
             BatchAxes(AxesDim(self.batch_size)),
-            GeometryAxes(self.geometry),
+            # GeometryAxes(self.geometry),
             FeatureAxes(variable=variable),
         ]
         self._output_ports.append(
