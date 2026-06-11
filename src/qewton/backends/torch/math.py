@@ -168,8 +168,21 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     tile = torch.tile
     repeat = torch.repeat_interleave
     broadcast_to = torch.broadcast_to
-    concatenate = torch.cat
-    stack = torch.stack
+
+    @staticmethod
+    def concatenate(tensors: Any, axis: int = 0) -> torch.Tensor:
+        return torch.cat(tensors, dim=axis)
+
+    @staticmethod
+    def stack(tensors: Any, axis: int = 0) -> torch.Tensor:
+        return torch.stack(tensors, dim=axis)
+
+    @staticmethod
+    def split(
+        x: Any, split_size_or_sections: Any, axis: int = 0
+    ) -> tuple[torch.Tensor, ...]:
+        return torch.split(x, split_size_or_sections, dim=axis)
+
     vstack = torch.vstack
     hstack = torch.hstack
     dstack = torch.dstack

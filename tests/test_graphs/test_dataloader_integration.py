@@ -52,8 +52,6 @@ def test_dataloader_to_algorithm_flow():
         output_value, input_batch**2  # type: ignore
     ), "Algorithm logic was not applied correctly to the batch"
 
-    print("Manual connection integration test passed successfully!")
-
 
 def test_dataloader_tracking_flow():
     # 1. Setup Mock Data
@@ -96,8 +94,6 @@ def test_dataloader_tracking_flow():
 
     input_batch = dataloader.output_ports[0].value
     assert torch.allclose(output_value, input_batch**2)  # type: ignore
-
-    print("Tracking integration test passed successfully!")
 
 
 if __name__ == "__main__":

@@ -98,7 +98,6 @@ class TestGraphConfigPropagation:
         # Configuration from n3 should have reached n1
         n1_out = g.dynamic_data_configs[n1][n1.output_ports[0]]
         assert len(n1_out.axes) == 2
-        print(n1_out)
         assert isinstance(n1_out.axes[0], BatchAxes)
         assert isinstance(n1_out.axes[1], FeatureAxes)
         assert n1_out.axes[1].shape[0].size == 5

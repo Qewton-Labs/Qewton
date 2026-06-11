@@ -29,7 +29,8 @@ else:
             if not isinstance(params, tuple):
                 params = (params,)
             # Erzeugt Annotated[BaseType, MarkerClass, Metadata...]
-            return Annotated[params[0] if params else Any, cls, params[1:]]
+            # TODO: the classes are currently not being used in the dataconfig
+            return Annotated[params[0] if params else Any, params[1], cls, params[2:]]
 
     class BFloat16(_DType):
         pass

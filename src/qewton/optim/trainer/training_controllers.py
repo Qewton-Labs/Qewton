@@ -129,7 +129,7 @@ class OptimizationPhase:
         # Find correct function for the optimizer type
         self.setup_fn: Callable = optimizer.backend.optim.setup_optimizer
         self.step_fn: Callable = optimizer.backend.optim.do_optimization_step
-        self.clean_up_fn: Callable = optimizer.backend.optim._cleanup
+        self.cleanup_fn: Callable = optimizer.backend.optim._cleanup
 
     def get_hyperparameter(self) -> set[HyperParameter]:
         hp_set = set[HyperParameter]()
@@ -152,5 +152,5 @@ class OptimizationPhase:
     ):
         self.step_fn(self, eval_function, step_idx, train_state)
 
-    def clean_up(self):
-        self.clean_up_fn(self.optimizer.backend)
+    def cleanup(self):
+        self.cleanup_fn()

@@ -26,6 +26,8 @@ class Backend(Generic[TensorType]):
     All backends are expected to be stateless, and only contain class methods.
     """
 
+    default_dtype: ClassVar[type[TensorType]]  # type: ignore
+
 
 class DeepLearningBackend(Backend[TensorType]):
     """A Backend that implements all the necessary methods for deep learning.
@@ -39,8 +41,6 @@ class DeepLearningBackend(Backend[TensorType]):
     nn: ClassVar[type[NNBackend]]
     linalg: ClassVar[type[LinAlgBackend]]
     param: ClassVar[type[ParameterBackend]]
-
-    default_dtype: ClassVar[type[TensorType]]  # type: ignore
 
     dtypes: ClassVar[dict]  # type: ignore
 

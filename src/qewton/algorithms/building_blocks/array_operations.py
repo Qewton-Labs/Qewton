@@ -76,7 +76,7 @@ class SplitVariables(BackendNode[TensorType]):
         self.split_sections = None
 
     def forward(self, inp: Annotated[TensorType, DataConfiguration.empty()]):
-        return self.backend.math.split(inp, self.split_sections, dim=self.split_dim)
+        return self.backend.math.split(inp, self.split_sections, axis=self.split_dim)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]

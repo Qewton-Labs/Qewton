@@ -135,7 +135,7 @@ class Trainer:
         """Collect all relevant loss and metric names into the state dict, to
         know at the start of training which values are to be expected."""
 
-    def clean_up(self):
+    def cleanup(self):
         self.optimization_phases[
             -1
-        ].clean_up()  # clean up after the last optimization phase
+        ].cleanup()  # clean up after the last optimization phase

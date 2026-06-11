@@ -11,5 +11,15 @@ class NNBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def relu(x: Any) -> TensorType:
+    def relu(input: Any) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def sigmoid(input: Any) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def tanh(input: Any) -> TensorType:
         pass
