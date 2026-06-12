@@ -16,7 +16,7 @@ class ParameterNode(Node):
         shape: tuple[int | HyperParameter, ...],
         initial_value=None,
         name: str = "ParameterNode",
-        backend: DeepLearningBackend = DEFAULT_DL_BACKEND,
+        backend: type[DeepLearningBackend] = DEFAULT_DL_BACKEND,
     ) -> None:
         self.shape = tuple(
             HyperParameter.from_value(s, f"shape_{i}") for i, s in enumerate(shape)
@@ -82,6 +82,8 @@ class ParameterNode(Node):
         return TrainableParameters(self.node_id, params)
 
     def to(self, device):
-        self._trainable_parameter = self.backend.param.to(
-            self._trainable_parameter, device=device
-        )
+        if self._state == NodeState.INITIALIZED:
+            self._trainable_parameter = self.backend.param.to(
+                self._trainable_parameter, device=device
+            )
+            self.output.set_value(self._trainable_parameter)

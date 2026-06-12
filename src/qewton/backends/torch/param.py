@@ -9,11 +9,11 @@ class TorchParameterBackend(ParameterBackend[torch.Tensor]):
             assert isinstance(
                 tensor, torch.Tensor
             ), "Torch can only work with torch.Tensors, but got {type(tensor)} instead."
-            param = torch.nn.Parameter(tensor)
+            param = tensor.requires_grad_(True)
         elif shape is not None:
             # TODO: We need some kind of initialization for these parameters
             # E.g. 0, rand, xavier,... But this also needs to be exposed to the outside
-            param = torch.nn.Parameter(torch.zeros(shape), requires_grad=True)
+            param = torch.zeros(shape, requires_grad=True)
             if len(shape) > 1:
                 torch.nn.init.xavier_uniform_(param)
         else:
@@ -21,8 +21,10 @@ class TorchParameterBackend(ParameterBackend[torch.Tensor]):
         return param
 
     @staticmethod
-    def to(data, device) -> torch.Tensor:
-        return data.data.to(device)
+    def to(data: torch.Tensor, device) -> torch.Tensor:
+        new_data = data.to(device).detach()
+        new_data.requires_grad = data.requires_grad
+        return new_data
 
     @staticmethod
     def requires_grad(data, requires_grad: bool) -> torch.Tensor:

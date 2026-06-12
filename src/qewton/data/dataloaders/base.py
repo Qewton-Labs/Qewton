@@ -9,7 +9,7 @@ from abc import abstractmethod
 import numpy as np
 
 from qewton.graphs.nodes import NodeState
-from qewton.backends import Backend, DEFAULT_DL_BACKEND
+from qewton.backends import Backend, DEFAULT_DL_BACKEND, DeepLearningBackend
 from qewton.config.variables import Variable
 
 from qewton.optim.base import EvaluationPhase
@@ -97,7 +97,7 @@ class DataLoader(DataNode):
         splitting_ratio: tuple[float, float, float] = (1.0, 0.0, 0.0),
         shuffle_data: bool | CategoricalHyperparameter = True,
         shuffle_seed: int | None = None,
-        backend: type[Backend] | None = DEFAULT_DL_BACKEND,
+        backend: type[Backend] = DEFAULT_DL_BACKEND,
         name: str = "DataLoader",
     ):
         """
@@ -213,7 +213,7 @@ class DataLoader(DataNode):
         batch_data = self.data_set.get_batch(indices)
 
         # Move batch to device if backend is specified
-        if self._device is not None and self.backend is not None:
+        if self._device is not None and issubclass(self.backend, DeepLearningBackend):
             batch_data = [self.backend.to(b, self._device) for b in batch_data]
 
         self._batch_progress += bs
