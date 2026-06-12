@@ -5,10 +5,10 @@ import os
 import sys
 import numpy as np
 
-from qewton.data.datasets.array_data.base import ArrayLikeDataSet
+from qewton.backends.numpy.base import NumPyBackend
+from qewton.backends.torch.base import TorchBackend
+from qewton.data.datasets.array_data.base import ArrayLikeDataSet, BackendDataSet
 from qewton.data.datasets.array_data.hdf5 import HDF5DataSet
-from qewton.data.datasets.array_data.numpy import NumpyDataSet
-from qewton.data.datasets.array_data.torch import TorchDataSet
 from qewton.config import (
     DataConfiguration,
     Variable,
@@ -247,21 +247,19 @@ class TestNumpyDataSet(unittest.TestCase):
         self.config = DataConfiguration(BatchAxes(10), FeatureAxes(shape=(5,)))
 
     def test_init_success(self):
-        dataset = NumpyDataSet(self.data, self.config)
+        dataset = BackendDataSet(self.data, self.config, NumPyBackend)
         self.assertIsInstance(dataset._data[0], np.ndarray)
 
     def test_init_type_error(self):
-        with self.assertRaisesRegex(
-            TypeError, "NumpyDataContainer only handles numpy.ndarray"
-        ):
-            NumpyDataSet([1, 2, 3], self.config)
+        with self.assertRaises(TypeError):
+            BackendDataSet([1, 2, 3], self.config, NumPyBackend)
 
     def test_from_file_npy(self):
         with tempfile.NamedTemporaryFile(suffix=".npy", delete=False) as tmp:
             np.save(tmp.name, self.data)
             tmp_path = tmp.name
         try:
-            dataset = NumpyDataSet.from_file(tmp_path, self.config)
+            dataset = BackendDataSet.from_file(tmp_path, self.config, NumPyBackend)
             np.testing.assert_array_equal(dataset.load_complete_data()[0], self.data)
         finally:
             if os.path.exists(tmp_path):
@@ -275,45 +273,26 @@ class TestTorchDataSet(unittest.TestCase):
         self.config = DataConfiguration(BatchAxes(10), FeatureAxes(shape=(5,)))
 
     def test_init_success(self):
-        dataset = TorchDataSet(self.data, self.config)
+        dataset = BackendDataSet(self.data, self.config, TorchBackend)
         self.assertTrue(torch.is_tensor(dataset._data[0]))
 
     def test_init_type_error(self):
-        with self.assertRaisesRegex(TypeError, "TorchDataSet only handles torch.Tensor"):
-            TorchDataSet(np.random.rand(10, 5), self.config)
+        with self.assertRaises(TypeError):
+            BackendDataSet(np.random.rand(10, 5), self.config, TorchBackend)
 
     def test_from_file(self):
         with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp:
             torch.save(self.data, tmp.name)
             tmp_path = tmp.name
         try:
-            dataset = TorchDataSet.from_file(tmp_path, self.config)
+            dataset = BackendDataSet.from_file(tmp_path, self.config, TorchBackend)
             self.assertTrue(torch.equal(dataset.load_complete_data()[0], self.data))
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
     def test_to_device(self):
-        dataset = TorchDataSet(self.data, self.config)
+        dataset = BackendDataSet(self.data, self.config, TorchBackend)
         # Just test moving to CPU to ensure the .to() logic runs
         dataset.to("cpu")
         self.assertEqual(dataset._data[0].device.type, "cpu")
-
-    @patch("torch.load")
-    def test_from_file_import_error_logic(self, mock_load):
-        # Manually trigger the ImportError branch by mocking sys.modules
-        with patch.dict(sys.modules, {"torch": None}), self.assertRaises(ImportError):
-            TorchDataSet.from_file("dummy.pt", self.config)
-
-    def test_init_import_error(self):
-        # Test the ImportError branch in __init__
-        with patch.dict(sys.modules, {"torch": None}):
-            # Since the module is already loaded in the environment,
-            # this is a bit of a synthetic check for the raise logic.
-            with self.assertRaises(ImportError):
-                # Force a re-import attempt inside the constructor logic
-                import qewton.data.datasets.array_data.torch as torch_mod
-
-                importlib = __import__("importlib")
-                importlib.reload(torch_mod)
-                torch_mod.TorchDataSet(self.data, self.config)

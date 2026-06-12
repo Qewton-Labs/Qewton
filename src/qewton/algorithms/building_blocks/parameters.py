@@ -1,7 +1,8 @@
 from __future__ import annotations
 from typing import Any, Annotated
 
-from qewton.config.backend import Backend, DEFAULT_DL_BACKEND, TorchBackend
+from qewton.backends import DEFAULT_DL_BACKEND
+from qewton.backends.base import DeepLearningBackend
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import TrainableParameters
 from qewton.config.data_configurations import DataConfiguration
@@ -9,68 +10,20 @@ from qewton.config.axes import EllipsisAxes, FeatureAxes
 from qewton.graphs.nodes import Node, NodeState
 
 
-class _InternalParameter:
-
-    def __init__(self, shape) -> None:
-        self.shape = shape
-
-    def to(self, device):
-        pass
-
-    @property
-    def trainable_parameters(self) -> Any:
-        pass
-
-    def requires_grad(self, requires_grad: bool):
-        pass
-
-
-class TorchParameter(_InternalParameter):
-
-    def __init__(self, shape=None, tensor=None) -> None:
-        import torch  # type: ignore
-
-        if tensor is not None:
-            assert isinstance(
-                tensor, torch.Tensor
-            ), "Torch can only work with torch.Tensors, but got {type(tensor)} instead."
-            self.param = torch.nn.Parameter(tensor)
-        elif shape is not None:
-            # TODO: We need some kind of initialization for these parameters
-            # E.g. 0, rand, xavier,... But this also needs to be exposed to the outside
-            self.param = torch.nn.Parameter(torch.zeros(shape), requires_grad=True)
-            if len(shape) > 1:
-                torch.nn.init.xavier_uniform_(self.param)
-        super().__init__(shape)
-
-    def to(self, device):
-        self.param.data = self.param.data.to(device)
-
-    @property
-    def trainable_parameters(self):
-        return self.param
-
-    def requires_grad(self, requires_grad: bool):
-        self.param.requires_grad = requires_grad
-
-
 class ParameterNode(Node):
-
-    existing_implementations = {TorchBackend: TorchParameter}
-
     def __init__(
         self,
         shape: tuple[int | HyperParameter, ...],
         initial_value=None,
         name: str = "ParameterNode",
-        backend=DEFAULT_DL_BACKEND,
+        backend: type[DeepLearningBackend] = DEFAULT_DL_BACKEND,
     ) -> None:
         self.shape = tuple(
             HyperParameter.from_value(s, f"shape_{i}") for i, s in enumerate(shape)
         )
-        self.implementation_class = self.existing_implementations[backend]
-        self.implementation: _InternalParameter | None = None
+        self._trainable_parameter: Any | None = None
         self.initial_value = initial_value
+        self.backend: DeepLearningBackend
         super().__init__(name, state=NodeState.UNINITIALIZED, backend=backend)
         self.output = self.output_ports[0]
 
@@ -78,16 +31,15 @@ class ParameterNode(Node):
         if self.state == NodeState.UNINITIALIZED:
             if self.initial_value is not None:
                 if not hasattr(self.initial_value, "shape"):
-                    raise ValueError(
-                        f"initial_value must have a 'shape' attribute, got {type(self.initial_value)}"
-                    )
-                self.implementation = self.implementation_class(
+                    raise ValueError(f"initial_value must have a 'shape' attribute,\
+                            got {type(self.initial_value)}")
+                self._trainable_parameter = self.backend.param.initialize(
                     self.initial_value.shape, self.initial_value
                 )
             else:
                 int_shape = tuple(hp.value for hp in self.shape)
-                self.implementation = self.implementation_class(int_shape)
-            self.output.set_value(self.implementation.param)
+                self._trainable_parameter = self.backend.param.initialize(int_shape)
+            self.output.set_value(self._trainable_parameter)
             self._state = NodeState.INITIALIZED
 
     def output_config(self):
@@ -95,28 +47,26 @@ class ParameterNode(Node):
         return DataConfiguration(
             EllipsisAxes(),
             FeatureAxes(shape=int_shape),
-            dtype=self.backend.standard_datatype(),  # type: ignore
+            dtype=self.backend.default_dtype,  # type: ignore
         )
 
     def run(self) -> None:
         pass  # value is set once in setup
 
     def forward(self) -> Annotated[Any, ParameterNode.output_config]:
-        return (
-            None
-            if self.implementation is None
-            else self.implementation.trainable_parameters
-        )
+        return self._trainable_parameter
 
     def reset(self):
         if not self.state == NodeState.FIXED:
             self.output.reset_value()
             self._state = NodeState.UNINITIALIZED
+            self._trainable_parameter = None
 
     def fix_node_state(self) -> None:
         super().fix_node_state()
-        if self.implementation is not None:
-            self.implementation.requires_grad(False)
+        self._trainable_parameter = self.backend.param.requires_grad(
+            self._trainable_parameter, False
+        )
 
     def set_state(self, new_state: NodeState):
         super().set_state(new_state)
@@ -128,13 +78,12 @@ class ParameterNode(Node):
         if self.state == NodeState.FIXED:
             params = []
         else:
-            params = (
-                []
-                if self.implementation is None
-                else self.implementation.trainable_parameters
-            )
+            params = self._trainable_parameter
         return TrainableParameters(self.node_id, params)
 
     def to(self, device):
-        if self.implementation is not None:
-            self.implementation.to(device=device)
+        if self._state == NodeState.INITIALIZED:
+            self._trainable_parameter = self.backend.param.to(
+                self._trainable_parameter, device=device
+            )
+            self.output.set_value(self._trainable_parameter)

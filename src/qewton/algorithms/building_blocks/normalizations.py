@@ -2,7 +2,7 @@ from typing import Annotated, Any
 
 from qewton.algorithms.building_blocks.math import Mean, Std
 from qewton.algorithms.building_blocks.parameters import ParameterNode
-from qewton.config.backend import DEFAULT_DL_BACKEND, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, Backend
 from qewton.config.data_configurations import DataConfiguration
 from qewton.data.datasets.base import DataSet
 from qewton.graphs.control_nodes.graph_node import TrackedNode

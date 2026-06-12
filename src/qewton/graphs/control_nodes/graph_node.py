@@ -6,7 +6,7 @@ import inspect
 from qewton.graphs.nodes import InputPort, Node, OutputPort, Port
 from qewton.graphs import Graph
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.backend import Backend, TensorType
+from qewton.backends import Backend, TensorType
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
 

@@ -3,7 +3,8 @@ from types import EllipsisType
 from typing import Annotated
 
 from qewton.algorithms.backend_node import BackendNode
-from qewton.config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, TensorType
+from qewton.backends.base import DeepLearningBackend
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes, FeatureAxes
 from qewton.config.variables import Variable
@@ -21,10 +22,7 @@ class Narrow(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DataConfiguration([])],
     ) -> Annotated[TensorType, DataConfiguration([])]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.narrow(x, self.dim, self.start, self.length)
+        return self.backend.math.narrow(x)
 
 
 class Slice(BackendNode[TensorType]):
@@ -35,7 +33,7 @@ class Slice(BackendNode[TensorType]):
             int | slice | Variable | tuple[slice | list[int] | EllipsisType | int, ...]
         ),
         name=None,
-        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.slice_obj = slice_config
         self.slice_config = slice_config
@@ -44,7 +42,7 @@ class Slice(BackendNode[TensorType]):
     def forward(
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.implementation(inp)
+        return self.backend.math.slice(inp, self.slice_config)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -63,14 +61,13 @@ class Slice(BackendNode[TensorType]):
                 pass
         return updated_ports
 
-    def torch_implementation(self, inp):
-        return inp[self.slice_config]
-
 
 class SplitVariables(BackendNode[TensorType]):
 
     def __init__(
-        self, name=None, backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND
+        self,
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         super().__init__(
             name if name is not None else "SplitVariablesNode", backend=backend
@@ -79,10 +76,7 @@ class SplitVariables(BackendNode[TensorType]):
         self.split_sections = None
 
     def forward(self, inp: Annotated[TensorType, DataConfiguration.empty()]):
-        return self.implementation(inp)
-
-    def torch_implementation(self, inp):
-        return self.backend.library.split(inp, self.split_sections, dim=self.split_dim)
+        return self.backend.math.split(inp, self.split_sections, axis=self.split_dim)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -135,7 +129,7 @@ class ConcatVariables(BackendNode[TensorType]):
         self,
         in_variables,
         name=None,
-        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         super().__init__(
             name if name is not None else "ConcatVariablesNode", backend=backend
@@ -155,7 +149,7 @@ class ConcatVariables(BackendNode[TensorType]):
                     DataConfiguration(
                         ellipsis_axes,
                         FeatureAxes(variable=var),
-                        dtype=self.backend.standard_datatype(),
+                        dtype=self.backend.default_dtype,
                     ),
                     node=self,
                     name=var.name,
@@ -169,7 +163,7 @@ class ConcatVariables(BackendNode[TensorType]):
                 DataConfiguration(
                     ellipsis_axes,
                     FeatureAxes(variable=out_var),
-                    dtype=self.backend.standard_datatype(),
+                    dtype=self.backend.default_dtype,
                 ),
                 node=self,
                 name=out_var.name,
@@ -187,7 +181,4 @@ class ConcatVariables(BackendNode[TensorType]):
                 seen_keys.add(key)
 
     def forward(self, *inp):
-        return self.implementation(*inp)
-
-    def torch_implementation(self, *inp):
-        return self.backend.library.cat(inp, dim=self.concat_dim)
+        return self.backend.math.concatenate(inp, axis=self.concat_dim)

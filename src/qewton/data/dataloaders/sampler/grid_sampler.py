@@ -1,6 +1,6 @@
 import numpy as np
 
-from qewton.config.backend import DEFAULT_DL_BACKEND, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, Backend
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry
 from qewton.graphs.nodes import NodeState

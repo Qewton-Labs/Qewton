@@ -8,7 +8,7 @@ from qewton.optim.parameters.number_hyperparameter import ContinuousHyperparamet
 from qewton.graphs.nodes import InputPort
 from qewton.graphs.graphs import Graph
 from qewton.graphs.control_nodes.graph_node import GraphNode
-from qewton.config.backend import DEFAULT_DL_BACKEND
+from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.algorithms.building_blocks.math import Subtract, Square, Mean, Divide, Sum
 from qewton.optim.base import EvaluationPhase
 

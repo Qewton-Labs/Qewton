@@ -1,7 +1,7 @@
 from copy import deepcopy
 from typing import Annotated
 
-from qewton.config.backend import DEFAULT_DL_BACKEND, TensorType, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, TensorType, Backend
 from qewton.algorithms.backend_node import BackendNode
 
 from qewton.config.data_configurations import DataConfiguration as DC
@@ -34,7 +34,7 @@ class Add(BackendNode[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.add(x, y)
+        return self.backend.math.add(x, y)
 
 
 class Subtract(BackendNode[TensorType]):
@@ -45,13 +45,7 @@ class Subtract(BackendNode[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.implementation(x, y)
-
-    def torch_implementation(self, x, y):
-        return self.backend.library.sub(x, y)
-
-    def tensorflow_implementation(self, x, y):
-        return self.backend.library.subtract(x, y)
+        return self.backend.math.subtract(x, y)
 
 
 class Multiply(BackendNode[TensorType]):
@@ -62,13 +56,7 @@ class Multiply(BackendNode[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.implementation(x, y)
-
-    def torch_implementation(self, x, y):
-        return self.backend.library.mul(x, y)
-
-    def tensorflow_implementation(self, x, y):
-        return self.backend.library.multiply(x, y)
+        return self.backend.math.multiply(x, y)
 
 
 class Divide(BackendNode[TensorType]):
@@ -79,13 +67,8 @@ class Divide(BackendNode[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.implementation(x, y)
-
-    def torch_implementation(self, x, y):
-        return self.backend.library.true_divide(x, y)
-
-    def tensorflow_implementation(self, x, y):
-        return self.backend.library.truediv(x, y)
+        # TODO: should this rather be true divide?
+        return self.backend.math.divide(x, y)
 
 
 class Mod(BackendNode[TensorType]):
@@ -96,13 +79,7 @@ class Mod(BackendNode[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.implementation(x, y)
-
-    def torch_implementation(self, x, y):
-        return self.backend.library.remainder(x, y)
-
-    def tensorflow_implementation(self, x, y):
-        return self.backend.library.mod(x, y)
+        return self.backend.math.mod(x, y)
 
 
 # endregion
@@ -118,7 +95,7 @@ class Square(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.square(x)
+        return self.backend.math.square(x)
 
 
 class Sqrt(BackendNode[TensorType]):
@@ -128,7 +105,7 @@ class Sqrt(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.sqrt(x)
+        return self.backend.math.sqrt(x)
 
 
 class Power(BackendNode[TensorType]):
@@ -139,7 +116,7 @@ class Power(BackendNode[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.pow(x, y)
+        return self.backend.math.power(x, y)
 
 
 # endregion
@@ -155,7 +132,7 @@ class Exp(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.exp(x)
+        return self.backend.math.exp(x)
 
 
 class Log(BackendNode[TensorType]):
@@ -165,7 +142,7 @@ class Log(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.log(x)
+        return self.backend.math.log(x)
 
 
 class Log2(BackendNode[TensorType]):
@@ -175,13 +152,7 @@ class Log2(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.log2(x)
-
-    def tensorflow_implementation(self, x):
-        return self.backend.library.keras.ops.log2(x)
+        return self.backend.math.log2(x)
 
 
 class Log10(BackendNode[TensorType]):
@@ -191,13 +162,7 @@ class Log10(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.log10(x)
-
-    def tensorflow_implementation(self, x):
-        return self.backend.library.math.log10(x)
+        return self.backend.math.log10(x)
 
 
 # endregion
@@ -213,75 +178,52 @@ class Sin(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.sin(x)
+        return self.backend.math.sin(x)
 
 
 class Cos(BackendNode[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
-        self,
-        x: Annotated[TensorType, DC(ellipsis_dims)],
+        self, x: Annotated[TensorType, DC(ellipsis_dims)]
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.cos(x)
+        return self.backend.math.cos(x)
 
 
 class Tan(BackendNode[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
-        self,
-        x: Annotated[TensorType, DC(ellipsis_dims)],
+        self, x: Annotated[TensorType, DC(ellipsis_dims)]
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.tan(x)
+        return self.backend.math.tan(x)
 
 
 class ArcSin(BackendNode[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
-        self,
-        x: Annotated[TensorType, DC(ellipsis_dims)],
+        self, x: Annotated[TensorType, DC(ellipsis_dims)]
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.arcsin(x)
-
-    def tensorflow_implementation(self, x):
-        return self.backend.library.asin(x)
+        return self.backend.math.arcsin(x)
 
 
 class ArcCos(BackendNode[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
-        self,
-        x: Annotated[TensorType, DC(ellipsis_dims)],
+        self, x: Annotated[TensorType, DC(ellipsis_dims)]
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.arccos(x)
-
-    def tensorflow_implementation(self, x):
-        return self.backend.library.acos(x)
+        return self.backend.math.arccos(x)
 
 
 class ArcTan(BackendNode[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
-        self,
-        x: Annotated[TensorType, DC(ellipsis_dims)],
+        self, x: Annotated[TensorType, DC(ellipsis_dims)]
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.arctan(x)
-
-    def tensorflow_implementation(self, x):
-        return self.backend.library.atan(x)
+        return self.backend.math.arctan(x)
 
 
 # endregion
@@ -297,7 +239,7 @@ class Abs(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.abs(x)
+        return self.backend.math.abs(x)
 
 
 class Floor(BackendNode[TensorType]):
@@ -307,7 +249,7 @@ class Floor(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.floor(x)
+        return self.backend.math.floor(x)
 
 
 class Ceil(BackendNode[TensorType]):
@@ -317,7 +259,7 @@ class Ceil(BackendNode[TensorType]):
         self,
         x: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.ceil(x)
+        return self.backend.math.ceil(x)
 
 
 class Maximum(BackendNode[TensorType]):
@@ -328,7 +270,7 @@ class Maximum(BackendNode[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.maximum(x, y)
+        return self.backend.math.maximum(x, y)
 
 
 class Minimum(BackendNode[TensorType]):
@@ -339,7 +281,7 @@ class Minimum(BackendNode[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return self.backend.library.minimum(x, y)
+        return self.backend.math.minimum(x, y)
 
 
 # endregion
@@ -358,7 +300,7 @@ class MatMul(BackendNode[TensorType]):
         x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
         y: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1, dim_2)))],
     ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2,)))]:
-        return self.backend.library.matmul(x, y)
+        return self.backend.math.matmul(x, y)
 
 
 class SVD(BackendNode[TensorType]):
@@ -375,14 +317,7 @@ class SVD(BackendNode[TensorType]):
         Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(min_dim,)))],
         Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2, dim_2)))],
     ]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.svd(x)
-
-    def tensorflow_implementation(self, x):
-        s, u, v = self.backend.library.linalg.svd(x)
-        return u, s, v
+        return self.backend.linalg.svd(x)
 
 
 # endregion
@@ -524,13 +459,7 @@ class Mean(ReductionNode[TensorType]):
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
     ) -> Annotated[TensorType, DC(EllipsisAxes())]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.mean(x, dim=self.axis, keepdim=self.keepdims)
-
-    def tensorflow_implementation(self, x):
-        return self.backend.library.reduce_mean(x, axis=self.axis, keepdims=self.keepdims)
+        return self.backend.math.mean(x, axis=self.axis, keepdims=self.keepdims)
 
 
 class Sum(ReductionNode[TensorType]):
@@ -541,13 +470,7 @@ class Sum(ReductionNode[TensorType]):
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
     ) -> Annotated[TensorType, DC(EllipsisAxes())]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.sum(x, dim=self.axis, keepdim=self.keepdims)
-
-    def tensorflow_implementation(self, x):
-        return self.backend.library.reduce_sum(x, axis=self.axis, keepdims=self.keepdims)
+        return self.backend.math.sum(x, axis=self.axis, keepdims=self.keepdims)
 
 
 class Std(ReductionNode[TensorType]):
@@ -555,15 +478,7 @@ class Std(ReductionNode[TensorType]):
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
     ) -> Annotated[TensorType, DC(EllipsisAxes())]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.std(x, dim=self.axis, keepdim=self.keepdims)
-
-    def tensorflow_implementation(self, x):
-        if self.axis is None:
-            return self.backend.library.reduce_std(x)
-        return self.backend.library.reduce_std(x, axis=self.axis, keepdims=self.keepdims)
+        return self.backend.math.std(x, axis=self.axis, keepdims=self.keepdims)
 
 
 # endregion
@@ -587,10 +502,7 @@ class Flatten(BackendNode[TensorType]):
     def forward(
         self, x: Annotated[TensorType, DC.empty()]
     ) -> Annotated[TensorType, DC.empty()]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.flatten(
+        return self.backend.math.flatten(
             x, start_dim=self.start_dim, end_dim=self.end_dim
         )
 
@@ -611,13 +523,7 @@ class Transpose(BackendNode[TensorType]):
     def forward(
         self, x: Annotated[TensorType, x_data_config]
     ) -> Annotated[TensorType, DC.empty()]:
-        return self.implementation(x)
-
-    def torch_implementation(self, x):
-        return self.backend.library.permute(x, self.perm)
-
-    def tensorflow_implementation(self, x):
-        return self.backend.library.transpose(x, perm=self.perm)
+        return self.backend.math.transpose(x, axes=self.perm)
 
 
 # endregion

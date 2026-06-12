@@ -2,7 +2,7 @@ from typing import Annotated, Generic
 
 from qewton.algorithms.building_blocks.linear import Linear
 from qewton.algorithms.building_blocks.activation_functions import ReLU
-from qewton.config.backend import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.config.axes import FeatureAxes, EllipsisAxes
@@ -134,12 +134,12 @@ class FCN(GraphNode, Generic[TensorType]):
             return DataConfiguration(
                 self.ellipsis_axes,
                 FeatureAxes(variable=self.input_var),
-                dtype=self.backend.standard_datatype(),
+                dtype=self.backend.default_dtype,
             )
         return DataConfiguration(
             self.ellipsis_axes,
             FeatureAxes(shape=(self.in_neurons.value,)),
-            dtype=self.backend.standard_datatype(),
+            dtype=self.backend.default_dtype,
         )
 
     def out_data_config(self):
@@ -149,7 +149,7 @@ class FCN(GraphNode, Generic[TensorType]):
         Returns:
             DataConfiguration: The output data configuration for the FCN.
         """
-        b_end = self.backend.standard_datatype()
+        b_end = self.backend.default_dtype
         if self.output_var is not None:
             return DataConfiguration(
                 self.ellipsis_axes,

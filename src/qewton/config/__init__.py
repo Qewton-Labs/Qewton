@@ -14,4 +14,3 @@ from .errors import DataConfigMismatchError
 from .data_configurations import DataConfiguration
 
 from .variables import Variable
-from .backend import *

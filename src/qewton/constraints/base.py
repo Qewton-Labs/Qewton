@@ -1,6 +1,6 @@
 from enum import Enum
 
-from qewton.config.backend import TensorType, Backend, DEFAULT_DL_BACKEND
+from qewton.backends import TensorType, Backend, DEFAULT_DL_BACKEND
 
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
