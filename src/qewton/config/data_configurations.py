@@ -81,6 +81,9 @@ class DataConfiguration:
         """
         return f"DataConfig([{', '.join(str(a) for a in self.axes)}])"
 
+    def __repr__(self):
+        return self.__str__()
+
     @property
     def feature_axes(self) -> FeatureAxes | None:
         """Returns the feature axes of this configuration.
