@@ -11,9 +11,13 @@ sys.path.insert(0, os.path.abspath("../../src"))
 
 def process_signature(app, what, name, obj, options, signature, return_annotation):
     if signature:
-        signature = signature.replace("typing.Annotated", "")
+        signature = signature.replace("~typing.Annotated", "")
+        signature = signature.replace("TensorType, ", "")
+        signature = signature.replace("TensorType,", "")
     if return_annotation:
-        return_annotation = return_annotation.replace("typing.Annotated", "")
+        return_annotation = return_annotation.replace("~typing.Annotated", "")
+        return_annotation = return_annotation.replace("TensorType, ", "")
+        return_annotation = return_annotation.replace("TensorType,", "")
 
     return signature, return_annotation
 
