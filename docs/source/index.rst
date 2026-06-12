@@ -42,3 +42,4 @@ The documentation of all modules, functions, methods and variable in
    Graphs <api/qewton.graphs>
    Optim <api/qewton.optim>
    Visualization <api/qewton.visualization>
+   Backends <api/qewton.backends>
