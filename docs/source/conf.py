@@ -46,7 +46,7 @@ def insert_readme_as_module_doc(app, what, name, obj, options, lines):
 
 def setup(app):
     app.connect("autodoc-process-docstring", insert_readme_as_module_doc)
-    app.connect("autodoc-process-signature", process_signature)
+    # app.connect("autodoc-process-signature", process_signature)
 
 
 # ---- auto-generate API ----
