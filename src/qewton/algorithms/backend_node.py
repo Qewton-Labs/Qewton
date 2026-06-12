@@ -36,11 +36,33 @@ class BackendNode(Node, Generic[TensorType]):
         name=None,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
+        """Initialize the BackendNode.
+
+        Args:
+            name (str, optional): The name of the node. Defaults to the class name.
+            backend (type[DeepLearningBackend[TensorType]], optional): The deep learning
+                backend used for the node's operations. Defaults to DEFAULT_DL_BACKEND.
+        """
         name = name if name is not None else self.__class__.__name__
         super().__init__(name=name, state=NodeState.FIXED, backend=backend)
         self.backend: type[DeepLearningBackend[TensorType]] = self.backend
 
     def forward(self, *args, **kwargs):
+        """Performs the forward computation using the configured backend.
+
+        This method must be implemented by subclasses to define the specific
+        mathematical or neural operation.
+
+        Args:
+            *args: Variable length argument list for input tensors.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            TensorType: The result of the computation.
+
+        Raises:
+            NotImplementedError: If the subclass does not implement this method.
+        """
         raise NotImplementedError(
             "The forward method must be implemented by subclasses of BackendNode."
         )

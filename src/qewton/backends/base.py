@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Generic, TypeVar, ClassVar, TYPE_CHECKING
 
 from qewton.config import dtypes as qt_dtypes
+from qewton.config.devices import Device
 
 if TYPE_CHECKING:
     from qewton.backends.param import ParameterBackend
@@ -42,7 +43,7 @@ class DeepLearningBackend(Backend[TensorType]):
     linalg: ClassVar[type[LinAlgBackend]]
     param: ClassVar[type[ParameterBackend]]
 
-    dtypes: ClassVar[dict]  # type: ignore
+    dtypes: ClassVar[dict]
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -103,4 +104,10 @@ class DeepLearningBackend(Backend[TensorType]):
         """
         raise NotImplementedError(
             "The from_numpy method must be implemented by subclasses of Backend."
+        )
+
+    @classmethod
+    def get_device(cls, device: Device):
+        raise NotImplementedError(
+            "The get_device method must be implemented by subclasses of Backend."
         )

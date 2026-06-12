@@ -83,8 +83,8 @@ class ArrayLikeDataSet(DataSet):
     def data_configs(self) -> list[DataConfiguration]:
         return self._data_configs
 
-    def get_batch(self, idx_list) -> list[Any]:
-        return [data[idx_list] for data in self._data]
+    def get_batch(self, idcs) -> list[Any]:
+        return [data[idcs] for data in self._data]
 
     def get_continuous_batch(self, start_idx, end_idx) -> list[Any]:
         return [data[start_idx:end_idx] for data in self._data]
@@ -112,12 +112,27 @@ class ArrayLikeDataSet(DataSet):
 
 
 class BackendDataSet(ArrayLikeDataSet):
+    """A dataset implementation for backend-specific tensor objects, e.g. numpy.ndarray
+    or torch.Tensor.
+    """
+
     def __init__(
         self,
         data: Any,
         data_configs: DataConfiguration | list[DataConfiguration],
         backend: type[Backend],
     ):
+        """Initialize the BackendDataSet.
+
+        Args:
+            data (Any): Tensors or data objects compatible with the backend.
+            data_configs (DataConfiguration | list[DataConfiguration]): Configuration
+                defining the dimensions and semantics of the data.
+            backend (type[Backend]): The backend associated with the data.
+
+        Raises:
+            TypeError: If any data item is not compatible with the backend's default type.
+        """
         self.backend = backend
         items = data if isinstance(data_configs, (list, tuple)) else [data]
         for item in items:

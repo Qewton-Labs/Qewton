@@ -1,6 +1,9 @@
 from typing import Any
 import torch
 from qewton.backends.math import MathBackend
+from qewton.backends.torch.base import TorchBackend
+from qewton.backends.torch.device import get_torch_device
+from qewton.config.devices import Device, cpu
 
 
 class TorchMathBackend(MathBackend[torch.Tensor]):
@@ -138,17 +141,124 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     einsum = torch.einsum
 
     # Factory Methods
-    zeros = torch.zeros
-    ones = torch.ones
-    empty = torch.empty
-    full = torch.full
-    eye = torch.eye
-    zeros_like = torch.zeros_like
-    ones_like = torch.ones_like
-    full_like = torch.full_like
-    arange = torch.arange
-    linspace = torch.linspace
-    logspace = torch.logspace
+    @staticmethod
+    def zeros(shape: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+        return torch.zeros(shape, dtype=dtype, device=get_torch_device(device))
+
+    @staticmethod
+    def ones(shape: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+        return torch.ones(shape, dtype=dtype, device=get_torch_device(device))
+
+    @staticmethod
+    def zeros_like(x: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+        return torch.zeros_like(x, dtype=dtype, device=get_torch_device(device))
+
+    @staticmethod
+    def ones_like(x: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+        return torch.ones_like(x, dtype=dtype, device=get_torch_device(device))
+
+    @staticmethod
+    def empty(shape: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+        return torch.empty(shape, dtype=dtype, device=get_torch_device(device))
+
+    @staticmethod
+    def empty_like(x: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+        return torch.empty_like(x, dtype=dtype, device=get_torch_device(device))
+
+    @staticmethod
+    def full(
+        shape: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+    ) -> torch.Tensor:
+        return torch.full(shape, fill_value, dtype=dtype, device=get_torch_device(device))
+
+    @staticmethod
+    def full_like(
+        x: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+    ) -> torch.Tensor:
+        return torch.full_like(
+            x, fill_value, dtype=dtype, device=get_torch_device(device)
+        )
+
+    @staticmethod
+    def eye(
+        N: int, M: int | None = None, k: int = 0, dtype: Any = None, device: Device = cpu
+    ) -> torch.Tensor:
+        m_val = M if M is not None else N
+        res = torch.zeros((N, m_val), dtype=dtype, device=get_torch_device(device))
+        if k >= 0:
+            row_idx = torch.arange(0, min(N, m_val - k), device=res.device)
+            col_idx = row_idx + k
+        else:
+            col_idx = torch.arange(0, min(m_val, N + k), device=res.device)
+            row_idx = col_idx - k
+        if len(row_idx) > 0:
+            res[row_idx, col_idx] = 1
+        return res
+
+    @staticmethod
+    def arange(
+        start: Any,
+        stop: Any = None,
+        step: Any = None,
+        dtype: Any = None,
+        device: Device = cpu,
+    ) -> torch.Tensor:
+        if stop is None:
+            return torch.arange(start, dtype=dtype, device=get_torch_device(device))
+        if step is None:
+            return torch.arange(start, stop, dtype=dtype, device=get_torch_device(device))
+        return torch.arange(
+            start, stop, step, dtype=dtype, device=get_torch_device(device)
+        )
+
+    @staticmethod
+    def linspace(
+        start: Any,
+        stop: Any,
+        num: int = 50,
+        endpoint: bool = True,
+        retstep: bool = False,
+        dtype: Any = None,
+        axis: int = 0,
+        device: Device = cpu,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        device_torch = get_torch_device(device)
+        if not endpoint and num > 0:
+            step = (stop - start) / num
+            res = torch.linspace(
+                start, stop - step, num, dtype=dtype, device=device_torch
+            )
+        else:
+            res = torch.linspace(start, stop, num, dtype=dtype, device=device_torch)
+        if retstep:
+            actual_step = (
+                (stop - start) / (num - 1)
+                if endpoint and num > 1
+                else (stop - start) / num
+            )
+            return res, torch.tensor(actual_step, device=device_torch)
+        return res
+
+    @staticmethod
+    def logspace(
+        start: Any,
+        stop: Any,
+        num: int = 50,
+        endpoint: bool = True,
+        base: float = 10.0,
+        dtype: Any = None,
+        axis: int = 0,
+        device: Device = cpu,
+    ) -> torch.Tensor:
+        device_torch = get_torch_device(device)
+        if not endpoint and num > 0:
+            step = (stop - start) / num
+            return torch.logspace(
+                start, stop - step, num, base=base, dtype=dtype, device=device_torch
+            )
+        return torch.logspace(
+            start, stop, num, base=base, dtype=dtype, device=device_torch
+        )
 
     # Array Manipulation
     reshape = torch.reshape

@@ -2,11 +2,15 @@ from abc import abstractmethod
 from typing import Any
 
 from qewton.backends.base import Backend, TensorType
+from qewton.config.devices import cpu, Device
 
 
 class MathBackend(Backend[TensorType]):
     """A Backend that implements all basic mathematical methods,
-    method selection inspired by numpy and Keras.
+    method selection inspired by numpy.
+
+    The overall idea is that every math backend implements the numpy methods,
+    and mimics numpy's behaviour to unify the usage among all backends.
     """
 
     # TODO: check these, currently only generated stuff
@@ -53,20 +57,74 @@ class MathBackend(Backend[TensorType]):
     ) -> TensorType:
         pass
 
+    # Factory methods:
+
     @staticmethod
     @abstractmethod
-    def ones(shape: Any, dtype: Any = None) -> TensorType:
+    def ones(shape: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def zeros(shape: Any, dtype: Any = None) -> TensorType:
+    def ones_like(x: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def zeros_like(x: Any, dtype: Any = None) -> TensorType:
+    def zeros(shape: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
         pass
+
+    @staticmethod
+    @abstractmethod
+    def zeros_like(x: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def empty(shape: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def empty_like(x: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def eye(
+        N: int, M: int | None = None, k: int = 0, dtype: Any = None, device: Device = cpu
+    ) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def linspace(
+        start: Any,
+        stop: Any,
+        num: int = 50,
+        endpoint: bool = True,
+        retstep: bool = False,
+        dtype: Any = None,
+        axis: int = 0,
+        device: Device = cpu,
+    ) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def logspace(
+        start: Any,
+        stop: Any,
+        num: int = 50,
+        endpoint: bool = True,
+        base: float = 10.0,
+        dtype: Any = None,
+        axis: int = 0,
+        device: Device = cpu,
+    ) -> TensorType:
+        pass
+
+    ########
 
     @staticmethod
     @abstractmethod
@@ -116,7 +174,11 @@ class MathBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def arange(
-        start: Any, stop: Any = None, step: Any = None, dtype: Any = None
+        start: Any,
+        stop: Any = None,
+        step: Any = None,
+        dtype: Any = None,
+        device: Device = cpu,
     ) -> TensorType:
         pass
 
@@ -391,16 +453,6 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def empty(shape: Any, dtype: Any = None) -> TensorType:
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def empty_like(x: Any, dtype: Any = None) -> TensorType:
-        pass
-
-    @staticmethod
-    @abstractmethod
     def equal(x1: Any, x2: Any) -> TensorType:
         pass
 
@@ -451,12 +503,16 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def full(shape: Any, fill_value: Any, dtype: Any = None) -> TensorType:
+    def full(
+        shape: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+    ) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def full_like(x: Any, fill_value: Any, dtype: Any = None) -> TensorType:
+    def full_like(
+        x: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+    ) -> TensorType:
         pass
 
     @staticmethod
@@ -594,19 +650,6 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def linspace(
-        start: Any,
-        stop: Any,
-        num: int = 50,
-        endpoint: bool = True,
-        retstep: bool = False,
-        dtype: Any = None,
-        axis: int = 0,
-    ) -> TensorType:
-        pass
-
-    @staticmethod
-    @abstractmethod
     def log(x: Any) -> TensorType:
         pass
 
@@ -648,19 +691,6 @@ class MathBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def logical_or(x1: Any, x2: Any) -> TensorType:
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def logspace(
-        start: Any,
-        stop: Any,
-        num: int = 50,
-        endpoint: bool = True,
-        base: float = 10.0,
-        dtype: Any = None,
-        axis: int = 0,
-    ) -> TensorType:
         pass
 
     @staticmethod
@@ -809,11 +839,6 @@ class MathBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def not_equal(x1: Any, x2: Any) -> TensorType:
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def ones_like(x: Any, dtype: Any = None) -> TensorType:
         pass
 
     @staticmethod
@@ -1114,11 +1139,6 @@ class MathBackend(Backend[TensorType]):
     def sum(
         x: Any, axis: Any = None, keepdims: bool = False
     ) -> TensorType:  # Removed dtype for consistency
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def eye(N: int, M: int | None = None, k: int = 0, dtype: Any = None) -> TensorType:
         pass
 
     @staticmethod

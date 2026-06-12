@@ -1,5 +1,9 @@
+from typing import TYPE_CHECKING
+
 import torch
 
+from qewton.backends.torch.device import get_torch_device
+from qewton.config.devices import CPU, CUDA, Device
 from qewton.config.dtypes import (
     BFloat16,
     Bool,
@@ -21,14 +25,18 @@ from qewton.config.dtypes import (
 )
 from qewton.backends.base import DeepLearningBackend
 from qewton.backends.torch.grad import TorchGradBackend
-from qewton.backends.torch.math import TorchMathBackend
 from qewton.backends.torch.nn import TorchNNBackend
 from qewton.backends.torch.optim import TorchOptimBackend
 from qewton.backends.torch.linalg import TorchLinAlgBackend
 from qewton.backends.torch.param import TorchParameterBackend
+from qewton.backends.torch.math import TorchMathBackend
 
 
 class TorchBackend(DeepLearningBackend[torch.Tensor]):
+    """
+    The Backend that implements all functionalities in PyTorch.
+    """
+
     math = TorchMathBackend
     nn = TorchNNBackend
     grad = TorchGradBackend
@@ -69,3 +77,7 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     @classmethod
     def from_numpy(cls, data, dtype=Float32):
         return torch.from_numpy(data).to(dtype=cls.dtypes[dtype])
+
+    @classmethod
+    def get_device(cls, device: Device):
+        return get_torch_device(device)
