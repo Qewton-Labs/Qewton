@@ -35,6 +35,7 @@ The documentation of all modules, functions, methods and variable in
    :caption: API
 
    Algorithms <api/qewton.algorithms>
+   Backends <api/qewton.backends>
    Configs <api/qewton.config>
    Constraints <api/qewton.constraints>
    Data <api/qewton.data>
@@ -42,4 +43,3 @@ The documentation of all modules, functions, methods and variable in
    Graphs <api/qewton.graphs>
    Optim <api/qewton.optim>
    Visualization <api/qewton.visualization>
-   Backends <api/qewton.backends>
