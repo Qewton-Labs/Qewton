@@ -12,23 +12,10 @@ sys.path.insert(0, os.path.abspath("../../src"))
 
 def process_signature(app, what, name, obj, options, signature, return_annotation):
     def prettify(text):
-        if not text:
-            return text
-        # Pattern matches: TypeName[TensorType, DataConfiguration(AxesInfo)]
-        # Handles qualified names (e.g. typing.Annotated), tildes (~), and DC aliases.
-        pattern = r"([\w\.~]+)?\[[\w\.~]*TensorType,\s*(?:[\w\.~]+\.)?(?:DataConfiguration|DC)\((.*?)\)\]"
-
-        def repl(m):
-            # Extract the type name and remove package qualification and tildes
-            full_type = m.group(1) or ""
-            type_name = full_type.split(".")[-1].replace("~", "")
-            axes_content = m.group(2)
-
-            if type_name == "Annotated" or not type_name:
-                return f"[{axes_content}]"
-            return f"{type_name}[{axes_content}]"
-
-        return re.sub(pattern, repl, text)
+        if text:
+            text = re.sub(r"~.*?Annotated", "", text)
+            text = re.sub(r"~.*?TensorType, ", "", text)
+        return text
 
     return prettify(signature), prettify(return_annotation)
 
