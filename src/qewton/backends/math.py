@@ -1116,6 +1116,11 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
+    def unsqueeze(x: Any, axis: Any = None) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
     def transpose(x: Any, axes: Any = None) -> TensorType:
         pass
 

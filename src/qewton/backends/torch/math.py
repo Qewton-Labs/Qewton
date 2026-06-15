@@ -267,6 +267,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         return torch.flatten(x, start_dim=start_dim, end_dim=end_dim)
 
     squeeze = torch.squeeze
+    unsqueeze = torch.unsqueeze
     ravel = torch.ravel
     moveaxis = torch.moveaxis
     swapaxes = torch.swapaxes
