@@ -24,6 +24,4 @@ The core structure of Qewton is based on few key components:
 ![Workflow in Qewton](images/struktur_dark.png#gh-dark-mode-only)
 
 ### About us:
-We are the creators of TorchPhysics_, a deep learning library PDEs. With Qewton, we aim to provide a more user-friendly and flexible framework for deep learning in physics and engineering.
-
-.. _TorchPhysics: https://github.com/qewton-labs/torchphysics
+We are the creators of [TorchPhysics](https://github.com/qewton-labs/torchphysics), a deep learning library for PDEs. With Qewton, we aim to provide a more user-friendly and flexible framework for deep learning in physics and engineering.
