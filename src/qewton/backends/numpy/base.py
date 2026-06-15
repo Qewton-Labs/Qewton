@@ -21,10 +21,13 @@ from qewton.config.dtypes import (
 )
 
 from qewton.backends.base import Backend
+from qewton.backends.numpy.math import NumpyMathBackend
 
 
 class NumPyBackend(Backend[np.ndarray]):
     default_dtype = np.ndarray
+
+    math = NumpyMathBackend
 
     dtypes = {
         BFloat16: False,
@@ -53,3 +56,7 @@ class NumPyBackend(Backend[np.ndarray]):
     @classmethod
     def from_numpy(cls, data, dtype=Float32):
         return data.astype(cls.dtypes[dtype])
+
+    @classmethod
+    def build_tensor(cls, data) -> np.ndarray:
+        return np.asarray(data)

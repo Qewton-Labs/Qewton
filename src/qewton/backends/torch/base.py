@@ -81,3 +81,7 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     @classmethod
     def get_device(cls, device: Device):
         return get_torch_device(device)
+
+    @classmethod
+    def build_tensor(cls, data) -> torch.Tensor:
+        return torch.as_tensor(data)

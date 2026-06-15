@@ -10,7 +10,7 @@ class MathBackend(Backend[TensorType]):
     method selection inspired by numpy.
 
     The overall idea is that every math backend implements the numpy methods,
-    and mimics numpy's behaviour to unify the usage among all backends.
+    and mimics numpy's behavior to unify the usage among all backends.
     """
 
     # TODO: check these, currently only generated stuff
@@ -781,7 +781,6 @@ class MathBackend(Backend[TensorType]):
         pass
 
     @staticmethod
-    @abstractmethod
     def nanmin(x: Any, axis: Any = None, keepdims: bool = False) -> TensorType:
         pass
 

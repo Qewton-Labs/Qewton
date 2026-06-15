@@ -1,5 +1,6 @@
 from typing import Any
 import torch
+import math
 from qewton.backends.math import MathBackend
 from qewton.backends.torch.device import get_torch_device
 from qewton.config.devices import Device, cpu
@@ -23,6 +24,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     abs = torch.abs
     absolute = torch.abs
     fabs = torch.abs
+    sign = torch.sign
 
     # Exponential and Logarithmic
     exp = torch.exp
@@ -59,13 +61,100 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     fmax = torch.fmax
     fmin = torch.fmin
     clip = torch.clamp
-    where = torch.where
+    real = torch.real
+
+    @staticmethod
+    def nonzero(x: Any) -> torch.Tensor:
+        return torch.nonzero(x, as_tuple=True)
+
+    @staticmethod
+    def where(condition: Any, x1: Any = None, x2: Any = None) -> torch.Tensor:
+        if x1 is None and x2 is None:
+            return torch.where(condition)
+        if x1 is not None and x2 is None:
+            x2 = 0
+        return torch.where(condition, x1, x2)
+
+    @staticmethod
+    def ptp(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
+        if axis is None:
+            return torch.max(x) - torch.min(x)
+        return torch.amax(x, dim=axis, keepdim=keepdims) - torch.amin(
+            x, dim=axis, keepdim=keepdims
+        )
+
     equal = torch.eq
     not_equal = torch.ne
     greater = torch.gt
     greater_equal = torch.ge
     less = torch.lt
     less_equal = torch.le
+    nan_to_num = torch.nan_to_num
+    nanmedian = torch.nanmedian
+
+    @staticmethod
+    def nansum(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
+        return torch.nansum(x, dim=axis, keepdim=keepdims)
+
+    @staticmethod
+    def nanmean(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
+        if axis is None:
+            return torch.nanmean(x)
+        return torch.nanmean(x, dim=axis, keepdim=keepdims)
+
+    @staticmethod
+    def nanmin(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
+        mask = torch.isnan(x)
+
+        if axis is None:
+            if torch.all(mask):
+                raise ValueError("All-NaN slice encountered")
+
+            return torch.min(torch.nan_to_num(x, nan=float("inf")))
+
+        if torch.any(torch.all(mask, dim=axis)):
+            raise ValueError("All-NaN slice encountered")
+
+        return torch.min(
+            torch.nan_to_num(x, nan=float("inf")), dim=axis, keepdim=keepdims
+        )
+
+    @staticmethod
+    def nanmax(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
+        mask = torch.isnan(x)
+
+        if axis is None:
+            if torch.all(mask):
+                raise ValueError("All-NaN slice encountered")
+
+            return torch.max(torch.nan_to_num(x, nan=-float("inf")))
+
+        if torch.any(torch.all(mask, dim=axis)):
+            raise ValueError("All-NaN slice encountered")
+
+        return torch.max(
+            torch.nan_to_num(x, nan=-float("inf")), dim=axis, keepdim=keepdims
+        )
+
+    @staticmethod
+    def isclose(
+        x1: Any,
+        x2: Any,
+        rtol: float = 0.00001,
+        atol: float = 1e-8,
+        equal_nan: bool = False,
+    ) -> torch.Tensor:
+        return torch.isclose(x1, x2, rtol=rtol, atol=atol, equal_nan=equal_nan)
+
+    @staticmethod
+    def allclose(
+        x1: Any,
+        x2: Any,
+        rtol: float = 0.00001,
+        atol: float = 1e-8,
+        equal_nan: bool = False,
+    ) -> torch.Tensor:
+        return torch.allclose(x1, x2, rtol=rtol, atol=atol, equal_nan=equal_nan)
 
     # Reductions (Translating keyword names axis -> dim, keepdims -> keepdim)
     @staticmethod
@@ -80,6 +169,8 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     def prod(
         x: Any, axis: Any = None, keepdims: bool = False, dtype: Any = None
     ) -> torch.Tensor:
+        if axis is None:
+            return torch.prod(x, dtype=dtype)
         return torch.prod(x, dim=axis, keepdim=keepdims, dtype=dtype)
 
     @staticmethod
@@ -88,7 +179,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
 
     @staticmethod
     def var(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
-        return torch.var(x, dim=axis, keepdim=keepdims)
+        return torch.var(x, dim=axis, keepdim=keepdims, correction=0)
 
     @staticmethod
     def all(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
@@ -132,12 +223,38 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     # Matrix Operations
     matmul = torch.matmul
     dot = torch.dot
-    vdot = torch.vdot
+
+    @staticmethod
+    def vdot(x: Any, y: Any) -> torch.Tensor:
+        return torch.sum(torch.conj(x).reshape(-1) * y.reshape(-1))
+
     inner = torch.inner
     outer = torch.outer
     kron = torch.kron
-    tensordot = torch.tensordot
+
+    @staticmethod
+    def tensordot(x1: Any, x2: Any, axes: Any = 2) -> torch.Tensor:
+        return torch.tensordot(x1, x2, dims=axes)
+
     einsum = torch.einsum
+
+    @staticmethod
+    def take(x: Any, indices: Any, axis: Any = None) -> torch.Tensor:
+        if axis is None:
+            return torch.take(x, torch.tensor(indices))
+        return torch.index_select(x, axis, torch.tensor(indices))
+
+    @staticmethod
+    def triu(x: Any, k: int = 0) -> torch.Tensor:
+        return torch.triu(x, diagonal=k)
+
+    @staticmethod
+    def tril(x: Any, k: int = 0) -> torch.Tensor:
+        return torch.tril(x, diagonal=k)
+
+    @staticmethod
+    def trace(x: Any, offset: int = 0, axis1: int = 0, axis2: int = 1) -> torch.Tensor:
+        return torch.diagonal(x, offset=offset, dim1=axis1, dim2=axis2).sum(dim=-1)
 
     # Factory Methods
     @staticmethod
@@ -260,7 +377,11 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         )
 
     # Array Manipulation
-    reshape = torch.reshape
+    @staticmethod
+    def reshape(x: Any, newshape: Any) -> torch.Tensor:
+        if isinstance(newshape, int):
+            return torch.reshape(x, (newshape,))
+        return torch.reshape(x, newshape)
 
     @staticmethod
     def flatten(x: Any, start_dim: int = 0, end_dim: int = -1) -> torch.Tensor:
@@ -272,9 +393,27 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     moveaxis = torch.moveaxis
     swapaxes = torch.swapaxes
     flip = torch.flip
-    roll = torch.roll
+
+    @staticmethod
+    def roll(x: Any, shift: Any, axis: Any = None) -> torch.Tensor:
+        return torch.roll(x, shifts=shift, dims=axis)
+
     rot90 = torch.rot90
-    tile = torch.tile
+
+    @staticmethod
+    def size(x: Any) -> int:
+        return math.prod(x.shape)
+
+    @staticmethod
+    def ndim(x: Any) -> int:
+        return len(x.shape)
+
+    @staticmethod
+    def tile(x: Any, repeats: Any) -> torch.Tensor:
+        if isinstance(repeats, int):
+            return torch.tile(x, (repeats,))
+        return torch.tile(x, dims=repeats)
+
     repeat = torch.repeat_interleave
     broadcast_to = torch.broadcast_to
 
@@ -295,6 +434,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     vstack = torch.vstack
     hstack = torch.hstack
     dstack = torch.dstack
+    reciprocal = torch.reciprocal
 
     @staticmethod
     def slice(x: Any, slice_config: Any) -> torch.Tensor:
@@ -309,6 +449,26 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         if axes is None:
             return x.T
         return torch.permute(x, dims=axes)
+
+    @staticmethod
+    def pad(
+        x: Any, pad_width: Any, mode: str = "constant", constant_values: Any = None
+    ) -> torch.Tensor:
+        pad = []
+
+        for before, after in reversed(pad_width):
+            pad.extend([before, after])
+
+        torch_mode = {
+            "constant": "constant",
+            "reflect": "reflect",
+            "edge": "replicate",
+            "wrap": "circular",
+        }[mode]
+
+        return torch.nn.functional.pad(
+            x, tuple(pad), mode=torch_mode, value=constant_values
+        )
 
     # Other Utility
     @staticmethod

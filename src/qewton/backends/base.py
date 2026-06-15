@@ -29,6 +29,20 @@ class Backend(Generic[TensorType]):
 
     default_dtype: ClassVar[type[TensorType]]  # type: ignore
 
+    @classmethod
+    def build_tensor(cls, data: TensorType) -> TensorType:
+        """Builds a tensor from the given data.
+
+        Args:
+            data (TensorType): The data to build the tensor from.
+
+        Returns:
+            TensorType: The built tensor.
+        """
+        raise NotImplementedError(
+            "The build_tensor method must be implemented by subclasses of Backend."
+        )
+
 
 class DeepLearningBackend(Backend[TensorType]):
     """A Backend that implements all the necessary methods for deep learning.
