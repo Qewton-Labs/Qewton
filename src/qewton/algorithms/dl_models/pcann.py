@@ -8,9 +8,12 @@ from qewton.algorithms.building_blocks.math import (
     MatMul,
     Multiply,
 )
-from qewton.algorithms.building_blocks.normalizations import StdNormalizationNode, InverseStdNormalization
+from qewton.algorithms.building_blocks.normalizations import (
+    StdNormalizationNode,
+    InverseStdNormalization,
+)
 from qewton.algorithms.building_blocks.array_operations import Narrow
-from qewton.config.backend import DEFAULT_DL_BACKEND, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, Backend
 from qewton.config.data_configurations import DataConfiguration
 from qewton.data.datasets.base import DataSet
 from qewton.graphs.graphs import Graph

@@ -202,8 +202,8 @@ class Trainer:
         output names before training begins.
         """
 
-    def clean_up(self):
+    def cleanup(self):
         """Perform cleanup tasks after the last optimization phase completes."""
         self.optimization_phases[
             -1
-        ].clean_up()  # clean up after the last optimization phase
+        ].cleanup()  # clean up after the last optimization phase

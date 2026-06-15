@@ -51,10 +51,10 @@ def worker(
             )
             result_queue.put((params, local_trainer.train_state))
 
-            local_trainer.clean_up()
+            local_trainer.cleanup()
         finally:
             if local_trainer is not None:
-                local_trainer.clean_up()
+                local_trainer.cleanup()
 
 
 # TODO: Enable to restart tuning from a given point
@@ -244,7 +244,7 @@ class Tuner:
                     current_results = []
                     done_counter += self.save_interval
                     self.print_update_text(done_counter, len(trial_params))
-                local_trainer.clean_up()
+                local_trainer.cleanup()
 
             if len(current_results) > 0:
                 self._write_to_csv(current_results)

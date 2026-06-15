@@ -6,7 +6,7 @@ from qewton.graphs.nodes import Node, Port, InputPort, OutputPort, NodeState
 from qewton.graphs.edges import Edge
 from qewton.graphs.graphs import Graph, SequentialGraph, TrackingObject
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.backend import Backend
+from qewton.backends import Backend
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import TrainableParameters
@@ -48,9 +48,7 @@ class ParamNode(Node):
 
 
 class MockBackend(Backend):
-    @classmethod
-    def standard_datatype(cls):
-        return "float32"
+    default_dtype = "float32"
 
 
 class TestGraphs(unittest.TestCase):
@@ -85,7 +83,6 @@ class TestGraphs(unittest.TestCase):
     def test_input_port_required_and_default(self):
         # 'x' is required because no default was provided in MockNode.forward
         req_port = self.node.get_input_port("x")
-        print(req_port.name, req_port.data_configuration, req_port.value)
         self.assertTrue(req_port.is_required)
 
         # 'y' has a default value of 1.0

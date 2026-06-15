@@ -99,10 +99,8 @@ class EarlyStoppingTuneCallback(TuningCallback):
                 current_value = state.losses[EvaluationPhase.TRAIN][self.monitor.name]
             else:
                 return
-            print(current_value, self.early_stopping_history[self.last_early_stop_idx])
             if current_value > self.early_stopping_history[self.last_early_stop_idx]:
                 self.check_counter += 1
-                print("here")
                 if self.check_counter >= self.persistence:
                     state.stop_training_timer("Early stopping triggered.")
             else:

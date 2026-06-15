@@ -4,17 +4,9 @@ from typing import Any, Callable
 import time
 import os
 
-from qewton.optim.trainer.optimizers.optim_setups.pytorch_optims import (
-    _pytorch_setup_optimizer,
-    _pytorch_do_optimization_step,
-    _pytorch_cleanup,
-)
 from qewton.optim.trainer.optimizers.optimizers import Optimizer
 from qewton.optim.base import EvaluationPhase
-from qewton.config.backend import (
-    TorchBackend,
-    TensorflowBackend,
-)
+
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
@@ -183,20 +175,6 @@ class OptimizationPhase:
         ValueError: If the optimizer backend is unsupported.
     """
 
-    optimizer_setup_fn = {
-        TorchBackend: _pytorch_setup_optimizer,
-        TensorflowBackend: None,  # TODO
-    }
-    optimizer_step_fn = {
-        TorchBackend: _pytorch_do_optimization_step,
-        TensorflowBackend: None,  # TODO
-    }
-
-    clean_up_fn = {
-        TorchBackend: _pytorch_cleanup,
-        TensorflowBackend: None,  # TODO
-    }
-
     def __init__(
         self,
         optimizer: Optimizer,
@@ -216,13 +194,10 @@ class OptimizationPhase:
             lr_scheduler_args if lr_scheduler_args is not None else {}
         )
 
-        self.setup_fn: Callable
-        self.step_fn: Callable
-        if optimizer.backend in self.optimizer_setup_fn:
-            self.setup_fn = self.optimizer_setup_fn[optimizer.backend]
-            self.step_fn = self.optimizer_step_fn[optimizer.backend]
-        else:
-            raise ValueError(f"Unsupported optimizer type: {optimizer.backend}")
+        # Find correct function for the optimizer type
+        self.setup_fn: Callable = optimizer.backend.optim.setup_optimizer
+        self.step_fn: Callable = optimizer.backend.optim.do_optimization_step
+        self.cleanup_fn: Callable = optimizer.backend.optim._cleanup
 
     def get_hyperparameter(self) -> set[HyperParameter]:
         """Return the set of HyperParameter instances referenced by this phase.
@@ -267,6 +242,6 @@ class OptimizationPhase:
         """
         self.step_fn(self, eval_function, step_idx, train_state)
 
-    def clean_up(self):
+    def cleanup(self):
         """Perform backend-specific cleanup after the optimization phase ends."""
-        self.clean_up_fn[self.optimizer.backend](self.optimizer.backend)
+        self.cleanup_fn()

@@ -8,7 +8,7 @@ import inspect
 import warnings
 
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.backend import Backend, TensorType
+from qewton.backends import Backend, TensorType
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.trainable_parameters import (
@@ -245,7 +245,7 @@ class Node(ABC):
         if backend == Backend:
             return
         for port in ports:
-            port.data_configuration.set_dtype(backend.standard_datatype())
+            port.data_configuration.set_dtype(backend.default_dtype)
 
     @classmethod
     def _unwrap_annotated(cls, type_hint, owner):

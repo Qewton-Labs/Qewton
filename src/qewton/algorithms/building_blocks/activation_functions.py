@@ -1,4 +1,4 @@
-from typing import Annotated
+from qewton.config.dtypes import Number
 
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes
@@ -16,8 +16,8 @@ class ReLU(BackendNode[TensorType]):
 
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration(ellipsis_axes)],
-    ) -> Annotated[TensorType, DataConfiguration(ellipsis_axes)]:
+        x: Number[TensorType, DataConfiguration(ellipsis_axes)],
+    ) -> Number[TensorType, DataConfiguration(ellipsis_axes)]:
         """Forward pass of ReLU activation.
 
         Args:
@@ -26,7 +26,7 @@ class ReLU(BackendNode[TensorType]):
         Returns:
             TensorType: Output tensor with same shape and dtype as input.
         """
-        return self.backend.library.relu(x)
+        return self.backend.nn.relu(x)
 
 
 class Tanh(BackendNode[TensorType]):
@@ -40,8 +40,8 @@ class Tanh(BackendNode[TensorType]):
 
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration(ellipsis_axes)],
-    ) -> Annotated[TensorType, DataConfiguration(ellipsis_axes)]:
+        x: Number[TensorType, DataConfiguration(ellipsis_axes)],
+    ) -> Number[TensorType, DataConfiguration(ellipsis_axes)]:
         """Forward pass of Tanh activation.
 
         Args:
@@ -51,7 +51,7 @@ class Tanh(BackendNode[TensorType]):
             TensorType: Output tensor with values in range [-1, 1],
                 same shape and dtype as input.
         """
-        return self.backend.library.tanh(x)
+        return self.backend.nn.tanh(x)
 
 
 class Sigmoid(BackendNode[TensorType]):
@@ -74,8 +74,8 @@ class Sigmoid(BackendNode[TensorType]):
 
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration(ellipsis_axes)],
-    ) -> Annotated[TensorType, DataConfiguration(ellipsis_axes)]:
+        x: Number[TensorType, DataConfiguration(ellipsis_axes)],
+    ) -> Number[TensorType, DataConfiguration(ellipsis_axes)]:
         """Forward pass of Sigmoid activation.
 
         Args:
@@ -85,4 +85,4 @@ class Sigmoid(BackendNode[TensorType]):
             TensorType: Output tensor with values in range (0, 1),
                 same shape and dtype as input.
         """
-        return self.backend.library.sigmoid(x)
+        return self.backend.nn.sigmoid(x)

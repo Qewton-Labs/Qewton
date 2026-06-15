@@ -1,7 +1,7 @@
 import torch
 
 
-from qewton.config.backend import TorchBackend
+from qewton.backends import TorchBackend
 from qewton.algorithms.building_blocks.derivatives import (
     Gradient,
     Laplacian,

@@ -1,12 +1,23 @@
 import os
 import sys
 import shutil
+import re
 from pathlib import Path
 from m2r2 import convert
 
 __location__ = os.path.dirname(__file__)
 
 sys.path.insert(0, os.path.abspath("../../src"))
+
+
+def process_signature(app, what, name, obj, options, signature, return_annotation):
+    def prettify(text):
+        if text:
+            text = re.sub(r"~.*?Annotated", "", text)
+            text = re.sub(r"~.*?TensorType, ", "", text)
+        return text
+
+    return prettify(signature), prettify(return_annotation)
 
 
 def insert_readme_as_module_doc(app, what, name, obj, options, lines):
@@ -35,6 +46,7 @@ def insert_readme_as_module_doc(app, what, name, obj, options, lines):
 
 def setup(app):
     app.connect("autodoc-process-docstring", insert_readme_as_module_doc)
+    # app.connect("autodoc-process-signature", process_signature)
 
 
 # ---- auto-generate API ----
