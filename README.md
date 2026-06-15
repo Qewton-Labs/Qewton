@@ -15,10 +15,15 @@ To simplify their usage, we provide
  - pre-implemented differential operators, equations and training pipelines.
 
 
+### Note:
+This library is currently in beta, therefore things are subject to change and there is no Pypi release yet. Feel free to try, contribute and suggest features.
+
 ### Structure:
 The core structure of Qewton is based on few key components:
 ![Workflow in Qewton](images/struktur_light.png#gh-light-mode-only)
 ![Workflow in Qewton](images/struktur_dark.png#gh-dark-mode-only)
 
 ### About us:
-We are the creators of TorchPhysics, a deep learning library PDEs. With Qewton, we aim to provide a more user-friendly and flexible framework for deep learning in physics and engineering.
+We are the creators of TorchPhysics_, a deep learning library PDEs. With Qewton, we aim to provide a more user-friendly and flexible framework for deep learning in physics and engineering.
+
+.. _TorchPhysics: https://github.com/qewton-labs/torchphysics
