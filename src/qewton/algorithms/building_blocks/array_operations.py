@@ -183,7 +183,7 @@ class ConcatVariables(Node[TensorType]):
         return self.backend.math.concatenate(inp, axis=self.concat_dim)
 
 
-class Squeeze(BackendNode[TensorType]):
+class Squeeze(Node[TensorType]):
 
     def __init__(
         self,
@@ -218,7 +218,7 @@ class Squeeze(BackendNode[TensorType]):
         return updated_ports
 
 
-class Unsqueeze(BackendNode[TensorType]):
+class Unsqueeze(Node[TensorType]):
 
     def __init__(
         self,

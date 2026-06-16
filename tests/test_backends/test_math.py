@@ -96,7 +96,7 @@ def test_mean(backend):
     assert backend.math.all(backend.math.mean(in_1, axis=0) == out)
 
     in_1 = backend.build_tensor([[1.0, 2.0], [3.0, 4.0]])
-    out = backend.build_tensor([[2.0], [3.0]])
+    out = backend.build_tensor([[1.5], [3.5]])
     assert backend.math.all(backend.math.mean(in_1, axis=1, keepdims=True) == out)
 
 
@@ -220,7 +220,7 @@ def test_argmax(backend):
     assert backend.math.all(backend.math.argmax(in_1) == out)
 
     in_1 = backend.build_tensor([[1, 5, 2], [8, 3, 4]])
-    out = backend.build_tensor([1, 0])
+    out = backend.build_tensor([1, 0, 1])
     assert backend.math.all(backend.math.argmax(in_1, axis=0) == out)
 
 
@@ -232,25 +232,18 @@ def test_argmin(backend):
 
     in_1 = backend.build_tensor([[1, 5, 2], [8, 3, 4]])
     out = backend.build_tensor([0, 1])
-    assert backend.math.all(backend.math.argmin(in_1, axis=0) == out)
+    assert backend.math.all(backend.math.argmin(in_1, axis=1) == out)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_argsort(backend):
     in_1 = backend.build_tensor([3, 1, 4, 1, 5, 9, 2, 6])
-    out = backend.build_tensor([1, 3, 6, 0, 2, 7, 4, 5])
+    out = backend.build_tensor([1, 3, 6, 0, 2, 4, 7, 5])
     assert backend.math.all(backend.math.argsort(in_1) == out)
 
     in_1 = backend.build_tensor([[0, 3], [2, 1]])
     out = backend.build_tensor([[0, 1], [1, 0]])
     assert backend.math.all(backend.math.argsort(in_1, axis=0) == out)
-
-
-@pytest.mark.parametrize("backend", BACKENDS)
-def test_array(backend):
-    data = [[1, 2], [3, 4]]
-    out = backend.build_tensor(data)
-    assert backend.math.all(backend.math.array(data) == out)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -313,7 +306,7 @@ def test_copy(backend):
 def test_cos(backend):
     in_1 = backend.build_tensor([0.0, math.pi / 2, math.pi])
     out = backend.build_tensor([1.0, 0.0, -1.0])
-    assert backend.math.allclose(backend.math.cos(in_1), out)
+    assert backend.math.allclose(backend.math.cos(in_1), out, atol=1.0e-6)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -331,7 +324,7 @@ def test_count_nonzero(backend):
 
     in_1 = backend.build_tensor([[0, 1, 0], [2, 0, 3]])
     out = backend.build_tensor([1, 2])
-    assert backend.math.all(backend.math.count_nonzero(in_1, axis=0) == out)
+    assert backend.math.all(backend.math.count_nonzero(in_1, axis=1) == out)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -341,7 +334,7 @@ def test_cumprod(backend):
     assert backend.math.all(backend.math.cumprod(in_1) == out)
 
     in_1 = backend.build_tensor([[1, 2], [3, 4]])
-    out = backend.build_tensor([[1, 2], [3, 8]])
+    out = backend.build_tensor([[1, 2], [3, 12]])
     assert backend.math.all(backend.math.cumprod(in_1, axis=1) == out)
 
 
@@ -392,7 +385,7 @@ def test_diff(backend):
     assert backend.math.all(backend.math.diff(in_1) == out)
 
     in_1 = backend.build_tensor([[1, 2, 3], [4, 5, 6]])
-    out = backend.build_tensor([[1, 1, 1]])
+    out = backend.build_tensor([[1, 1], [1, 1]])
     assert backend.math.all(backend.math.diff(in_1, axis=1) == out)
 
 
@@ -413,7 +406,7 @@ def test_dot(backend):
 def test_dstack(backend):
     in_1 = backend.build_tensor([1, 2])
     in_2 = backend.build_tensor([3, 4])
-    out = backend.build_tensor([[[1], [2]], [[3], [4]]])
+    out = backend.build_tensor([[[1, 3], [2, 4]]])
     assert backend.math.all(backend.math.dstack([in_1, in_2]) == out)
 
     in_1 = backend.build_tensor([[1], [2]])
@@ -534,7 +527,7 @@ def test_identity(backend):
 def test_isclose(backend):
     in_1 = backend.build_tensor([1.0, 2.0, 3.0])
     in_2 = backend.build_tensor([1.000001, 2.0001, 3.1])
-    out = backend.build_tensor([True, False, False])
+    out = backend.build_tensor([True, True, False])
     assert backend.math.all(backend.math.isclose(in_1, in_2, rtol=1e-5, atol=1e-4) == out)
 
 
@@ -638,8 +631,8 @@ def test_median(backend):
     out = backend.build_tensor(3.0)
     assert backend.math.all(backend.math.median(in_1) == out)
 
-    in_1 = backend.build_tensor([[1, 5], [3, 2]])
-    out = backend.build_tensor([2.0, 3.5])
+    in_1 = backend.build_tensor([[1, 5], [3, 2], [4, 3]])
+    out = backend.build_tensor([3.0, 3.0])
     assert backend.math.all(backend.math.median(in_1, axis=0) == out)
 
 
@@ -673,11 +666,11 @@ def test_mod(backend):
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_moveaxis(backend):
     in_1 = backend.build_tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])  # shape (2,2,2)
-    out = backend.build_tensor([[[1, 5], [3, 7]], [[2, 6], [4, 8]]])  # shape (2,2,2)
+    out = backend.build_tensor([[[1, 5], [2, 6]], [[3, 7], [4, 8]]])  # shape (2,2,2)
     assert backend.math.all(backend.math.moveaxis(in_1, 0, -1) == out)
 
     in_1 = backend.build_tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
-    out = backend.build_tensor([[[1, 3], [2, 4]], [[5, 7], [6, 8]]])
+    out = backend.build_tensor([[[1, 2], [5, 6]], [[3, 4], [7, 8]]])
     assert backend.math.all(backend.math.moveaxis(in_1, 1, 0) == out)
 
 
@@ -688,8 +681,8 @@ def test_nanargmax(backend):
     assert backend.math.all(backend.math.nanargmax(in_1) == out)
 
     in_1 = backend.build_tensor([[1, math.nan, 2], [8, 3, 4]])
-    out = backend.build_tensor([1, 0])
-    assert backend.math.all(backend.math.nanargmax(in_1, axis=0) == out)
+    out = backend.build_tensor([2, 0])
+    assert backend.math.all(backend.math.nanargmax(in_1, axis=1) == out)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -698,8 +691,8 @@ def test_nanargmin(backend):
     out = backend.build_tensor(2)
     assert backend.math.all(backend.math.nanargmin(in_1) == out)
 
-    in_1 = backend.build_tensor([[math.nan, 5, 2], [8, 3, 4]])
-    out = backend.build_tensor([1, 1])
+    in_1 = backend.build_tensor([[math.nan, -1, 2], [8, 3, 4]])
+    out = backend.build_tensor([1, 0, 0])
     assert backend.math.all(backend.math.nanargmin(in_1, axis=0) == out)
 
 

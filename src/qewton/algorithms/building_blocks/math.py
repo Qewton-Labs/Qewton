@@ -320,7 +320,7 @@ class SVD(Node[TensorType]):
         return self.backend.linalg.svd(x)
 
 
-class Dot(BackendNode[TensorType]):
+class Dot(Node[TensorType]):
     dim_1 = AxesDim(None)
     ell_ax = EllipsisAxes()
 

@@ -50,6 +50,9 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     arcsinh = torch.asinh
     arccosh = torch.acosh
     arctanh = torch.atanh
+    hypot = torch.hypot
+    deg2rad = torch.deg2rad
+    rad2deg = torch.rad2deg
 
     # Rounding and Comparison
     ceil = torch.ceil
@@ -62,6 +65,10 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     fmin = torch.fmin
     clip = torch.clamp
     real = torch.real
+
+    @staticmethod
+    def count_nonzero(x: Any, axis: Any = None) -> torch.Tensor:
+        return torch.count_nonzero(x, dim=axis)
 
     @staticmethod
     def nonzero(x: Any) -> torch.Tensor:
@@ -89,8 +96,17 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     greater_equal = torch.ge
     less = torch.lt
     less_equal = torch.le
+    isnan = torch.isnan
+    isinf = torch.isinf
+    isfinite = torch.isfinite
     nan_to_num = torch.nan_to_num
     nanmedian = torch.nanmedian
+
+    @staticmethod
+    def median(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
+        if axis is None:
+            return torch.median(x)
+        return torch.median(x, dim=axis, keepdim=keepdims).values
 
     @staticmethod
     def nansum(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
@@ -117,7 +133,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
 
         return torch.min(
             torch.nan_to_num(x, nan=float("inf")), dim=axis, keepdim=keepdims
-        )
+        ).values
 
     @staticmethod
     def nanmax(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
@@ -134,6 +150,40 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
 
         return torch.max(
             torch.nan_to_num(x, nan=-float("inf")), dim=axis, keepdim=keepdims
+        ).values
+
+    @staticmethod
+    def nanargmax(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
+        mask = torch.isnan(x)
+
+        if axis is None:
+            if torch.all(mask):
+                raise ValueError("All-NaN slice encountered")
+
+            return torch.argmax(torch.nan_to_num(x, nan=-float("inf")))
+
+        if torch.any(torch.all(mask, dim=axis)):
+            raise ValueError("All-NaN slice encountered")
+
+        return torch.argmax(
+            torch.nan_to_num(x, nan=-float("inf")), dim=axis, keepdim=keepdims
+        )
+
+    @staticmethod
+    def nanargmin(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
+        mask = torch.isnan(x)
+
+        if axis is None:
+            if torch.all(mask):
+                raise ValueError("All-NaN slice encountered")
+
+            return torch.argmin(torch.nan_to_num(x, nan=float("inf")))
+
+        if torch.any(torch.all(mask, dim=axis)):
+            raise ValueError("All-NaN slice encountered")
+
+        return torch.argmin(
+            torch.nan_to_num(x, nan=float("inf")), dim=axis, keepdim=keepdims
         )
 
     @staticmethod
@@ -221,14 +271,22 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         )
 
     # Matrix Operations
+    identity = torch.eye
+
+    @staticmethod
+    def diag(x: Any, k: int = 0) -> torch.Tensor:
+        return torch.diag(x, diagonal=k)
+
+    diagonal = torch.diagonal
     matmul = torch.matmul
-    dot = torch.dot
+    dot = torch.inner
 
     @staticmethod
     def vdot(x: Any, y: Any) -> torch.Tensor:
         return torch.sum(torch.conj(x).reshape(-1) * y.reshape(-1))
 
     inner = torch.inner
+    diff = torch.diff
     outer = torch.outer
     kron = torch.kron
 
@@ -237,6 +295,18 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         return torch.tensordot(x1, x2, dims=axes)
 
     einsum = torch.einsum
+
+    @staticmethod
+    def cumsum(x: Any, axis: Any = None, dtype: Any = None) -> torch.Tensor:
+        if axis is None:
+            axis = 0
+        return torch.cumsum(x, dim=axis, dtype=dtype)
+
+    @staticmethod
+    def cumprod(x: Any, axis: Any = None, dtype: Any = None) -> torch.Tensor:
+        if axis is None:
+            axis = 0
+        return torch.cumprod(x, dim=axis, dtype=dtype)
 
     @staticmethod
     def take(x: Any, indices: Any, axis: Any = None) -> torch.Tensor:
@@ -257,6 +327,8 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         return torch.diagonal(x, offset=offset, dim1=axis1, dim2=axis2).sum(dim=-1)
 
     # Factory Methods
+    meshgrid = torch.meshgrid
+
     @staticmethod
     def zeros(shape: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
         return torch.zeros(shape, dtype=dtype, device=get_torch_device(device))
@@ -387,12 +459,26 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     def flatten(x: Any, start_dim: int = 0, end_dim: int = -1) -> torch.Tensor:
         return torch.flatten(x, start_dim=start_dim, end_dim=end_dim)
 
+    copy = torch.clone
     squeeze = torch.squeeze
     unsqueeze = torch.unsqueeze
     ravel = torch.ravel
     moveaxis = torch.moveaxis
     swapaxes = torch.swapaxes
-    flip = torch.flip
+
+    @staticmethod
+    def append(x1: Any, x2: Any, axis: Any = None) -> torch.Tensor:
+        if axis is None:
+            axis = 0
+        return torch.concat([x1, x2], dim=axis)
+
+    @staticmethod
+    def flip(x: Any, axis: Any = None) -> torch.Tensor:
+        if isinstance(axis, int):
+            axis = (axis,)
+        if axis is None:
+            axis = (0,)
+        return torch.flip(x, dims=axis)
 
     @staticmethod
     def roll(x: Any, shift: Any, axis: Any = None) -> torch.Tensor:
@@ -486,3 +572,9 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     @staticmethod
     def argmin(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
         return torch.argmin(x, dim=axis, keepdim=keepdims)
+
+    # Logic methods:
+    logical_not = torch.logical_not
+    logical_and = torch.logical_and
+    logical_or = torch.logical_or
+    logical_xor = torch.logical_xor

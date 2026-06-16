@@ -118,7 +118,7 @@ class Hessian(Node[TensorType]):
         return self.backend.grad.hessian(u, x)
 
 
-class MatrixDivergence(BackendNode[TensorType]):
+class MatrixDivergence(Node[TensorType]):
     """Computes the row-wise divergence of a matrix-valued field.
 
     The output is a vector containing the divergence of each row of the
@@ -137,7 +137,7 @@ class MatrixDivergence(BackendNode[TensorType]):
         return self.backend.grad.matrix_divergence(u, x)
 
 
-class Rotation(BackendNode[TensorType]):
+class Rotation(Node[TensorType]):
     """Computes the curl/rotation of a 3D vector field."""
 
     ell_axes = EllipsisAxes()
@@ -151,7 +151,7 @@ class Rotation(BackendNode[TensorType]):
         return self.backend.grad.rotation(u, x)
 
 
-class SymmetricGradient(BackendNode[TensorType]):
+class SymmetricGradient(Node[TensorType]):
     """Computes the symmetric gradient 0.5 * (∇u + (∇u)^T)."""
 
     ell_axes = EllipsisAxes()

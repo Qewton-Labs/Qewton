@@ -234,11 +234,6 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def array(x: Any, dtype: Any = None) -> TensorType:
-        pass
-
-    @staticmethod
-    @abstractmethod
     def view(x: Any, dtype: Any = None) -> TensorType:
         pass
 
