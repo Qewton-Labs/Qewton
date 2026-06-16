@@ -2,10 +2,11 @@ from qewton.config.dtypes import Number
 
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes
-from qewton.algorithms.backend_node import BackendNode, TensorType
+from qewton.graphs.nodes import Node
+from qewton.backends import TensorType
 
 
-class ReLU(BackendNode[TensorType]):
+class ReLU(Node[TensorType]):
     """Rectified Linear Unit (ReLU) activation function.
 
     Applies the ReLU activation function element-wise to the input tensor.
@@ -29,7 +30,7 @@ class ReLU(BackendNode[TensorType]):
         return self.backend.nn.relu(x)
 
 
-class Tanh(BackendNode[TensorType]):
+class Tanh(Node[TensorType]):
     """Hyperbolic Tangent (Tanh) activation function.
 
     Applies the tanh activation function element-wise to the input tensor.
@@ -54,7 +55,7 @@ class Tanh(BackendNode[TensorType]):
         return self.backend.nn.tanh(x)
 
 
-class Sigmoid(BackendNode[TensorType]):
+class Sigmoid(Node[TensorType]):
     """Sigmoid activation function.
 
     Applies the sigmoid activation function element-wise to the input tensor.

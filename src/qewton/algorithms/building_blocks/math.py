@@ -2,8 +2,7 @@ from copy import deepcopy
 from typing import Annotated
 
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType, DeepLearningBackend
-from qewton.algorithms.backend_node import BackendNode
-
+from qewton.graphs.nodes import Node
 from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.errors import DataConfigMismatchError
 from qewton.config.axes import (
@@ -26,7 +25,7 @@ from qewton.graphs.nodes import InputPort, Port
 # region: Arithmetic operations
 
 
-class Add(BackendNode[TensorType]):
+class Add(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -37,7 +36,7 @@ class Add(BackendNode[TensorType]):
         return self.backend.math.add(x, y)
 
 
-class Subtract(BackendNode[TensorType]):
+class Subtract(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -48,7 +47,7 @@ class Subtract(BackendNode[TensorType]):
         return self.backend.math.subtract(x, y)
 
 
-class Multiply(BackendNode[TensorType]):
+class Multiply(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -59,7 +58,7 @@ class Multiply(BackendNode[TensorType]):
         return self.backend.math.multiply(x, y)
 
 
-class Divide(BackendNode[TensorType]):
+class Divide(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -71,7 +70,7 @@ class Divide(BackendNode[TensorType]):
         return self.backend.math.divide(x, y)
 
 
-class Mod(BackendNode[TensorType]):
+class Mod(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -88,7 +87,7 @@ class Mod(BackendNode[TensorType]):
 # region: Powers and roots
 
 
-class Square(BackendNode[TensorType]):
+class Square(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -98,7 +97,7 @@ class Square(BackendNode[TensorType]):
         return self.backend.math.square(x)
 
 
-class Sqrt(BackendNode[TensorType]):
+class Sqrt(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -108,7 +107,7 @@ class Sqrt(BackendNode[TensorType]):
         return self.backend.math.sqrt(x)
 
 
-class Power(BackendNode[TensorType]):
+class Power(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -125,7 +124,7 @@ class Power(BackendNode[TensorType]):
 # region: Exponential and logarithmic functions
 
 
-class Exp(BackendNode[TensorType]):
+class Exp(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -135,7 +134,7 @@ class Exp(BackendNode[TensorType]):
         return self.backend.math.exp(x)
 
 
-class Log(BackendNode[TensorType]):
+class Log(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -145,7 +144,7 @@ class Log(BackendNode[TensorType]):
         return self.backend.math.log(x)
 
 
-class Log2(BackendNode[TensorType]):
+class Log2(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -155,7 +154,7 @@ class Log2(BackendNode[TensorType]):
         return self.backend.math.log2(x)
 
 
-class Log10(BackendNode[TensorType]):
+class Log10(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -171,7 +170,7 @@ class Log10(BackendNode[TensorType]):
 # region: Trigonometric functions
 
 
-class Sin(BackendNode[TensorType]):
+class Sin(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -181,7 +180,7 @@ class Sin(BackendNode[TensorType]):
         return self.backend.math.sin(x)
 
 
-class Cos(BackendNode[TensorType]):
+class Cos(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -190,7 +189,7 @@ class Cos(BackendNode[TensorType]):
         return self.backend.math.cos(x)
 
 
-class Tan(BackendNode[TensorType]):
+class Tan(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -199,7 +198,7 @@ class Tan(BackendNode[TensorType]):
         return self.backend.math.tan(x)
 
 
-class ArcSin(BackendNode[TensorType]):
+class ArcSin(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -208,7 +207,7 @@ class ArcSin(BackendNode[TensorType]):
         return self.backend.math.arcsin(x)
 
 
-class ArcCos(BackendNode[TensorType]):
+class ArcCos(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -217,7 +216,7 @@ class ArcCos(BackendNode[TensorType]):
         return self.backend.math.arccos(x)
 
 
-class ArcTan(BackendNode[TensorType]):
+class ArcTan(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -232,7 +231,7 @@ class ArcTan(BackendNode[TensorType]):
 # region: Other useful math functions
 
 
-class Abs(BackendNode[TensorType]):
+class Abs(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -242,7 +241,7 @@ class Abs(BackendNode[TensorType]):
         return self.backend.math.abs(x)
 
 
-class Floor(BackendNode[TensorType]):
+class Floor(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -252,7 +251,7 @@ class Floor(BackendNode[TensorType]):
         return self.backend.math.floor(x)
 
 
-class Ceil(BackendNode[TensorType]):
+class Ceil(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -262,7 +261,7 @@ class Ceil(BackendNode[TensorType]):
         return self.backend.math.ceil(x)
 
 
-class Maximum(BackendNode[TensorType]):
+class Maximum(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -273,7 +272,7 @@ class Maximum(BackendNode[TensorType]):
         return self.backend.math.maximum(x, y)
 
 
-class Minimum(BackendNode[TensorType]):
+class Minimum(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -290,7 +289,7 @@ class Minimum(BackendNode[TensorType]):
 # region: Matrix operations
 
 
-class MatMul(BackendNode[TensorType]):
+class MatMul(Node[TensorType]):
     ell_ax = EllipsisAxes()
     dim_1 = AxesDim(None)
     dim_ellipsis = EllipsisDim()
@@ -304,7 +303,7 @@ class MatMul(BackendNode[TensorType]):
         return self.backend.math.matmul(x, y)
 
 
-class SVD(BackendNode[TensorType]):
+class SVD(Node[TensorType]):
     dim_1 = AxesDim(None)
     dim_2 = AxesDim(None)
     min_dim = MinimumDim(dim_1, dim_2)
@@ -337,7 +336,7 @@ class Dot(BackendNode[TensorType]):
 
 
 # region: Statistic operations
-class ReductionNode(BackendNode[TensorType]):
+class ReductionNode(Node[TensorType]):
 
     def __init__(
         self,
@@ -500,7 +499,7 @@ class Std(ReductionNode[TensorType]):
 # region: Reshaping operations
 
 
-class Flatten(BackendNode[TensorType]):
+class Flatten(Node[TensorType]):
     def __init__(
         self,
         start_dim: int = 0,
@@ -520,7 +519,7 @@ class Flatten(BackendNode[TensorType]):
         )
 
 
-class Transpose(BackendNode[TensorType]):
+class Transpose(Node[TensorType]):
     def __init__(
         self,
         perm: list | None = None,

@@ -332,24 +332,12 @@ class GraphNode(Node):
             bool: True if configurations were defined in `forward`, False otherwise.
         """
         call_sig = inspect.signature(self.forward)
-        configs_defined = False
         for param in call_sig.parameters.values():
             hint = param.annotation
-            _, config = self._unwrap_annotated(hint, self)
-            if get_origin(hint) is Annotated:
-                _, *meta = get_args(hint)
-                config = next(
-                    (m for m in meta if isinstance(m, (DataConfiguration, Callable))),
-                    None,
-                )
-                if isinstance(config, Callable):
-                    config = config(self)
-                if not isinstance(config, DataConfiguration):
-                    return False
-                configs_defined = True
-            else:
+            _, was_annotated = self._unwrap_annotated(hint, self, self.backend)
+            if not was_annotated:
                 return False
-        return configs_defined
+        return True
 
     def run(self):
         """

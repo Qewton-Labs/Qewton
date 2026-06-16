@@ -2,13 +2,13 @@ from __future__ import annotations
 from abc import ABC
 from copy import deepcopy
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Generic, Optional, Union
 from typing import Annotated, get_type_hints, get_origin, get_args
 import inspect
 import warnings
 
 from qewton.config.data_configurations import DataConfiguration
-from qewton.backends import Backend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.trainable_parameters import (
@@ -154,7 +154,7 @@ class NodeState(Enum):
     TRAINED = 4
 
 
-class Node(ABC):
+class Node(ABC, Generic[TensorType]):
     """Base class for all nodes to create a graph.
 
     Args:
@@ -171,12 +171,12 @@ class Node(ABC):
     # TODO: Save and load methods
     def __init__(
         self,
-        name: str = "Node",
+        name: str | None = None,
         state: NodeState = NodeState.FIXED,
-        backend: type[Backend[TensorType]] = Backend,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
         super().__init__()
-        self.name = name
+        self._name = name
         self._state = state
         self.backend = backend
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
@@ -187,6 +187,12 @@ class Node(ABC):
 
         self.node_id = type(self)._node_id_counter
         type(self)._node_id_counter += 1
+
+    @property
+    def name(self):
+        if hasattr(self, "_name"):
+            return self._name if self._name is not None else self.__class__.__name__
+        return self.__class__.__name__
 
     @classmethod
     def set_tracking(cls, set_active: bool):
@@ -208,7 +214,7 @@ class Node(ABC):
         # Build input ports:
         for name, param in call_sig.parameters.items():
             hint = type_hints.get(name, param.annotation)
-            _, config = cls._unwrap_annotated(hint, owner)
+            config, _ = cls._unwrap_annotated(hint, owner, backend)
             input_ports.append(
                 InputPort(
                     config,
@@ -221,7 +227,6 @@ class Node(ABC):
                     ),
                 )
             )
-        cls._set_port_backend(input_ports, backend)
         # Build output ports
         return_values = type_hints.get("return", inspect.Signature.empty)
         if return_values is None or return_values is inspect.Signature.empty:
@@ -233,23 +238,25 @@ class Node(ABC):
             outputs = [return_values]
 
         for i, output in enumerate(outputs):
-            _, config = cls._unwrap_annotated(output, owner)
+            config, _ = cls._unwrap_annotated(output, owner, backend)
             output_ports.append(OutputPort(config, node=owner, name=f"output_{i}"))
-
-        cls._set_port_backend(output_ports, backend)
 
         return input_ports, output_ports
 
     @classmethod
-    def _set_port_backend(cls, ports: list[Port], backend: type[Backend[TensorType]]):
+    def get_dtype(cls, type_hint, backend: type[Backend[TensorType]]):
+        if type_hint is not TensorType and isinstance(type_hint, type):
+            if type_hint is not inspect.Signature.empty:
+                return type_hint
         if backend == Backend:
-            return
-        for port in ports:
-            port.data_configuration.set_dtype(backend.default_dtype)
+            return Any
+        return backend.default_dtype
 
     @classmethod
-    def _unwrap_annotated(cls, type_hint, owner):
+    def _unwrap_annotated(cls, type_hint, owner, backend):
         """Return (base_type, config)."""
+        if get_origin(type_hint) in [Optional, Union]:
+            type_hint = get_args(type_hint)[0]
         if get_origin(type_hint) is Annotated:
             base, *meta = get_args(type_hint)
             config = (
@@ -261,8 +268,11 @@ class Node(ABC):
             )
             if isinstance(config, Callable):
                 config = config(owner)
-            return base, config
-        return type_hint, DataConfiguration.empty()
+            config.set_dtype(cls.get_dtype(base, backend))
+            return config, True
+        empty_conf = DataConfiguration.empty()
+        empty_conf.set_dtype(cls.get_dtype(type_hint, backend))
+        return empty_conf, False
 
     def copy_data_configs(self):
         copy_memo = {}
