@@ -3,7 +3,6 @@ import math
 import pytest
 
 from qewton.backends.base import Backend
-from qewton.backends.torch.base import TorchBackend
 
 
 def all_subclasses(cls):
@@ -15,7 +14,7 @@ def all_subclasses(cls):
     return result
 
 
-BACKENDS = [TorchBackend]  # all_subclasses(Backend)
+BACKENDS = all_subclasses(Backend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -641,8 +640,8 @@ def test_meshgrid(backend):
     x = backend.build_tensor([1, 2])
     y = backend.build_tensor([3, 4])
     X, Y = backend.math.meshgrid(x, y)
-    out_X = backend.build_tensor([[1, 1], [2, 2]])
-    out_Y = backend.build_tensor([[3, 4], [3, 4]])
+    out_X = backend.build_tensor([[1, 2], [1, 2]])
+    out_Y = backend.build_tensor([[3, 3], [4, 4]])
     assert backend.math.all(X == out_X)
     assert backend.math.all(Y == out_Y)
 
@@ -934,10 +933,10 @@ def test_sort(backend):
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_split(backend):
     in_1 = backend.build_tensor([1, 2, 3, 4, 5, 6])
-    out_1 = backend.build_tensor([1, 2])
-    out_2 = backend.build_tensor([3, 4])
+    out_1 = backend.build_tensor([1, 2, 3])
+    out_2 = backend.build_tensor([4, 5, 6])
     res = backend.math.split(in_1, 2)
-    assert len(res) == 3
+    assert len(res) == 2
     assert backend.math.all(res[0] == out_1)
     assert backend.math.all(res[1] == out_2)
 
@@ -945,7 +944,7 @@ def test_split(backend):
     out_1 = backend.build_tensor([[1], [4]])
     out_2 = backend.build_tensor([[2], [5]])
     out_3 = backend.build_tensor([[3], [6]])
-    res = backend.math.split(in_1, 1, axis=1)
+    res = backend.math.split(in_1, 3, axis=1)
     assert len(res) == 3
     assert backend.math.all(res[0] == out_1)
     assert backend.math.all(res[1] == out_2)
@@ -968,11 +967,11 @@ def test_stack(backend):
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_std(backend):
     in_1 = backend.build_tensor([1.0, 2.0, 3.0])
-    out = backend.build_tensor(1.0)
-    assert backend.math.allclose(backend.math.std(in_1), out)
+    out = backend.build_tensor(0.816496580927726)
+    assert backend.math.allclose(backend.math.std(in_1), out, atol=1.0e-5)
 
     in_1 = backend.build_tensor([[1.0, 2.0], [3.0, 4.0]])
-    out = backend.build_tensor([math.sqrt(2.0), math.sqrt(2.0)])
+    out = backend.build_tensor([1.0, 1.0])
     assert backend.math.allclose(backend.math.std(in_1, axis=0), out)
 
 

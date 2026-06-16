@@ -11,12 +11,13 @@ if TYPE_CHECKING:
     from qewton.backends.optim import OptimBackend
     from qewton.backends.nn import NNBackend
     from qewton.backends.linalg import LinAlgBackend
+    from qewton.backends.random import RandomBackend
 
 
 TensorType = TypeVar("TensorType")
 
 
-# TODO: Wa have standard datatype gives tensors, but what about float, etc.?
+# TODO: We have standard datatype gives tensors, but what about float, etc.?
 
 
 class Backend(Generic[TensorType]):
@@ -56,6 +57,7 @@ class DeepLearningBackend(Backend[TensorType]):
     nn: ClassVar[type[NNBackend]]
     linalg: ClassVar[type[LinAlgBackend]]
     param: ClassVar[type[ParameterBackend]]
+    random: ClassVar[type[RandomBackend]]
 
     dtypes: ClassVar[dict]
 

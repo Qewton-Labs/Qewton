@@ -51,7 +51,6 @@ from qewton.algorithms.building_blocks.math import (
     Flatten,
     Transpose,
 )
-from qewton.backends import Backend
 from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.axes import EllipsisAxes
 

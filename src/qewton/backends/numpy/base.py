@@ -22,12 +22,14 @@ from qewton.config.dtypes import (
 
 from qewton.backends.base import Backend
 from qewton.backends.numpy.math import NumpyMathBackend
+from qewton.backends.numpy.random import NumpyRandomBackend
 
 
 class NumPyBackend(Backend[np.ndarray]):
     default_dtype = np.ndarray
 
     math = NumpyMathBackend
+    random = NumpyRandomBackend
 
     dtypes = {
         BFloat16: False,
@@ -60,3 +62,7 @@ class NumPyBackend(Backend[np.ndarray]):
     @classmethod
     def build_tensor(cls, data) -> np.ndarray:
         return np.asarray(data)
+
+    @classmethod
+    def get_device(cls, device):
+        return "cpu"  # NumPy always operates on CPU

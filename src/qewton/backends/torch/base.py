@@ -1,9 +1,7 @@
-from typing import TYPE_CHECKING
-
 import torch
 
 from qewton.backends.torch.device import get_torch_device
-from qewton.config.devices import CPU, CUDA, Device
+from qewton.config.devices import Device
 from qewton.config.dtypes import (
     BFloat16,
     Bool,
@@ -30,6 +28,7 @@ from qewton.backends.torch.optim import TorchOptimBackend
 from qewton.backends.torch.linalg import TorchLinAlgBackend
 from qewton.backends.torch.param import TorchParameterBackend
 from qewton.backends.torch.math import TorchMathBackend
+from qewton.backends.torch.random import TorchRandomBackend
 
 
 class TorchBackend(DeepLearningBackend[torch.Tensor]):
@@ -43,6 +42,7 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     optim = TorchOptimBackend
     linalg = TorchLinAlgBackend
     param = TorchParameterBackend
+    random = TorchRandomBackend
 
     default_dtype = torch.Tensor
 

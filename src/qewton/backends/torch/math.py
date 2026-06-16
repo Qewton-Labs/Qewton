@@ -225,7 +225,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
 
     @staticmethod
     def std(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
-        return torch.std(x, dim=axis, keepdim=keepdims)
+        return torch.std(x, dim=axis, keepdim=keepdims, correction=0)
 
     @staticmethod
     def var(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
@@ -311,8 +311,8 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     @staticmethod
     def take(x: Any, indices: Any, axis: Any = None) -> torch.Tensor:
         if axis is None:
-            return torch.take(x, torch.tensor(indices))
-        return torch.index_select(x, axis, torch.tensor(indices))
+            return torch.take(x, torch.as_tensor(indices))
+        return torch.index_select(x, axis, torch.as_tensor(indices))
 
     @staticmethod
     def triu(x: Any, k: int = 0) -> torch.Tensor:
@@ -327,7 +327,9 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         return torch.diagonal(x, offset=offset, dim1=axis1, dim2=axis2).sum(dim=-1)
 
     # Factory Methods
-    meshgrid = torch.meshgrid
+    @staticmethod
+    def meshgrid(*x: Any, indexing: str = "xy") -> tuple[torch.Tensor, ...]:
+        return torch.meshgrid(*x, indexing=indexing)
 
     @staticmethod
     def zeros(shape: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
@@ -515,6 +517,9 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     def split(
         x: Any, split_size_or_sections: Any, axis: int = 0
     ) -> tuple[torch.Tensor, ...]:
+        if isinstance(split_size_or_sections, int):
+            transformed_split = x.shape[axis] // split_size_or_sections
+            return torch.split(x, transformed_split, dim=axis)
         return torch.split(x, split_size_or_sections, dim=axis)
 
     vstack = torch.vstack

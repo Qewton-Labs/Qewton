@@ -138,9 +138,7 @@ class DataConfiguration:
         return -1
 
     def set_dtype(self, new_dtype):
-        # TODO: Any checkes needed here?
-        if self.dtype in [None, Any]:
-            self.dtype = new_dtype
+        self.dtype = new_dtype
 
     def get_axes_and_dim(self, idx: int) -> tuple[Axes | None, AxesDim | None]:
         """Returns the axes object and corresponding axes dimension at a

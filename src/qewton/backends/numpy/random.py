@@ -1,18 +1,15 @@
 from typing import Any, Optional
-from qewton.backends.base import Backend, TensorType
+import numpy as np
+
+from qewton.backends.random import RandomBackend
 from qewton.config.devices import Device, cpu
 
 
-class RandomBackend(Backend[TensorType]):
-    """A Backend that implements random number generation.
-    Method selection and behavior inspired by numpy.random to unify
-    usage across different backends.
-    """
+class NumpyRandomBackend(RandomBackend[np.ndarray]):
 
     @staticmethod
     def set_seed(seed: int):
-        """Sets the seed for the random number generator."""
-        raise NotImplementedError
+        np.random.seed(seed)
 
     @staticmethod
     def normal(
@@ -21,16 +18,22 @@ class RandomBackend(Backend[TensorType]):
         std: float = 1.0,
         dtype: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a normal (Gaussian) distribution."""
-        raise NotImplementedError
+        result = np.random.normal(loc=mean, scale=std, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def standard_normal(
         shape: Any, dtype: Any = None, device: Device = cpu
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a standard normal distribution (mean=0, std=1)."""
-        raise NotImplementedError
+        result = np.random.standard_normal(size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def uniform(
@@ -39,9 +42,12 @@ class RandomBackend(Backend[TensorType]):
         high: float = 1.0,
         dtype: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a uniform distribution over [low, high)."""
-        raise NotImplementedError
+        result = np.random.uniform(low=low, high=high, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def randint(
@@ -50,9 +56,11 @@ class RandomBackend(Backend[TensorType]):
         shape: Any = None,
         dtype: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
-        """Samples from a discrete uniform distribution over [low, high)."""
-        raise NotImplementedError
+    ) -> np.ndarray:
+        if dtype is None:
+            dtype = np.int32
+        result = np.random.randint(low, high=high, size=shape, dtype=dtype)
+        return result
 
     @staticmethod
     def choice(
@@ -61,33 +69,41 @@ class RandomBackend(Backend[TensorType]):
         replace: bool = True,
         p: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
-        """Generates a random sample from a given 1-D array or integer."""
-        raise NotImplementedError
+    ) -> np.ndarray:
+        result = np.random.choice(a, size=shape, replace=replace, p=p)
+        return result
 
     @staticmethod
-    def permutation(x: Any, device: Device = cpu) -> TensorType:
+    def permutation(x: Any, device: Device = cpu) -> np.ndarray:
         """Randomly permute a sequence, or return a permuted range."""
-        raise NotImplementedError
+        return np.random.permutation(x)
 
     @staticmethod
     def exponential(
         shape: Any, scale: float = 1.0, dtype: Any = None, device: Device = cpu
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from an exponential distribution."""
-        raise NotImplementedError
+        result = np.random.exponential(scale=scale, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def multivariate_normal(
         mean: Any, cov: Any, shape: Any = None, dtype: Any = None, device: Device = cpu
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a multivariate normal distribution."""
-        raise NotImplementedError
+        result = np.random.multivariate_normal(mean=mean, cov=cov, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def shuffle(x: Any, axis: int = 0) -> None:
         """Modify a sequence in-place by shuffling its contents."""
-        raise NotImplementedError
+        # NumPy's shuffle operates in-place and does not have an 'axis' argument.
+        # The 'axis' parameter in the signature will be ignored for NumPy.
+        np.random.shuffle(x)
 
     @staticmethod
     def binomial(
@@ -96,9 +112,12 @@ class RandomBackend(Backend[TensorType]):
         shape: Any = None,
         dtype: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a binomial distribution."""
-        raise NotImplementedError
+        result = np.random.binomial(n=n, p=p, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def poisson(
@@ -106,9 +125,12 @@ class RandomBackend(Backend[TensorType]):
         shape: Any = None,
         dtype: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a Poisson distribution."""
-        raise NotImplementedError
+        result = np.random.poisson(lam=lam, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def gamma(
@@ -117,9 +139,13 @@ class RandomBackend(Backend[TensorType]):
         shape: Any = None,
         dtype: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a Gamma distribution."""
-        raise NotImplementedError
+        # Note: np.random.gamma uses 'shape' for the distribution's shape parameter.
+        result = np.random.gamma(shape=shape_param, scale=scale, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def beta(
@@ -128,9 +154,12 @@ class RandomBackend(Backend[TensorType]):
         shape: Any = None,
         dtype: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a Beta distribution."""
-        raise NotImplementedError
+        result = np.random.beta(a=a, b=b, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def lognormal(
@@ -139,9 +168,12 @@ class RandomBackend(Backend[TensorType]):
         shape: Any = None,
         dtype: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a log-normal distribution."""
-        raise NotImplementedError
+        result = np.random.lognormal(mean=mean, sigma=sigma, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
 
     @staticmethod
     def gumbel(
@@ -150,6 +182,9 @@ class RandomBackend(Backend[TensorType]):
         shape: Any = None,
         dtype: Any = None,
         device: Device = cpu,
-    ) -> TensorType:
+    ) -> np.ndarray:
         """Samples from a Gumbel distribution."""
-        raise NotImplementedError
+        result = np.random.gumbel(loc=loc, scale=scale, size=shape)
+        if dtype is not None:
+            return result.astype(dtype)
+        return result
