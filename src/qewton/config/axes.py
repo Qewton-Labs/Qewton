@@ -3,7 +3,6 @@ from types import EllipsisType
 
 from qewton.config.variables import Variable
 from qewton.config.errors import DataConfigMismatchError
-from qewton.geometries.base import Geometry
 
 
 def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
@@ -418,7 +417,7 @@ class GeometryAxes(Axes):
 
     def __init__(
         self,
-        geometry: Geometry | None = None,
+        geometry=None,
         shape: tuple[int | AxesDim, ...] | None = None,
     ):
         """Represents geometry-specific axes, typically used for
@@ -435,6 +434,8 @@ class GeometryAxes(Axes):
             ValueError: Only one geometry or shape can be provided, not both.
             ValueError: Either geometry or shape must be provided.
         """
+        from qewton.geometries.base import Geometry
+
         self._geometry: Geometry
         if geometry is not None and shape is not None:
             raise ValueError("Only one of geometry or shape can be provided.")

@@ -2,7 +2,8 @@ import inspect
 import math
 import pytest
 
-from qewton.backends.base import Backend
+from qewton.backends.base import ComputingBackend
+from qewton.config.dtypes import Complex32, Int64, Bool
 
 
 def all_subclasses(cls):
@@ -14,7 +15,7 @@ def all_subclasses(cls):
     return result
 
 
-BACKENDS = all_subclasses(Backend)
+BACKENDS = all_subclasses(ComputingBackend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -841,7 +842,7 @@ def test_ravel(backend):
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_real(backend):
     # Assuming complex numbers are supported by the backend
-    in_1 = backend.build_tensor([1 + 2j, 3 - 4j, 5])
+    in_1 = backend.build_tensor([1 + 2j, 3 - 4j, 5], dtype=Complex32)
     out = backend.build_tensor([1, 3, 5])
     assert backend.math.all(backend.math.real(in_1) == out)
 
@@ -996,12 +997,12 @@ def test_swapaxes(backend):
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_take(backend):
     in_1 = backend.build_tensor([4, 3, 5, 7, 6, 8])
-    indices = backend.build_tensor([0, 1, 4])
+    indices = backend.build_tensor([0, 1, 4], dtype=Int64)
     out = backend.build_tensor([4, 3, 6])
     assert backend.math.all(backend.math.take(in_1, indices) == out)
 
     in_1 = backend.build_tensor([[0, 1], [2, 3]])
-    indices = backend.build_tensor([1, 0])
+    indices = backend.build_tensor([1, 0], dtype=Int64)
     out = backend.build_tensor([[2, 3], [0, 1]])
     assert backend.math.all(backend.math.take(in_1, indices, axis=0) == out)
 
@@ -1136,13 +1137,13 @@ def test_vstack(backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_where(backend):
-    condition = backend.build_tensor([True, False, True])
+    condition = backend.build_tensor([True, False, True], dtype=Bool)
     x = backend.build_tensor([1, 2, 3])
     y = backend.build_tensor([10, 20, 30])
     out = backend.build_tensor([1, 20, 3])
     assert backend.math.all(backend.math.where(condition, x, y) == out)
 
-    condition = backend.build_tensor([True, False, True])
+    condition = backend.build_tensor([True, False, True], dtype=Bool)
     x = backend.build_tensor([1, 2, 3])
     out = backend.build_tensor([1, 0, 3])  # default y is 0
     assert backend.math.all(backend.math.where(condition, x) == out)

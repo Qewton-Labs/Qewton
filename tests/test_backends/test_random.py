@@ -2,7 +2,7 @@ import inspect
 import math
 import pytest
 
-from qewton.backends.base import Backend
+from qewton.backends.base import ComputingBackend
 
 
 def all_subclasses(cls):
@@ -14,7 +14,7 @@ def all_subclasses(cls):
     return result
 
 
-BACKENDS = all_subclasses(Backend)
+BACKENDS = all_subclasses(ComputingBackend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

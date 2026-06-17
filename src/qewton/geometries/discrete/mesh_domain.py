@@ -4,16 +4,24 @@ import numpy as np
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, DiscreteGeometry, BoundaryGeometry
 from qewton.geometries.discrete.mesh import Mesh
+from qewton.backends.base import TensorType, ComputingBackend
+from qewton.backends import DEFAULT_DL_BACKEND
 
 
-class MeshGeometry(DiscreteGeometry):
+class MeshGeometry(DiscreteGeometry[TensorType]):
 
-    def __init__(self, variable, mesh: Mesh, discretization_of: Geometry | None = None):
+    def __init__(
+        self,
+        variable,
+        mesh: Mesh,
+        discretization_of: Geometry | None = None,
+        backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
         assert (
             len(mesh.vertices[0]) == variable.dim
         ), "Dimension of variable must match dimension of mesh vertices."
         self.mesh = mesh
-        super().__init__(variable=variable, shape=mesh.vertices.shape)
+        super().__init__(variable=variable, shape=mesh.vertices.shape, backend=backend)
         if discretization_of is not None:
             self.discretization_of = discretization_of
         # For checking points inside the mesh:

@@ -190,7 +190,7 @@ class TestGraphs(unittest.TestCase):
                 return x
 
         BackendNode(backend=MockBackend)
-        config.set_dtype.assert_called_with(Any)
+        config.set_dtype.assert_called_with(TensorType)
 
     def test_unwrap_annotated_no_metadata(self):
         # Test Annotated without DataConfiguration or Callable meta

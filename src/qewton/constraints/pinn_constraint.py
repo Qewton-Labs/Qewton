@@ -69,10 +69,12 @@ class PINNConstraint(Constraint, GraphNode):
             for var, p in zip(sig, self.residual_node.input_ports):
                 if isinstance(var.annotation, Variable):
                     p.name = var.name
-                    p.data_configuration = DataConfiguration(
-                        EllipsisAxes(),
-                        FeatureAxes(var.annotation),
-                        dtype=backend.default_dtype,
+                    p.update_static_data_configuration(
+                        DataConfiguration(
+                            EllipsisAxes(),
+                            FeatureAxes(var.annotation),
+                            dtype=backend.default_dtype,
+                        )
                     )
 
         assert (

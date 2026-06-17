@@ -30,12 +30,18 @@ class Backend(Generic[TensorType]):
 
     default_dtype: ClassVar[type[TensorType]]  # type: ignore
 
+
+class ComputingBackend(Backend[TensorType]):
+    math: ClassVar[type[MathBackend]]
+    random: ClassVar[type[RandomBackend]]
+    linalg: ClassVar[type[LinAlgBackend]]
+
     @classmethod
-    def build_tensor(cls, data: TensorType) -> TensorType:
+    def build_tensor(cls, data, dtype=qt_dtypes.Float32) -> TensorType:
         """Builds a tensor from the given data.
 
         Args:
-            data (TensorType): The data to build the tensor from.
+            data: The data to build the tensor from.
 
         Returns:
             TensorType: The built tensor.
@@ -44,20 +50,32 @@ class Backend(Generic[TensorType]):
             "The build_tensor method must be implemented by subclasses of Backend."
         )
 
+    @classmethod
+    def to(cls, data, device):
+        """Moves the data to the given device.
 
-class DeepLearningBackend(Backend[TensorType]):
+        Args:
+            data (TensorType): The data to move.
+            device (str): The device to move the data to.
+
+        Returns:
+            TensorType: The moved data.
+        """
+        raise NotImplementedError(
+            "The moving to a different device is backend dependent."
+        )
+
+
+class DeepLearningBackend(ComputingBackend[TensorType]):
     """A Backend that implements all the necessary methods for deep learning.
 
     Note that this structure is similar to Keras' backends.
     """
 
-    math: ClassVar[type[MathBackend]]
     grad: ClassVar[type[GradBackend]]
     optim: ClassVar[type[OptimBackend]]
     nn: ClassVar[type[NNBackend]]
-    linalg: ClassVar[type[LinAlgBackend]]
     param: ClassVar[type[ParameterBackend]]
-    random: ClassVar[type[RandomBackend]]
 
     dtypes: ClassVar[dict]
 
@@ -92,21 +110,6 @@ class DeepLearningBackend(Backend[TensorType]):
         if missing:
             raise KeyError(f"In {cls.__name__}.dtypes the following keys are missing:\
                     {', '.join(missing)}")
-
-    @classmethod
-    def to(cls, data, device):
-        """Moves the data to the given device.
-
-        Args:
-            data (TensorType): The data to move.
-            device (str): The device to move the data to.
-
-        Returns:
-            TensorType: The moved data.
-        """
-        raise NotImplementedError(
-            "The moving to a different device is backend dependent."
-        )
 
     @classmethod
     def from_numpy(cls, data, dtype=qt_dtypes.Float32):

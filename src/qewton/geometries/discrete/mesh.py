@@ -1,10 +1,15 @@
 from __future__ import annotations
+from typing import Generic
 import math
 
 import numpy as np
 
+from qewton.backends.base import TensorType, ComputingBackend
+from qewton.backends import DEFAULT_DL_BACKEND
+from qewton.config.dtypes import Int32, Float32
 
-class Mesh:
+
+class Mesh(Generic[TensorType]):
 
     def __init__(
         self,
@@ -13,23 +18,38 @@ class Mesh:
         cell_markers: list[int] | None | np.ndarray = None,
         faces: list[list[int]] | None | np.ndarray = None,
         face_markers: list[int] | None | np.ndarray = None,
+        backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
-        self.vertices = np.asarray(vertices, dtype=np.float32)
-        self.cells = np.asarray(cells, dtype=np.int32)
-        self.cell_markers = np.asarray(cell_markers) if cell_markers is not None else None
-        self.faces = np.asarray(faces, dtype=np.int32) if faces is not None else None
-        self.face_markers = np.asarray(face_markers) if face_markers is not None else None
-
-        # Data for normals and volumes that are only computed once
-        self.cell_volumes: np.ndarray | None = None
-        self.cell_probability_weights: np.ndarray | None = None
-        self.boundary_normals: np.ndarray = np.empty((0, self.vertices.shape[1]))
-        self.boundary_normals_at_vertex: np.ndarray = np.empty(
-            (0, self.vertices.shape[1])
+        self.backend = backend
+        self.vertices = backend.build_tensor(vertices, dtype=Float32)
+        self.cells = backend.build_tensor(cells, dtype=Int32)
+        self.cell_markers = (
+            backend.build_tensor(cell_markers, dtype=Int32)
+            if cell_markers is not None
+            else None
+        )
+        self.faces = (
+            backend.build_tensor(faces, dtype=Int32) if faces is not None else None
+        )
+        self.face_markers = (
+            backend.build_tensor(face_markers, dtype=Int32)
+            if face_markers is not None
+            else None
         )
 
-        self.topological_dim = len(cells[0])
-        self._find_boundary_facets()
+        # Data for normals and volumes that are only computed once
+        # TODO: Update all of this
+        # self.cell_volumes: TensorType | None = None
+        # self.cell_probability_weights: TensorType | None = None
+        # self.boundary_normals: TensorType = self.backend.math.empty(
+        #     (0, self.vertices.shape[1])
+        # )
+        # self.boundary_normals_at_vertex: TensorType = self.backend.math.empty(
+        #     (0, self.vertices.shape[1])
+        # )
+
+        # self.topological_dim = len(cells[0])
+        # self._find_boundary_facets()
 
         # TODO: Add names <-> marker connection
 

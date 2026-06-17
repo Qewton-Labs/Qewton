@@ -1,12 +1,15 @@
 from __future__ import annotations
 from types import EllipsisType
-from typing import Any
+from typing import Any, Generic
 
 from qewton.config.errors import DataConfigMismatchError
 from qewton.config.variables import Variable
+from qewton.config.devices import Device, cpu
+from qewton.backends.base import ComputingBackend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND
 
 
-class Geometry:
+class Geometry(Generic[TensorType]):
     """Represents a geometric shape for sampling points, computing normal
     vectors, plotting, etc.
 
@@ -17,6 +20,9 @@ class Geometry:
             Defaults to None.
         shape (tuple[int  |  None, ...] | EllipsisType, optional): A discrete
             shape. Defaults to ....
+        backend (type[ComputingBackend[TensorType]], optional): What backend the node
+            should use for computations, etc. Defaults to the deep learning
+            backend (DEFAULT_DL_BACKEND).
     """
 
     def __init__(
@@ -24,6 +30,7 @@ class Geometry:
         variable: Variable | None = None,
         dim: int | None = None,
         shape: tuple[int | None, ...] | EllipsisType = ...,
+        backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.variable = variable if variable is not None else Variable()
         self._dim = dim
@@ -33,6 +40,7 @@ class Geometry:
         self.markers = {}
         self._user_volume = None
         self.boundary_object: BoundaryGeometry | None = None
+        self.backend = backend
 
     @property
     def boundary(self) -> BoundaryGeometry:
@@ -256,22 +264,24 @@ class Geometry:
             return self.markers[marker]
         raise KeyError(f"{marker} marker not found.")
 
-    def sample_random_uniform(self, n_points: int) -> Any:
+    def sample_random_uniform(self, n_points: int, device: Device = cpu) -> TensorType:
         """Samples random uniform points inside this domain.
 
         Args:
             n_points (int): The number of points that should be sampled.
+            device (Device): The device to sample on.
 
         Returns:
             array: An array of shape (n_points, dim) containing the sampled points.
         """
         raise NotImplementedError()
 
-    def sample_grid(self, n_points: int) -> Any:
+    def sample_grid(self, n_points: int, device: Device = cpu) -> TensorType:
         """Samples grid points inside this domain.
 
         Args:
             n_points (int): The number of points that should be sampled.
+            device (Device): The device to sample on.
 
         Returns:
             array: An array of shape (n_points, dim) containing the sampled points.
@@ -356,7 +366,7 @@ class Geometry:
         return self._user_volume
 
 
-class DiscreteGeometry(Geometry):
+class DiscreteGeometry(Geometry[TensorType]):
     """A discrete geometry represents a geometry that includes a number of
     discretized points and concrete discretization shape.
 
@@ -369,6 +379,9 @@ class DiscreteGeometry(Geometry):
         dim (int | None, optional): The dimension of this geometry. Defaults to None.
         discretization_points (Any | None, optional): Discrete points that
             make up this geometry. Defaults to None.
+        backend (type[ComputingBackend[TensorType]], optional): What backend the node
+            should use for computations, etc. Defaults to the deep learning
+            backend (DEFAULT_DL_BACKEND).
     """
 
     def __init__(
@@ -377,8 +390,9 @@ class DiscreteGeometry(Geometry):
         variable: Variable | None = None,
         dim: int | None = None,
         discretization_points: Any | None = None,
+        backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
-        super().__init__(variable=variable, dim=dim, shape=shape)
+        super().__init__(variable=variable, dim=dim, shape=shape, backend=backend)
         self.discretization_of: Geometry
         self.discretization_points = discretization_points
 
@@ -389,7 +403,9 @@ class DiscreteGeometry(Geometry):
             return True
         return False
 
-    def sample_random_uniform_from_discretization(self, n_points: int) -> Any:
+    def sample_random_uniform_from_discretization(
+        self, n_points: int, device: Device = cpu
+    ) -> TensorType:
         """Samples random points from the discretization_points saved
         in this geometry.
 
@@ -397,13 +413,16 @@ class DiscreteGeometry(Geometry):
             n_points (int): How many points should be sampled from the
                 discretization. If n_points is larger than the number of
                 discretization points, duplicates will be returned.
+            device (Device): The device to sample on.
 
         Returns:
             array: An array of shape (n_points, dim) containing the sampled points.
         """
         raise NotImplementedError()
 
-    def sample_grid_from_discretization(self, n_points: int) -> Any:
+    def sample_grid_from_discretization(
+        self, n_points: int, device: Device = cpu
+    ) -> TensorType:
         """Samples points from the discretization_points, the n_points
         will be equally distributed over the number of all points, such
         that every point is returned the same amount.
@@ -412,6 +431,7 @@ class DiscreteGeometry(Geometry):
             n_points (int): How many points should be sampled from the
                 discretization. If n_points is larger than the number of
                 discretization points, duplicates will be returned.
+            device (Device): The device to sample on.
 
         Returns:
             Any: An array of shape (n_points, dim) containing the sampled points.
@@ -419,7 +439,7 @@ class DiscreteGeometry(Geometry):
         raise NotImplementedError()
 
 
-class BoundaryGeometry(Geometry):
+class BoundaryGeometry(Geometry[TensorType]):
     """The parent class for all built-in boundaries. Can be used just like
     any other Geometry.
 
@@ -433,7 +453,7 @@ class BoundaryGeometry(Geometry):
             dim = geometry.dim
         else:
             dim = None
-        super().__init__(variable=geometry.variable, dim=dim)
+        super().__init__(variable=geometry.variable, dim=dim, backend=geometry.backend)
         self.geometry = geometry
 
     def bounding_box(self):
@@ -442,12 +462,13 @@ class BoundaryGeometry(Geometry):
     def create_boundary(self) -> BoundaryGeometry:
         raise NotImplementedError("Boundary of a boundary geometry is not defined.")
 
-    def normal(self, points):
+    def normal(self, points, device: Device = cpu) -> TensorType:
         """Computes the normal vector at each point in points.
 
         Args:
             points (array): An array of shape (n_points, dim) containing the points
                 at which the normal vector should be computed.
+            device (Device): The device to sample on.
 
         Returns:
             array: An array of shape (n_points, dim) containing the normal vectors
@@ -458,12 +479,14 @@ class BoundaryGeometry(Geometry):
     def sample_grid(
         self,
         n_points: int,
+        device: Device = cpu,
         include_normals: bool = False,  # pylint: disable=unused-argument
-    ) -> Any:
+    ) -> TensorType:
         """Samples a grid along the boundary.
 
         Args:
             n_points (int): The number of points.
+            device (Device): The device to sample on.
             include_normals (bool, optional): Wether also the normal vectors at
                 each point should be returned. Defaults to False.
 
@@ -477,12 +500,14 @@ class BoundaryGeometry(Geometry):
     def sample_random_uniform(
         self,
         n_points: int,
+        device: Device = cpu,
         include_normals: bool = False,  # pylint: disable=unused-argument
-    ) -> Any:
+    ) -> TensorType:
         """Samples random uniform points along the boundary.
 
         Args:
             n_points (int): The number of points.
+            device (Device): The device to sample on.
             include_normals (bool, optional): Wether also the normal vectors at
                 each point should be returned. Defaults to False.
 
