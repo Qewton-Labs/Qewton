@@ -67,6 +67,23 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     real = torch.real
 
     @staticmethod
+    def delete(x: torch.Tensor, obj: Any, axis: int | None = None) -> torch.Tensor:
+        if isinstance(obj, int):
+            obj = [obj]
+
+        if axis is None:
+            x = x.flatten()
+            mask = torch.ones(x.numel(), dtype=torch.bool, device=x.device)
+            mask[obj] = False
+            return x[mask]
+
+        mask = torch.ones(x.shape[axis], dtype=torch.bool, device=x.device)
+        mask[obj] = False
+
+        keep = torch.nonzero(mask, as_tuple=True)[0]
+        return x.index_select(axis, keep)
+
+    @staticmethod
     def count_nonzero(x: Any, axis: Any = None) -> torch.Tensor:
         return torch.count_nonzero(x, dim=axis)
 
@@ -101,6 +118,69 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     isfinite = torch.isfinite
     nan_to_num = torch.nan_to_num
     nanmedian = torch.nanmedian
+
+    @staticmethod
+    def unique(
+        x: torch.Tensor,
+        sorted: bool = True,
+        return_index: bool = False,
+        return_inverse: bool = False,
+        return_counts: bool = False,
+        axis: int | None = None,
+    ) -> Any:
+        out = torch.unique(
+            x,
+            sorted=sorted,
+            return_inverse=return_index or return_inverse,
+            return_counts=return_counts,
+            dim=axis,
+        )
+        inverse: torch.Tensor = torch.zeros((1, 1))
+        if return_index or return_inverse:
+            uniques, inverse = out[:2]
+            rest = out[2:]
+        else:
+            uniques = out
+            rest = ()
+
+        result = [uniques]
+
+        if return_index:
+            n_unique = uniques.shape[0] if axis is not None else uniques.numel()
+
+            # First occurrence index for each unique value.
+            first_idx = torch.full(
+                (n_unique,),
+                inverse.numel(),
+                dtype=torch.long,
+                device=x.device,
+            )
+
+            positions = torch.arange(
+                inverse.numel(),
+                device=x.device,
+                dtype=torch.long,
+            )
+
+            # Scatter-reduce amin gives the first occurrence.
+            first_idx.scatter_reduce_(
+                0,
+                inverse.reshape(-1),
+                positions,
+                reduce="amin",
+                include_self=True,
+            )
+
+            result.append(first_idx)
+
+        if return_inverse:
+            result.append(inverse)
+
+        if return_counts:
+            counts = rest[-1] if (return_index or return_inverse) else rest[0]
+            result.append(counts)
+
+        return result[0] if len(result) == 1 else tuple(result)
 
     @staticmethod
     def median(x: Any, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
@@ -359,6 +439,8 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     def full(
         shape: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
     ) -> torch.Tensor:
+        if isinstance(shape, int):
+            shape = (shape,)
         return torch.full(shape, fill_value, dtype=dtype, device=get_torch_device(device))
 
     @staticmethod

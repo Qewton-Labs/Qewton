@@ -15,5 +15,12 @@ class LinAlgBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def norm(x: TensorType, ord="fro", axis=None, keepdims=False) -> TensorType:
+    def norm(
+        x: TensorType, order: str | int = "fro", axis=None, keepdims=False
+    ) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def det(x: TensorType) -> TensorType:
         pass

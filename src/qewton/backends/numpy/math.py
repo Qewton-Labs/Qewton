@@ -84,6 +84,7 @@ class NumpyMathBackend(MathBackend[np.ndarray]):
     logical_xor = np.logical_xor
     isclose = np.isclose
     allclose = np.allclose
+    delete = np.delete
 
     # Array Manipulation
     reshape = np.reshape

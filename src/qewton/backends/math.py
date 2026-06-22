@@ -336,6 +336,11 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
+    def delete(x: Any, obj: Any, axis: int | None = None):
+        pass
+
+    @staticmethod
+    @abstractmethod
     def ceil(x: Any) -> TensorType:
         pass
 
@@ -1193,8 +1198,6 @@ class MathBackend(Backend[TensorType]):
         return_inverse: bool = False,
         return_counts: bool = False,
         axis: int | None = None,
-        size: int | None = None,
-        fill_value: Any = None,
     ) -> Any:
         pass
 

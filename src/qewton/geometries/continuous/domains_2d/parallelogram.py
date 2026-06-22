@@ -86,7 +86,7 @@ class Parallelogram(ContinuousGeometry[TensorType]):
                 1,
                 int(
                     math.ceil(
-                        float(self.backend.linalg.norm(e1, ord=2)) / max_vertex_distance
+                        float(self.backend.linalg.norm(e1, order=2)) / max_vertex_distance
                     )
                 ),
             )
@@ -94,7 +94,7 @@ class Parallelogram(ContinuousGeometry[TensorType]):
                 1,
                 int(
                     math.ceil(
-                        float(self.backend.linalg.norm(e2, ord=2)) / max_vertex_distance
+                        float(self.backend.linalg.norm(e2, order=2)) / max_vertex_distance
                     )
                 ),
             )
@@ -223,8 +223,8 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         origin = self.geometry.origin
         dir_1 = self.geometry.corner_1 - origin
         dir_2 = self.geometry.corner_2 - origin
-        side_length1 = self.backend.linalg.norm(dir_1, ord=2)
-        side_length2 = self.backend.linalg.norm(dir_2, ord=2)
+        side_length1 = self.backend.linalg.norm(dir_1, order=2)
+        side_length2 = self.backend.linalg.norm(dir_2, order=2)
         return 2 * (side_length1 + side_length2)
 
     def _bary_coords_close_to_0_or_1(
@@ -250,10 +250,10 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         corner_3 = self.geometry.corner_1 + self.geometry.corner_2 - origin
         side_lengths = self.backend.math.stack(
             [
-                self.backend.linalg.norm(dir_1, ord=2),
-                self.backend.linalg.norm(dir_2, ord=2),
-                self.backend.linalg.norm(dir_1, ord=2),
-                self.backend.linalg.norm(dir_2, ord=2),
+                self.backend.linalg.norm(dir_1, order=2),
+                self.backend.linalg.norm(dir_2, order=2),
+                self.backend.linalg.norm(dir_1, order=2),
+                self.backend.linalg.norm(dir_2, order=2),
             ],
         )
         total_length = self.backend.math.sum(side_lengths)
@@ -315,10 +315,10 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         corner_3 = self.geometry.corner_1 + self.geometry.corner_2 - origin
         side_lengths = self.backend.math.stack(
             [
-                self.backend.linalg.norm(dir_1, ord=2),
-                self.backend.linalg.norm(dir_2, ord=2),
-                self.backend.linalg.norm(dir_1, ord=2),
-                self.backend.linalg.norm(dir_2, ord=2),
+                self.backend.linalg.norm(dir_1, order=2),
+                self.backend.linalg.norm(dir_2, order=2),
+                self.backend.linalg.norm(dir_1, order=2),
+                self.backend.linalg.norm(dir_2, order=2),
             ],
         )
         total_length = self.backend.math.sum(side_lengths)
@@ -394,10 +394,10 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
                     at_boundary[:, None], normals + (2 * i - 1) * n_dir, normals
                 )
 
-        norms = self.backend.linalg.norm(normals, ord=2, axis=1, keepdims=True)
+        norms = self.backend.linalg.norm(normals, order=2, axis=1, keepdims=True)
         return normals / norms
 
     def _get_normal_direction(self, direction: TensorType, device: Device = cpu):
         normal = self.backend.build_tensor([-direction[1], direction[0]], dtype=Float32)
         normal = self.backend.to(normal, device=device)
-        return normal / self.backend.linalg.norm(normal, ord=2)
+        return normal / self.backend.linalg.norm(normal, order=2)

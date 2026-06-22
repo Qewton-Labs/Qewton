@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Generic, TypeVar, ClassVar, TYPE_CHECKING
+from typing import Generic, TypeVar, ClassVar, TYPE_CHECKING, Protocol, Any
 
 from qewton.config import dtypes as qt_dtypes
 from qewton.config.devices import Device
@@ -14,7 +14,21 @@ if TYPE_CHECKING:
     from qewton.backends.random import RandomBackend
 
 
-TensorType = TypeVar("TensorType")
+class ArrayLike(Protocol):
+    @property
+    def shape(self) -> tuple[int, ...]: ...
+
+    @property
+    def size(self) -> int: ...
+
+    def __len__(self) -> int: ...
+
+    def __getitem__(self, key) -> Any: ...
+
+    def __setitem__(self, key, value): ...
+
+
+TensorType = TypeVar("TensorType", bound=ArrayLike)
 
 
 # TODO: We have standard datatype gives tensors, but what about float, etc.?
@@ -37,7 +51,7 @@ class ComputingBackend(Backend[TensorType]):
     linalg: ClassVar[type[LinAlgBackend]]
 
     @classmethod
-    def build_tensor(cls, data, dtype=qt_dtypes.Float32) -> TensorType:
+    def build_tensor(cls, data, dtype: Any = qt_dtypes.Float32) -> TensorType:
         """Builds a tensor from the given data.
 
         Args:

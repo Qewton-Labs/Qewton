@@ -94,7 +94,7 @@ class Circle(ContinuousGeometry[TensorType]):
         )
 
     def contains(self, points):
-        norm = self.backend.linalg.norm(points - self.center, ord=2, axis=1).reshape(
+        norm = self.backend.linalg.norm(points - self.center, order=2, axis=1).reshape(
             -1, 1
         )
         return norm <= self.radius
@@ -151,7 +151,7 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
 
     def contains(self, points):
         norm = self.backend.linalg.norm(
-            points - self.geometry.center, ord=2, axis=1
+            points - self.geometry.center, order=2, axis=1
         ).reshape(-1, 1)
         return self.backend.math.isclose(
             norm, self.backend.build_tensor(self.geometry.radius, dtype=norm.dtype)

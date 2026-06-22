@@ -10,5 +10,9 @@ class NumpyLinAlgBackend(LinAlgBackend[np.ndarray]):
         return np.linalg.svd(x)
 
     @staticmethod
-    def norm(x: np.ndarray, ord="fro", axis=None, keepdims=False) -> np.ndarray:
-        return np.linalg.norm(x, ord=ord, axis=axis, keepdims=keepdims)
+    def norm(x: np.ndarray, order="fro", axis=None, keepdims=False) -> np.ndarray:
+        return np.linalg.norm(x, ord=order, axis=axis, keepdims=keepdims)
+
+    @staticmethod
+    def det(x: np.ndarray) -> np.ndarray:
+        return np.linalg.det(x)
