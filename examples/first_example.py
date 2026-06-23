@@ -26,7 +26,6 @@ data_loader = qewton.data.DataLoader(
     shuffle_data=False,
 )
 
-
 model = qewton.algorithms.FCN(
     in_neurons=1,
     hidden_neurons=50,
@@ -36,14 +35,23 @@ model = qewton.algorithms.FCN(
 )
 
 constraint = qewton.constraints.MSEConstraint()
-
 computation_graph = qewton.Graph()
 
 computation_graph.connect(data_loader.get_output_port(X), model)
 computation_graph.connect(model, constraint.input_1)
 computation_graph.connect(data_loader.get_output_port(U), constraint.input_2)
 
+constraint.name = "Constraint"
+data_loader.name = "Input"
+# end output ?
 computation_graph.setup()
+
+
+from qewton.visualization.graphs.base import GraphPlotter
+
+plotter = GraphPlotter(computation_graph)
+plotter.save_svg("computation_graph")
+
 
 adam_phase = qewton.optim.OptimizationPhase(
     optimizer=qewton.optim.Adam(),
