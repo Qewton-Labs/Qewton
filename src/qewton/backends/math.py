@@ -61,38 +61,42 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def ones(shape: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def ones(shape: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def ones_like(x: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def ones_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def zeros(shape: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def zeros(shape: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def zeros_like(x: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def zeros_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def empty(shape: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def empty(shape: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def empty_like(x: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def empty_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
     def eye(
-        N: int, M: int | None = None, k: int = 0, dtype: Any = None, device: Device = cpu
+        N: int,
+        M: int | None = None,
+        k: int = 0,
+        dtype: Any = None,
+        device: Device | str = cpu,
     ) -> TensorType:
         pass
 
@@ -106,7 +110,7 @@ class MathBackend(Backend[TensorType]):
         retstep: bool = False,
         dtype: Any = None,
         axis: int = 0,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         pass
 
@@ -120,7 +124,7 @@ class MathBackend(Backend[TensorType]):
         base: float = 10.0,
         dtype: Any = None,
         axis: int = 0,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         pass
 
@@ -178,7 +182,7 @@ class MathBackend(Backend[TensorType]):
         stop: Any = None,
         step: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         pass
 
@@ -504,14 +508,14 @@ class MathBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def full(
-        shape: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+        shape: Any, fill_value: Any, dtype: Any = None, device: Device | str = cpu
     ) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
     def full_like(
-        x: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+        x: Any, fill_value: Any, dtype: Any = None, device: Device | str = cpu
     ) -> TensorType:
         pass
 

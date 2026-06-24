@@ -138,7 +138,7 @@ class Parallelogram(ContinuousGeometry[TensorType]):
         self.corner_1 = self.backend.to(self.corner_1, device=new_device)
         self.corner_2 = self.backend.to(self.corner_2, device=new_device)
 
-    def sample_random_uniform(self, n_points: int, device: Device = cpu):
+    def sample_random_uniform(self, n_points: int, device: Device | str = cpu):
         self.move_to_device(device)
         bary_coords = self.backend.random.uniform((n_points, 2), device=device)
         dir_1 = self.corner_1 - self.origin
@@ -146,7 +146,7 @@ class Parallelogram(ContinuousGeometry[TensorType]):
         points = self.origin + bary_coords[:, :1] * dir_1 + bary_coords[:, 1:] * dir_2
         return points
 
-    def sample_grid(self, n_points: int, device: Device = cpu):
+    def sample_grid(self, n_points: int, device: Device | str = cpu):
         self.move_to_device(device)
         n_side = int(math.ceil(math.sqrt(n_points)))
         u = self.backend.math.linspace(0.0, 1.0, num=n_side, device=device)
@@ -241,7 +241,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         )
 
     def sample_random_uniform(
-        self, n_points: int, device: Device = cpu, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         self.geometry.move_to_device(device)
         origin = self.geometry.origin
@@ -306,7 +306,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         return points
 
     def sample_grid(
-        self, n_points: int, device: Device = cpu, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         self.geometry.move_to_device(device)
         origin = self.geometry.origin
@@ -372,7 +372,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
             return points, normals
         return points
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str = cpu):
         self.geometry.move_to_device(device)
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 2)
         origin = self.geometry.origin
@@ -397,7 +397,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         norms = self.backend.linalg.norm(normals, order=2, axis=1, keepdims=True)
         return normals / norms
 
-    def _get_normal_direction(self, direction: TensorType, device: Device = cpu):
+    def _get_normal_direction(self, direction: TensorType, device: Device | str = cpu):
         normal = self.backend.build_tensor([-direction[1], direction[0]], dtype=Float32)
         normal = self.backend.to(normal, device=device)
         return normal / self.backend.linalg.norm(normal, order=2)

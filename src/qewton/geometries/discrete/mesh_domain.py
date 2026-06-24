@@ -1,11 +1,13 @@
 from __future__ import annotations
-import numpy as np
+import math
 
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, DiscreteGeometry, BoundaryGeometry
 from qewton.geometries.discrete.mesh import Mesh
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
+from qewton.config.devices import Device, cpu
+from qewton.config.dtypes import Bool, Int32, Float32
 
 
 class MeshGeometry(DiscreteGeometry[TensorType]):
@@ -25,15 +27,20 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         if discretization_of is not None:
             self.discretization_of = discretization_of
         # For checking points inside the mesh:
-        self.inv_A: np.ndarray | None = None  # Inverse matrix for bary. coords.
-        self.v0: np.ndarray | None = None  # Origin of each simplex
-        self.bbox_min: np.ndarray | None = None  # bounding box of each simplex
-        self.bbox_max: np.ndarray | None = None
+        self.inv_A: TensorType | None = None  # Inverse matrix for bary. coords.
+        self.v0: TensorType | None = None  # Origin of each simplex
+        self.bbox_min: TensorType | None = None  # bounding box of each simplex
+        self.bbox_max: TensorType | None = None
         self.contains_tol = 1.0e-5
 
     @classmethod
-    def load_mesh(cls, variable: Variable, file_path: str) -> MeshGeometry:
-        return cls(variable=variable, mesh=Mesh.load_mesh(file_path))
+    def load_mesh(
+        cls,
+        variable: Variable,
+        file_path: str,
+        backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> MeshGeometry:
+        return cls(variable=variable, mesh=Mesh.load_mesh(file_path, backend=backend))
 
     def __and__(self, other):
         raise NotImplementedError("Mesh combinations are not supported yet.")
@@ -47,15 +54,15 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
     def bounding_box(self):
         bounding_box = []
         for i in range(self.variable.dim):
-            min_val = np.min(self.mesh.vertices[:, i])
-            max_val = np.max(self.mesh.vertices[:, i])
+            min_val = self.backend.math.min(self.mesh.vertices[:, i])
+            max_val = self.backend.math.max(self.mesh.vertices[:, i])
             bounding_box.append(min_val)
             bounding_box.append(max_val)
-        return np.array(bounding_box)
+        return self.backend.build_tensor(bounding_box)
 
     def _get_volume(self):
         cell_volumes = self.mesh.compute_cell_volumes()
-        return np.sum(cell_volumes)
+        return self.backend.math.sum(cell_volumes)
 
     @property
     def boundary(self) -> MeshBoundaryGeometry:
@@ -64,39 +71,50 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
     def create_boundary(self) -> MeshBoundaryGeometry:
         return MeshBoundaryGeometry(self)
 
-    def sample_random_uniform_from_discretization(self, n_points: int) -> np.ndarray:
-        return self.mesh.sample_random_from_vertices(n_points=n_points)[0]
+    def sample_random_uniform_from_discretization(
+        self, n_points: int, device: Device | str = cpu
+    ) -> TensorType:
+        return self.mesh.sample_random_from_vertices(n_points=n_points, device=device)[0]
 
-    def sample_grid_from_discretization(self, n_points: int) -> np.ndarray:
-        return self.mesh.sample_grid_from_vertices(n_points=n_points)[0]
+    def sample_grid_from_discretization(
+        self, n_points: int, device: Device | str = cpu
+    ) -> TensorType:
+        return self.mesh.sample_grid_from_vertices(n_points=n_points, device=device)[0]
 
-    def sample_random_uniform(self, n_points: int) -> np.ndarray:
-        return self.mesh.sample_random_inside(n_points=n_points)[0]
+    def sample_random_uniform(
+        self, n_points: int, device: Device | str = cpu
+    ) -> TensorType:
+        return self.mesh.sample_random_inside(n_points=n_points, device=device)[0]
 
-    def sample_grid(self, n_points: int) -> np.ndarray:
+    def sample_grid(self, n_points: int, device: Device | str = cpu) -> TensorType:
         mins = self.bounding_box()[::2]
         maxs = self.bounding_box()[1::2]
 
         dim = len(mins)
 
         bbox_lengths = maxs - mins
-        bbox_volume = np.prod(bbox_lengths)
+        bbox_volume = self.backend.math.prod(bbox_lengths)
         # Sample first in bounding box
-        scaled_points = int(np.ceil(bbox_volume / self.volume() * n_points))
+        scaled_points = int(math.ceil(bbox_volume / self.volume() * n_points))
 
         # Resolution per axis proportional to side length
-        points_per_axis = np.maximum(
-            2,
-            np.round(
+        points_per_axis = self.backend.math.clip(
+            self.backend.math.floor(
                 scaled_points ** (1 / dim) * bbox_lengths / (bbox_volume ** (1 / dim))
-            ).astype(int),
+            ),
+            2,
+            1.0e8,
         )
+        points_per_axis = self.backend.cast_dtype(points_per_axis, Int32)
 
-        axes = [np.linspace(lo, hi, n) for lo, hi, n in zip(mins, maxs, points_per_axis)]
+        axes = [
+            self.backend.math.linspace(lo, hi, n, device=device)
+            for lo, hi, n in zip(mins, maxs, points_per_axis)
+        ]
 
-        meshgrid = np.meshgrid(*axes, indexing="ij")
+        meshgrid = self.backend.math.meshgrid(*axes, indexing="ij")
 
-        grid_points = np.stack(
+        grid_points = self.backend.math.stack(
             [g.ravel() for g in meshgrid],
             axis=-1,
         )
@@ -106,24 +124,26 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         # Add random points
         missing_n = n_points - len(grid_points)
         if missing_n > 0:
-            random_points = self.sample_random_uniform(missing_n)
-            grid_points = np.concatenate(
+            random_points = self.sample_random_uniform(missing_n, device=device)
+            grid_points = self.backend.math.concatenate(
                 [grid_points, random_points],
                 axis=0,
             )
         elif missing_n < 0:  # or remove some if we have to many
-            idx = np.random.permutation(np.arange(len(grid_points)))[:n_points]
+            idx = self.backend.random.permutation(
+                self.backend.math.arange(len(grid_points)), device=device
+            )[:n_points]
             grid_points = grid_points[idx]
         return grid_points
 
     def contains(self, points):
         if self.inv_A is None or self.v0 is None:
             vertices = self.mesh.vertices[self.mesh.cells]
-            self.bbox_min = vertices.min(axis=1)
-            self.bbox_max = vertices.max(axis=1)
+            self.bbox_min = self.backend.math.min(vertices, axis=1)
+            self.bbox_max = self.backend.math.max(vertices, axis=1)
             self.v0 = vertices[:, 0]
-            mat_A = vertices[:, 1:] - self.v0[:, None]
-            self.inv_A = np.linalg.inv(mat_A)
+            mat_A = vertices[:, 1:] - self.v0[:, None]  # type: ignore
+            self.inv_A = self.backend.linalg.inv(mat_A)
 
         if len(points) < len(self.mesh.cells):
             return self._contains_point_based_search(points)
@@ -133,14 +153,16 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         def point_in_simplex(p, v0, inv_A, tol=1e-12):
             u = inv_A @ (p - v0)
             l0 = 1.0 - u.sum()
-            return l0 >= -tol and np.all(u >= -tol)
+            return l0 >= -tol and self.backend.math.all(u >= -tol)
 
-        point_inside = np.zeros(len(points), dtype=bool)
+        point_inside = self.backend.math.zeros(
+            len(points), dtype=self.backend.dtypes[Bool]
+        )
         for i, p in enumerate(points):
-            candidates = np.where(
-                np.all(p >= self.bbox_min, axis=1) & np.all(p <= self.bbox_max, axis=1)
-            )[0]
-
+            candidates = self.backend.math.where(
+                self.backend.math.all(p >= self.bbox_min, axis=1)
+                & self.backend.math.all(p <= self.bbox_max, axis=1)
+            )
             for cell in candidates:
                 if point_in_simplex(
                     p, self.v0[cell], self.inv_A[cell], self.contains_tol  # type: ignore
@@ -151,26 +173,29 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         return point_inside
 
     def _contains_cell_based_search(self, points):
-        point_inside = np.zeros(len(points), dtype=bool)
+        point_inside = self.backend.math.zeros(
+            len(points), dtype=self.backend.dtypes[Bool]
+        )
 
         for cell in range(len(self.mesh.cells)):
             # bbox filter
             mask = (
                 ~point_inside
-                & np.all(points >= self.bbox_min[cell], axis=1)  # type: ignore
-                & np.all(points <= self.bbox_max[cell], axis=1)  # type: ignore
+                & self.backend.math.all(points >= self.bbox_min[cell], axis=1)  # type: ignore
+                & self.backend.math.all(points <= self.bbox_max[cell], axis=1)  # type: ignore
             )
 
-            idx = np.where(mask)[0]
+            idx = self.backend.math.where(mask)[0]
 
             if len(idx) == 0:
                 continue
 
             # barycentric test
             u = (points[idx] - self.v0[cell]) @ self.inv_A[cell]  # type: ignore
-            l0 = 1.0 - np.sum(u, axis=1)
-            bary_mask = np.logical_and(
-                l0 >= -self.contains_tol, np.all(u >= -self.contains_tol, axis=1)
+            l0 = 1.0 - self.backend.math.sum(u, axis=1)
+            bary_mask = self.backend.math.logical_and(
+                l0 >= -self.contains_tol,
+                self.backend.math.all(u >= -self.contains_tol, axis=1),
             )
             point_inside[idx[bary_mask]] = True
         return point_inside
@@ -180,10 +205,11 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             variable=self.variable,
             mesh=self.mesh.get_submesh(marker),
             discretization_of=self.discretization_of,
+            backend=self.backend,
         )
 
 
-class MeshBoundaryGeometry(BoundaryGeometry):
+class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
 
     def __init__(self, geometry: MeshGeometry):
         assert isinstance(geometry, MeshGeometry)
@@ -191,19 +217,15 @@ class MeshBoundaryGeometry(BoundaryGeometry):
         self.mesh = geometry.mesh.get_boundary_mesh()
         self.geometry: MeshGeometry = geometry  # type: ignore
 
-        self.face_bbox_min: np.ndarray | None = None  # bounding box of each face
-        self.face_bbox_max: np.ndarray | None = None
-        self.v0: np.ndarray | None = None  # Origin of each face simplex
+        self.face_bbox_min: TensorType | None = None  # bounding box of each face
+        self.face_bbox_max: TensorType | None = None
+        self.v0: TensorType | None = None  # Origin of each face simplex
 
     def bounding_box(self):
         return self.geometry.bounding_box()
 
     def contains(self, points):
-        if self.face_bbox_min is None or self.face_bbox_max is None:
-            vertices = self.mesh.vertices[self.mesh.cells]
-            self.v0 = vertices[:, 0]
-            self.face_bbox_min = vertices.min(axis=1) - self.geometry.contains_tol
-            self.face_bbox_max = vertices.max(axis=1) + self.geometry.contains_tol
+        self._build_face_bbox()
         if len(points) < len(self.mesh.cells):
             return self._contains_point_based_search(points)[0]
         return self._contains_cell_based_search(points)[0]
@@ -214,17 +236,19 @@ class MeshBoundaryGeometry(BoundaryGeometry):
         return self
 
     def _contains_point_based_search(self, points):
-        point_inside = np.zeros(len(points), dtype=bool)
-        cell_idx = np.zeros(len(points), dtype=int)
+        point_inside = self.backend.math.zeros(
+            len(points), dtype=self.backend.dtypes[Bool]
+        )
+        cell_idx = self.backend.math.zeros(len(points), dtype=self.backend.dtypes[Int32])
         for i, p in enumerate(points):
             # Check if points are close to face
-            candidates = np.where(
-                np.all(p >= self.face_bbox_min, axis=1)
-                & np.all(p <= self.face_bbox_max, axis=1)
-            )[0]
+            candidates = self.backend.math.where(
+                self.backend.math.all(p >= self.face_bbox_min, axis=1)
+                & self.backend.math.all(p <= self.face_bbox_max, axis=1)
+            )
             # Do concrete distance check via normal computation
-            for cell in candidates:
-                dist = np.dot(
+            for cell in candidates[0]:
+                dist = self.backend.math.dot(
                     p - self.v0[cell],  # type: ignore
                     self.geometry.mesh.boundary_normals[cell],
                 )
@@ -235,23 +259,25 @@ class MeshBoundaryGeometry(BoundaryGeometry):
         return point_inside, cell_idx
 
     def _contains_cell_based_search(self, points):
-        point_inside = np.zeros(len(points), dtype=bool)
-        cell_idx = np.zeros(len(points), dtype=int)
+        point_inside = self.backend.math.zeros(
+            len(points), dtype=self.backend.dtypes[Bool]
+        )
+        cell_idx = self.backend.math.zeros(len(points), dtype=self.backend.dtypes[Int32])
         for cell in range(len(self.mesh.cells)):
             mask = (
                 ~point_inside
-                & np.all(points >= self.face_bbox_min[cell], axis=1)  # type: ignore
-                & np.all(points <= self.face_bbox_max[cell], axis=1)  # type: ignore
+                & self.backend.math.all(points >= self.face_bbox_min[cell], axis=1)  # type: ignore
+                & self.backend.math.all(points <= self.face_bbox_max[cell], axis=1)  # type: ignore
             )
-            idx = np.where(mask)[0]
+            idx = self.backend.math.where(mask)[0]
             if len(idx) == 0:
                 continue
 
-            distance = np.dot(
+            distance = self.backend.math.dot(
                 (points[idx] - self.v0[cell]),  # type: ignore
                 self.geometry.mesh.boundary_normals[cell],
             )
-            bary_mask = np.abs(distance) <= self.geometry.contains_tol
+            bary_mask = self.backend.math.abs(distance) <= self.geometry.contains_tol
             point_inside[idx[bary_mask]] = True
             cell_idx[idx[bary_mask]] = cell
         return point_inside, cell_idx
@@ -264,34 +290,53 @@ class MeshBoundaryGeometry(BoundaryGeometry):
 
     def _get_volume(self):
         cell_volumes = self.mesh.compute_cell_volumes()
-        return np.sum(cell_volumes)
+        return self.backend.math.sum(cell_volumes)
 
     def sample_random_uniform_from_discretization(
-        self, n_points: int, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
-        points, idx = self.mesh.sample_random_from_vertices(n_points=n_points)
+        points, idx = self.mesh.sample_random_from_vertices(
+            n_points=n_points, device=device
+        )
         normals = None
         if include_normals:
+            self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals_at_vertex[idx]
         return points, normals
+
+    def _move_normals(self, device: Device):
+        self.geometry.mesh.boundary_normals_at_vertex = self.backend.to(
+            self.geometry.mesh.boundary_normals_at_vertex, device=device
+        )
+        self.geometry.mesh.boundary_normals = self.backend.to(
+            self.geometry.mesh.boundary_normals, device=device
+        )
 
     def sample_grid_from_discretization(
-        self, n_points: int, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
-        points, idx = self.mesh.sample_grid_from_vertices(n_points=n_points)
+        points, idx = self.mesh.sample_grid_from_vertices(
+            n_points=n_points, device=device
+        )
         normals = None
         if include_normals:
+            self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals_at_vertex[idx]
         return points, normals
 
-    def sample_random_uniform(self, n_points: int, include_normals: bool = False):
-        points, idx = self.mesh.sample_random_inside(n_points=n_points)
+    def sample_random_uniform(
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
+    ):
+        points, idx = self.mesh.sample_random_inside(n_points=n_points, device=device)
         normals = None
         if include_normals:
+            self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals[idx]
         return points, normals
 
-    def sample_grid(self, n_points: int, include_normals: bool = False):
+    def sample_grid(
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
+    ):
         # Allocate points based on area:
         n_areas, local_n = self._compute_local_distribution(n_points)
 
@@ -313,44 +358,49 @@ class MeshBoundaryGeometry(BoundaryGeometry):
             all_points.extend(new_points)
             face_idx.extend([area_counter] * len(new_points))
 
-        points = np.vstack(all_points)
-        face_idx = np.array(face_idx, dtype=int)
+        points = self.backend.math.vstack(all_points)
+        face_idx = self.backend.build_tensor(face_idx, dtype=self.backend.dtypes[Int32])
         # Check how many points we have and either cut them or add some more
         random_normals = None
         if len(points) > n_points:
-            idx = np.random.permutation(np.arange(len(points)))[:n_points]
+            idx = self.backend.random.permutation(
+                self.backend.math.arange(len(points)), device=device
+            )[:n_points]
             points = points[idx]
             face_idx = face_idx[idx]
         elif len(points) < n_points:
             missing_n = n_points - len(points)
             random_points, random_normals = self.sample_random_uniform(
-                missing_n, include_normals=include_normals
+                missing_n, include_normals=include_normals, device=device
             )
-            points = np.concatenate([points, random_points], axis=0)
+            points = self.backend.math.concatenate([points, random_points], axis=0)
 
         normals = None
         if include_normals:
+            self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals[face_idx]
             if random_normals is not None:
-                normals = np.concatenate([normals, random_normals], axis=0)
+                normals = self.backend.math.concatenate([normals, random_normals], axis=0)
         return points, normals
 
     def _compute_local_distribution(self, n_points):
         total_area = self.volume()
-        local_area: np.ndarray = self.mesh.cell_volumes  # type: ignore
+        local_area: TensorType = self.mesh.cell_volumes  # type: ignore
         n_areas = len(local_area)
-        local_n = np.maximum(1, np.round(local_area / total_area * n_points)).astype(int)
+        local_n = self.backend.math.maximum(
+            1, self.backend.math.round(local_area / total_area * n_points)  # type: ignore
+        ).astype(int)
         # check if we have enough points or not:
-        diff = n_points - np.sum(local_n)
+        diff = n_points - self.backend.math.sum(local_n)
         if diff != 0:
             # Fix number by adding or removing points, starting from the biggest area
-            idx = np.argsort(local_area)[::-1]
+            idx = self.backend.math.argsort(local_area)[::-1]
             for i in range(abs(diff)):
-                local_n[idx[i % n_areas]] += np.sign(diff)
+                local_n[idx[i % n_areas]] += self.backend.math.sign(diff)
         return n_areas, local_n
 
     def _face_grid(self, n_points: int, face_vertices):
-        n_i = int(np.ceil(np.sqrt(2 * n_points)))
+        n_i = int(math.ceil(math.sqrt(2 * n_points)))
         all_points = []
         for i in range(n_i):
             for j in range(n_i - i):
@@ -370,17 +420,24 @@ class MeshBoundaryGeometry(BoundaryGeometry):
             all_points.append(point)
         return all_points
 
-    def normal(self, points):
+    def _build_face_bbox(self):
         if self.face_bbox_min is None or self.face_bbox_max is None:
             vertices = self.mesh.vertices[self.mesh.cells]
             self.v0 = vertices[:, 0]
-            self.face_bbox_min = vertices.min(axis=1) - self.geometry.contains_tol
-            self.face_bbox_max = vertices.max(axis=1) + self.geometry.contains_tol
+            self.face_bbox_min = (
+                self.backend.math.min(vertices, axis=1) - self.geometry.contains_tol
+            )
+            self.face_bbox_max = (
+                self.backend.math.max(vertices, axis=1) + self.geometry.contains_tol
+            )
+
+    def normal(self, points, device: Device | str = cpu):
+        self._build_face_bbox()
         if len(points) < len(self.mesh.cells):
             point_found, cell_idx = self._contains_point_based_search(points)
         else:
             point_found, cell_idx = self._contains_cell_based_search(points)[0]
-        normals = np.zeros_like(points)
+        normals = self.backend.math.zeros_like(points, device=device)
         normals[point_found] = self.geometry.mesh.boundary_normals[cell_idx[point_found]]
         return normals
 

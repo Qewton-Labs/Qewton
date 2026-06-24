@@ -67,13 +67,15 @@ class Interval(ContinuousGeometry[TensorType]):
             backend=self.backend,
         )
 
-    def sample_random_uniform(self, n_points: int, device: Device = cpu) -> TensorType:
+    def sample_random_uniform(
+        self, n_points: int, device: Device | str = cpu
+    ) -> TensorType:
         points = self.backend.random.uniform((n_points, 1), device=device)
         points *= self.upper_bound - self.lower_bound
         points += self.lower_bound
         return points
 
-    def sample_grid(self, n_points: int, device: Device = cpu) -> TensorType:
+    def sample_grid(self, n_points: int, device: Device | str = cpu) -> TensorType:
         points = self.backend.math.linspace(
             self.lower_bound, self.upper_bound, n_points + 2, device=device
         )[1:-1, None]
@@ -133,7 +135,7 @@ class IntervalBoundary(ContinuousBoundaryGeometry[TensorType]):
         )
 
     def sample_random_uniform(
-        self, n_points: int, device: Device = cpu, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         rand_side = self.backend.random.uniform((n_points, 1), device=device)
         random_boundary_index = rand_side < 0.5
@@ -146,7 +148,7 @@ class IntervalBoundary(ContinuousBoundaryGeometry[TensorType]):
         return points
 
     def sample_grid(
-        self, n_points: int, device: Device = cpu, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         lb = self.geometry.lower_bound
         ub = self.geometry.upper_bound
@@ -160,7 +162,7 @@ class IntervalBoundary(ContinuousBoundaryGeometry[TensorType]):
             return points, normals
         return points
 
-    def normal(self, points, device: Device = cpu) -> TensorType:
+    def normal(self, points, device: Device | str = cpu) -> TensorType:
         close_left = self.backend.math.isclose(
             points, self.backend.build_tensor(self.geometry.lower_bound)
         )
@@ -196,7 +198,7 @@ class IntervalSingleBoundaryPoint(ContinuousBoundaryGeometry[TensorType]):
         )
 
     def sample_random_uniform(
-        self, n_points: int, device: Device = cpu, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         points = self.side * self.backend.math.ones((n_points, 1), device=device)
         if include_normals:
@@ -205,13 +207,13 @@ class IntervalSingleBoundaryPoint(ContinuousBoundaryGeometry[TensorType]):
         return points
 
     def sample_grid(
-        self, n_points: int, device: Device = cpu, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         return self.sample_random_uniform(
             n_points=n_points, device=device, include_normals=include_normals
         )
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str = cpu):
         return self.normal_vec * self.backend.math.ones((len(points), 1), device=device)
 
     def _get_volume(self):

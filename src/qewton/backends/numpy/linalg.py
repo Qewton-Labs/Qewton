@@ -16,3 +16,7 @@ class NumpyLinAlgBackend(LinAlgBackend[np.ndarray]):
     @staticmethod
     def det(x: np.ndarray) -> np.ndarray:
         return np.linalg.det(x)
+
+    @staticmethod
+    def inv(x: np.ndarray) -> np.ndarray:
+        return np.linalg.inv(x)

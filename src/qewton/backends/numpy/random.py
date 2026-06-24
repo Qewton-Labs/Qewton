@@ -17,7 +17,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         mean: float = 0.0,
         std: float = 1.0,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         """Samples from a normal (Gaussian) distribution."""
         result = np.random.normal(loc=mean, scale=std, size=shape)
@@ -27,7 +27,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
 
     @staticmethod
     def standard_normal(
-        shape: Any, dtype: Any = None, device: Device = cpu
+        shape: Any, dtype: Any = None, device: Device | str = cpu
     ) -> np.ndarray:
         """Samples from a standard normal distribution (mean=0, std=1)."""
         result = np.random.standard_normal(size=shape)
@@ -41,7 +41,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         low: float = 0.0,
         high: float = 1.0,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         """Samples from a uniform distribution over [low, high)."""
         result = np.random.uniform(low=low, high=high, size=shape)
@@ -55,7 +55,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         high: Optional[int] = None,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         if dtype is None:
             dtype = np.int32
@@ -68,19 +68,19 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         shape: Any = None,
         replace: bool = True,
         p: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         result = np.random.choice(a, size=shape, replace=replace, p=p)
         return result
 
     @staticmethod
-    def permutation(x: Any, device: Device = cpu) -> np.ndarray:
+    def permutation(x: Any, device: Device | str = cpu) -> np.ndarray:
         """Randomly permute a sequence, or return a permuted range."""
         return np.random.permutation(x)
 
     @staticmethod
     def exponential(
-        shape: Any, scale: float = 1.0, dtype: Any = None, device: Device = cpu
+        shape: Any, scale: float = 1.0, dtype: Any = None, device: Device | str = cpu
     ) -> np.ndarray:
         """Samples from an exponential distribution."""
         result = np.random.exponential(scale=scale, size=shape)
@@ -90,7 +90,11 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
 
     @staticmethod
     def multivariate_normal(
-        mean: Any, cov: Any, shape: Any = None, dtype: Any = None, device: Device = cpu
+        mean: Any,
+        cov: Any,
+        shape: Any = None,
+        dtype: Any = None,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         """Samples from a multivariate normal distribution."""
         result = np.random.multivariate_normal(mean=mean, cov=cov, size=shape)
@@ -111,7 +115,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         p: float | Any,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         """Samples from a binomial distribution."""
         result = np.random.binomial(n=n, p=p, size=shape)
@@ -124,7 +128,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         lam: float | Any,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         """Samples from a Poisson distribution."""
         result = np.random.poisson(lam=lam, size=shape)
@@ -138,7 +142,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         scale: float | Any = 1.0,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         """Samples from a Gamma distribution."""
         # Note: np.random.gamma uses 'shape' for the distribution's shape parameter.
@@ -153,7 +157,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         b: float | Any,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         """Samples from a Beta distribution."""
         result = np.random.beta(a=a, b=b, size=shape)
@@ -167,7 +171,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         sigma: float = 1.0,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         """Samples from a log-normal distribution."""
         result = np.random.lognormal(mean=mean, sigma=sigma, size=shape)
@@ -181,7 +185,7 @@ class NumpyRandomBackend(RandomBackend[np.ndarray]):
         scale: float = 1.0,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         """Samples from a Gumbel distribution."""
         result = np.random.gumbel(loc=loc, scale=scale, size=shape)

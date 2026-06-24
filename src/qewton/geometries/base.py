@@ -264,7 +264,9 @@ class Geometry(Generic[TensorType]):
             return self.markers[marker]
         raise KeyError(f"{marker} marker not found.")
 
-    def sample_random_uniform(self, n_points: int, device: Device = cpu) -> TensorType:
+    def sample_random_uniform(
+        self, n_points: int, device: Device | str = cpu
+    ) -> TensorType:
         """Samples random uniform points inside this domain.
 
         Args:
@@ -276,7 +278,7 @@ class Geometry(Generic[TensorType]):
         """
         raise NotImplementedError()
 
-    def sample_grid(self, n_points: int, device: Device = cpu) -> TensorType:
+    def sample_grid(self, n_points: int, device: Device | str = cpu) -> TensorType:
         """Samples grid points inside this domain.
 
         Args:
@@ -393,7 +395,7 @@ class DiscreteGeometry(Geometry[TensorType]):
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         super().__init__(variable=variable, dim=dim, shape=shape, backend=backend)
-        self.discretization_of: Geometry
+        self.discretization_of: Geometry | None = None
         self.discretization_points = discretization_points
 
     def is_discretization_of(self, other_geometry: Geometry) -> bool:
@@ -404,7 +406,7 @@ class DiscreteGeometry(Geometry[TensorType]):
         return False
 
     def sample_random_uniform_from_discretization(
-        self, n_points: int, device: Device = cpu
+        self, n_points: int, device: Device | str = cpu
     ) -> TensorType:
         """Samples random points from the discretization_points saved
         in this geometry.
@@ -421,7 +423,7 @@ class DiscreteGeometry(Geometry[TensorType]):
         raise NotImplementedError()
 
     def sample_grid_from_discretization(
-        self, n_points: int, device: Device = cpu
+        self, n_points: int, device: Device | str = cpu
     ) -> TensorType:
         """Samples points from the discretization_points, the n_points
         will be equally distributed over the number of all points, such
@@ -462,7 +464,7 @@ class BoundaryGeometry(Geometry[TensorType]):
     def create_boundary(self) -> BoundaryGeometry:
         raise NotImplementedError("Boundary of a boundary geometry is not defined.")
 
-    def normal(self, points, device: Device = cpu) -> TensorType:
+    def normal(self, points, device: Device | str = cpu) -> TensorType:
         """Computes the normal vector at each point in points.
 
         Args:
@@ -479,7 +481,7 @@ class BoundaryGeometry(Geometry[TensorType]):
     def sample_grid(
         self,
         n_points: int,
-        device: Device = cpu,
+        device: Device | str = cpu,
         include_normals: bool = False,  # pylint: disable=unused-argument
     ) -> TensorType:
         """Samples a grid along the boundary.
@@ -500,7 +502,7 @@ class BoundaryGeometry(Geometry[TensorType]):
     def sample_random_uniform(
         self,
         n_points: int,
-        device: Device = cpu,
+        device: Device | str = cpu,
         include_normals: bool = False,  # pylint: disable=unused-argument
     ) -> TensorType:
         """Samples random uniform points along the boundary.

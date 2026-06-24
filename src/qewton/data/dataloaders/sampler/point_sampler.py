@@ -1,12 +1,11 @@
 from abc import abstractmethod
-import numpy as np
 
 from qewton.data.dataloaders.base import DataNode
 from qewton.geometries.base import Geometry, BoundaryGeometry
 from qewton.graphs.nodes import NodeState, OutputPort
-from qewton.backends import Backend, DEFAULT_DL_BACKEND
+from qewton.backends import Backend, DEFAULT_DL_BACKEND, TensorType
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.axes import BatchAxes, AxesDim, FeatureAxes, GeometryAxes
+from qewton.config.axes import BatchAxes, AxesDim, FeatureAxes
 from qewton.config.variables import Variable
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.number_hyperparameter import (
@@ -18,7 +17,7 @@ from qewton.optim.parameters.categorical_hyperparameter import (
 
 
 # TODO: Add static sampling and caching
-class PointSampler(DataNode):
+class PointSampler(DataNode[TensorType]):
     """Parent class for sampling individual points from a geometry.
 
     Args:
@@ -41,8 +40,12 @@ class PointSampler(DataNode):
         normal_name: str | Variable = "normals",
         name: str = "PointSampler",
         state: NodeState = NodeState.FIXED,
-        backend: type[Backend] | None = DEFAULT_DL_BACKEND,
+        backend: type[Backend[TensorType]] | None = DEFAULT_DL_BACKEND,
     ) -> None:
+        assert backend == geometry.backend, (
+            f"Sampler and geometry should use the same backend, found {backend} "
+            + f"and {geometry.backend}"
+        )
         self.geometry = geometry
         self.compute_normals = compute_normals
         self.is_boundary_geometry = isinstance(geometry, BoundaryGeometry)
@@ -59,13 +62,13 @@ class PointSampler(DataNode):
                 normal_name = Variable(name=normal_name)
             self._build_port(normal_name)
 
-        self.point_cache: np.ndarray | None = None
-        self.normal_cache: np.ndarray | None = None
+        self.point_cache: TensorType | None = None
+        self.normal_cache: TensorType | None = None
 
     def _build_port(self, variable: Variable):
         axes = [
             BatchAxes(AxesDim(self.batch_size)),
-            # GeometryAxes(self.geometry),
+            # GeometryAxes(self.geometry), # TODO: How add this here???
             FeatureAxes(variable=variable),
         ]
         self._output_ports.append(
@@ -90,7 +93,7 @@ class PointSampler(DataNode):
         return True
 
     @abstractmethod
-    def sample_points(self) -> tuple[np.ndarray, np.ndarray | None]:
+    def sample_points(self) -> tuple[TensorType, TensorType | None]:
         pass
 
     def forward(self):
@@ -100,15 +103,6 @@ class PointSampler(DataNode):
         the appropriate device.
         """
         points, normals = self.sample_points()
-        # Transform data to backend format
-        points = self.backend.from_numpy(points)
-        # Move batch to device if backend is specified
-        if self._device is not None and self.backend is not None:
-            points = self.backend.to(points, self._device)
-
         if self.compute_normals:
-            normals = self.backend.from_numpy(normals)
-            if self._device is not None and self.backend is not None:
-                normals = self.backend.to(normals, self._device)
             return points, normals
         return points

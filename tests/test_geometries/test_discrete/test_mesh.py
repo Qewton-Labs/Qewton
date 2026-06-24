@@ -29,7 +29,6 @@ def test_create_triangle_mesh(backend):
     m = Mesh(vertices=vertices, cells=cells, backend=backend)
 
     assert m.vertex_count == 3
-    assert m.topological_dim == 3
     # boundary faces should be three edges
     assert m.boundary_faces.shape[0] == 3
 
@@ -40,7 +39,6 @@ def test_create_tetrahedron(backend):
     cells3 = [[0, 1, 2, 3]]
     m3 = Mesh(vertices=vertices3, cells=cells3, backend=backend)
     assert m3.vertex_count == 4
-    assert m3.topological_dim == 4
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -133,3 +131,60 @@ def test_sample_random_inside(backend, device):
     inside_pts, chosen_cells = mesh.sample_random_inside(10, device=device)
     assert inside_pts.shape[0] == 10
     assert chosen_cells.shape[0] == 10
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_boundary_normals_point_outwards(backend):
+    # Unit square triangulated into two triangles
+    vertices = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+    cells = [[0, 1, 2], [0, 2, 3]]
+    mesh = Mesh(vertices=vertices, cells=cells, backend=backend)
+
+    # there should be four boundary faces (the square edges)
+    assert mesh.boundary_faces.shape[0] == 4
+
+    # normals should point outwards (away from the center of the domain)
+    center = backend.build_tensor([0.5, 0.5])
+    centroids = backend.math.mean(mesh.vertices[mesh.boundary_faces], axis=1)
+
+    inward_vectors = center - centroids
+    dots = backend.math.sum(mesh.boundary_normals * inward_vectors, axis=1)
+
+    for d in dots:
+        try:
+            dv = float(d)
+        except Exception:
+            dv = d.item() if hasattr(d, "item") else d
+        assert dv < 0.0
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_simple_face_marking_strategy(backend):
+    # Provide explicit face markers and ensure they are transferred
+    vertices = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+    cells = [[0, 1, 2], [0, 2, 3]]
+    # define all boundary faces explicitly and give markers
+    faces = [[0, 1], [1, 2], [2, 3], [3, 0]]
+    face_markers = [10, 11, 12, 13]
+
+    mesh = Mesh(
+        vertices=vertices,
+        cells=cells,
+        faces=faces,
+        face_markers=face_markers,
+        backend=backend,
+    )
+
+    b = mesh.get_boundary_mesh()
+    assert b.cell_markers is not None
+    # all boundary faces mapped to cell_markers
+    try:
+        markers = [int(x) for x in b.cell_markers]
+    except Exception:
+        markers = [
+            int(x.item()) if hasattr(x, "item") else int(x) for x in b.cell_markers
+        ]
+
+    # Every marker should be one of the provided markers (no default marker used)
+    print(face_markers, markers)
+    assert all(m in face_markers for m in markers)

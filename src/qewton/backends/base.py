@@ -50,47 +50,6 @@ class ComputingBackend(Backend[TensorType]):
     random: ClassVar[type[RandomBackend]]
     linalg: ClassVar[type[LinAlgBackend]]
 
-    @classmethod
-    def build_tensor(cls, data, dtype: Any = qt_dtypes.Float32) -> TensorType:
-        """Builds a tensor from the given data.
-
-        Args:
-            data: The data to build the tensor from.
-
-        Returns:
-            TensorType: The built tensor.
-        """
-        raise NotImplementedError(
-            "The build_tensor method must be implemented by subclasses of Backend."
-        )
-
-    @classmethod
-    def to(cls, data, device):
-        """Moves the data to the given device.
-
-        Args:
-            data (TensorType): The data to move.
-            device (str): The device to move the data to.
-
-        Returns:
-            TensorType: The moved data.
-        """
-        raise NotImplementedError(
-            "The moving to a different device is backend dependent."
-        )
-
-
-class DeepLearningBackend(ComputingBackend[TensorType]):
-    """A Backend that implements all the necessary methods for deep learning.
-
-    Note that this structure is similar to Keras' backends.
-    """
-
-    grad: ClassVar[type[GradBackend]]
-    optim: ClassVar[type[OptimBackend]]
-    nn: ClassVar[type[NNBackend]]
-    param: ClassVar[type[ParameterBackend]]
-
     dtypes: ClassVar[dict]
 
     def __init_subclass__(cls, **kwargs):
@@ -124,6 +83,80 @@ class DeepLearningBackend(ComputingBackend[TensorType]):
         if missing:
             raise KeyError(f"In {cls.__name__}.dtypes the following keys are missing:\
                     {', '.join(missing)}")
+
+    @classmethod
+    def build_tensor(cls, data, dtype: Any = qt_dtypes.Float32) -> TensorType:
+        """Builds a tensor from the given data.
+
+        Args:
+            data: The data to build the tensor from.
+
+        Returns:
+            TensorType: The built tensor.
+        """
+        raise NotImplementedError(
+            "The build_tensor method must be implemented by subclasses of Backend."
+        )
+
+    @classmethod
+    def to(cls, data, device):
+        """Moves the data to the given device.
+
+        Args:
+            data (TensorType): The data to move.
+            device (str): The device to move the data to.
+
+        Returns:
+            TensorType: The moved data.
+        """
+        raise NotImplementedError(
+            "The moving to a different device is backend dependent."
+        )
+
+    @classmethod
+    def cast_dtype(cls, data, dtype):
+        """Changes the data type of the given data.
+
+        Args:
+            data (TensorType): The data to change the type of.
+            dtype (qt_dtypes): The new type of the data.
+
+        Returns:
+            TensorType: The data with the new type.
+        """
+        raise NotImplementedError("The type changing is backend dependent")
+
+
+class DeepLearningBackend(ComputingBackend[TensorType]):
+    """A Backend that implements all the necessary methods for deep learning.
+
+    Note that this structure is similar to Keras' backends.
+    """
+
+    grad: ClassVar[type[GradBackend]]
+    optim: ClassVar[type[OptimBackend]]
+    nn: ClassVar[type[NNBackend]]
+    param: ClassVar[type[ParameterBackend]]
+
+    dtypes = {
+        qt_dtypes.BFloat16: None,
+        qt_dtypes.Float16: None,
+        qt_dtypes.Float32: None,
+        qt_dtypes.Float64: None,
+        qt_dtypes.Complex32: None,
+        qt_dtypes.Complex64: None,
+        qt_dtypes.Complex128: None,
+        qt_dtypes.UInt8: None,
+        qt_dtypes.UInt16: None,
+        qt_dtypes.UInt32: None,
+        qt_dtypes.UInt64: None,
+        qt_dtypes.Int8: None,
+        qt_dtypes.Int16: None,
+        qt_dtypes.Int32: None,
+        qt_dtypes.Int64: None,
+        qt_dtypes.Number: None,
+        qt_dtypes.Bool: None,
+    }
 
     @classmethod
     def from_numpy(cls, data, dtype=qt_dtypes.Float32):

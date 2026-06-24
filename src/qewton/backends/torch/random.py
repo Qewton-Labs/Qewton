@@ -19,7 +19,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         mean: float = 0.0,
         std: float = 1.0,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a normal (Gaussian) distribution."""
         return torch.normal(
@@ -32,7 +32,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
 
     @staticmethod
     def standard_normal(
-        shape: Any, dtype: Any = None, device: Device = cpu
+        shape: Any, dtype: Any = None, device: Device | str = cpu
     ) -> torch.Tensor:
         """Samples from a standard normal distribution (mean=0, std=1)."""
         return torch.randn(shape, device=get_torch_device(device), dtype=dtype)
@@ -43,7 +43,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         low: float = 0.0,
         high: float = 1.0,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a uniform distribution over [low, high)."""
         return low + (high - low) * torch.rand(
@@ -56,7 +56,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         high: Optional[int] = None,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a discrete uniform distribution over [low, high)."""
         if high is None:
@@ -74,10 +74,12 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         shape: Any = None,
         replace: bool = True,
         p: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Generates a random sample from a given 1-D array or integer."""
         torch_device = get_torch_device(device)
+        if isinstance(shape, int):
+            shape = (shape,)
         if isinstance(a, int):
             a_tensor = torch.arange(a, device=torch_device)
         else:
@@ -103,7 +105,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         return samples
 
     @staticmethod
-    def permutation(x: Any, device: Device = cpu) -> torch.Tensor:
+    def permutation(x: Any, device: Device | str = cpu) -> torch.Tensor:
         """Randomly permute a sequence, or return a permuted range."""
         torch_device = get_torch_device(device)
         if isinstance(x, int):
@@ -114,7 +116,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
 
     @staticmethod
     def exponential(
-        shape: Any, scale: float = 1.0, dtype: Any = None, device: Device = cpu
+        shape: Any, scale: float = 1.0, dtype: Any = None, device: Device | str = cpu
     ) -> torch.Tensor:
         """Samples from an exponential distribution."""
         return torch.empty(
@@ -123,7 +125,11 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
 
     @staticmethod
     def multivariate_normal(
-        mean: Any, cov: Any, shape: Any = None, dtype: Any = None, device: Device = cpu
+        mean: Any,
+        cov: Any,
+        shape: Any = None,
+        dtype: Any = None,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a multivariate normal distribution."""
         torch_device = get_torch_device(device)
@@ -149,7 +155,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         p: float | Any,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a binomial distribution."""
         torch_device = get_torch_device(device)
@@ -166,7 +172,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         lam: float | Any,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a Poisson distribution."""
         torch_device = get_torch_device(device)
@@ -182,7 +188,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         scale: float | Any = 1.0,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a Gamma distribution."""
         torch_device = get_torch_device(device)
@@ -201,7 +207,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         b: float | Any,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a Beta distribution."""
         torch_device = get_torch_device(device)
@@ -220,7 +226,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         sigma: float = 1.0,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a log-normal distribution."""
         torch_device = get_torch_device(device)
@@ -234,7 +240,7 @@ class TorchRandomBackend(RandomBackend[torch.Tensor]):
         scale: float = 1.0,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         """Samples from a Gumbel distribution."""
         torch_device = get_torch_device(device)

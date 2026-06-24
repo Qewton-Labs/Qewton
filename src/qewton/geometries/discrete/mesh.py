@@ -49,7 +49,6 @@ class Mesh(Generic[TensorType]):
             (0, self.vertices.shape[1])
         )
 
-        self.topological_dim = len(cells[0])
         self._find_boundary_facets()
 
         # TODO: Add names <-> marker connection
@@ -59,6 +58,8 @@ class Mesh(Generic[TensorType]):
         return len(self.vertices)  # type: ignore
 
     def _find_boundary_facets(self):
+        if len(self.cells.shape) <= 1:
+            return
         # Find boundary faces:
         n = self.cells.shape[1]
         # Collect all faces of each cell
@@ -133,22 +134,22 @@ class Mesh(Generic[TensorType]):
         self.boundary_normals = normals
         # Compute also the normals at the vertices (take the average of the
         # adjacent faces)
-        vertex_ids = self.boundary_faces.ravel()
-        num_vertices = vertex_ids.max() + 1
-        self.boundary_normals_at_vertex = self.backend.math.zeros(
-            (num_vertices, self.boundary_normals.shape[1])
-        )
-        for f, verts in enumerate(self.boundary_faces):
-            self.boundary_normals_at_vertex[verts[0]] += normals[f]
-            self.boundary_normals_at_vertex[verts[1]] += normals[f]
-        # np.add.at(
-        #     self.boundary_normals_at_vertex,
-        #     vertex_ids,
-        #     np.repeat(normals, self.boundary_normals.shape[1], axis=0),
-        # )
-        self.boundary_normals_at_vertex /= self.backend.linalg.norm(
-            self.boundary_normals_at_vertex, axis=1, order=2, keepdims=True
-        )
+        if self.boundary_faces.shape[1] >= 2:
+            vertex_ids = self.boundary_faces.ravel()
+            num_vertices = vertex_ids.max() + 1
+            self.boundary_normals_at_vertex = self.backend.math.zeros(
+                (num_vertices, self.boundary_normals.shape[1])
+            )
+            for f, verts in enumerate(self.boundary_faces):
+                self.boundary_normals_at_vertex[verts[0]] += normals[f]
+                self.boundary_normals_at_vertex[verts[1]] += normals[f]
+
+            normal_norm = self.backend.linalg.norm(
+                self.boundary_normals_at_vertex, axis=1, order=2, keepdims=True
+            )
+            normal_norm[self.backend.math.where(normal_norm < 1.0e-9)[0]] += 1.0e-9
+
+            self.boundary_normals_at_vertex /= normal_norm
 
     @classmethod
     def load_mesh(
@@ -183,6 +184,7 @@ class Mesh(Generic[TensorType]):
             cell_markers=cell_markers,
             faces=faces,
             face_markers=face_markers,
+            backend=backend,
         )
 
     @classmethod
@@ -214,14 +216,18 @@ class Mesh(Generic[TensorType]):
             if block.type == cell_key:
                 cells.extend(block.data)
         faces = []
-        cell_markers = default_cell_tags * backend.math.ones(len(cells), dtype=Int32)
+        cell_markers = default_cell_tags * backend.math.ones(
+            (len(cells),), dtype=backend.dtypes[Int32]
+        )
         face_markers = []
         # Try to read out the markers from the mesh:
         if marker_key in msh.cell_data:
             marker_counter = 0
             for i, block in enumerate(msh.cells):
                 # Cell data has markers for each block
-                markers = msh.cell_data[marker_key][i]
+                markers = backend.build_tensor(
+                    msh.cell_data[marker_key][i], dtype=backend.dtypes[Int32]
+                )
                 # Markers of main dimension:
                 if block.type == cell_key:
                     assert not any(
@@ -268,8 +274,12 @@ class Mesh(Generic[TensorType]):
         boundary_vertices = self.vertices[boundary_indices]
 
         # Map faces to new vertex ordering:
-        inverse_map = self.backend.math.full(self.vertices.shape[0], -1, dtype=int)
-        inverse_map[boundary_indices] = self.backend.math.arange(len(boundary_indices))
+        inverse_map = self.backend.math.full(
+            self.vertices.shape[0], -1, dtype=self.backend.dtypes[Int32]
+        )
+        inverse_map[boundary_indices] = self.backend.math.arange(
+            len(boundary_indices), dtype=self.backend.dtypes[Int32]
+        )
         remapped_faces = inverse_map[self.boundary_faces]
 
         # Transfer face mapping
@@ -286,13 +296,15 @@ class Mesh(Generic[TensorType]):
             mapped_face_markers = self.face_markers[mask]
 
             face_to_marker = {
-                tuple(sorted(face)): marker
+                tuple(sorted(int(v) for v in face)): marker
                 for face, marker in zip(mapped_faces, mapped_face_markers)
             }
 
             mapped_face_markers = self.backend.build_tensor(
                 [
-                    face_to_marker.get(tuple(sorted(face)), default_marker)
+                    face_to_marker.get(
+                        tuple(sorted(int(v) for v in face)), default_marker
+                    )
                     for face in self.boundary_faces
                 ]
             )
@@ -301,6 +313,7 @@ class Mesh(Generic[TensorType]):
             vertices=boundary_vertices,
             cells=remapped_faces,
             cell_markers=mapped_face_markers,
+            backend=self.backend,
         )
 
     def get_submesh(self, marker: int) -> Mesh:
@@ -315,18 +328,23 @@ class Mesh(Generic[TensorType]):
         remaining_indices = self.backend.math.unique(new_cells.flatten())
         remaining_vertices = self.vertices[remaining_indices]
 
-        inverse_map = self.backend.math.full(self.vertices.shape[0], -1, dtype=int)
-        inverse_map[remaining_indices] = self.backend.math.arange(len(remaining_indices))
+        inverse_map = self.backend.math.full(
+            self.vertices.shape[0], -1, dtype=self.backend.dtypes[Int32]
+        )
+        inverse_map[remaining_indices] = self.backend.math.arange(
+            len(remaining_indices), dtype=self.backend.dtypes[Int32]
+        )
         new_cells = inverse_map[new_cells]
 
         return Mesh(
             vertices=remaining_vertices,
             cells=new_cells,
             cell_markers=self.cell_markers[mask],
+            backend=self.backend,
         )
 
     def sample_random_from_vertices(
-        self, n_points: int, device: Device = cpu
+        self, n_points: int, device: Device | str = cpu
     ) -> tuple[TensorType, TensorType]:
         idx = self.backend.random.choice(
             self.backend.math.arange(self.vertex_count),
@@ -338,7 +356,7 @@ class Mesh(Generic[TensorType]):
         return self.vertices[idx], idx
 
     def sample_grid_from_vertices(
-        self, n_points: int, device: Device = cpu
+        self, n_points: int, device: Device | str = cpu
     ) -> tuple[TensorType, TensorType]:
         self.vertices = self.backend.to(self.vertices, device=device)
         # TODO: Could be done distance based
@@ -355,18 +373,18 @@ class Mesh(Generic[TensorType]):
 
         base = self.backend.math.tile(self.vertices, (reps, 1))
         base_idx = self.backend.math.tile(
-            self.backend.math.arange(vertex_count, device=device), (reps, 1)
+            self.backend.math.arange(vertex_count, device=device), (reps,)
         )
 
         extra_idx = self.backend.random.permutation(vertex_count, device=device)[:rem]
         extra = self.vertices[extra_idx]
 
-        return self.backend.math.vstack([base, extra]), self.backend.math.vstack(
+        return self.backend.math.vstack([base, extra]), self.backend.math.concatenate(
             [base_idx, extra_idx]
         )
 
     def sample_random_inside(
-        self, n_points: int, device: Device = cpu
+        self, n_points: int, device: Device | str = cpu
     ) -> tuple[TensorType, TensorType]:
         chosen_cells = self.backend.random.choice(
             len(self.cells),
@@ -374,6 +392,9 @@ class Mesh(Generic[TensorType]):
             p=self.compute_cell_probability_weights(),
             device=device,
         )
+
+        self.vertices = self.backend.to(self.vertices, device=device)
+        self.cells = self.backend.to(self.cells, device=device)
 
         simplices = self.cells[chosen_cells]
         verts = self.vertices[simplices]

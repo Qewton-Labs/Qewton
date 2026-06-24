@@ -20,14 +20,14 @@ class RandomBackend(Backend[TensorType]):
         mean: float = 0.0,
         std: float = 1.0,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a normal (Gaussian) distribution."""
         raise NotImplementedError
 
     @staticmethod
     def standard_normal(
-        shape: Any, dtype: Any = None, device: Device = cpu
+        shape: Any, dtype: Any = None, device: Device | str = cpu
     ) -> TensorType:
         """Samples from a standard normal distribution (mean=0, std=1)."""
         raise NotImplementedError
@@ -38,7 +38,7 @@ class RandomBackend(Backend[TensorType]):
         low: float = 0.0,
         high: float = 1.0,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a uniform distribution over [low, high)."""
         raise NotImplementedError
@@ -49,7 +49,7 @@ class RandomBackend(Backend[TensorType]):
         high: Optional[int] = None,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a discrete uniform distribution over [low, high)."""
         raise NotImplementedError
@@ -60,26 +60,30 @@ class RandomBackend(Backend[TensorType]):
         shape: Any = None,
         replace: bool = True,
         p: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Generates a random sample from a given 1-D array or integer."""
         raise NotImplementedError
 
     @staticmethod
-    def permutation(x: Any, device: Device = cpu) -> TensorType:
+    def permutation(x: Any, device: Device | str = cpu) -> TensorType:
         """Randomly permute a sequence, or return a permuted range."""
         raise NotImplementedError
 
     @staticmethod
     def exponential(
-        shape: Any, scale: float = 1.0, dtype: Any = None, device: Device = cpu
+        shape: Any, scale: float = 1.0, dtype: Any = None, device: Device | str = cpu
     ) -> TensorType:
         """Samples from an exponential distribution."""
         raise NotImplementedError
 
     @staticmethod
     def multivariate_normal(
-        mean: Any, cov: Any, shape: Any = None, dtype: Any = None, device: Device = cpu
+        mean: Any,
+        cov: Any,
+        shape: Any = None,
+        dtype: Any = None,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a multivariate normal distribution."""
         raise NotImplementedError
@@ -95,7 +99,7 @@ class RandomBackend(Backend[TensorType]):
         p: float | Any,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a binomial distribution."""
         raise NotImplementedError
@@ -105,7 +109,7 @@ class RandomBackend(Backend[TensorType]):
         lam: float | Any,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a Poisson distribution."""
         raise NotImplementedError
@@ -116,7 +120,7 @@ class RandomBackend(Backend[TensorType]):
         scale: float | Any = 1.0,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a Gamma distribution."""
         raise NotImplementedError
@@ -127,7 +131,7 @@ class RandomBackend(Backend[TensorType]):
         b: float | Any,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a Beta distribution."""
         raise NotImplementedError
@@ -138,7 +142,7 @@ class RandomBackend(Backend[TensorType]):
         sigma: float = 1.0,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a log-normal distribution."""
         raise NotImplementedError
@@ -149,7 +153,7 @@ class RandomBackend(Backend[TensorType]):
         scale: float = 1.0,
         shape: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         """Samples from a Gumbel distribution."""
         raise NotImplementedError

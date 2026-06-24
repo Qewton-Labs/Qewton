@@ -67,7 +67,7 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     }
 
     @classmethod
-    def to(cls, data, device):
+    def to(cls, data: torch.Tensor, device):
         return data.to(cls.get_device(device))
 
     @classmethod
@@ -87,3 +87,7 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     def build_tensor(cls, data, dtype=Float32) -> torch.Tensor:
         converted_type = cls.dtypes.get(dtype, dtype)
         return torch.as_tensor(data, dtype=converted_type)
+
+    @classmethod
+    def cast_dtype(cls, data: torch.Tensor, dtype):
+        return data.type(cls.dtypes.get(dtype, dtype))

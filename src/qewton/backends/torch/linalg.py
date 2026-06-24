@@ -16,3 +16,7 @@ class TorchLinAlgBackend(LinAlgBackend[torch.Tensor]):
     @staticmethod
     def det(x: torch.Tensor) -> torch.Tensor:
         return torch.linalg.det(x)
+
+    @staticmethod
+    def inv(x: torch.Tensor) -> torch.Tensor:
+        return torch.linalg.inv(x)

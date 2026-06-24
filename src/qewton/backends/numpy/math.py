@@ -133,6 +133,7 @@ class NumpyMathBackend(MathBackend[np.ndarray]):
     triu = np.triu
     identity = np.identity
     meshgrid = np.meshgrid
+    cross = np.cross
 
     # Others
     diff = np.diff
@@ -142,6 +143,8 @@ class NumpyMathBackend(MathBackend[np.ndarray]):
 
     @staticmethod
     def where(condition: Any, x1: Any = None, x2: Any = None) -> np.ndarray:
+        if x1 is None and x2 is None:
+            return np.where(condition)
         if x1 is not None and x2 is None:
             x2 = 0
         return np.where(condition, x1, x2)
@@ -229,44 +232,48 @@ class NumpyMathBackend(MathBackend[np.ndarray]):
 
     # Factories
     @staticmethod
-    def ones(shape: Any, dtype: Any = None, device: Device = cpu) -> np.ndarray:
+    def ones(shape: Any, dtype: Any = None, device: Device | str = cpu) -> np.ndarray:
         return np.ones(shape, dtype=dtype)
 
     @staticmethod
-    def ones_like(x: Any, dtype: Any = None, device: Device = cpu) -> np.ndarray:
+    def ones_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> np.ndarray:
         return np.ones_like(x, dtype=dtype)
 
     @staticmethod
-    def zeros(shape: Any, dtype: Any = None, device: Device = cpu) -> np.ndarray:
+    def zeros(shape: Any, dtype: Any = None, device: Device | str = cpu) -> np.ndarray:
         return np.zeros(shape, dtype=dtype)
 
     @staticmethod
-    def zeros_like(x: Any, dtype: Any = None, device: Device = cpu) -> np.ndarray:
+    def zeros_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> np.ndarray:
         return np.zeros_like(x, dtype=dtype)
 
     @staticmethod
-    def empty(shape: Any, dtype: Any = None, device: Device = cpu) -> np.ndarray:
+    def empty(shape: Any, dtype: Any = None, device: Device | str = cpu) -> np.ndarray:
         return np.empty(shape, dtype=dtype)
 
     @staticmethod
-    def empty_like(x: Any, dtype: Any = None, device: Device = cpu) -> np.ndarray:
+    def empty_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> np.ndarray:
         return np.empty_like(x, dtype=dtype)
 
     @staticmethod
     def full(
-        shape: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+        shape: Any, fill_value: Any, dtype: Any = None, device: Device | str = cpu
     ) -> np.ndarray:
         return np.full(shape, fill_value, dtype=dtype)
 
     @staticmethod
     def full_like(
-        x: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+        x: Any, fill_value: Any, dtype: Any = None, device: Device | str = cpu
     ) -> np.ndarray:
         return np.full_like(x, fill_value, dtype=dtype)
 
     @staticmethod
     def eye(
-        N: int, M: int | None = None, k: int = 0, dtype: Any = None, device: Device = cpu
+        N: int,
+        M: int | None = None,
+        k: int = 0,
+        dtype: Any = None,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         return np.eye(N, M=M, k=k, dtype=dtype)
 
@@ -279,7 +286,7 @@ class NumpyMathBackend(MathBackend[np.ndarray]):
         retstep: bool = False,
         dtype: Any = None,
         axis: int = 0,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         return np.linspace(
             start,
@@ -300,7 +307,7 @@ class NumpyMathBackend(MathBackend[np.ndarray]):
         base: float = 10.0,
         dtype: Any = None,
         axis: int = 0,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         return np.logspace(
             start, stop, num=num, endpoint=endpoint, base=base, dtype=dtype, axis=axis
@@ -312,7 +319,7 @@ class NumpyMathBackend(MathBackend[np.ndarray]):
         stop: Any = None,
         step: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> np.ndarray:
         return np.arange(start, stop=stop, step=step, dtype=dtype)
 

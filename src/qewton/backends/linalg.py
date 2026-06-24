@@ -24,3 +24,8 @@ class LinAlgBackend(Backend[TensorType]):
     @abstractmethod
     def det(x: TensorType) -> TensorType:
         pass
+
+    @staticmethod
+    @abstractmethod
+    def inv(x: TensorType) -> TensorType:
+        pass

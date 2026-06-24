@@ -366,6 +366,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         return torch.sum(torch.conj(x).reshape(-1) * y.reshape(-1))
 
     inner = torch.inner
+    cross = torch.linalg.cross
     diff = torch.diff
     outer = torch.outer
     kron = torch.kron
@@ -412,32 +413,32 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         return torch.meshgrid(*x, indexing=indexing)
 
     @staticmethod
-    def zeros(shape: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+    def zeros(shape: Any, dtype: Any = None, device: Device | str = cpu) -> torch.Tensor:
         return torch.zeros(shape, dtype=dtype, device=get_torch_device(device))
 
     @staticmethod
-    def ones(shape: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+    def ones(shape: Any, dtype: Any = None, device: Device | str = cpu) -> torch.Tensor:
         return torch.ones(shape, dtype=dtype, device=get_torch_device(device))
 
     @staticmethod
-    def zeros_like(x: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+    def zeros_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> torch.Tensor:
         return torch.zeros_like(x, dtype=dtype, device=get_torch_device(device))
 
     @staticmethod
-    def ones_like(x: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+    def ones_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> torch.Tensor:
         return torch.ones_like(x, dtype=dtype, device=get_torch_device(device))
 
     @staticmethod
-    def empty(shape: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+    def empty(shape: Any, dtype: Any = None, device: Device | str = cpu) -> torch.Tensor:
         return torch.empty(shape, dtype=dtype, device=get_torch_device(device))
 
     @staticmethod
-    def empty_like(x: Any, dtype: Any = None, device: Device = cpu) -> torch.Tensor:
+    def empty_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> torch.Tensor:
         return torch.empty_like(x, dtype=dtype, device=get_torch_device(device))
 
     @staticmethod
     def full(
-        shape: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+        shape: Any, fill_value: Any, dtype: Any = None, device: Device | str = cpu
     ) -> torch.Tensor:
         if isinstance(shape, int):
             shape = (shape,)
@@ -445,7 +446,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
 
     @staticmethod
     def full_like(
-        x: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+        x: Any, fill_value: Any, dtype: Any = None, device: Device | str = cpu
     ) -> torch.Tensor:
         return torch.full_like(
             x, fill_value, dtype=dtype, device=get_torch_device(device)
@@ -453,7 +454,11 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
 
     @staticmethod
     def eye(
-        N: int, M: int | None = None, k: int = 0, dtype: Any = None, device: Device = cpu
+        N: int,
+        M: int | None = None,
+        k: int = 0,
+        dtype: Any = None,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         m_val = M if M is not None else N
         res = torch.zeros((N, m_val), dtype=dtype, device=get_torch_device(device))
@@ -473,7 +478,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         stop: Any = None,
         step: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         if stop is None:
             return torch.arange(start, dtype=dtype, device=get_torch_device(device))
@@ -492,7 +497,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         retstep: bool = False,
         dtype: Any = None,
         axis: int = 0,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         device_torch = get_torch_device(device)
         if not endpoint and num > 0:
@@ -520,7 +525,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         base: float = 10.0,
         dtype: Any = None,
         axis: int = 0,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> torch.Tensor:
         device_torch = get_torch_device(device)
         if not endpoint and num > 0:

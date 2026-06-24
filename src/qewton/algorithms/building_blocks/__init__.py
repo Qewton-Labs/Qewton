@@ -25,6 +25,7 @@ from .math import (
     Minimum,
     MatMul,
     Mean,
+    Negative,
 )
 
 from .array_operations import SplitVariables, Slice, Narrow, Squeeze, Unsqueeze

@@ -1,6 +1,9 @@
 import torch
 from qewton.backends.grad import GradBackend
 
+# TODO: Try to use torch.func to improve gradients,
+#       or also just vmap for speed up of the loops
+
 
 class TorchGradBackend(GradBackend[torch.Tensor]):
     """Torch implementations of differential operators."""

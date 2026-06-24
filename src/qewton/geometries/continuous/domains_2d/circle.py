@@ -106,7 +106,7 @@ class Circle(ContinuousGeometry[TensorType]):
             bounds.append(self.center[i] + self.radius)  # type: ignore
         return self.backend.build_tensor(bounds)
 
-    def sample_random_uniform(self, n_points: int, device: Device = cpu):
+    def sample_random_uniform(self, n_points: int, device: Device | str = cpu):
         rand_radius = self.backend.random.uniform((n_points, 1), device=device)
         r = self.radius * self.backend.math.sqrt(rand_radius)
         phi = 2 * math.pi * self.backend.random.uniform((n_points, 1), device=device)
@@ -116,13 +116,13 @@ class Circle(ContinuousGeometry[TensorType]):
         points += self.backend.to(self.center[None, :], device)  # type: ignore
         return points
 
-    def sample_grid(self, n_points: int, device: Device = cpu):
+    def sample_grid(self, n_points: int, device: Device | str = cpu):
         grid = self._equidistant_points_in_circle(n_points, device=device)
         points = self.radius * grid
         points += self.backend.to(self.center[None, :], device)  # type: ignore
         return points
 
-    def _equidistant_points_in_circle(self, n_points: int, device: Device = cpu):
+    def _equidistant_points_in_circle(self, n_points: int, device: Device | str = cpu):
         # use a sunflower seed arrangement:
         # https://demonstrations.wolfram.com/SunflowerSeedArrangements/
         gr = (math.sqrt(5) + 1) / 2.0  # golden ratio
@@ -158,7 +158,7 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
         )
 
     def sample_random_uniform(
-        self, n_points: int, device: Device = cpu, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         phi = (
             2
@@ -175,7 +175,7 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
         return points
 
     def sample_grid(
-        self, n_points: int, device: Device = cpu, include_normals: bool = False
+        self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         phi = self.backend.math.linspace(0, 2 * math.pi, n_points + 1, device=device)[
             :-1
@@ -193,7 +193,7 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
             return points, normals
         return points
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str = cpu):
         normal = points - self.backend.to(self.geometry.center[None, :], device)
         return (normal / self.geometry.radius).reshape(-1, 2)
 

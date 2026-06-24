@@ -592,6 +592,12 @@ class TrackingObject:
         subtract_node = Subtract()
         return subtract_node(self, other)
 
+    def __neg__(self):
+        from qewton.algorithms.building_blocks.math import Negative
+
+        neg_node = Negative()
+        return neg_node(self)
+
     def __rsub__(self, other):
         from qewton.algorithms.building_blocks.math import Subtract
 

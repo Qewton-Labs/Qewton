@@ -1,6 +1,4 @@
-import numpy as np
-
-from qewton.backends import DEFAULT_DL_BACKEND, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry
 from qewton.graphs.nodes import NodeState
@@ -10,7 +8,7 @@ from qewton.optim.parameters.number_hyperparameter import DiscreteHyperparameter
 from qewton.data.dataloaders.sampler.point_sampler import PointSampler
 
 
-class GridSampler(PointSampler):
+class GridSampler(PointSampler[TensorType]):
     """Samples points in a grid-like fashion from a geometry.
 
     Args:
@@ -33,14 +31,14 @@ class GridSampler(PointSampler):
         normal_name: str | Variable = "normals",
         name: str = "PointSampler",
         state: NodeState = NodeState.FIXED,
-        backend: type[Backend] | None = DEFAULT_DL_BACKEND,
+        backend: type[Backend[TensorType]] | None = DEFAULT_DL_BACKEND,
     ) -> None:
         super().__init__(
             geometry, n_points, compute_normals, normal_name, name, state, backend
         )
         self.is_static = True
-        self.point_cache: np.ndarray | None = None
-        self.normal_cache: np.ndarray | None = None
+        self.point_cache: TensorType | None = None
+        self.normal_cache: TensorType | None = None
 
     def sample_points(self):
         """Samples points from the geometry in a grid-like fashion."""
@@ -48,11 +46,13 @@ class GridSampler(PointSampler):
             return self.point_cache, self.normal_cache
         if self.is_boundary_geometry:
             self.point_cache, self.normal_cache = self.geometry.sample_grid(
-                self.batch_size, include_normals=self.compute_normals  # type: ignore
+                self.batch_size,
+                device=self._device,
+                include_normals=self.compute_normals,  # type: ignore
             )
         else:
             self.point_cache, self.normal_cache = (
-                self.geometry.sample_grid(self.batch_size),
+                self.geometry.sample_grid(self.batch_size, device=self._device),
                 None,
             )
         return self.point_cache, self.normal_cache
