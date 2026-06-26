@@ -31,3 +31,29 @@ class ZerosLike(Node[TensorType]):
         self, x: Annotated[TensorType, DC(ellipsis_dims)]
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.math.zeros_like(x)
+
+
+class Ones(Node[TensorType]):
+    def __init__(
+        self,
+        shape: int | tuple[int, ...],
+        name: str | None = None,
+        state: NodeState = NodeState.FIXED,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        if isinstance(shape, int):
+            shape = (shape,)
+        self.shape = shape
+        super().__init__(name, state, backend)
+
+    def forward(self) -> Annotated[TensorType, DC(EllipsisAxes())]:
+        return self.backend.math.ones(self.shape)
+
+
+class OnesLike(Node[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
+    def forward(
+        self, x: Annotated[TensorType, DC(ellipsis_dims)]
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        return self.backend.math.ones_like(x)

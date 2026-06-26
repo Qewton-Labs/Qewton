@@ -28,7 +28,15 @@ from .math import (
     Negative,
 )
 
-from .array_operations import SplitVariables, Slice, Narrow, Squeeze, Unsqueeze
+from .array_operations import (
+    SplitVariables,
+    Slice,
+    Narrow,
+    Squeeze,
+    Unsqueeze,
+    ConcatVariables,
+    SetItem,
+)
 from .derivatives import (
     GradientTracking,
     Gradient,
@@ -39,4 +47,4 @@ from .derivatives import (
     Partial,
     Hessian,
 )
-from .creation import Zeros, ZerosLike
+from .creation import Zeros, ZerosLike, Ones, OnesLike

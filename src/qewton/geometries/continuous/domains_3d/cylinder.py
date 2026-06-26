@@ -10,7 +10,7 @@ from qewton.config.variables import Variable
 class Cylinder(ContinuousGeometry):
     """Class for cylinders.
 
-    The cylinder is axis-aligned along the upwards dirction.
+    The cylinder is axis-aligned along the upwards direction.
 
     Args:
         variable (Variable): The variable associated with the cylinder, must be 3D.

@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 
 
 class ArrayLike(Protocol):
+
+    def reshape(self, *new_shape) -> "TensorType": ...  # type: ignore
+
     @property
     def shape(self) -> tuple[int, ...]: ...
 
@@ -26,6 +29,16 @@ class ArrayLike(Protocol):
     def __getitem__(self, key) -> Any: ...
 
     def __setitem__(self, key, value): ...
+
+    def __sub__(self, other) -> "TensorType": ...  # type: ignore
+
+    def __add__(self, other) -> "TensorType": ...  # type: ignore
+
+    def __mul__(self, other) -> "TensorType": ...  # type: ignore
+
+    def __rmul__(self, other) -> "TensorType": ...  # type: ignore
+
+    def __truediv__(self, other) -> "TensorType": ...  # type: ignore
 
 
 TensorType = TypeVar("TensorType", bound=ArrayLike)

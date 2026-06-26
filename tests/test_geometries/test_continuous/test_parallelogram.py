@@ -1,5 +1,4 @@
 import inspect
-import math
 import pytest
 
 from qewton.backends.base import ComputingBackend, DeepLearningBackend
