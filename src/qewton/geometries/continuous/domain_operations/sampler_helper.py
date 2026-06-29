@@ -9,18 +9,7 @@ import numpy as np
 
 
 def _inside_random_with_n(domain_a, domain_b, n, invert) -> np.ndarray:
-    """Creates a random uniform points inside of a cut or intersection domain.
-
-    Parameters
-    ----------
-    domain_a, domain_b : Domain
-        The two domains that define the main domain.
-    n : int
-        The number of points.
-    invert : bool
-        Says if the points should lay in the domain_b (intersection) or if
-        not (cut). For the Cut-Domain it is invert=True.
-    """
+    """Creates a random uniform points inside of a cut or intersection domain."""
     number_valid = 0
     scaled_n = n
     while number_valid < n:
@@ -35,20 +24,7 @@ def _inside_random_with_n(domain_a, domain_b, n, invert) -> np.ndarray:
 
 
 def _inside_grid_with_n(domain_a, domain_b, n, invert) -> np.ndarray:
-    """Creates a point grid inside of a cut or intersection domain.
-
-    Parameters
-    ----------
-    domain_a, domain_b : Domain
-        The two domains that define the main domain.
-    n : int
-        The number of points.
-    params : Points
-        Additional parameters for the domains.
-    invert : bool
-        Says if the points should lay in the domain_b (intersection) or if
-        not (cut). For the Cut-Domain it is invert=True.
-    """
+    """Creates a point grid inside of a cut or intersection domain."""
     # first sample grid inside the domain_a
     grid_a = domain_a.sample_grid(n_points=n)
     index_valid = _check_in_b(domain_b, invert, grid_a)
@@ -114,19 +90,7 @@ def _compute_boundary_ratio(main_domain, domain_a, domain_b, n):
 
 
 def _boundary_grid_with_n(main_domain, domain_a, domain_b, n):
-    """Creates a point grid on the boundary of a domain operation.
-
-    Parameters
-    ----------
-    main_domain : Domain
-        The domain that represents the new created domain.
-    domain_a, domain_b : Domain
-        The two domains that define the main domain.
-    n : int
-        The number of points.
-    params : Points
-        Additional parameters for the domains.
-    """
+    """Creates a point grid on the boundary of a domain operation."""
     # first sample a grid on both boundaries
     grid_a = domain_a.boundary.sample_grid(n_points=n)[0]
     grid_b = domain_b.boundary.sample_grid(n_points=n)[0]

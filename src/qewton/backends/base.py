@@ -40,6 +40,8 @@ class ArrayLike(Protocol):
 
     def __truediv__(self, other) -> "TensorType": ...  # type: ignore
 
+    def __pow__(self, other) -> "TensorType": ...  # type: ignore
+
 
 TensorType = TypeVar("TensorType", bound=ArrayLike)
 
