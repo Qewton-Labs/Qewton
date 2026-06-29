@@ -94,10 +94,16 @@ class Circle(ContinuousGeometry[TensorType]):
         )
 
     def contains(self, points):
+        points = self.backend.build_tensor(points)
+        self.set_center_device(points)
         norm = self.backend.linalg.norm(points - self.center, order=2, axis=1).reshape(
             -1, 1
         )
         return norm <= self.radius
+
+    def set_center_device(self, points):
+        p_device = points.device if hasattr(points, "device") else cpu
+        self.center = self.backend.to(self.center, p_device)
 
     def bounding_box(self):
         bounds = []
@@ -150,6 +156,8 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
         self.geometry: Circle = geometry  # type: ignore
 
     def contains(self, points):
+        points = self.backend.build_tensor(points)
+        self.geometry.set_center_device(points=points)
         norm = self.backend.linalg.norm(
             points - self.geometry.center, order=2, axis=1
         ).reshape(-1, 1)

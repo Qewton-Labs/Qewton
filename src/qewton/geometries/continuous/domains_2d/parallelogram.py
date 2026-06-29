@@ -133,7 +133,7 @@ class Parallelogram(ContinuousGeometry[TensorType]):
             discretization_of=self,
         )
 
-    def move_to_device(self, new_device: Device):
+    def move_to_device(self, new_device: Device | str):
         self.origin = self.backend.to(self.origin, device=new_device)
         self.corner_1 = self.backend.to(self.corner_1, device=new_device)
         self.corner_2 = self.backend.to(self.corner_2, device=new_device)
@@ -395,6 +395,8 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
                 )
 
         norms = self.backend.linalg.norm(normals, order=2, axis=1, keepdims=True)
+        small_norm = self.backend.math.where(self.backend.math.abs(norms) <= 1.0e-6)[0]
+        norms[small_norm] += 1.0e-6
         return normals / norms
 
     def _get_normal_direction(self, direction: TensorType, device: Device | str = cpu):
