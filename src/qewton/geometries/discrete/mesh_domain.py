@@ -48,7 +48,9 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
     def __sub__(self, other):
         raise NotImplementedError("Mesh combinations are not supported yet.")
 
-    def create_mesh(self, max_vertex_distance: float | None = None) -> MeshGeometry:
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
         return self
 
     def bounding_box(self):
@@ -231,7 +233,7 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         return self._contains_cell_based_search(points)[0]
 
     def create_mesh(
-        self, max_vertex_distance: float | None = None
+        self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshBoundaryGeometry:
         return self
 
@@ -298,11 +300,11 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         points, idx = self.mesh.sample_random_from_vertices(
             n_points=n_points, device=device
         )
-        normals = None
         if include_normals:
             self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals_at_vertex[idx]
-        return points, normals
+            return points, normals
+        return points
 
     def _move_normals(self, device: Device):
         self.geometry.mesh.boundary_normals_at_vertex = self.backend.to(
@@ -318,21 +320,21 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         points, idx = self.mesh.sample_grid_from_vertices(
             n_points=n_points, device=device
         )
-        normals = None
         if include_normals:
             self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals_at_vertex[idx]
-        return points, normals
+            return points, normals
+        return points
 
     def sample_random_uniform(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         points, idx = self.mesh.sample_random_inside(n_points=n_points, device=device)
-        normals = None
         if include_normals:
             self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals[idx]
-        return points, normals
+            return points, normals
+        return points
 
     def sample_grid(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
@@ -375,13 +377,13 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
             )
             points = self.backend.math.concatenate([points, random_points], axis=0)
 
-        normals = None
         if include_normals:
             self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals[face_idx]
             if random_normals is not None:
                 normals = self.backend.math.concatenate([normals, random_normals], axis=0)
-        return points, normals
+            return points, normals
+        return points
 
     def _compute_local_distribution(self, n_points):
         total_area = self.volume()

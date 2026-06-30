@@ -7,11 +7,14 @@ class RandomUniformSampler(PointSampler):
     def sample_points(self):
         """Samples random uniform points from the geometry."""
         if self.is_boundary_geometry:
-            return self.geometry.sample_random_uniform(
+            sample_out = self.geometry.sample_random_uniform(
                 self.batch_size,
                 device=self._device,
                 include_normals=self.compute_normals,  # type: ignore
             )
+            if self.compute_normals:
+                return sample_out[0], sample_out[1]
+            return sample_out, None
         return (
             self.geometry.sample_random_uniform(self.batch_size, device=self._device),
             None,

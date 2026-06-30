@@ -73,7 +73,10 @@ class Parallelogram(ContinuousGeometry[TensorType]):
             [mins[0:1], maxs[0:1], mins[1:2], maxs[1:2]], axis=0
         )
 
-    def create_mesh(self, max_vertex_distance: float | None = None) -> MeshGeometry:
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
+        self.move_to_device(device)
         # edge vectors
         e1 = self.corner_1 - self.origin
         e2 = self.corner_2 - self.origin

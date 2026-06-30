@@ -1,4 +1,4 @@
-from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND, ComputingBackend, TensorType
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry
 from qewton.graphs.nodes import NodeState
@@ -31,10 +31,10 @@ class GridSampler(PointSampler[TensorType]):
         normal_name: str | Variable = "normals",
         name: str = "PointSampler",
         state: NodeState = NodeState.FIXED,
-        backend: type[Backend[TensorType]] | None = DEFAULT_DL_BACKEND,
+        backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
         super().__init__(
-            geometry, n_points, compute_normals, normal_name, name, state, backend
+            geometry, n_points, compute_normals, normal_name, name, state, backend=backend
         )
         self.is_static = True
         self.point_cache: TensorType | None = None
@@ -45,11 +45,15 @@ class GridSampler(PointSampler[TensorType]):
         if self.point_cache is not None:
             return self.point_cache, self.normal_cache
         if self.is_boundary_geometry:
-            self.point_cache, self.normal_cache = self.geometry.sample_grid(
+            sample_out = self.geometry.sample_grid(
                 self.batch_size,
                 device=self._device,
                 include_normals=self.compute_normals,  # type: ignore
             )
+            if self.compute_normals:
+                self.point_cache, self.normal_cache = sample_out[0], sample_out[1]
+            else:
+                self.point_cache, self.normal_cache = sample_out, None
         else:
             self.point_cache, self.normal_cache = (
                 self.geometry.sample_grid(self.batch_size, device=self._device),

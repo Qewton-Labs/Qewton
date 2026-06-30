@@ -437,11 +437,9 @@ class GeometryAxes(Axes):
         from qewton.geometries.base import Geometry
 
         self._geometry: Geometry
-        if geometry is not None and shape is not None:
-            raise ValueError("Only one of geometry or shape can be provided.")
         if geometry is not None:
             self._geometry = geometry
-        elif shape is not None:
+        elif shape is not None and geometry is None:
             self._geometry = Geometry(
                 shape=tuple(i.size if isinstance(i, AxesDim) else i for i in shape)
             )

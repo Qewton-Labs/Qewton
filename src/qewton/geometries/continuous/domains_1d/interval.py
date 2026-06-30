@@ -45,7 +45,7 @@ class Interval(ContinuousGeometry[TensorType]):
             -1, 1
         )
 
-    def create_mesh(self, max_vertex_distance: float | None = None):
+    def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
         size = self.upper_bound - self.lower_bound
         if max_vertex_distance is None:
             max_vertex_distance = size
@@ -122,7 +122,9 @@ class IntervalBoundary(ContinuousBoundaryGeometry[TensorType]):
         return self.backend.math.logical_or(close_left, close_right).reshape(-1, 1)
 
     def create_mesh(
-        self, max_vertex_distance: float | None = None  # pylint: disable=unused-argument
+        self,
+        max_vertex_distance: float | None = None,  # pylint: disable=unused-argument
+        device: Device = cpu,  # pylint: disable=unused-argument
     ):
         return MeshGeometry(
             variable=self.variable,
@@ -185,7 +187,9 @@ class IntervalSingleBoundaryPoint(ContinuousBoundaryGeometry[TensorType]):
         return inside.reshape(-1, 1)
 
     def create_mesh(
-        self, max_vertex_distance: float | None = None  # pylint: disable=unused-argument
+        self,
+        max_vertex_distance: float | None = None,  # pylint: disable=unused-argument
+        device: Device = cpu,  # pylint: disable=unused-argument
     ):
         return MeshGeometry(
             variable=self.variable,

@@ -79,6 +79,9 @@ class DataNode(Node[TensorType]):
     def cache(self, n_batches: int = -1):
         pass
 
+    def clear_cache(self):
+        pass
+
     def provides_data_in_phase(
         self, phase: EvaluationPhase  # pylint: disable=unused-argument
     ) -> bool:

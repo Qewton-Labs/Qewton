@@ -560,6 +560,10 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     swapaxes = torch.swapaxes
 
     @staticmethod
+    def shape(x: torch.Tensor):
+        return x.shape
+
+    @staticmethod
     def append(x1: Any, x2: Any, axis: Any = None) -> torch.Tensor:
         if axis is None:
             axis = 0

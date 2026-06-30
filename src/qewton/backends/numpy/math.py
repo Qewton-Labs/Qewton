@@ -116,6 +116,7 @@ class NumpyMathBackend(MathBackend[np.ndarray]):
     nonzero = np.nonzero
     count_nonzero = np.count_nonzero
     split = np.split
+    shape = np.shape
 
     # Linear Algebra
     diag = np.diag

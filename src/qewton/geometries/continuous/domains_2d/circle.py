@@ -37,7 +37,10 @@ class Circle(ContinuousGeometry[TensorType]):
         self.radius = radius
         super().__init__(variable=variable, backend=backend)
 
-    def create_mesh(self, max_vertex_distance: float | None = None) -> MeshGeometry:
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
+        self.center = self.backend.to(self.center, device=device)
         if max_vertex_distance is None:
             power_n = 4
             n = 16

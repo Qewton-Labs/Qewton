@@ -48,7 +48,8 @@ class Triangle(ContinuousGeometry[TensorType]):
         self.corner_1 = self.backend.to(self.corner_1, device=new_device)
         self.corner_2 = self.backend.to(self.corner_2, device=new_device)
 
-    def create_mesh(self, max_vertex_distance: float | None = None):
+    def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
+        self._update_device(device)
         max_length = self.backend.math.max(
             [
                 self.backend.linalg.norm(self.corner_1 - self.origin, order=2),

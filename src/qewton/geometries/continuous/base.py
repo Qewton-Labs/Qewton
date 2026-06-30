@@ -4,6 +4,7 @@ from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, BoundaryGeometry
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
+from qewton.config.devices import cpu, Device
 
 
 class ContinuousGeometry(Geometry[TensorType]):
@@ -53,7 +54,7 @@ class ContinuousBoundaryGeometry(BoundaryGeometry[TensorType]):
         super().__init__(geometry)
         self.geometry: ContinuousGeometry = geometry
 
-    def create_mesh(self, max_vertex_distance: float | None = None):
+    def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
         return self.geometry.create_mesh(max_vertex_distance=max_vertex_distance).boundary
 
     def create_boundary(self):

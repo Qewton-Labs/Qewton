@@ -237,7 +237,7 @@ class Geometry(Generic[TensorType]):
         """
         return False
 
-    def create_mesh(self, max_vertex_distance: float | None = None):
+    def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
         """Meshes this geometry into a `MeshGeometry` object. The meshing can be
         controlled by providing a maximum vertex distance, which determines the
         fineness of the mesh.

@@ -858,6 +858,11 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
+    def shape(x: TensorType) -> tuple:
+        pass
+
+    @staticmethod
+    @abstractmethod
     def percentile(
         x: Any, q: Any, axis: Any = None, method: str = "linear", keepdims: bool = False
     ) -> TensorType:
