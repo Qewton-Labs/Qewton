@@ -5,8 +5,6 @@ number of points.
 
 from qewton.config.devices import Device
 
-# TODO: Update docstring
-
 
 def _inside_random_with_n(domain_a, domain_b, n, invert, device: Device):
     """Creates a random uniform points inside of a cut or intersection domain."""

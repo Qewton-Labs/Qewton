@@ -46,9 +46,6 @@ class ArrayLike(Protocol):
 TensorType = TypeVar("TensorType", bound=ArrayLike)
 
 
-# TODO: We have standard datatype gives tensors, but what about float, etc.?
-
-
 class Backend(Generic[TensorType]):
     """A Container that allows the connection of Qewton to any other library,
     which then might perform computations.

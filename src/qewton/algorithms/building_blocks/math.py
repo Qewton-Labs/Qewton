@@ -66,7 +66,6 @@ class Divide(Node[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        # TODO: should this rather be true divide?
         return self.backend.math.divide(x, y)
 
 

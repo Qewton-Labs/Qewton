@@ -446,7 +446,9 @@ class GeometryAxes(Axes):
         else:
             raise ValueError("Either geometry or shape must be provided.")
         default_shape = (...,)
-        if not isinstance(self._geometry.shape, EllipsisType):
+        if shape is not None:
+            default_shape = shape
+        elif not isinstance(self._geometry.shape, EllipsisType):
             default_shape = self._geometry.shape
         super().__init__(*default_shape)
 

@@ -75,9 +75,7 @@ class PointSampler(DataNode[TensorType]):
     def _build_port(self, variable: Variable):
         axes = [
             # BatchAxes(AxesDim(self.batch_size)),
-            GeometryAxes(
-                self.geometry, (AxesDim(self.batch_size),)
-            ),  # TODO: How add this here???
+            GeometryAxes(self.geometry, (AxesDim(self.batch_size),)),
             FeatureAxes(variable=variable),
         ]
         self._output_ports.append(
@@ -169,7 +167,6 @@ class PointSampler(DataNode[TensorType]):
 
 
 class ProductSampler(PointSampler[TensorType]):
-    # TODO: Could become a graph node?
     def __init__(
         self,
         sampler_a: PointSampler,

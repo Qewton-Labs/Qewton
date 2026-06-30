@@ -26,8 +26,6 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.graphs.nodes import Node, OutputPort, InputPort
 from qewton.data.datasets import DataSet
 
-# TODO: Add caching functionality
-
 
 class DataNode(Node[TensorType]):
     """

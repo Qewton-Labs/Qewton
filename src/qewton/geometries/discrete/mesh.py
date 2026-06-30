@@ -2,8 +2,6 @@ from __future__ import annotations
 from typing import Generic
 import math
 
-# import numpy as np
-
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
@@ -39,7 +37,6 @@ class Mesh(Generic[TensorType]):
         )
 
         # Data for normals and volumes that are only computed once
-        # TODO: Update all of this
         self.cell_volumes: TensorType | None = None
         self.cell_probability_weights: TensorType | None = None
         self.boundary_normals: TensorType = self.backend.math.empty(
@@ -159,6 +156,25 @@ class Mesh(Generic[TensorType]):
         default_cell_tags: int = -1,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> Mesh:
+        """Load a mesh from the disk. The mesh should already be a "volume" mesh.
+        Currently only simplex meshes are supported.
+
+        Args:
+            file_path: The file path to the mesh.
+            marker_key (str | None, optional): Markers inside the mesh that should also
+                be loaded/included in the mesh object.
+            default_cell_tags (int, optional): A default cell tag for all cells that
+                dont have any markers. Defaults to -1.
+            backend (type[ComputingBackend[TensorType]], optional):
+                Defaults to DEFAULT_DL_BACKEND.
+
+        Raises:
+            ImportError: Use Meshio to convert and read the mesh, raises an error if
+            not installed.
+
+        Returns:
+            Mesh: The mesh object containing the mesh from the file.
+        """
         try:
             import meshio  # pylint: disable=import-outside-toplevel # type: ignore
         except ImportError as e:
