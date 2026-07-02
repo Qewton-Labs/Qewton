@@ -1,3 +1,3 @@
-from .plotly.base import PlotlyRenderer
+from .plotly import PlotlyRenderer
 
-DEFAULT_PLOT_RENDERER = PlotlyRenderer()
+DEFAULT_RENDERER = PlotlyRenderer()
