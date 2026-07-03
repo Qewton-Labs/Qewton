@@ -1,7 +1,7 @@
 from copy import deepcopy
 from typing import Annotated
 
-from qewton.backends import DEFAULT_DL_BACKEND, TensorType, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, TensorType, Backend, DeepLearningBackend
 from qewton.algorithms.backend_node import BackendNode
 
 from qewton.config.data_configurations import DataConfiguration as DC
@@ -110,6 +110,16 @@ class Sqrt(BackendNode[TensorType]):
 
 class Power(BackendNode[TensorType]):
     ellipsis_dims = EllipsisAxes()
+
+    def __init__(
+        self,
+        power: float | None = None,
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(name, backend)
+        if power is not None:
+            self.input_ports[-1].default = power
 
     def forward(
         self,

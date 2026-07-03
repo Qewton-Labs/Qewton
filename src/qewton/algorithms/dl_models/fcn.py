@@ -1,12 +1,13 @@
 from typing import Annotated, Generic
 
+from qewton.algorithms.building_blocks.math import Power, Add
 from qewton.algorithms.building_blocks.linear import Linear
 from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.config.axes import FeatureAxes, EllipsisAxes
-from qewton.graphs.graphs import SequentialGraph
+from qewton.graphs.graphs import SequentialGraph, Graph
 from qewton.graphs.nodes import Node, NodeState
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -168,3 +169,95 @@ class FCN(GraphNode, Generic[TensorType]):
         self.input_ports[0].set_value(x)
         self.run()
         return self.output_ports[0].value  # type: ignore
+
+
+class DeepRitzNet(FCN[TensorType]):
+    """Implementation of the architecture used in the Deep Ritz paper [1]_.
+    Consists of fully connected layers and residual connections.
+
+    Args:
+        in_neurons (int | HyperParameter | Variable): The number of input neurons
+            or a variable representing it.
+        out_neurons (int | HyperParameter | Variable): The number of output
+            neurons or a variable representing it.
+        width (int | HyperParameter): The width of the used hidden
+            fully connected layers.
+        depth (int | HyperParameter): The amount of subsequent residual blocks.
+        bias (bool | HyperParameter, optional): If a bias should be included.
+            Defaults to True.
+        name (str, optional): Name of the model. Defaults to "fcn".
+        backend (type[Backend[TensorType]], optional): What backend this
+            model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
+
+    Notes:
+        [1] Weinan E and Bing Yu, "The Deep Ritz method: A deep learning-based numerical
+        algorithm for solving variational problems", 2017
+    """
+
+    def __init__(
+        self,
+        in_neurons: int | HyperParameter | Variable,
+        out_neurons: int | HyperParameter | Variable,
+        width: int | HyperParameter,
+        depth: int | HyperParameter,
+        bias: bool | HyperParameter = True,
+        name: str = "DeepRitzNet",
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        super().__init__(
+            in_neurons=in_neurons,
+            out_neurons=out_neurons,
+            hidden_neurons=width,
+            n_hidden_layers=depth,
+            bias=bias,
+            activation=ReLU,
+            name=name,
+            backend=backend,
+        )
+
+    def _build_network(self, backend):
+        graph = Graph()
+        linear_in = Linear(
+            in_neurons=self.in_neurons.value,
+            out_neurons=self.hidden_neurons.value,
+            bias=self.bias.value,
+            backend=backend,
+        )
+        last_node = linear_in
+        for _ in range(self.n_hidden_layers.value):
+            linear_1 = Linear(
+                in_neurons=self.hidden_neurons.value,
+                out_neurons=self.hidden_neurons.value,
+                bias=self.bias.value,
+                backend=backend,
+            )
+            linear_2 = Linear(
+                in_neurons=self.hidden_neurons.value,
+                out_neurons=self.hidden_neurons.value,
+                bias=self.bias.value,
+                backend=backend,
+            )
+            power_node_1 = Power(power=3.0)
+            power_node_2 = Power(power=3.0)
+            relu_node_1 = ReLU()
+            relu_node_2 = ReLU()
+            add_node = Add()
+            graph.connect(last_node, linear_1)
+            graph.connect(linear_1, power_node_1.input_ports[0])
+            graph.connect(power_node_1, relu_node_1)
+            graph.connect(relu_node_1, linear_2)
+            graph.connect(linear_2, power_node_2.input_ports[0])
+            graph.connect(power_node_2, relu_node_2)
+            graph.connect(last_node, add_node.input_ports[0])
+            graph.connect(relu_node_2, add_node.input_ports[1])
+            last_node = add_node
+
+        linear_out = Linear(
+            in_neurons=self.hidden_neurons.value,
+            out_neurons=self.out_neurons.value,
+            bias=self.bias.value,
+            backend=backend,
+        )
+        graph.connect(last_node, linear_out)
+        graph.sort()
+        return graph
