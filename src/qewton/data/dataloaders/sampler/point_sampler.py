@@ -1,5 +1,7 @@
 from __future__ import annotations
 from abc import abstractmethod
+import inspect
+from typing import Callable
 
 from qewton.config.devices import Device
 from qewton.data.dataloaders.base import DataNode
@@ -24,6 +26,9 @@ class PointSampler(DataNode[TensorType]):
     Args:
         geometry (Geometry): The geometry in which points should be sampled.
         n_points (int | Hyperparameter): The number of points that should be sampled.
+        filter_fn (callable, optional): An additional filter that specifies at which
+            location points should be sampled. Internally a rejection sampling
+            strategy is used. Default is None.
         compute_normals (bool, optional): Whether to compute normals to each sampled
             points. This is only possible for BoundaryGeometries. Defaults to False.
         normal_name (str | Variable): The name for the output port of the normals.
@@ -31,12 +36,16 @@ class PointSampler(DataNode[TensorType]):
         name (str, optional): The name of the node. Defaults to "PointSampler".
         state (NodeState, optional): The state of the node.
             Defaults to NodeState.FIXED.
+        backend (type[ComputingBackend[TensorType]], optional): What backend the node
+            should use for computations, etc. Defaults to the deep learning
+            backend (DEFAULT_DL_BACKEND).
     """
 
     def __init__(
         self,
         geometry: Geometry,
         n_points: int | DiscreteHyperparameter | CategoricalHyperparameter,
+        filter_fn: Callable | None = None,
         compute_normals: bool = False,
         normal_name: str | Variable = "normals",
         name: str = "PointSampler",
@@ -59,10 +68,12 @@ class PointSampler(DataNode[TensorType]):
         super().__init__(batch_size=n_points, name=name, state=state, backend=backend)
         self.backend: type[ComputingBackend[TensorType]] = backend
 
+        # clear automatically build ports:
+        self._output_ports = []
         self._build_port(self.geometry.variable)
         if self.compute_normals:
             if isinstance(normal_name, str):
-                self.normal_name = Variable(name=normal_name)
+                self.normal_name = Variable(name=normal_name, dim=self.geometry.dim)
             else:
                 self.normal_name = normal_name
             self._build_port(self.normal_name)
@@ -71,6 +82,23 @@ class PointSampler(DataNode[TensorType]):
         self.normal_cache: TensorType | None = None
         self.created_cache: bool = False
         self.cache_idx: int = 0
+
+        self.filter_fn = filter_fn
+        self.filter_indices: list[tuple[slice, ...]] | list[list[int]] = []
+        # build the indices
+        if filter_fn is not None:
+            sig = inspect.signature(filter_fn).parameters.values()
+            for var in sig:
+                if isinstance(var.annotation, Variable):
+                    self.filter_indices.append(
+                        self.geometry.variable.get_slice(var.annotation)  # type: ignore
+                    )
+
+    def _evaluate_filter(self, points):
+        filter_output = self.filter_fn(  # type: ignore
+            *(points[..., indices] for indices in self.filter_indices)
+        )
+        return self.backend.math.where(filter_output)[0]
 
     def _build_port(self, variable: Variable):
         axes = [
@@ -129,7 +157,7 @@ class PointSampler(DataNode[TensorType]):
     def sample_points(self) -> tuple[TensorType, TensorType | None]:
         pass
 
-    def forward(self):
+    def forward(self) -> TensorType | tuple[TensorType, TensorType | None]:
         """Executes the data loading for one batch.
 
         This method handles split indexing, batch slicing, and moving data to
@@ -163,103 +191,6 @@ class PointSampler(DataNode[TensorType]):
                 self.normal_cache = self.backend.to(self.normal_cache, self._device)
 
     def __mul__(self, other):
+        from .product_sampler import ProductSampler
+
         return ProductSampler(self, other)
-
-
-class ProductSampler(PointSampler[TensorType]):
-    def __init__(
-        self,
-        sampler_a: PointSampler,
-        sampler_b: PointSampler,
-        name: str = "ProductSampler",
-    ) -> None:
-        assert sampler_a.backend == sampler_b.backend, "Backends do not fit together!"
-        self.sampler_a = sampler_a
-        self.sampler_b = sampler_b
-
-        compute_normals = False
-        normal_name = "normals"
-        if sampler_a.compute_normals:
-            compute_normals = True
-            normal_name = sampler_a.normal_name
-        elif sampler_b.compute_normals:
-            compute_normals = True
-            normal_name = sampler_b.normal_name
-
-        super().__init__(
-            geometry=sampler_a.geometry,
-            n_points=sampler_a.batch_size * sampler_b.batch_size,
-            name=name,
-            compute_normals=compute_normals,
-            normal_name=normal_name,
-            backend=sampler_a.backend,
-        )
-
-    def _build_port(self, variable: Variable):
-        a_config = self.sampler_a.output_ports[0].data_configuration
-        b_config = self.sampler_b.output_ports[0].data_configuration
-        assert (
-            a_config.variables != b_config.variables
-        ), "ProductSampler can only work on samplers of different variables."
-        combined_variable = a_config.variables * b_config.variables  # type: ignore
-        axes = []
-        for axis in a_config.axes + b_config.axes:
-            if isinstance(axis, GeometryAxes):
-                axes.append(axis)
-        axes.append(FeatureAxes(variable=combined_variable))
-        self._output_ports.append(
-            OutputPort(
-                DataConfiguration(
-                    *axes,
-                    dtype=self.backend.default_dtype if self.backend else None,
-                ),
-                node=self,
-                name=variable.name,
-            )
-        )
-
-    def sample_points(self) -> tuple[TensorType, TensorType | None]:
-        points_a, normals_a = self.sampler_a.sample_points()
-        points_b, normals_b = self.sampler_b.sample_points()
-        # Sampler is assumed to always return points in the shape of
-        # (GeometryAxes1, ..., FeatureAxes)
-        a_shape = self.backend.math.shape(points_a)
-        b_shape = self.backend.math.shape(points_b)
-        # Now extend the sampled points such that we at the end can
-        # build a tensor of the shape:
-        # (GeometryAxes_a_1, ..., GeometryAxes_b_1, ..., Features_a + Features_b)
-        points_a = self._add_dims(points_a, len(b_shape) - 1, -2)
-        points_b = self._add_dims(points_b, len(a_shape) - 1, 0)
-        new_shape = a_shape[:-1] + b_shape[:-1]
-        points = self.backend.math.concatenate(
-            [
-                self.backend.math.broadcast_to(points_a, new_shape + (a_shape[-1],)),
-                self.backend.math.broadcast_to(points_b, new_shape + (b_shape[-1],)),
-            ],
-            axis=-1,
-        )
-        # Also expand the normals
-        normals = None
-        if normals_a is not None:
-            normals = self._expand_normals(normals_a, len(b_shape) - 1, -2, new_shape)
-        elif normals_b is not None:
-            normals = self._expand_normals(normals_b, len(a_shape) - 1, 0, new_shape)
-
-        return points, normals
-
-    def _add_dims(self, data: TensorType, times: int, idx: int):
-        for _ in range(times):
-            data = self.backend.math.unsqueeze(data, idx)
-        return data
-
-    def _expand_normals(
-        self, normals: TensorType, times: int, idx: int, new_shape: tuple[int, ...]
-    ):
-        n_dim = self.backend.math.shape(normals)[-1]
-        normals = self._add_dims(normals, times, idx)
-        return self.backend.math.broadcast_to(normals, new_shape + (n_dim,))
-
-    def to(self, device: str | Device):
-        self.sampler_a.to(device=device)
-        self.sampler_b.to(device=device)
-        super().to(device)

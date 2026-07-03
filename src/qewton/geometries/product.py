@@ -13,7 +13,9 @@ class ProductGeometry(Geometry[TensorType]):
             geometry_a.variable != geometry_b.variable
         ), "Both geometries can not belong to the same variable"
         super().__init__(
-            variable=geometry_a.variable * geometry_b.variable, backend=geometry_a.backend
+            variable=geometry_a.variable * geometry_b.variable,
+            dim=geometry_a.dim + geometry_b.dim,  # type: ignore
+            backend=geometry_a.backend,
         )
         self.geometry_a = geometry_a
         self.geometry_b = geometry_b
