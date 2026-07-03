@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import MagicMock
 from typing import Annotated
 
+from qewton.backends.base import TensorType
 from qewton.graphs.nodes import Node, Port, InputPort, OutputPort, NodeState
 from qewton.graphs.edges import Edge
 from qewton.graphs.graphs import Graph, SequentialGraph, TrackingObject
@@ -182,8 +183,10 @@ class TestGraphs(unittest.TestCase):
         config = DataConfiguration.empty()
         config.set_dtype = MagicMock()
 
-        class BackendNode(Node):
-            def forward(self, x: Annotated[float, config]) -> Annotated[float, config]:
+        class BackendNode(Node[TensorType]):
+            def forward(
+                self, x: Annotated[TensorType, config]
+            ) -> Annotated[TensorType, config]:
                 return x
 
         BackendNode(backend=MockBackend)
@@ -192,9 +195,9 @@ class TestGraphs(unittest.TestCase):
     def test_unwrap_annotated_no_metadata(self):
         # Test Annotated without DataConfiguration or Callable meta
         hint = Annotated[float, "some_other_metadata"]
-        base, config = Node._unwrap_annotated(hint, self.node)
-        self.assertEqual(base, float)
+        config, was_annotated = Node._unwrap_annotated(hint, self.node, self.node.backend)
         self.assertIsInstance(config, DataConfiguration)
+        self.assertTrue(was_annotated)
 
     def test_update_data_configs(self):
         node = MultiOutputNode()

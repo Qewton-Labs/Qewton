@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, Annotated
 
 from qewton.backends import DEFAULT_DL_BACKEND
-from qewton.backends.base import DeepLearningBackend
+from qewton.backends.base import DeepLearningBackend, TensorType
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import TrainableParameters
 from qewton.config.data_configurations import DataConfiguration
@@ -10,7 +10,7 @@ from qewton.config.axes import EllipsisAxes, FeatureAxes
 from qewton.graphs.nodes import Node, NodeState
 
 
-class ParameterNode(Node):
+class ParameterNode(Node[TensorType]):
     def __init__(
         self,
         shape: tuple[int | HyperParameter, ...],
@@ -53,8 +53,8 @@ class ParameterNode(Node):
     def run(self) -> None:
         pass  # value is set once in setup
 
-    def forward(self) -> Annotated[Any, ParameterNode.output_config]:
-        return self._trainable_parameter
+    def forward(self) -> Annotated[TensorType, ParameterNode.output_config]:
+        return self._trainable_parameter  # type: ignore
 
     def reset(self):
         if not self.state == NodeState.FIXED:

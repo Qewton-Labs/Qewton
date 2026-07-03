@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 
 from qewton.config.axes import (
     Axes,
@@ -218,10 +219,16 @@ class DataConfiguration:
                 from both original configurations as keys, and the unified axes
                 and dimensions as values.
         """
+        # TODO: in future we should check whether one is a subtype of the other
         if self.dtype != other.dtype:
-            raise DataConfigMismatchError(
-                f"Found different data types {self.dtype} and {other.dtype}."
-            )
+            if self.dtype is Any:
+                self.dtype = other.dtype
+            elif other.dtype is Any:
+                other.dtype = self.dtype
+            else:
+                raise DataConfigMismatchError(
+                    f"Found different data types {self.dtype} and {other.dtype}."
+                )
 
         # First we check if they match from the end
         matching_end_self, matching_end_other = self._match_axes(

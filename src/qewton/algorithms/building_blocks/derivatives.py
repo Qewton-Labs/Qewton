@@ -4,10 +4,10 @@ from typing import Annotated
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.backends import TensorType
 from qewton.config.data_configurations import DataConfiguration as DC
-from qewton.algorithms.backend_node import BackendNode
+from qewton.graphs.nodes import Node
 
 
-class GradientTracking(BackendNode[TensorType]):
+class GradientTracking(Node[TensorType]):
     ell_axes = EllipsisAxes()
 
     def forward(
@@ -17,7 +17,7 @@ class GradientTracking(BackendNode[TensorType]):
         return self.backend.grad.gradient_tracking(inp)
 
 
-class Gradient(BackendNode[TensorType]):
+class Gradient(Node[TensorType]):
     ell_axes = EllipsisAxes()
     x_dim = AxesDim(None)
 
@@ -29,7 +29,7 @@ class Gradient(BackendNode[TensorType]):
         return self.backend.grad.gradient(u, x)
 
 
-class Laplacian(BackendNode[TensorType]):
+class Laplacian(Node[TensorType]):
     """Computes the laplacian (sum of second derivatives) of a scalar output
     with respect to the input variable."""
 
@@ -43,7 +43,7 @@ class Laplacian(BackendNode[TensorType]):
         return self.backend.grad.laplacian(u, x)
 
 
-class NormalDerivative(BackendNode[TensorType]):
+class NormalDerivative(Node[TensorType]):
     """Computes the normal derivative (gradient · normals) of a scalar output."""
 
     ell_axes = EllipsisAxes()
@@ -59,7 +59,7 @@ class NormalDerivative(BackendNode[TensorType]):
         return self.backend.grad.normal_derivative(u, normals, x)
 
 
-class Divergence(BackendNode[TensorType]):
+class Divergence(Node[TensorType]):
     """Computes the divergence of a vector field (model output) with
     respect to spatial variables."""
 
@@ -74,7 +74,7 @@ class Divergence(BackendNode[TensorType]):
         return self.backend.grad.divergence(u, x)
 
 
-class Jacobian(BackendNode[TensorType]):
+class Jacobian(Node[TensorType]):
     """Computes the Jacobian matrix of a vector output with respect to input variables."""
 
     ell_axes = EllipsisAxes()
@@ -88,7 +88,7 @@ class Jacobian(BackendNode[TensorType]):
         return self.backend.grad.jacobian(u, x)
 
 
-class Partial(BackendNode[TensorType]):
+class Partial(Node[TensorType]):
     """Computes n-th order partial derivatives recursively with
     respect to multiple variables."""
 
@@ -103,7 +103,7 @@ class Partial(BackendNode[TensorType]):
         return self.backend.grad.partial(u, x)
 
 
-class Hessian(BackendNode[TensorType]):
+class Hessian(Node[TensorType]):
     """Computes the Hessian matrix (second partial derivatives) of a scalar
     output."""
 

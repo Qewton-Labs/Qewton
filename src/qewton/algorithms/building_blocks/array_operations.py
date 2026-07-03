@@ -2,16 +2,15 @@ from copy import deepcopy
 from types import EllipsisType
 from typing import Annotated
 
-from qewton.algorithms.backend_node import BackendNode
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType
 from qewton.backends.base import DeepLearningBackend
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes, FeatureAxes
 from qewton.config.variables import Variable
-from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort
+from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort, Node
 
 
-class Narrow(BackendNode[TensorType]):
+class Narrow(Node[TensorType]):
     def __init__(self, dim=None, start=0, length=None, backend=DEFAULT_DL_BACKEND):
         self.dim = dim if dim is not None else NO_DEFAULT
         self.start = start
@@ -25,7 +24,7 @@ class Narrow(BackendNode[TensorType]):
         return self.backend.math.narrow(x)
 
 
-class Slice(BackendNode[TensorType]):
+class Slice(Node[TensorType]):
 
     def __init__(
         self,
@@ -62,7 +61,7 @@ class Slice(BackendNode[TensorType]):
         return updated_ports
 
 
-class SplitVariables(BackendNode[TensorType]):
+class SplitVariables(Node[TensorType]):
 
     def __init__(
         self,
@@ -120,7 +119,7 @@ class SplitVariables(BackendNode[TensorType]):
         raise ValueError(f"No output port with name {name} found in node {self.name}.")
 
 
-class ConcatVariables(BackendNode[TensorType]):
+class ConcatVariables(Node[TensorType]):
     """
     Assumes the feature axes are all the last axes.
     """
