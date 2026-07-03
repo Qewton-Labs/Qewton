@@ -1,12 +1,19 @@
 from pathlib import Path
 import gmsh
 
+from qewton.config.variables import Variable
+from qewton.geometries.discrete.mesh_domain import MeshGeometry
+from qewton.backends.base import TensorType, ComputingBackend
+from qewton.backends import DEFAULT_DL_BACKEND
 
-def mesh_geometry(
+
+def create_mesh_geometry(
+    variable: Variable,
     input_file: str | Path,
     output_file: str | Path,
     dim: int = 3,
     mesh_size: float | None = None,
+    backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
 ):
     """Mesh a CAD geometry using Gmsh.
 
@@ -16,6 +23,8 @@ def mesh_geometry(
         dim (int, optional): The dimension of the object. Defaults to 3.
         mesh_size (float | None, optional): The maximum edge size in the mesh.
             Defaults to None.
+
+    TODO: Keep markers from the CAD geometry in the mesh
     """
     gmsh.initialize()
     gmsh.model.add("model")
@@ -48,3 +57,7 @@ def mesh_geometry(
     gmsh.write(str(output_file))
 
     gmsh.finalize()
+
+    return MeshGeometry.load_mesh(
+        variable=variable, file_path=str(output_file), backend=backend
+    )

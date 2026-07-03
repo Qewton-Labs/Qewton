@@ -7,7 +7,7 @@ from qewton.geometries.discrete.mesh import Mesh
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
-from qewton.config.dtypes import Bool, Int32, Float32
+from qewton.config.dtypes import Bool, Int32
 
 
 class MeshGeometry(DiscreteGeometry[TensorType]):
@@ -23,7 +23,9 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             len(mesh.vertices[0]) == variable.dim
         ), "Dimension of variable must match dimension of mesh vertices."
         self.mesh = mesh
-        super().__init__(variable=variable, shape=mesh.vertices.shape, backend=backend)
+        super().__init__(
+            variable=variable, shape=(mesh.vertices.shape[0],), backend=backend
+        )
         if discretization_of is not None:
             self.discretization_of = discretization_of
         # For checking points inside the mesh:
@@ -306,7 +308,7 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
             return points, normals
         return points
 
-    def _move_normals(self, device: Device):
+    def _move_normals(self, device: Device | str):
         self.geometry.mesh.boundary_normals_at_vertex = self.backend.to(
             self.geometry.mesh.boundary_normals_at_vertex, device=device
         )
