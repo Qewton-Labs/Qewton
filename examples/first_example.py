@@ -1,5 +1,6 @@
 import torch
 import qewton
+from qewton.visualization.graphs.base import GraphPlotter
 
 x_data = torch.linspace(0, 1, 1000).reshape(-1, 1)
 u_data = x_data**2 + torch.sin(6.0 * x_data)
@@ -41,13 +42,8 @@ computation_graph.connect(data_loader.get_output_port(X), model)
 computation_graph.connect(model, constraint.input_1)
 computation_graph.connect(data_loader.get_output_port(U), constraint.input_2)
 
-constraint.name = "Constraint"
-data_loader.name = "Input"
-# end output ?
 computation_graph.setup()
 
-
-from qewton.visualization.graphs.base import GraphPlotter
 
 plotter = GraphPlotter(computation_graph)
 plotter.save_svg("computation_graph")

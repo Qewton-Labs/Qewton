@@ -6,13 +6,26 @@ class GraphPlotter:
     def __init__(self, graph: Graph):
         self.graph = graph
 
+    def _node_style(self, node):
+        COLORS = {
+            "FCN": "lightskyblue",
+            "MSEConstraint": "aquamarine",
+            "DataLoader": "lemonchiffon",
+        }
+        return {"fillcolor": COLORS.get(type(node).__name__, "lightblue")}
+
+    # ----------------------------
+    # vertical port stack
+    # ----------------------------
+    def _stack_ports(self, ports, prefix):
+        return "{ " + " | ".join(f"<{prefix}_{p.name}> {p.name}" for p in ports) + " }"
+
     def to_dot(self) -> Digraph:
         dot = Digraph("QewtonGraph")
-        # assign unique IDs
+
         node_ids = {node: str(i) for i, node in enumerate(self.graph.nodes)}
 
-        # General appearance
-        dot.attr(rankdir="LR")  # Left -> Right flow
+        dot.attr(rankdir="LR")
         dot.attr(
             "node",
             shape="box",
@@ -20,52 +33,68 @@ class GraphPlotter:
             fillcolor="lightblue",
             fontname="Arial",
         )
-
         dot.attr("edge", arrowsize="0.8")
 
         # --------------------
         # Create nodes
         # --------------------
         for node in self.graph.nodes:
+            style = self._node_style(node)
 
-            label = f"{node.name}\n" f"({type(node).__name__})"
-            dot.node(node_ids[node], label=label)
+            inputs = list(getattr(node, "input_ports", []) or [])
+            outputs = list(getattr(node, "output_ports", []) or [])
+
+            has_inputs = len(inputs) > 0
+            has_outputs = len(outputs) > 0
+
+            if has_inputs or has_outputs:
+
+                left = self._stack_ports(inputs, "in") if has_inputs else ""
+                right = self._stack_ports(outputs, "out") if has_outputs else ""
+
+                if has_inputs and has_outputs:
+                    label = f"{{ {left} | {node.name} | {right} }}"
+                elif has_inputs:
+                    label = f"{{ {left} | {node.name} }}"
+                else:
+                    label = f"{{ {node.name} | {right} }}"
+
+                dot.node(
+                    node_ids[node],
+                    label=label,
+                    shape="record",
+                    style="rounded,filled",
+                    fillcolor=style["fillcolor"],
+                )
+            # if no ports (?)
+            else:
+                dot.node(node_ids[node], label=node.name, **style)
 
         # --------------------
         # Create edges
         # --------------------
         for node in self.graph.nodes:
-
             for edge in self.graph.outgoing_edges[node]:
 
                 source_node = edge.from_port.node
                 target_node = edge.to_port.node
 
-                source_label = edge.from_port.name
-                target_label = edge.to_port.name
+                source_conf = self.graph.dynamic_data_configs[source_node][edge.from_port]
+                source_conf_str = f"[{', '.join(str(a) for a in source_conf.axes)}]"
 
                 dot.edge(
-                    node_ids[source_node],
-                    node_ids[target_node],
-                    # so far no labels on edges
-                    # label=f"{source_label} → {target_label}",
+                    f"{node_ids[source_node]}:out_{edge.from_port.name}",
+                    f"{node_ids[target_node]}:in_{edge.to_port.name}",
+                    label=source_conf_str,
                 )
 
         return dot
 
     def save_png(self, filename: str = "graph"):
-        dot = self.to_dot()
-        dot.render(filename, format="png", cleanup=True)
+        self.to_dot().render(filename, format="png", cleanup=True)
 
     def save_pdf(self, filename: str = "graph"):
-        dot = self.to_dot()
-        dot.render(filename, format="pdf", cleanup=True)
+        self.to_dot().render(filename, format="pdf", cleanup=True)
 
     def save_svg(self, filename: str = "graph"):
-        dot = self.to_dot()
-        dot.render(filename, format="svg", cleanup=True)
-
-    # def show(self):
-    #    dot = self.to_dot()
-    #    dot.view()
-    # No such file or directory: 'xdg-open'
+        self.to_dot().render(filename, format="svg", cleanup=True)
