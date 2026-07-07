@@ -16,8 +16,8 @@ class Plot:
     def title(self):
         return self._title
 
-    def evaluate(self):
-        return self.plot_config.evaluate_data(self.data)
+    def evaluate(self, required_axis_order):
+        return self.plot_config.evaluate_data(self.data, required_axis_order)
 
     def create_artist(self, backend_figure, renderer):
         # uses self.data_config.evaluate_data(self.data, self.data_config)

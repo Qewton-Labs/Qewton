@@ -4,13 +4,6 @@ class Renderer:
         raise NotImplementedError()
 
     @staticmethod
-    def slider(
-        backend_figure,
-        slider_axis,
-    ):
-        raise NotImplementedError()
-
-    @staticmethod
     def show(backend_figure):
         raise NotImplementedError()
 

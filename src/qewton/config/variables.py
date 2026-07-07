@@ -1,56 +1,129 @@
 from __future__ import annotations
-from collections import OrderedDict
-from math import prod
-from typing import Optional
 
 
-class Variable(OrderedDict):
-    """Creates a variable of the given problem. Helps for a natural
-    implementation of the problem and internal tracking.
-
-    Args:
-        name (str | None, optional): The name of the variable. Defaults to None.
-        dim (int | tuple[int, ...] | None, optional): The dimension of the variable.
-        Defaults to None.
-    """
+class Variable:
+    """Order of children is now important."""
 
     def __init__(
         self,
-        name: Optional[str] = None,
+        name: str | None = None,
         dim: int | tuple[int, ...] | None = None,
+        children: list[Variable] | None = None,
+        parent: Variable | None = None,
     ):
-        super().__init__()
-        if name is not None:
-            self[name] = dim
-        self.has_multiple_axes = isinstance(dim, tuple)
+        self.name = name
+        self.parent = parent
 
-    @property
-    def name(self) -> str:
-        """Returns the variable keys split by ", ".
+        if children is None:
+            if isinstance(dim, int):
+                if dim == 1 or dim == 0:
+                    self.children = []
+                else:
+                    self.children = [
+                        Variable(f"{name}_{i}", dim=1, parent=self) for i in range(dim)
+                    ]
+                self.dim = dim
+            if isinstance(dim, tuple):
+                assert (
+                    children is None
+                ), "Variables with multiple axes cannot have children."
+                self.dim = dim
+                self.children = []
 
-        Returns:
-            str: The variable keys as a string.
-        """
-        return ", ".join(str(key) for key in self.keys())
+        if children is not None:
+            self.children = children
+            overall_dim = 0
+            c_dim_is_none = False
+            for child in children:
+                if child.parent is None:
+                    child.parent = self
+                if isinstance(child.dim, tuple):
+                    raise ValueError("Children cannot have multiple axes.")
+                if isinstance(child.dim, int):
+                    overall_dim += child.dim
+                elif child.dim is None:
+                    c_dim_is_none = True
+
+            if c_dim_is_none:
+                if dim is None:
+                    self.dim = None
+                else:
+                    raise ValueError("Cannot specify dim from parent to children.")
+            else:
+                self.dim = overall_dim
+                if dim is not None:
+                    assert (
+                        dim == overall_dim
+                    ), f"Computed dim {self.dim} does not agree with given dim {dim}"
+
+        else:
+            if dim is None:
+                self.dim = dim
+                self.children = []
 
     @classmethod
-    def from_dict(cls, var_dict: dict[str, int]) -> Variable:
-        """Construct a variable from a given dictionary.
+    def empty(cls):
+        return cls()
 
-        Args:
-            var_dict (dict[str, int]): The dictionary containing the variable
-                information. The keys of the dictionary are used as the
-                variable names and the values should denote the dimension.
+    @property
+    def is_leaf(self):
+        return len(self.children) == 0
 
-        Returns:
-            Variable: The variable object.
-        """
-        v = cls()
-        for name, dim in var_dict.items():
-            v[name] = dim
-        return v
+    @property
+    def leaves(self):
+        if self.is_leaf:
+            return [self]
+        else:
+            leaves = []
+            for child in self.children:
+                leaves.extend(child.leaves)
+            return leaves
 
-    def get_slice(self, variable: Variable) -> tuple[slice, ...] | list[int]:
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.leaves[key]
+        if isinstance(key, str):
+            for child in self.children:
+                if child.name == key:
+                    return child
+            raise KeyError(f"No child with name {key}")
+
+    def __iter__(self):
+        return iter(self.leaves)
+
+    def __repr__(self):
+        if self.is_leaf:
+            return f"Variable({self.name}, dim={self.dim})"
+        return f"Variable({self.name}, dim={self.dim}, children={len(self.children)})"
+
+    def __mul__(self, other: Variable) -> "Variable":
+        new_var = Variable(name=f"({self.name}, {other.name})", children=[self, other])
+        if self.parent is None:
+            self.parent = new_var
+        if other.parent is None:
+            other.parent = new_var
+        return new_var
+
+    __add__ = __mul__
+
+    @classmethod
+    def from_dict(cls, data: dict[str, int | tuple[int, ...]]) -> Variable:
+        children = []
+        name = "("
+        if len(data) == 0:
+            return cls()
+        for k, v in data.items():
+            if isinstance(v, (int, tuple)):
+                children.append(Variable(name=k, dim=v))
+                name += f"{k}, "
+            else:
+                raise ValueError(f"Invalid value type for key {k}: {type(v)}")
+        if len(children) == 1:
+            return children[0]
+        else:
+            return cls(name=name.rstrip(", ") + ")", children=children)
+
+    def get_slice(self, variable: Variable) -> slice:
         """Computes a slice index for the variable provided in this main
         variable. The provided variable has to be included in this
         variable
@@ -65,29 +138,46 @@ class Variable(OrderedDict):
         Returns:
             tuple[slice, ...] | list[int]: The slice indices.
         """
-        if self.has_multiple_axes:
-            return tuple([slice(None)] * len(list(self.values())[0]))
-        slc = []
-        for variable_k, variable_v in variable.items():
-            prev_dims = 0
-            found = False
-            for k, v in self.items():
-                if k == variable_k:
-                    slc.extend(list(range(prev_dims, prev_dims + variable_v)))
-                    found = True
-                    break
-                prev_dims += v
-            if not found:
-                raise KeyError(f"Variable key '{variable_k}' not found in {self.keys()}")
-        return slc
+        if self.is_leaf and variable == self:
+            return slice(None)
+        if self.is_leaf and variable != self:
+            raise KeyError(f"Variable '{variable.name}' not found in '{self.name}'")
+        running_idx = 0
+        for child in self.children:
+            print(child._hash_name(), variable._hash_name())
+            if variable == child:
+                return slice(running_idx, running_idx + child.dim)  # type: ignore
+            if variable in child.leaves:
+                child_slice = child.get_slice(variable)
+                return slice(
+                    running_idx + child_slice.start, running_idx + child_slice.stop
+                )
+            running_idx += child.dim  # type: ignore
+        raise KeyError(f"Variable '{variable.name}' not found in '{self.name}'")
 
     def is_empty(self) -> bool:
-        """Checks if the variable is empty, i.e. has no keys.
+        """Check if the variable has no children and dim is 0.
 
         Returns:
             bool: True if the variable is empty, False otherwise.
         """
-        return len(self) == 0
+        return self.dim is None and len(self.children) == 0 and self.name is None
+
+    def _hash_name(self):
+        hash_name = self.name if self.name is not None else ""
+        hash_name += str(self.dim)
+        for v in self.children:
+            hash_name += v._hash_name()  # pylint: disable=W0212
+            hash_name += ";"
+        return hash_name
+
+    def __hash__(self):
+        return hash(self._hash_name())
+
+    def __eq__(self, other):
+        if not isinstance(other, Variable):
+            return False
+        return self._hash_name() == other._hash_name()
 
     def unify(self, other: Variable) -> Variable:
         """Unifies two variables, i.e. checks if they are compatible and returns
@@ -104,94 +194,48 @@ class Variable(OrderedDict):
             return other
         if other.is_empty():
             return self
-        if self.has_multiple_axes or other.has_multiple_axes:
+        if isinstance(self.dim, tuple) or isinstance(other.dim, tuple):
             raise ValueError("Can not combine variables with multiple axes.")
-        key_diff = self.keys() ^ other.keys()
-        out = {}
-        if len(key_diff) != 0:
+
+        # check name
+        if self.name is None:
+            out_name = other.name
+        elif other.name is None:
+            out_name = self.name
+        elif self.name != other.name:
             raise ValueError("Variable names have to agree for unification.")
-        for key in self.keys() & other.keys():
-            out[key] = Variable.check(self, other, key, key)
-        return Variable.from_dict(out)
+        else:
+            out_name = self.name
 
-    @classmethod
-    def check(cls, variable_a: Variable, variable_b: Variable, a_key, b_key):
-        if variable_a[a_key] is None:
-            return variable_b[b_key]
-        if variable_b[b_key] is None:
-            return variable_a[a_key]
-        if variable_a[a_key] != variable_b[b_key]:
+        # check dim
+        if self.dim is None:
+            out_dim = other.dim
+        elif other.dim is None:
+            out_dim = self.dim
+        elif self.dim != other.dim:
             raise ValueError("Variable dimensions have to agree for unification.")
-        return variable_a[a_key]
+        else:
+            out_dim = self.dim
 
-    def __mul__(self, other: Variable) -> Variable:
-        """Combines two variables to a single object.
+        # check children
+        out_children = []
+        for child1, child2 in zip(self.children, other.children):
+            out_children.append(child1.unify(child2))
 
-        Args:
-            other (Variable): The other variable.
-
-        Returns:
-            Variable: The combined variable containing the information from
-                both original variables (Cross-product)
-        """
-        if self.has_multiple_axes or other.has_multiple_axes:
-            raise ValueError("Can not combine variables with multiple axes.")
-        if len(self.keys() & other.keys()) > 0:
-            raise ValueError("Variables with overlapping names cannot be combined.")
-        result = Variable.from_dict(self)
-        for k, v in other.items():
-            result[k] = v
-        return result
-
-    def __add__(self, other: Variable) -> Variable:
-        return self * other
-
-    def __hash__(self):
-        hash_name = ""
-        for key, value in self.items():
-            hash_name += key + str(value) + "_"
-        return hash(hash_name)
-
-    @property
-    def dim(self):
-        first_value = next(iter(self.values()), None)
-        if isinstance(first_value, tuple):  # there can be no other keys
-            return prod(first_value)
-        return sum(self.values())
+        return Variable(out_name, out_dim, out_children)
 
     @property
     def shape(self):
-        if self.has_multiple_axes:
-            return list(self.values())[0]
+        if isinstance(self.dim, tuple):
+            return self.dim
         return (self.dim,)
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}({dict(self)})"
-
-    def __contains__(self, variable) -> bool:
-        if isinstance(variable, str):
-            return super().__contains__(variable)
-
-        if isinstance(variable, Variable):
-            return all((k in self and self[k] == v) for k, v in variable.items())
-
+    def __contains__(self, other: Variable):
+        if self.is_empty():
+            return False
+        if other == self:
+            return True
+        for child in self.children:
+            if other in child:
+                return True
         return False
-
-    def __getitem__(self, val: str | slice | list[str] | tuple[str]):
-        # if isinstance(val, slice):
-        #     keys = list(self.keys())
-        #     new_slice = slice(
-        #         keys.index(val.start) if val.start is not None else None,
-        #         keys.index(val.stop) if val.stop is not None else None,
-        #         val.step,
-        #     )
-        #     new_keys = keys[new_slice]
-        #     return self.from_dict({k: int(self[k]) for k in new_keys})
-        # if isinstance(val, (list, tuple)):
-        #     return self.from_dict({k: int(self[k]) for k in val})
-        # if len(self.keys()) == 1 and isinstance(val, int):
-        #     return SubVariable(self, val)
-        # elif len(self.keys()) == 1 and isinstance(val, slice):
-        #     return SubVariable(self, val)
-        # return super().__getitem__(val)
-        raise NotImplementedError("Slicing and indexing is not implemented yet.")
