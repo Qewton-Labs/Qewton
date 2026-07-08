@@ -74,7 +74,12 @@ class Mesh(Generic[TensorType]):
 
     @property
     def vertex_count(self) -> int:
-        return len(self.vertices)  # type: ignore
+        """Returns the number of vertices in this mesh.
+
+        Returns:
+            int: The number of vertices.
+        """
+        return len(self.vertices)
 
     def _find_boundary_facets(self):
         if len(self.cells.shape) <= 1:

@@ -52,6 +52,19 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         file_path: str,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> MeshGeometry:
+        """Loads a *volume* mesh from a path.
+
+        Args:
+            variable (Variable): The variable connected to this geometry.
+            file_path (str): The path to the mesh file. This uses the meshio library
+                load the mesh. Supported formats are .msh/.vtk/.vtu/.xdmf/.inp and
+                more, see the meshio documentation.
+            backend (type[ComputingBackend[TensorType]], optional):
+                Defaults to DEFAULT_DL_BACKEND.
+
+        Returns:
+            MeshGeometry: _description_
+        """
         return cls(variable=variable, mesh=Mesh.load_mesh(file_path, backend=backend))
 
     def __and__(self, other):
@@ -82,6 +95,9 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         return self.get_submesh(marker=marker)
 
     def mesh_info(self):
+        """Print out some general information about the mesh."""
+        print("Number of vertices:", self.mesh.vertex_count)
+        print("Number of cells:", len(self.mesh.cells))
         if len(self.mesh.marker_labels) > 0:
             print("The mesh has the markers:", self.mesh.marker_labels)
         elif self.mesh.cell_markers is not None:
@@ -233,6 +249,16 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         return point_inside
 
     def get_submesh(self, marker: int | str) -> MeshGeometry:
+        """Returns a submesh of the main mesh that only contains the provided
+        marker.
+
+        Args:
+            marker (int | str): The marker of the submesh
+
+        Returns:
+            MeshGeometry: A new mesh geometry that only consists of the
+                mesh with the marker.
+        """
         return MeshGeometry(
             variable=self.variable,
             mesh=self.mesh.get_submesh(marker),
