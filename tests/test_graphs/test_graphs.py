@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import MagicMock
-from typing import Annotated
+from typing import Annotated, Any
 
 from qewton.backends.base import TensorType
 from qewton.graphs.nodes import Node, Port, InputPort, OutputPort, NodeState
@@ -49,7 +49,7 @@ class ParamNode(Node):
 
 
 class MockBackend(Backend):
-    default_dtype = "float32"
+    default_dtype = Any
 
 
 class TestGraphs(unittest.TestCase):
@@ -190,7 +190,7 @@ class TestGraphs(unittest.TestCase):
                 return x
 
         BackendNode(backend=MockBackend)
-        config.set_dtype.assert_called_with("float32")
+        config.set_dtype.assert_called_with(TensorType)
 
     def test_unwrap_annotated_no_metadata(self):
         # Test Annotated without DataConfiguration or Callable meta

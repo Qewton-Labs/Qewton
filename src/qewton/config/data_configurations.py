@@ -138,7 +138,6 @@ class DataConfiguration:
         return -1
 
     def set_dtype(self, new_dtype):
-        # TODO: Any checkes needed here?
         self.dtype = new_dtype
 
     def get_axes_and_dim(self, idx: int) -> tuple[Axes | None, AxesDim | None]:
@@ -154,18 +153,30 @@ class DataConfiguration:
                 axes dimension at the given index, or None if they can not be
                 uniquely identified due to the presence of ellipsis.
         """
-        counter = 0
-        for axes in self.axes:
-            if isinstance(axes, EllipsisAxes):
-                # Can not get values via an index if ellipsis is present
-                return None, None
-            for dim in axes.shape:
-                if isinstance(dim, EllipsisDim):
+        if idx >= 0:
+            counter = 0
+            for axes in self.axes:
+                if isinstance(axes, EllipsisAxes):
                     # Can not get values via an index if ellipsis is present
                     return None, None
-                if counter == idx:
-                    return axes, dim
-                counter += 1
+                for dim in axes.shape:
+                    if isinstance(dim, EllipsisDim):
+                        # Can not get values via an index if ellipsis is present
+                        return None, None
+                    if counter == idx:
+                        return axes, dim
+                    counter += 1
+        else:
+            counter = -1
+            for axes in reversed(self.axes):
+                if isinstance(axes, EllipsisAxes):
+                    return None, None
+                for dim in reversed(axes.shape):
+                    if isinstance(dim, EllipsisDim):
+                        return None, None
+                    if counter == idx:
+                        return axes, dim
+                    counter -= 1
         return None, None
 
     def remove_dim(self, axis: Axes, dim: AxesDim):

@@ -10,7 +10,7 @@ class MathBackend(Backend[TensorType]):
     method selection inspired by numpy.
 
     The overall idea is that every math backend implements the numpy methods,
-    and mimics numpy's behaviour to unify the usage among all backends.
+    and mimics numpy's behavior to unify the usage among all backends.
     """
 
     # TODO: check these, currently only generated stuff
@@ -61,38 +61,42 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def ones(shape: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def ones(shape: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def ones_like(x: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def ones_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def zeros(shape: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def zeros(shape: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def zeros_like(x: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def zeros_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def empty(shape: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def empty(shape: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
-    def empty_like(x: Any, dtype: Any = None, device: Device = cpu) -> TensorType:
+    def empty_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
     def eye(
-        N: int, M: int | None = None, k: int = 0, dtype: Any = None, device: Device = cpu
+        N: int,
+        M: int | None = None,
+        k: int = 0,
+        dtype: Any = None,
+        device: Device | str = cpu,
     ) -> TensorType:
         pass
 
@@ -106,7 +110,7 @@ class MathBackend(Backend[TensorType]):
         retstep: bool = False,
         dtype: Any = None,
         axis: int = 0,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         pass
 
@@ -120,7 +124,7 @@ class MathBackend(Backend[TensorType]):
         base: float = 10.0,
         dtype: Any = None,
         axis: int = 0,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         pass
 
@@ -178,7 +182,7 @@ class MathBackend(Backend[TensorType]):
         stop: Any = None,
         step: Any = None,
         dtype: Any = None,
-        device: Device = cpu,
+        device: Device | str = cpu,
     ) -> TensorType:
         pass
 
@@ -230,11 +234,6 @@ class MathBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def argsort(x: Any, axis: int = -1) -> TensorType:
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def array(x: Any, dtype: Any = None) -> TensorType:
         pass
 
     @staticmethod
@@ -337,6 +336,11 @@ class MathBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def cbrt(x: Any) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def delete(x: Any, obj: Any, axis: int | None = None):
         pass
 
     @staticmethod
@@ -504,14 +508,14 @@ class MathBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def full(
-        shape: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+        shape: Any, fill_value: Any, dtype: Any = None, device: Device | str = cpu
     ) -> TensorType:
         pass
 
     @staticmethod
     @abstractmethod
     def full_like(
-        x: Any, fill_value: Any, dtype: Any = None, device: Device = cpu
+        x: Any, fill_value: Any, dtype: Any = None, device: Device | str = cpu
     ) -> TensorType:
         pass
 
@@ -781,7 +785,6 @@ class MathBackend(Backend[TensorType]):
         pass
 
     @staticmethod
-    @abstractmethod
     def nanmin(x: Any, axis: Any = None, keepdims: bool = False) -> TensorType:
         pass
 
@@ -851,6 +854,11 @@ class MathBackend(Backend[TensorType]):
     def pad(
         x: Any, pad_width: Any, mode: str = "constant", constant_values: Any = None
     ) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def shape(x: TensorType) -> tuple:
         pass
 
     @staticmethod
@@ -1116,6 +1124,11 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
+    def unsqueeze(x: Any, axis: Any = None) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
     def transpose(x: Any, axes: Any = None) -> TensorType:
         pass
 
@@ -1194,8 +1207,6 @@ class MathBackend(Backend[TensorType]):
         return_inverse: bool = False,
         return_counts: bool = False,
         axis: int | None = None,
-        size: int | None = None,
-        fill_value: Any = None,
     ) -> Any:
         pass
 

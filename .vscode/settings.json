@@ -32,6 +32,7 @@
         "qewton",
         "randperm",
         "Sobol",
+        "submesh",
         "TUNABLEPARAMS",
         "vecs"
     ]

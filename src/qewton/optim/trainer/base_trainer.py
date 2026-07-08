@@ -15,6 +15,7 @@ from qewton.optim.trainer.callbacks.progressbar_callback import ProgressBarCallb
 from qewton.optim.trainer.training_controllers import OptimizationPhase, TrainerState
 from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.config.devices import Device, cpu
 
 
 ###############################
@@ -52,7 +53,7 @@ class Trainer:
         optimization_phases: OptimizationPhase | list[OptimizationPhase],
         callbacks: Callback | list[Callback],
         hyperparameters: set[HyperParameter],
-        device="cpu",
+        device: str | Device = cpu,
         save_path: str = "train_results",
         progress_bar: ProgressBarCallback | None = None,
         enable_logging=True,

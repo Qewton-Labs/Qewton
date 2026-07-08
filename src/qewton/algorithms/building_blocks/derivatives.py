@@ -116,3 +116,51 @@ class Hessian(Node[TensorType]):
         x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))],
     ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim, x_dim)))]:
         return self.backend.grad.hessian(u, x)
+
+
+class MatrixDivergence(Node[TensorType]):
+    """Computes the row-wise divergence of a matrix-valued field.
+
+    The output is a vector containing the divergence of each row of the
+    matrix field with respect to the spatial input.
+    """
+
+    ell_axes = EllipsisAxes()
+    u_dim = AxesDim(None)
+    x_dim = AxesDim(None)
+
+    def forward(
+        self,
+        u: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(u_dim, x_dim)))],
+        x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))],
+    ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(u_dim,)))]:
+        return self.backend.grad.matrix_divergence(u, x)
+
+
+class Rotation(Node[TensorType]):
+    """Computes the curl/rotation of a 3D vector field."""
+
+    ell_axes = EllipsisAxes()
+    x_dim = AxesDim(None)
+
+    def forward(
+        self,
+        u: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(3,)))],
+        x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(3,)))],
+    ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(3,)))]:
+        return self.backend.grad.rotation(u, x)
+
+
+class SymmetricGradient(Node[TensorType]):
+    """Computes the symmetric gradient 0.5 * (∇u + (∇u)^T)."""
+
+    ell_axes = EllipsisAxes()
+    u_dim = AxesDim(None)
+    x_dim = AxesDim(None)
+
+    def forward(
+        self,
+        u: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(u_dim,)))],
+        x: Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(x_dim,)))],
+    ) -> Annotated[TensorType, DC(ell_axes, FeatureAxes(shape=(u_dim, x_dim)))]:
+        return self.backend.grad.symmetric_gradient(u, x)

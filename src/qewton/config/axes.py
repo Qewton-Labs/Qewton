@@ -3,7 +3,6 @@ from types import EllipsisType
 
 from qewton.config.variables import Variable
 from qewton.config.errors import DataConfigMismatchError
-from qewton.geometries.base import Geometry
 
 
 def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
@@ -135,6 +134,30 @@ class Axes:
         """
         self._shape = tuple(d for d in self._shape if d != dim)
 
+    def get_dim_idx(self, dim):
+        """
+        Returns the index of a specific dimension in the axes.
+
+        Args:
+            dim (AxesDim): The dimension to find.
+
+        Returns:
+            int: The index of the dimension, or None if not found.
+        """
+        try:
+            return self._shape.index(dim)
+        except ValueError:
+            return None
+
+    def add_dim(self, new_dim, index):
+        """Adds a new dimension to the axes at a specific index.
+
+        Args:
+            new_dim (AxesDim): The dimension to add.
+            index (int): The index at which to add the dimension.
+        """
+        self._shape = self._shape[:index] + (new_dim,) + self._shape[index:]
+
     def matches(self, other: Axes) -> bool:
         """
         Checks if these axes exactly match another `Axes` object in terms of
@@ -222,7 +245,6 @@ class Axes:
         2. Matching dimensions from the start of both shapes.
         3. Handling any remaining middle parts, especially if they contain `EllipsisDim`.
         """
-
         # First we check if they match from the end
         matching_end_1, matching_end_2 = cls._match_shapes(
             reversed(shape1), reversed(shape2)
@@ -395,7 +417,7 @@ class GeometryAxes(Axes):
 
     def __init__(
         self,
-        geometry: Geometry | None = None,
+        geometry=None,
         shape: tuple[int | AxesDim, ...] | None = None,
     ):
         """Represents geometry-specific axes, typically used for
@@ -412,19 +434,21 @@ class GeometryAxes(Axes):
             ValueError: Only one geometry or shape can be provided, not both.
             ValueError: Either geometry or shape must be provided.
         """
+        from qewton.geometries.base import Geometry
+
         self._geometry: Geometry
-        if geometry is not None and shape is not None:
-            raise ValueError("Only one of geometry or shape can be provided.")
         if geometry is not None:
             self._geometry = geometry
-        elif shape is not None:
+        elif shape is not None and geometry is None:
             self._geometry = Geometry(
                 shape=tuple(i.size if isinstance(i, AxesDim) else i for i in shape)
             )
         else:
             raise ValueError("Either geometry or shape must be provided.")
         default_shape = (...,)
-        if not isinstance(self._geometry.shape, EllipsisType):
+        if shape is not None:
+            default_shape = shape
+        elif not isinstance(self._geometry.shape, EllipsisType):
             default_shape = self._geometry.shape
         super().__init__(*default_shape)
 

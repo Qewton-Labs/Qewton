@@ -1,5 +1,6 @@
 import torch
 from qewton.backends.param import ParameterBackend
+from qewton.backends.torch.device import get_torch_device
 
 
 class TorchParameterBackend(ParameterBackend[torch.Tensor]):
@@ -22,7 +23,7 @@ class TorchParameterBackend(ParameterBackend[torch.Tensor]):
 
     @staticmethod
     def to(data: torch.Tensor, device) -> torch.Tensor:
-        new_data = data.to(device).detach()
+        new_data = data.to(get_torch_device(device=device)).detach()
         new_data.requires_grad = data.requires_grad
         return new_data
 

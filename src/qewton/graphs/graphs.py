@@ -592,6 +592,12 @@ class TrackingObject:
         subtract_node = Subtract()
         return subtract_node(self, other)
 
+    def __neg__(self):
+        from qewton.algorithms.building_blocks.math import Negative
+
+        neg_node = Negative()
+        return neg_node(self)
+
     def __rsub__(self, other):
         from qewton.algorithms.building_blocks.math import Subtract
 
@@ -646,6 +652,30 @@ class TrackingObject:
         slice_node = Slice(key)
         return slice_node(self)
 
+    def __setitem__(self, key, value):
+        from qewton.algorithms.building_blocks.array_operations import SetItem
+
+        set_item_node = SetItem()
+        return set_item_node(self, key, value)
+
+    def dot(self, other):
+        from qewton.algorithms.building_blocks.math import Dot
+
+        dot_node = Dot()
+        return dot_node(self, other)
+
+    def squeeze(self, dim):
+        from qewton.algorithms.building_blocks.array_operations import Squeeze
+
+        squeeze_node = Squeeze(dim)
+        return squeeze_node(self)
+
+    def unsqueeze(self, dim):
+        from qewton.algorithms.building_blocks.array_operations import Unsqueeze
+
+        unsqueeze_node = Unsqueeze(dim)
+        return unsqueeze_node(self)
+
     def gradient(self, with_respect_to):
         from qewton.algorithms.building_blocks.derivatives import Gradient
 
@@ -681,6 +711,24 @@ class TrackingObject:
 
         hes_node = Hessian()
         return hes_node(self, with_respect_to)
+
+    def sym_grad(self, with_respect_to):
+        from qewton.algorithms.building_blocks.derivatives import SymmetricGradient
+
+        sym_grad_node = SymmetricGradient()
+        return sym_grad_node(self, with_respect_to)
+
+    def rot(self, with_respect_to):
+        from qewton.algorithms.building_blocks.derivatives import Rotation
+
+        rot_node = Rotation()
+        return rot_node(self, with_respect_to)
+
+    def matrix_div(self, with_respect_to):
+        from qewton.algorithms.building_blocks.derivatives import MatrixDivergence
+
+        matrix_div_node = MatrixDivergence()
+        return matrix_div_node(self, with_respect_to)
 
 
 # endregion

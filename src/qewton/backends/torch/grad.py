@@ -1,6 +1,9 @@
 import torch
 from qewton.backends.grad import GradBackend
 
+# TODO: Try to use torch.func to improve gradients,
+#       or also just vmap for speed up of the loops
+
 
 class TorchGradBackend(GradBackend[torch.Tensor]):
     """Torch implementations of differential operators."""
@@ -89,3 +92,49 @@ class TorchGradBackend(GradBackend[torch.Tensor]):
 
         # Stack to form Hessian matrix (batch, input_dim, input_dim)
         return torch.stack(hessian_rows, dim=-2)
+
+    @staticmethod
+    def matrix_divergence(u, x):
+        matrix_div = torch.zeros((*u.shape[:-2], u.shape[-2]), device=u.device)
+        for i in range(u.shape[-2]):
+            row = u[..., i, :]
+            row_div = torch.zeros((*row.shape[:-1], 1), device=u.device)
+
+            for j in range(row.shape[-1]):
+                grad_ij = torch.autograd.grad(row[..., j].sum(), x, create_graph=True)[0]
+                row_div += grad_ij[..., j : j + 1]
+            matrix_div[..., i : i + 1] = row_div
+
+        return matrix_div
+
+    @staticmethod
+    def rotation(u, x):
+        if u.shape[-1] != 3 or x.shape[-1] != 3:
+            raise ValueError("Rotation requires 3-dimensional field and input.")
+
+        jac_rows = [
+            torch.autograd.grad(u[..., i].sum(), x, create_graph=True)[0]
+            for i in range(3)
+        ]
+        jacobian = torch.stack(jac_rows, dim=-2)
+
+        rotation = torch.stack(
+            [
+                jacobian[..., 2, 1] - jacobian[..., 1, 2],
+                jacobian[..., 0, 2] - jacobian[..., 2, 0],
+                jacobian[..., 1, 0] - jacobian[..., 0, 1],
+            ],
+            dim=-1,
+        )
+
+        return rotation
+
+    @staticmethod
+    def symmetric_gradient(u, x):
+        jac_rows = [
+            torch.autograd.grad(u[..., i].sum(), x, create_graph=True)[0]
+            for i in range(u.shape[-1])
+        ]
+        jacobian = torch.stack(jac_rows, dim=-2)
+
+        return 0.5 * (jacobian + jacobian.transpose(-2, -1))

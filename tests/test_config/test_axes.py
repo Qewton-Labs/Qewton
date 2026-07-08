@@ -9,10 +9,10 @@ from qewton.config.axes import (
     GeometryAxes,
     FeatureAxes,
     EllipsisAxes,
-    Geometry,
 )
 from qewton.config.variables import Variable
 from qewton.config.errors import DataConfigMismatchError
+from qewton.geometries.base import Geometry
 
 # --- AxesDim Tests ---
 

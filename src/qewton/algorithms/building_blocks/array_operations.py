@@ -1,27 +1,40 @@
 from copy import deepcopy
 from types import EllipsisType
-from typing import Annotated
+from typing import Annotated, Any
 
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType
 from qewton.backends.base import DeepLearningBackend
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.axes import EllipsisAxes, FeatureAxes
+from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.config.variables import Variable
 from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort, Node
 
 
-class Narrow(Node[TensorType]):
-    def __init__(self, dim=None, start=0, length=None, backend=DEFAULT_DL_BACKEND):
-        self.dim = dim if dim is not None else NO_DEFAULT
-        self.start = start
-        self.length = length if length is not None else NO_DEFAULT
-        super().__init__(name=None, backend=backend)
+# region: Slicing and value setting
+class SetItem(Node[TensorType]):
+    data_axis = EllipsisAxes()
 
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
-        return self.backend.math.narrow(x)
+        inp: Annotated[TensorType, DataConfiguration(data_axis)],
+        key: Annotated[Any, DataConfiguration.empty()],
+        value: Annotated[TensorType, DataConfiguration.empty()],
+    ) -> Annotated[TensorType, DataConfiguration(data_axis)]:
+        inp[key] = value
+        return inp
+
+    def _track(self, *args, **kwargs):
+        output_trackers = super()._track(*args, **kwargs)
+        # Since set item happens in place, we have to update the
+        # TrackingObject in place as well. Else while tracking this
+        # operation happens at an arbitrary point.
+        if "inp" in kwargs:
+            inp_tacker = kwargs["inp"]
+        else:
+            inp_tacker = args[0]
+        inp_tacker.to_ports = []
+        inp_tacker.last_output_port = self.output_ports[0]
+        return output_trackers
 
 
 class Slice(Node[TensorType]):
@@ -181,3 +194,100 @@ class ConcatVariables(Node[TensorType]):
 
     def forward(self, *inp):
         return self.backend.math.concatenate(inp, axis=self.concat_dim)
+
+
+# endregion
+# region: Reshaping
+
+
+class Narrow(Node[TensorType]):
+    def __init__(self, dim=None, start=0, length=None, backend=DEFAULT_DL_BACKEND):
+        self.dim = dim if dim is not None else NO_DEFAULT
+        self.start = start
+        self.length = length if length is not None else NO_DEFAULT
+        super().__init__(name=None, backend=backend)
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
+        return self.backend.math.narrow(x)
+
+
+class Squeeze(Node[TensorType]):
+
+    def __init__(
+        self,
+        dim: int,
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(name if name is not None else "SqueezeNode", backend=backend)
+        self.dim = dim
+
+    def forward(
+        self, inp: Annotated[TensorType, DataConfiguration.empty()]
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        return self.backend.math.squeeze(inp, self.dim)
+
+    def update_data_configs(
+        self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
+    ):
+        updated_ports = super().update_data_configs(
+            updated_port, config_dict, dynamic_configs
+        )
+        if isinstance(updated_port, InputPort):
+            axes, index_dim = dynamic_configs[updated_port].get_axes_and_dim(self.dim)
+            if axes is not None and index_dim is not None:
+                new_output_config = deepcopy(dynamic_configs[updated_port])
+                new_output_config.remove_dim(axes, index_dim)
+                old_output_config = dynamic_configs[self.output_ports[0]]
+                unify_config = old_output_config.unify_with(new_output_config)[0]
+                output_changed = old_output_config.update_config(unify_config)
+                if output_changed:
+                    updated_ports.add(self.output_ports[0])
+        return updated_ports
+
+
+class Unsqueeze(Node[TensorType]):
+
+    def __init__(
+        self,
+        dim: int,
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(name if name is not None else "UnsqueezeNode", backend=backend)
+        self.dim = dim
+
+    def forward(
+        self, inp: Annotated[TensorType, DataConfiguration.empty()]
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        return self.backend.math.unsqueeze(inp, self.dim)
+
+    def update_data_configs(
+        self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
+    ):
+        updated_ports = super().update_data_configs(
+            updated_port, config_dict, dynamic_configs
+        )
+        if isinstance(updated_port, InputPort):
+            axes, index_dim = dynamic_configs[updated_port].get_axes_and_dim(self.dim)
+            if axes is not None and index_dim is not None:
+                # Build new config and add a dimension
+                new_output_config = deepcopy(dynamic_configs[updated_port])
+                new_axes, new_dim = new_output_config.get_axes_and_dim(self.dim)
+                dim_idx = new_axes.get_dim_idx(new_dim)  # type: ignore
+                new_axes.add_dim(AxesDim(1), dim_idx + 1)  # type: ignore
+                print(new_output_config)
+                # Check if the old config is the same anyway
+                old_output_config = dynamic_configs[self.output_ports[0]]
+                unify_config = old_output_config.unify_with(new_output_config)[0]
+                output_changed = old_output_config.update_config(unify_config)
+                # If something changed we have to pass this through the graph
+                if output_changed:
+                    updated_ports.add(self.output_ports[0])
+        return updated_ports
+
+
+# endregion

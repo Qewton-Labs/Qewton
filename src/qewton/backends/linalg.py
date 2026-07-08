@@ -1,5 +1,4 @@
 from abc import abstractmethod
-from typing import Any
 
 from qewton.backends.base import Backend, TensorType
 
@@ -11,5 +10,22 @@ class LinAlgBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def svd(x: Any) -> tuple[TensorType, TensorType, TensorType]:
+    def svd(x: TensorType) -> tuple[TensorType, TensorType, TensorType]:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def norm(
+        x: TensorType, order: str | int = "fro", axis=None, keepdims=False
+    ) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def det(x: TensorType) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def inv(x: TensorType) -> TensorType:
         pass

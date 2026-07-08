@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Generic, TypeVar, ClassVar, TYPE_CHECKING
+from typing import Generic, TypeVar, ClassVar, TYPE_CHECKING, Protocol, Any
 
 from qewton.config import dtypes as qt_dtypes
 from qewton.config.devices import Device
@@ -11,12 +11,39 @@ if TYPE_CHECKING:
     from qewton.backends.optim import OptimBackend
     from qewton.backends.nn import NNBackend
     from qewton.backends.linalg import LinAlgBackend
+    from qewton.backends.random import RandomBackend
 
 
-TensorType = TypeVar("TensorType")
+class ArrayLike(Protocol):
+
+    def reshape(self, *new_shape) -> "TensorType": ...  # type: ignore
+
+    @property
+    def shape(self) -> tuple[int, ...]: ...
+
+    @property
+    def size(self) -> int: ...
+
+    def __len__(self) -> int: ...
+
+    def __getitem__(self, key) -> Any: ...
+
+    def __setitem__(self, key, value): ...
+
+    def __sub__(self, other) -> "TensorType": ...  # type: ignore
+
+    def __add__(self, other) -> "TensorType": ...  # type: ignore
+
+    def __mul__(self, other) -> "TensorType": ...  # type: ignore
+
+    def __rmul__(self, other) -> "TensorType": ...  # type: ignore
+
+    def __truediv__(self, other) -> "TensorType": ...  # type: ignore
+
+    def __pow__(self, other) -> "TensorType": ...  # type: ignore
 
 
-# TODO: Wa have standard datatype gives tensors, but what about float, etc.?
+TensorType = TypeVar("TensorType", bound=ArrayLike)
 
 
 class Backend(Generic[TensorType]):
@@ -30,18 +57,10 @@ class Backend(Generic[TensorType]):
     default_dtype: ClassVar[type[TensorType]]  # type: ignore
 
 
-class DeepLearningBackend(Backend[TensorType]):
-    """A Backend that implements all the necessary methods for deep learning.
-
-    Note that this structure is similar to Keras' backends.
-    """
-
+class ComputingBackend(Backend[TensorType]):
     math: ClassVar[type[MathBackend]]
-    grad: ClassVar[type[GradBackend]]
-    optim: ClassVar[type[OptimBackend]]
-    nn: ClassVar[type[NNBackend]]
+    random: ClassVar[type[RandomBackend]]
     linalg: ClassVar[type[LinAlgBackend]]
-    param: ClassVar[type[ParameterBackend]]
 
     dtypes: ClassVar[dict]
 
@@ -78,6 +97,20 @@ class DeepLearningBackend(Backend[TensorType]):
                     {', '.join(missing)}")
 
     @classmethod
+    def build_tensor(cls, data, dtype: Any = qt_dtypes.Float32) -> TensorType:
+        """Builds a tensor from the given data.
+
+        Args:
+            data: The data to build the tensor from.
+
+        Returns:
+            TensorType: The built tensor.
+        """
+        raise NotImplementedError(
+            "The build_tensor method must be implemented by subclasses of Backend."
+        )
+
+    @classmethod
     def to(cls, data, device):
         """Moves the data to the given device.
 
@@ -91,6 +124,51 @@ class DeepLearningBackend(Backend[TensorType]):
         raise NotImplementedError(
             "The moving to a different device is backend dependent."
         )
+
+    @classmethod
+    def cast_dtype(cls, data, dtype):
+        """Changes the data type of the given data.
+
+        Args:
+            data (TensorType): The data to change the type of.
+            dtype (qt_dtypes): The new type of the data.
+
+        Returns:
+            TensorType: The data with the new type.
+        """
+        raise NotImplementedError("The type changing is backend dependent")
+
+
+class DeepLearningBackend(ComputingBackend[TensorType]):
+    """A Backend that implements all the necessary methods for deep learning.
+
+    Note that this structure is similar to Keras' backends.
+    """
+
+    grad: ClassVar[type[GradBackend]]
+    optim: ClassVar[type[OptimBackend]]
+    nn: ClassVar[type[NNBackend]]
+    param: ClassVar[type[ParameterBackend]]
+
+    dtypes = {
+        qt_dtypes.BFloat16: None,
+        qt_dtypes.Float16: None,
+        qt_dtypes.Float32: None,
+        qt_dtypes.Float64: None,
+        qt_dtypes.Complex32: None,
+        qt_dtypes.Complex64: None,
+        qt_dtypes.Complex128: None,
+        qt_dtypes.UInt8: None,
+        qt_dtypes.UInt16: None,
+        qt_dtypes.UInt32: None,
+        qt_dtypes.UInt64: None,
+        qt_dtypes.Int8: None,
+        qt_dtypes.Int16: None,
+        qt_dtypes.Int32: None,
+        qt_dtypes.Int64: None,
+        qt_dtypes.Number: None,
+        qt_dtypes.Bool: None,
+    }
 
     @classmethod
     def from_numpy(cls, data, dtype=qt_dtypes.Float32):

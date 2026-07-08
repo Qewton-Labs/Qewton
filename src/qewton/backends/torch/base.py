@@ -1,9 +1,7 @@
-from typing import TYPE_CHECKING
-
 import torch
 
 from qewton.backends.torch.device import get_torch_device
-from qewton.config.devices import CPU, CUDA, Device
+from qewton.config.devices import Device
 from qewton.config.dtypes import (
     BFloat16,
     Bool,
@@ -30,6 +28,7 @@ from qewton.backends.torch.optim import TorchOptimBackend
 from qewton.backends.torch.linalg import TorchLinAlgBackend
 from qewton.backends.torch.param import TorchParameterBackend
 from qewton.backends.torch.math import TorchMathBackend
+from qewton.backends.torch.random import TorchRandomBackend
 
 
 class TorchBackend(DeepLearningBackend[torch.Tensor]):
@@ -43,6 +42,7 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     optim = TorchOptimBackend
     linalg = TorchLinAlgBackend
     param = TorchParameterBackend
+    random = TorchRandomBackend
 
     default_dtype = torch.Tensor
 
@@ -67,8 +67,8 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     }
 
     @classmethod
-    def to(cls, data, device):
-        return data.to(device)
+    def to(cls, data: torch.Tensor, device):
+        return data.to(cls.get_device(device))
 
     @classmethod
     def load(cls, path, **kwargs):
@@ -76,8 +76,18 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
 
     @classmethod
     def from_numpy(cls, data, dtype=Float32):
-        return torch.from_numpy(data).to(dtype=cls.dtypes[dtype])
+        converted_type = cls.dtypes.get(dtype, dtype)
+        return torch.from_numpy(data).to(converted_type)
 
     @classmethod
     def get_device(cls, device: Device):
         return get_torch_device(device)
+
+    @classmethod
+    def build_tensor(cls, data, dtype=Float32) -> torch.Tensor:
+        converted_type = cls.dtypes.get(dtype, dtype)
+        return torch.as_tensor(data, dtype=converted_type)
+
+    @classmethod
+    def cast_dtype(cls, data: torch.Tensor, dtype):
+        return data.type(cls.dtypes.get(dtype, dtype))

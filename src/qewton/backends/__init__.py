@@ -1,4 +1,5 @@
-from .base import Backend, TensorType, DeepLearningBackend
+from .base import Backend, TensorType, DeepLearningBackend, ComputingBackend
+from .numpy.base import NumPyBackend
 
 # internal hierarchy: if torch exists, we set it as the default backend,
 # otherwise if tensorflow exists, we set it as the default backend.
