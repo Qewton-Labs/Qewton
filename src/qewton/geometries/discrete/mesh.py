@@ -9,6 +9,28 @@ from qewton.config.dtypes import Int32, Float32
 
 
 class Mesh(Generic[TensorType]):
+    """A generic simplex mesh represented by vertices and cells.
+
+    Args:
+        vertices (list[list[float]] | TensorType): The vertices of the mesh.
+        cells (list[list[int]] | TensorType): The cells of the mesh. A simplex always has
+            d+1 corners, where d is the dimension of the vertices. For example in 2D, a
+            vertex is some point [x, y] and a cell corresponds to a triangle given by
+            [vertex_1, vertex_2, vertex_3].
+        cell_markers (list[int] | None | TensorType, optional): Some markers of the
+            cells. For each cell one marker must be provided. Defaults to None.
+        faces (list[list[int]] | None | TensorType, optional): A list of special faces.
+            Only needed if some faces should have special markers. Defaults to None.
+        face_markers (list[int] | None | TensorType, optional): The markers of the faces.
+            Defaults to None.
+        marker_labels (dict[str, tuple[int, int]] | None, optional): The above markers
+            are based on integers. If names should be used instead, they can be
+            mapped with this dictionary. The dictionary has the name of the marker as
+            a key and maps it to a tuple of (marker integer, entity dimension).
+            Defaults to None.
+        backend (type[ComputingBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
 
     def __init__(
         self,
@@ -17,6 +39,7 @@ class Mesh(Generic[TensorType]):
         cell_markers: list[int] | None | TensorType = None,
         faces: list[list[int]] | None | TensorType = None,
         face_markers: list[int] | None | TensorType = None,
+        marker_labels: dict[str, tuple[int, int]] | None = None,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
         self.backend = backend
@@ -35,6 +58,7 @@ class Mesh(Generic[TensorType]):
             if face_markers is not None
             else None
         )
+        self.marker_labels = {} if marker_labels is None else marker_labels
 
         # Data for normals and volumes that are only computed once
         self.cell_volumes: TensorType | None = None
@@ -47,8 +71,6 @@ class Mesh(Generic[TensorType]):
         )
 
         self._find_boundary_facets()
-
-        # TODO: Add names <-> marker connection
 
     @property
     def vertex_count(self) -> int:
@@ -176,90 +198,32 @@ class Mesh(Generic[TensorType]):
             Mesh: The mesh object containing the mesh from the file.
         """
         try:
-            import meshio  # pylint: disable=import-outside-toplevel # type: ignore
+            from qewton.geometries.discrete.load_meshes_helper import (
+                load_file_with_meshio,
+            )  # pylint: disable=import-outside-toplevel # type: ignore
         except ImportError as e:
             raise ImportError(
                 "For loading meshes the library meshio is required. Install it via pip"
                 "or load the mesh manually to pass the mesh information."
             ) from e
 
-        msh = meshio.read(file_path)
-        # Read all cell data:
-        priority = ["tetra", "triangle", "line", "vertex"]
-        p_key, key_idx = "", 0
-        for key_idx, p_key in enumerate(priority):
-            if p_key in msh.cells_dict:
-                break
-        # Check for markers of the cells and facets.
-        cells, cell_markers, faces, face_markers = cls._read_markers_from_file(
-            msh, marker_key, default_cell_tags, p_key, priority[key_idx + 1], backend
+        vertices, cells, cell_markers, faces, face_markers, marker_labels = (
+            load_file_with_meshio(
+                file_path=file_path,
+                marker_key=marker_key,
+                default_cell_tags=default_cell_tags,
+                backend=backend,
+            )
         )
         return cls(
-            vertices=msh.points,
+            vertices=vertices,
             cells=cells,
             cell_markers=cell_markers,
             faces=faces,
             face_markers=face_markers,
+            marker_labels=marker_labels,
             backend=backend,
         )
-
-    @classmethod
-    def _read_markers_from_file(
-        cls,
-        msh,
-        marker_key,
-        default_cell_tags,
-        cell_key,
-        face_key,
-        backend: type[ComputingBackend[TensorType]],
-    ):
-        # First try to find a key if not provided by the user
-        if marker_key is None:
-            candidates = [
-                "gmsh:physical",
-                "material",
-                "Material",
-                "region",
-                "cell_tags",
-            ]
-            for c in candidates:
-                if c in msh.cell_data:
-                    marker_key = c
-                    break
-        # build all cells:
-        cells = []
-        for block in msh.cells:
-            if block.type == cell_key:
-                cells.extend(block.data)
-        faces = []
-        cell_markers = default_cell_tags * backend.math.ones(
-            (len(cells),), dtype=backend.dtypes[Int32]
-        )
-        face_markers = []
-        # Try to read out the markers from the mesh:
-        if marker_key in msh.cell_data:
-            marker_counter = 0
-            for i, block in enumerate(msh.cells):
-                # Cell data has markers for each block
-                markers = backend.build_tensor(
-                    msh.cell_data[marker_key][i], dtype=backend.dtypes[Int32]
-                )
-                # Markers of main dimension:
-                if block.type == cell_key:
-                    assert not any(
-                        m == default_cell_tags for m in markers
-                    ), f"Default marker {default_cell_tags} tag found in the mesh \
-                        data. This can lead to unexpected behavior."
-                    cell_markers[marker_counter : marker_counter + len(markers)] = markers
-                    marker_counter += len(markers)
-                # Facets marker:
-                elif block.type == face_key:
-                    faces.extend(block.data)
-                    face_markers.extend(markers)
-        elif marker_key is not None:
-            print(f"Could not find cell marker information. Mesh contains \
-                {msh.cell_dict.keys()} which does not have the key {marker_key}.")
-        return cells, cell_markers, faces, face_markers
 
     def compute_cell_volumes(self) -> TensorType:
         if self.cell_volumes is not None:
@@ -329,12 +293,23 @@ class Mesh(Generic[TensorType]):
             vertices=boundary_vertices,
             cells=remapped_faces,
             cell_markers=mapped_face_markers,
+            marker_labels=self.marker_labels,
             backend=self.backend,
         )
 
-    def get_submesh(self, marker: int) -> Mesh:
+    def get_submesh(self, marker: int | str) -> Mesh:
         if self.cell_markers is None:
             raise ValueError("No markers in mesh available.")
+        if isinstance(marker, str):
+            assert (
+                marker in self.marker_labels
+            ), f"The marker {marker} does not appear in {self.marker_labels}"
+            marker, marker_dim = self.marker_labels[marker]
+            assert (
+                marker_dim + 1 == self.cells.shape[1]
+            ), "The provided marker belongs to a different cell dimension, \
+                please build the correct boundary mesh first."
+
         mask = self.cell_markers == marker
         if not self.backend.math.any(mask):
             raise ValueError(f"Marker {marker} not found in mesh. \
@@ -356,6 +331,7 @@ class Mesh(Generic[TensorType]):
             vertices=remaining_vertices,
             cells=new_cells,
             cell_markers=self.cell_markers[mask],
+            marker_labels=self.marker_labels,
             backend=self.backend,
         )
 

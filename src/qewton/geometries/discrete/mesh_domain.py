@@ -11,10 +11,20 @@ from qewton.config.dtypes import Bool, Int32
 
 
 class MeshGeometry(DiscreteGeometry[TensorType]):
+    """A geometry object representing a simplex mesh.
+
+    Args:
+        variable (Variable): The variable connected to this geometry.
+        mesh (Mesh): The underlying mesh object.
+        discretization_of (Geometry | None, optional): The geometry this
+            mesh is a discretization of. Defaults to None.
+        backend (type[ComputingBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
 
     def __init__(
         self,
-        variable,
+        variable: Variable,
         mesh: Mesh,
         discretization_of: Geometry | None = None,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
@@ -67,6 +77,20 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
     def _get_volume(self):
         cell_volumes = self.mesh.compute_cell_volumes()
         return self.backend.math.sum(cell_volumes)
+
+    def get_marker(self, marker):
+        return self.get_submesh(marker=marker)
+
+    def mesh_info(self):
+        if len(self.mesh.marker_labels) > 0:
+            print("The mesh has the markers:", self.mesh.marker_labels)
+        elif self.mesh.cell_markers is not None:
+            print(
+                "The mesh has the markers:",
+                self.backend.math.unique(self.mesh.cell_markers),
+            )
+        else:
+            print("No markers are known in the mesh.")
 
     @property
     def boundary(self) -> MeshBoundaryGeometry:
@@ -185,8 +209,12 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             # bbox filter
             mask = (
                 ~point_inside
-                & self.backend.math.all(points >= self.bbox_min[cell], axis=1)  # type: ignore
-                & self.backend.math.all(points <= self.bbox_max[cell], axis=1)  # type: ignore
+                & self.backend.math.all(
+                    points >= self.bbox_min[cell], axis=1  # type: ignore
+                )
+                & self.backend.math.all(
+                    points <= self.bbox_max[cell], axis=1  # type: ignore
+                )
             )
 
             idx = self.backend.math.where(mask)[0]
@@ -204,7 +232,7 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             point_inside[idx[bary_mask]] = True
         return point_inside
 
-    def get_submesh(self, marker: int) -> MeshGeometry:
+    def get_submesh(self, marker: int | str) -> MeshGeometry:
         return MeshGeometry(
             variable=self.variable,
             mesh=self.mesh.get_submesh(marker),
@@ -270,8 +298,12 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         for cell in range(len(self.mesh.cells)):
             mask = (
                 ~point_inside
-                & self.backend.math.all(points >= self.face_bbox_min[cell], axis=1)  # type: ignore
-                & self.backend.math.all(points <= self.face_bbox_max[cell], axis=1)  # type: ignore
+                & self.backend.math.all(
+                    points >= self.face_bbox_min[cell], axis=1  # type: ignore
+                )
+                & self.backend.math.all(
+                    points <= self.face_bbox_max[cell], axis=1  # type: ignore
+                )
             )
             idx = self.backend.math.where(mask)[0]
             if len(idx) == 0:
@@ -445,7 +477,7 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         normals[point_found] = self.geometry.mesh.boundary_normals[cell_idx[point_found]]
         return normals
 
-    def get_submesh(self, marker: int) -> MeshBoundaryGeometry:
+    def get_submesh(self, marker: int | str) -> MeshBoundaryGeometry:
         sub_mesh_geo = MeshBoundaryGeometry(self.geometry)
         sub_mesh_geo.mesh = self.mesh.get_submesh(marker)
         return sub_mesh_geo
