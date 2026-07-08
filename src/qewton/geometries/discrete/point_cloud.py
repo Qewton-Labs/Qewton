@@ -58,7 +58,7 @@ class PointCloud(DiscreteGeometry[TensorType]):
         return math.prod(side_dist)
 
     def create_boundary(self):
-        raise NotImplementedError("Point clouds dont have have boundary")
+        raise NotImplementedError("Point clouds dont have a boundary.")
 
     def sample_random_uniform_from_discretization(
         self, n_points: int, device: Device | str = cpu

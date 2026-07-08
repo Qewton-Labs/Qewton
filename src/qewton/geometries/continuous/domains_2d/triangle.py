@@ -4,7 +4,7 @@ from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,
 )
-from qewton.geometries.discrete.mesh_domain import MeshGeometry, Mesh
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry, Mesh
 from qewton.config.variables import Variable
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND

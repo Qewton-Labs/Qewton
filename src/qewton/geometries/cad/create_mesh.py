@@ -2,7 +2,7 @@ from pathlib import Path
 import gmsh
 
 from qewton.config.variables import Variable
-from qewton.geometries.discrete.mesh_domain import MeshGeometry
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 
