@@ -14,5 +14,5 @@ from .errors import DataConfigMismatchError
 from .data_configurations import DataConfiguration
 
 from .variables import Variable
-from .devices import Device, cpu, cuda
+from .devices import Device, cpu, cuda, cuda_available
 from .dtypes import *

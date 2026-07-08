@@ -18,7 +18,7 @@ def all_subclasses(cls):
 
 BACKENDS = all_subclasses(ComputingBackend)
 T = Variable("t", 1)
-devices = [cpu, cuda(0)]
+devices = [cpu, cuda(0)] if cuda_available() else [cpu]
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
