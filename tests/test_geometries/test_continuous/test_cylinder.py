@@ -5,7 +5,7 @@ import math
 from qewton.backends.base import ComputingBackend, DeepLearningBackend
 from qewton.geometries.continuous.domains_3d.cylinder import Cylinder
 from qewton.config.variables import Variable
-from qewton.config.devices import cpu, cuda
+from qewton.config.devices import cpu, cuda, cuda_available
 
 
 def all_subclasses(cls):

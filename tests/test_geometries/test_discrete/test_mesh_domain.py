@@ -5,7 +5,7 @@ from qewton.backends.base import ComputingBackend
 from qewton.geometries.discrete.mesh import Mesh
 from qewton.geometries.discrete.mesh_geometry import MeshGeometry, MeshBoundaryGeometry
 from qewton.config.variables import Variable
-from qewton.config.devices import cpu, cuda
+from qewton.config.devices import cpu, cuda, cuda_available
 
 
 def all_subclasses(cls):

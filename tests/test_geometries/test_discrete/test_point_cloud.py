@@ -4,7 +4,7 @@ import pytest
 from qewton.backends.base import ComputingBackend
 from qewton.geometries.discrete.point_cloud import PointCloud
 from qewton.config.variables import Variable
-from qewton.config.devices import cpu, cuda
+from qewton.config.devices import cpu, cuda, cuda_available
 
 
 def all_subclasses(cls):
