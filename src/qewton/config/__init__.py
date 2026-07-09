@@ -9,6 +9,8 @@ from .axes import (
     MinimumDim,
     ProductDim,
     AddedDim,
+    SubDim,
+    DivideDim,
 )
 from .errors import DataConfigMismatchError
 from .data_configurations import DataConfiguration
