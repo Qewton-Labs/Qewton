@@ -1,3 +1,5 @@
+from typing import Literal
+
 import torch
 from qewton.backends.nn import NNBackend
 
@@ -25,3 +27,15 @@ class TorchNNBackend(NNBackend[torch.Tensor]):
     batch_norm1d = torch.nn.functional.batch_norm
     batch_norm2d = torch.nn.functional.batch_norm
     batch_norm3d = torch.nn.functional.batch_norm
+
+    @staticmethod
+    def interpolate(
+        x: torch.Tensor,
+        size: int | tuple[int] | tuple[int, int] | tuple[int, int, int] | None = None,
+        scale_factor: float | tuple[float] | None = None,
+        mode: Literal[
+            "nearest", "linear", "bilinear", "bicubic", "trilinear"
+        ] = "nearest",
+        align_corners: bool = False,
+    ) -> torch.Tensor:
+        return torch.nn.functional.interpolate(x, size, scale_factor, mode, align_corners)

@@ -1,7 +1,7 @@
 import torch
 
 from qewton.backends.torch.device import get_torch_device
-from qewton.config.devices import Device
+from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import (
     BFloat16,
     Bool,
@@ -84,9 +84,13 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
         return get_torch_device(device)
 
     @classmethod
-    def build_tensor(cls, data, dtype=Float32) -> torch.Tensor:
+    def build_tensor(
+        cls, data, dtype=Float32, device: Device | str = cpu
+    ) -> torch.Tensor:
         converted_type = cls.dtypes.get(dtype, dtype)
-        return torch.as_tensor(data, dtype=converted_type)
+        if isinstance(data, torch.Tensor):
+            return data.to(dtype=converted_type)
+        return torch.as_tensor(data, dtype=converted_type, device=cls.get_device(device))
 
     @classmethod
     def cast_dtype(cls, data: torch.Tensor, dtype):

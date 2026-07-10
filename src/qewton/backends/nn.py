@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Any
+from typing import Any, Literal
 
 from qewton.backends.base import Backend, TensorType
 
@@ -193,5 +193,18 @@ class NNBackend(Backend[TensorType]):
         training: bool = False,
         momentum: float = 0.1,
         eps: float = 1e-5,
+    ) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def interpolate(
+        x: Any,
+        size: int | tuple[int] | tuple[int, int] | tuple[int, int, int] | None = None,
+        scale_factor: float | tuple[float] | None = None,
+        mode: Literal[
+            "nearest", "linear", "bilinear", "bicubic", "trilinear"
+        ] = "nearest",
+        align_corners: bool = False,
     ) -> TensorType:
         pass

@@ -24,6 +24,7 @@ from qewton.backends.base import ComputingBackend
 from qewton.backends.numpy.math import NumpyMathBackend
 from qewton.backends.numpy.random import NumpyRandomBackend
 from qewton.backends.numpy.linalg import NumpyLinAlgBackend
+from qewton.config.devices import Device, cpu
 
 
 class NumPyBackend(ComputingBackend[np.ndarray]):
@@ -63,7 +64,7 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
         return data.astype(converted_type)
 
     @classmethod
-    def build_tensor(cls, data, dtype=Float32) -> np.ndarray:
+    def build_tensor(cls, data, dtype=Float32, device: Device | str = cpu) -> np.ndarray:
         converted_type = cls.dtypes.get(dtype, dtype)
         return np.asarray(data, dtype=converted_type)
 

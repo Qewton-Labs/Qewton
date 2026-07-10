@@ -3,8 +3,9 @@ from typing import Annotated, Literal, Generic
 from qewton.algorithms.building_blocks.parameters import ParameterNode
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType, DeepLearningBackend
 from qewton.config.data_configurations import DataConfiguration as DC
-from qewton.config.axes import FeatureAxes, AxesDim, BatchAxes, GeometryAxes
+from qewton.config.axes import FeatureAxes, AxesDim, BatchAxes, GeometryAxes, EllipsisAxes
 from qewton.algorithms.building_blocks.activation_functions import ReLU
+from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.graphs.graphs import Graph
 from qewton.graphs.nodes import Node, NodeState
@@ -43,7 +44,7 @@ class FunctionalConv(Node[TensorType]):
         self.groups = groups
 
         # Shape information for data configurations
-        self.batch_axes = BatchAxes()
+        self.batch_axes = BatchAxes(AxesDim(None))
         channel_dim_in = AxesDim(None)
         self.channel_dim_out = AxesDim(None)
         kernel_dims = tuple(AxesDim(None) for _ in range(dim))
@@ -189,6 +190,7 @@ class Conv(GraphNode, Generic[TensorType]):
             backend=backend,
             **kwargs,
         )
+        self._graph.setup()
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
 
@@ -374,7 +376,7 @@ class DoubleConv(GraphNode, Generic[TensorType]):
             backend=backend,
             **kwargs,
         )
-
+        self._graph.setup()
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
 
@@ -398,11 +400,10 @@ class PoolingNode(Node[TensorType]):
         state: NodeState = NodeState.FIXED,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
-        super().__init__(name, state, backend)
         self.backend: type[DeepLearningBackend[TensorType]] = backend
         self.kernel_size = kernel_size
         # Axes for dataconfigs:
-        self.batch_axes = BatchAxes()
+        self.batch_axes = EllipsisAxes()
         self.feature_axes = FeatureAxes(shape=(AxesDim(None),))
         in_geo_dims, out_geo_dims = [], []
         for i in range(len(kernel_size)):
@@ -410,6 +411,7 @@ class PoolingNode(Node[TensorType]):
             out_geo_dims.append(self._build_output_dim(in_geo_dims[-1], i))
         self.in_geo_axes = GeometryAxes(shape=tuple(in_geo_dims))
         self.out_geo_axes = GeometryAxes(shape=tuple(out_geo_dims))
+        super().__init__(name, state, backend)
 
     def _build_output_dim(self, input_dim, dim_idx) -> AxesDim:
         """Builds the coupling between the input and output axes, which
@@ -649,6 +651,100 @@ class AvgPool3D(AvgPool1D[TensorType]):
 
 
 # region: Upsampling
+class Interpolate(Node[TensorType]):
+    """A node that interpolates a given tensor to a new shape.
+    Expected inputs are 3-D, 4-D or 5-D in shape. E.g
+    (batch, feature, width, [height, depth]), where the last to axis
+    are optional.
+
+    Args:
+        size (int | tuple[int...] | None, optional):
+            The output spatial size. Defaults to None.
+        scale_factor (int  |  tuple[int...]  |  None, optional):
+            A multiplier for the spatial size. The scale_factor has to fit the the
+            number of spatial dimensions. Defaults to None.
+            Either *size* or the *scale_factor* need to be provided.
+        mode (Literal[ &quot;nearest&quot;, &quot;linear&quot;,
+                       &quot;bilinear&quot;, &quot;bicubic&quot;,
+                       &quot;trilinear&quot; ], optional):
+            The type of interpolation scheme to use. Defaults to "nearest".
+        align_corners (bool, optional): If the pixel data should be aligned along
+            corners. Defaults to False.
+        name (str, optional): Name of the node. Defaults to "InterpolateNode".
+        backend (type[DeepLearningBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
+
+    def __init__(
+        self,
+        size: int | tuple[int] | tuple[int, int] | tuple[int, int, int] | None = None,
+        scale_factor: (
+            int | tuple[int] | tuple[int, int] | tuple[int, int, int] | None
+        ) = None,
+        mode: Literal[
+            "nearest", "linear", "bilinear", "bicubic", "trilinear"
+        ] = "nearest",
+        align_corners: bool | None = None,
+        name: str = "InterpolateNode",
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        assert (
+            size is not None or scale_factor is not None
+        ), "Either the goal size or a scale factor need to provided"
+        self.size = (size,) if isinstance(size, int) else size
+        self.scale_factor = (
+            (scale_factor,) if isinstance(scale_factor, int) else scale_factor
+        )
+        self.interpolate_mode = mode
+        self.align_corners = align_corners
+
+        # Build the data config:
+        self.batch_axes = BatchAxes(AxesDim(None))
+        self.feature_axes = FeatureAxes(shape=(AxesDim(None),))
+        # If a size is given the output shape is fix
+        if self.size is not None:
+            self.geo_axes_in = GeometryAxes(
+                shape=tuple(AxesDim(None) for _ in range(len(self.size)))
+            )
+            self.geo_axes_out = GeometryAxes(shape=self.size)
+        # For scaling we need to couple input and output
+        else:
+            assert self.scale_factor is not None
+            axes_dims = tuple(AxesDim(None) for _ in range(len(self.scale_factor)))
+            self.geo_axes_in = GeometryAxes(shape=axes_dims)
+            self.geo_axes_out = GeometryAxes(
+                shape=tuple(a * s for a, s in zip(axes_dims, self.scale_factor))
+            )
+
+        super().__init__(name, NodeState.FIXED, backend)
+        self.backend: DeepLearningBackend = self.backend
+
+    def in_data_config(self):
+        return DC(
+            self.batch_axes,
+            self.feature_axes,
+            self.geo_axes_in,
+            dtype=self.backend.default_dtype,
+        )
+
+    def out_data_config(self):
+        return DC(
+            self.batch_axes,
+            self.feature_axes,
+            self.geo_axes_out,
+            dtype=self.backend.default_dtype,
+        )
+
+    def forward(
+        self, x: Annotated[TensorType, in_data_config]
+    ) -> Annotated[TensorType, out_data_config]:
+        return self.backend.nn.interpolate(
+            x,
+            size=self.size,
+            scale_factor=self.scale_factor,  # type: ignore
+            mode=self.interpolate_mode,  # type: ignore
+            align_corners=self.align_corners,
+        )
 
 
 # endregion
@@ -656,3 +752,283 @@ class AvgPool3D(AvgPool1D[TensorType]):
 
 # region: BatchNorm
 # TODO: Add state dependent evaluation!
+class FunctionalBatchNorm(Node[TensorType]):
+    """A node implementing a batch normalization operation for 1D data.
+
+    Args:
+        dim (Literal[1, 2, 3]): The dimension of the input data.
+        momentum (float, optional): The momentum used to update the running bias.
+            Defaults to 0.1.
+        eps (float, optional): A tolerance added to the variance normalization.
+            Defaults to 1e-5.
+        name (str, optional): Name of the node. Defaults to "BatchNorm1D".
+        backend (type[DeepLearningBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
+
+    def __init__(
+        self,
+        dim: Literal[1, 2, 3],
+        momentum: float = 0.1,
+        eps: float = 1e-5,
+        name: str = "FunctionalBatchNorm",
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        self.eps = eps
+        self.momentum = momentum
+        self.training = True
+        if dim == 1:
+            self.batch_norm_fn = backend.nn.batch_norm1d
+        elif dim == 2:
+            self.batch_norm_fn = backend.nn.batch_norm2d
+        elif dim == 3:
+            self.batch_norm_fn = backend.nn.batch_norm3d
+
+        # Data configurations for the input and output ports
+        self.feature_dim = AxesDim(None)
+        self.batch_axes = BatchAxes(AxesDim(None))
+        self.feature_axes = FeatureAxes(shape=(self.feature_dim,))
+        self.geo_axes = GeometryAxes(shape=tuple(AxesDim(None) for _ in range(dim)))
+
+        super().__init__(name, NodeState.INITIALIZED, backend)
+
+    def set_mode(self, new_mode: EvaluationPhase):
+        if new_mode == EvaluationPhase.TRAIN:
+            self.training = True
+        else:
+            self.training = False
+        return super().set_mode(new_mode)
+
+    def data_config(self):
+        return DC(
+            self.batch_axes,
+            self.feature_axes,
+            self.geo_axes,
+            dtype=self.backend.default_dtype,
+        )
+
+    def parameter_data_config(self):
+        return DC(self.feature_axes, dtype=self.backend.default_dtype)
+
+    def forward(
+        self,
+        x: Annotated[TensorType, data_config],
+        running_mean: Annotated[TensorType, parameter_data_config],
+        running_var: Annotated[TensorType, parameter_data_config],
+        weight: Annotated[TensorType, parameter_data_config] = None,  # type: ignore
+        bias: Annotated[TensorType, parameter_data_config] = None,  # type: ignore
+    ) -> Annotated[TensorType, data_config]:
+        return self.batch_norm_fn(
+            x,
+            running_mean=running_mean,
+            running_var=running_var,
+            weight=weight,
+            bias=bias,
+            training=self.training,
+            momentum=self.momentum,
+            eps=self.eps,
+        )
+
+
+class BatchNorm(GraphNode, Generic[TensorType]):
+    """A node implementing a batch normalization operation for 1D data.
+
+    Args:
+        num_features (int): The number of features in the input data.
+        dim (Literal[1, 2, 3]): The dimension of the input data.
+        weight (bool, optional): If a trainable weight should be added. Defaults to False.
+        bias (bool, optional): If a trainable bias should be added. Defaults to False.
+        momentum (float, optional): The momentum used to update the running bias.
+            Defaults to 0.1.
+        eps (float, optional): A tolerance added to the variance normalization.
+            Defaults to 1e-5.
+        name (str, optional): Name of the node. Defaults to "BatchNorm".
+        backend (type[DeepLearningBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
+
+    def __init__(
+        self,
+        num_features: int,
+        dim: Literal[1, 2, 3],
+        weight: bool = False,
+        bias: bool = False,
+        momentum: float = 0.1,
+        eps: float = 1e-5,
+        name: str = "BatchNorm",
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        # Build all the nodes and the graph:
+        graph = Graph()
+        self.functional_batch_norm = FunctionalBatchNorm(
+            dim=dim,
+            momentum=momentum,
+            eps=eps,
+            backend=backend,
+        )
+        self.running_mean = ParameterNode(
+            (num_features,),
+            initial_value=backend.math.zeros((num_features,)),
+            name="running_mean",
+            backend=backend,
+        )
+        self.running_var = ParameterNode(
+            (num_features,),
+            initial_value=backend.math.ones((num_features,)),
+            name="running_var",
+            backend=backend,
+        )
+
+        graph.connect(self.running_mean, self.functional_batch_norm.input_ports[1])
+        graph.connect(self.running_var, self.functional_batch_norm.input_ports[2])
+        # Add optional arguments
+        if weight:
+            self.weight = ParameterNode(
+                (num_features,),
+                initial_value=backend.math.ones((num_features,)),
+                name="weight",
+                backend=backend,
+            )
+            graph.connect(self.weight, self.functional_batch_norm.input_ports[3])
+        if bias:
+            self.bias = ParameterNode(
+                (num_features,),
+                initial_value=backend.math.zeros((num_features,)),
+                name="bias",
+                backend=backend,
+            )
+            graph.connect(self.bias, self.functional_batch_norm.input_ports[4])
+        super().__init__(
+            graph=graph,
+            input_ports=[self.functional_batch_norm.input_ports[0]],
+            output_ports=[self.functional_batch_norm.output_ports[0]],
+            backend=backend,
+            name=name,
+        )
+        self._graph.setup()
+        self.running_mean.fix_node_state()  # no automatic gradient tracking
+        self.running_var.fix_node_state()
+        self.input = self.input_ports[0]
+        self.output = self.output_ports[0]
+
+    def forward(self, x):
+        self.input.set_value(x)
+        self.run()
+        return self.output.value
+
+
+class BatchNorm1D(BatchNorm[TensorType]):
+    """A node implementing a batch normalization operation for 1D data.
+
+    Args:
+        num_features (int): The number of features in the input data.
+        weight (bool, optional): If a trainable weight should be added. Defaults to False.
+        bias (bool, optional): If a trainable bias should be added. Defaults to False.
+        momentum (float, optional): The momentum used to update the running bias.
+            Defaults to 0.1.
+        eps (float, optional): A tolerance added to the variance normalization.
+            Defaults to 1e-5.
+        name (str, optional): Name of the node. Defaults to "BatchNorm1D".
+        backend (type[DeepLearningBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
+
+    def __init__(
+        self,
+        num_features: int,
+        weight: bool = False,
+        bias: bool = False,
+        momentum: float = 0.1,
+        eps: float = 1e-5,
+        name: str = "BatchNorm1D",
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        super().__init__(
+            num_features=num_features,
+            dim=1,
+            weight=weight,
+            bias=bias,
+            momentum=momentum,
+            eps=eps,
+            name=name,
+            backend=backend,
+        )
+
+
+class BatchNorm2D(BatchNorm[TensorType]):
+    """A node implementing a batch normalization operation for 2D data.
+
+    Args:
+        num_features (int): The number of features in the input data.
+        weight (bool, optional): If a trainable weight should be added. Defaults to False.
+        bias (bool, optional): If a trainable bias should be added. Defaults to False.
+        momentum (float, optional): The momentum used to update the running bias.
+            Defaults to 0.1.
+        eps (float, optional): A tolerance added to the variance normalization.
+            Defaults to 1e-5.
+        name (str, optional): Name of the node. Defaults to "BatchNorm2D".
+        backend (type[DeepLearningBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
+
+    def __init__(
+        self,
+        num_features: int,
+        weight: bool = False,
+        bias: bool = False,
+        momentum: float = 0.1,
+        eps: float = 1e-5,
+        name: str = "BatchNorm2D",
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        super().__init__(
+            num_features=num_features,
+            dim=2,
+            weight=weight,
+            bias=bias,
+            momentum=momentum,
+            eps=eps,
+            name=name,
+            backend=backend,
+        )
+
+
+class BatchNorm3D(BatchNorm[TensorType]):
+    """A node implementing a batch normalization operation for 3D data.
+
+    Args:
+        num_features (int): The number of features in the input data.
+        weight (bool, optional): If a trainable weight should be added. Defaults to False.
+        bias (bool, optional): If a trainable bias should be added. Defaults to False.
+        momentum (float, optional): The momentum used to update the running bias.
+            Defaults to 0.1.
+        eps (float, optional): A tolerance added to the variance normalization.
+            Defaults to 1e-5.
+        name (str, optional): Name of the node. Defaults to "BatchNorm3D".
+        backend (type[DeepLearningBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
+
+    def __init__(
+        self,
+        num_features: int,
+        weight: bool = False,
+        bias: bool = False,
+        momentum: float = 0.1,
+        eps: float = 1e-5,
+        name: str = "BatchNorm3D",
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        super().__init__(
+            num_features=num_features,
+            dim=3,
+            weight=weight,
+            bias=bias,
+            momentum=momentum,
+            eps=eps,
+            name=name,
+            backend=backend,
+        )
+
+
+# endregion
