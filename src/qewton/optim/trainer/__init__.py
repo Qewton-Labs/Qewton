@@ -6,7 +6,11 @@ from .graph_trainer import GraphBasedTrainer
 from .function_trainer import FunctionBasedTrainer
 
 from .callbacks.base_callback import Callback
-from .callbacks.training_callbacks import GraphEvalCallback
+from .callbacks.training_callbacks import (
+    GraphEvalCallback,
+    FunctionEvalCallback,
+    CacheDataCallback,
+)
 from .callbacks.progressbar_callback import ProgressBarCallback
 from .callbacks.log_callback import CSVLogger, LogCallback, TensorboardLogger
 

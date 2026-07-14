@@ -10,6 +10,7 @@ from qewton.optim.base import EvaluationPhase
 from qewton.graphs import Graph
 from qewton.graphs.nodes import Node
 from qewton.constraints.base import Constraint
+from qewton.config.devices import Device, cpu
 from qewton.data.dataloaders.base import DataNode
 
 
@@ -30,7 +31,7 @@ class GraphBasedTrainer(Trainer):
             callbacks that should be applied. Defaults to None.
         validation_interval (int, optional): The interval for validation.
             Defaults to 100.
-        device (str): Target device string for training, e.g. "cpu" or "cuda".
+        device (str | Device): Target device string for training, e.g. "cpu" or "cuda".
         save_path (str): Directory or file path where training results are stored.
         progress_bar (ProgressBarCallback | None, optional): Optional progress bar
             callback instance. If omitted, a default ProgressBarCallback is added.
@@ -45,7 +46,7 @@ class GraphBasedTrainer(Trainer):
         training_objectives: list[Constraint],
         callbacks: Callback | list[Callback] | None = None,
         validation_interval: int = 100,
-        device="cpu",
+        device: str | Device = cpu,
         save_path: str = "train_results",
         progress_bar: ProgressBarCallback | None = None,
         enable_logging=True,

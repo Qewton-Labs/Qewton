@@ -5,7 +5,7 @@ from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,
 )
-from qewton.geometries.discrete.mesh_domain import MeshGeometry, Mesh
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry, Mesh
 from qewton.config.variables import Variable
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
@@ -73,7 +73,10 @@ class Parallelogram(ContinuousGeometry[TensorType]):
             [mins[0:1], maxs[0:1], mins[1:2], maxs[1:2]], axis=0
         )
 
-    def create_mesh(self, max_vertex_distance: float | None = None) -> MeshGeometry:
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
+        self.move_to_device(device)
         # edge vectors
         e1 = self.corner_1 - self.origin
         e2 = self.corner_2 - self.origin
@@ -133,7 +136,7 @@ class Parallelogram(ContinuousGeometry[TensorType]):
             discretization_of=self,
         )
 
-    def move_to_device(self, new_device: Device):
+    def move_to_device(self, new_device: Device | str):
         self.origin = self.backend.to(self.origin, device=new_device)
         self.corner_1 = self.backend.to(self.corner_1, device=new_device)
         self.corner_2 = self.backend.to(self.corner_2, device=new_device)
@@ -395,6 +398,8 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
                 )
 
         norms = self.backend.linalg.norm(normals, order=2, axis=1, keepdims=True)
+        small_norm = self.backend.math.where(self.backend.math.abs(norms) <= 1.0e-6)[0]
+        norms[small_norm] += 1.0e-6
         return normals / norms
 
     def _get_normal_direction(self, direction: TensorType, device: Device | str = cpu):

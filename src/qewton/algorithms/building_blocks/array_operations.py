@@ -1,6 +1,6 @@
 from copy import deepcopy
 from types import EllipsisType
-from typing import Annotated
+from typing import Annotated, Any
 
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType
 from qewton.backends.base import DeepLearningBackend
@@ -10,18 +10,31 @@ from qewton.config.variables import Variable
 from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort, Node
 
 
-class Narrow(Node[TensorType]):
-    def __init__(self, dim=None, start=0, length=None, backend=DEFAULT_DL_BACKEND):
-        self.dim = dim if dim is not None else NO_DEFAULT
-        self.start = start
-        self.length = length if length is not None else NO_DEFAULT
-        super().__init__(name=None, backend=backend)
+# region: Slicing and value setting
+class SetItem(Node[TensorType]):
+    data_axis = EllipsisAxes()
 
     def forward(
         self,
-        x: Annotated[TensorType, DataConfiguration([])],
-    ) -> Annotated[TensorType, DataConfiguration([])]:
-        return self.backend.math.narrow(x)
+        inp: Annotated[TensorType, DataConfiguration(data_axis)],
+        key: Annotated[Any, DataConfiguration.empty()],
+        value: Annotated[TensorType, DataConfiguration.empty()],
+    ) -> Annotated[TensorType, DataConfiguration(data_axis)]:
+        inp[key] = value
+        return inp
+
+    def _track(self, *args, **kwargs):
+        output_trackers = super()._track(*args, **kwargs)
+        # Since set item happens in place, we have to update the
+        # TrackingObject in place as well. Else while tracking this
+        # operation happens at an arbitrary point.
+        if "inp" in kwargs:
+            inp_tacker = kwargs["inp"]
+        else:
+            inp_tacker = args[0]
+        inp_tacker.to_ports = []
+        inp_tacker.last_output_port = self.output_ports[0]
+        return output_trackers
 
 
 class Slice(Node[TensorType]):
@@ -183,6 +196,24 @@ class ConcatVariables(Node[TensorType]):
         return self.backend.math.concatenate(inp, axis=self.concat_dim)
 
 
+# endregion
+# region: Reshaping
+
+
+class Narrow(Node[TensorType]):
+    def __init__(self, dim=None, start=0, length=None, backend=DEFAULT_DL_BACKEND):
+        self.dim = dim if dim is not None else NO_DEFAULT
+        self.start = start
+        self.length = length if length is not None else NO_DEFAULT
+        super().__init__(name=None, backend=backend)
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DataConfiguration([])],
+    ) -> Annotated[TensorType, DataConfiguration([])]:
+        return self.backend.math.narrow(x)
+
+
 class Squeeze(Node[TensorType]):
 
     def __init__(
@@ -197,7 +228,7 @@ class Squeeze(Node[TensorType]):
     def forward(
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.backend.math.squeeze(inp)
+        return self.backend.math.squeeze(inp, self.dim)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -232,7 +263,7 @@ class Unsqueeze(Node[TensorType]):
     def forward(
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.backend.math.unsqueeze(inp)
+        return self.backend.math.unsqueeze(inp, self.dim)
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -257,3 +288,6 @@ class Unsqueeze(Node[TensorType]):
                 if output_changed:
                     updated_ports.add(self.output_ports[0])
         return updated_ports
+
+
+# endregion

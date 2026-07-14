@@ -3,7 +3,7 @@ import pytest
 
 from qewton.backends.base import ComputingBackend
 from qewton.geometries.discrete.mesh import Mesh
-from qewton.geometries.discrete.mesh_domain import MeshGeometry, MeshBoundaryGeometry
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry, MeshBoundaryGeometry
 from qewton.config.variables import Variable
 from qewton.config.devices import cpu, cuda
 
@@ -160,12 +160,12 @@ def test_boundary_contains_point_and_cell_based(backend):
 
     # point-based
     mb._build_face_bbox()
-    pts, _ = mb.sample_random_uniform_from_discretization(1)
+    pts = mb.sample_random_uniform_from_discretization(1)
     inside, idx = mb._contains_point_based_search(pts)
     assert inside.shape[0] == 1
 
     # cell-based: generate many points on boundary via sample_grid
-    pts2, _ = mb.sample_grid_from_discretization(5)
+    pts2, _ = mb.sample_grid_from_discretization(5, include_normals=True)
     inside2, idx2 = mb._contains_cell_based_search(pts2)
     assert inside2.shape[0] == pts2.shape[0]
 
@@ -212,7 +212,7 @@ def test_boundary_normal_method_and_get_submesh(backend):
     mb = MeshBoundaryGeometry(mg)
 
     # normal should return array same length as input points
-    pts, _ = mb.sample_random_uniform_from_discretization(2)
+    pts = mb.sample_random_uniform_from_discretization(2)
     normals = mb.normal(pts)
     assert normals.shape[0] == pts.shape[0]
 

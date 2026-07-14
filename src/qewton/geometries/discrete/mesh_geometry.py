@@ -7,14 +7,24 @@ from qewton.geometries.discrete.mesh import Mesh
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
-from qewton.config.dtypes import Bool, Int32, Float32
+from qewton.config.dtypes import Bool, Int32
 
 
 class MeshGeometry(DiscreteGeometry[TensorType]):
+    """A geometry object representing a simplex mesh.
+
+    Args:
+        variable (Variable): The variable connected to this geometry.
+        mesh (Mesh): The underlying mesh object.
+        discretization_of (Geometry | None, optional): The geometry this
+            mesh is a discretization of. Defaults to None.
+        backend (type[ComputingBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
 
     def __init__(
         self,
-        variable,
+        variable: Variable,
         mesh: Mesh,
         discretization_of: Geometry | None = None,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
@@ -23,7 +33,9 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             len(mesh.vertices[0]) == variable.dim
         ), "Dimension of variable must match dimension of mesh vertices."
         self.mesh = mesh
-        super().__init__(variable=variable, shape=mesh.vertices.shape, backend=backend)
+        super().__init__(
+            variable=variable, shape=(mesh.vertices.shape[0],), backend=backend
+        )
         if discretization_of is not None:
             self.discretization_of = discretization_of
         # For checking points inside the mesh:
@@ -40,6 +52,19 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         file_path: str,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> MeshGeometry:
+        """Loads a *volume* mesh from a path.
+
+        Args:
+            variable (Variable): The variable connected to this geometry.
+            file_path (str): The path to the mesh file. This uses the meshio library
+                load the mesh. Supported formats are .msh/.vtk/.vtu/.xdmf/.inp and
+                more, see the meshio documentation.
+            backend (type[ComputingBackend[TensorType]], optional):
+                Defaults to DEFAULT_DL_BACKEND.
+
+        Returns:
+            MeshGeometry: _description_
+        """
         return cls(variable=variable, mesh=Mesh.load_mesh(file_path, backend=backend))
 
     def __and__(self, other):
@@ -48,7 +73,9 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
     def __sub__(self, other):
         raise NotImplementedError("Mesh combinations are not supported yet.")
 
-    def create_mesh(self, max_vertex_distance: float | None = None) -> MeshGeometry:
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
         return self
 
     def bounding_box(self):
@@ -63,6 +90,23 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
     def _get_volume(self):
         cell_volumes = self.mesh.compute_cell_volumes()
         return self.backend.math.sum(cell_volumes)
+
+    def get_marker(self, marker):
+        return self.get_submesh(marker=marker)
+
+    def mesh_info(self):
+        """Print out some general information about the mesh."""
+        print("Number of vertices:", self.mesh.vertex_count)
+        print("Number of cells:", len(self.mesh.cells))
+        if len(self.mesh.marker_labels) > 0:
+            print("The mesh has the markers:", self.mesh.marker_labels)
+        elif self.mesh.cell_markers is not None:
+            print(
+                "The mesh has the markers:",
+                self.backend.math.unique(self.mesh.cell_markers),
+            )
+        else:
+            print("No markers are known in the mesh.")
 
     @property
     def boundary(self) -> MeshBoundaryGeometry:
@@ -181,8 +225,12 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             # bbox filter
             mask = (
                 ~point_inside
-                & self.backend.math.all(points >= self.bbox_min[cell], axis=1)  # type: ignore
-                & self.backend.math.all(points <= self.bbox_max[cell], axis=1)  # type: ignore
+                & self.backend.math.all(
+                    points >= self.bbox_min[cell], axis=1  # type: ignore
+                )
+                & self.backend.math.all(
+                    points <= self.bbox_max[cell], axis=1  # type: ignore
+                )
             )
 
             idx = self.backend.math.where(mask)[0]
@@ -200,7 +248,17 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             point_inside[idx[bary_mask]] = True
         return point_inside
 
-    def get_submesh(self, marker: int) -> MeshGeometry:
+    def get_submesh(self, marker: int | str) -> MeshGeometry:
+        """Returns a submesh of the main mesh that only contains the provided
+        marker.
+
+        Args:
+            marker (int | str): The marker of the submesh
+
+        Returns:
+            MeshGeometry: A new mesh geometry that only consists of the
+                mesh with the marker.
+        """
         return MeshGeometry(
             variable=self.variable,
             mesh=self.mesh.get_submesh(marker),
@@ -231,7 +289,7 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         return self._contains_cell_based_search(points)[0]
 
     def create_mesh(
-        self, max_vertex_distance: float | None = None
+        self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshBoundaryGeometry:
         return self
 
@@ -266,8 +324,12 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         for cell in range(len(self.mesh.cells)):
             mask = (
                 ~point_inside
-                & self.backend.math.all(points >= self.face_bbox_min[cell], axis=1)  # type: ignore
-                & self.backend.math.all(points <= self.face_bbox_max[cell], axis=1)  # type: ignore
+                & self.backend.math.all(
+                    points >= self.face_bbox_min[cell], axis=1  # type: ignore
+                )
+                & self.backend.math.all(
+                    points <= self.face_bbox_max[cell], axis=1  # type: ignore
+                )
             )
             idx = self.backend.math.where(mask)[0]
             if len(idx) == 0:
@@ -298,13 +360,13 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         points, idx = self.mesh.sample_random_from_vertices(
             n_points=n_points, device=device
         )
-        normals = None
         if include_normals:
             self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals_at_vertex[idx]
-        return points, normals
+            return points, normals
+        return points
 
-    def _move_normals(self, device: Device):
+    def _move_normals(self, device: Device | str):
         self.geometry.mesh.boundary_normals_at_vertex = self.backend.to(
             self.geometry.mesh.boundary_normals_at_vertex, device=device
         )
@@ -318,21 +380,21 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         points, idx = self.mesh.sample_grid_from_vertices(
             n_points=n_points, device=device
         )
-        normals = None
         if include_normals:
             self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals_at_vertex[idx]
-        return points, normals
+            return points, normals
+        return points
 
     def sample_random_uniform(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
         points, idx = self.mesh.sample_random_inside(n_points=n_points, device=device)
-        normals = None
         if include_normals:
             self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals[idx]
-        return points, normals
+            return points, normals
+        return points
 
     def sample_grid(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
@@ -375,13 +437,13 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
             )
             points = self.backend.math.concatenate([points, random_points], axis=0)
 
-        normals = None
         if include_normals:
             self._move_normals(device=device)
             normals = self.geometry.mesh.boundary_normals[face_idx]
             if random_normals is not None:
                 normals = self.backend.math.concatenate([normals, random_normals], axis=0)
-        return points, normals
+            return points, normals
+        return points
 
     def _compute_local_distribution(self, n_points):
         total_area = self.volume()
@@ -441,7 +503,7 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         normals[point_found] = self.geometry.mesh.boundary_normals[cell_idx[point_found]]
         return normals
 
-    def get_submesh(self, marker: int) -> MeshBoundaryGeometry:
+    def get_submesh(self, marker: int | str) -> MeshBoundaryGeometry:
         sub_mesh_geo = MeshBoundaryGeometry(self.geometry)
         sub_mesh_geo.mesh = self.mesh.get_submesh(marker)
         return sub_mesh_geo

@@ -26,8 +26,6 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.graphs.nodes import Node, OutputPort, InputPort
 from qewton.data.datasets import DataSet
 
-# TODO: Add caching functionality
-
 
 class DataNode(Node[TensorType]):
     """
@@ -77,6 +75,9 @@ class DataNode(Node[TensorType]):
         return [self._batch_size]
 
     def cache(self, n_batches: int = -1):
+        pass
+
+    def clear_cache(self):
         pass
 
     def provides_data_in_phase(

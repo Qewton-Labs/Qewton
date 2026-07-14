@@ -437,18 +437,18 @@ class GeometryAxes(Axes):
         from qewton.geometries.base import Geometry
 
         self._geometry: Geometry
-        if geometry is not None and shape is not None:
-            raise ValueError("Only one of geometry or shape can be provided.")
         if geometry is not None:
             self._geometry = geometry
-        elif shape is not None:
+        elif shape is not None and geometry is None:
             self._geometry = Geometry(
                 shape=tuple(i.size if isinstance(i, AxesDim) else i for i in shape)
             )
         else:
             raise ValueError("Either geometry or shape must be provided.")
         default_shape = (...,)
-        if not isinstance(self._geometry.shape, EllipsisType):
+        if shape is not None:
+            default_shape = shape
+        elif not isinstance(self._geometry.shape, EllipsisType):
             default_shape = self._geometry.shape
         super().__init__(*default_shape)
 

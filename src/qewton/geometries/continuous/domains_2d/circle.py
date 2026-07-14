@@ -4,7 +4,7 @@ from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,
 )
-from qewton.geometries.discrete.mesh_domain import MeshGeometry, Mesh
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry, Mesh
 from qewton.config.variables import Variable
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
@@ -37,7 +37,10 @@ class Circle(ContinuousGeometry[TensorType]):
         self.radius = radius
         super().__init__(variable=variable, backend=backend)
 
-    def create_mesh(self, max_vertex_distance: float | None = None) -> MeshGeometry:
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
+        self.center = self.backend.to(self.center, device=device)
         if max_vertex_distance is None:
             power_n = 4
             n = 16
@@ -94,10 +97,16 @@ class Circle(ContinuousGeometry[TensorType]):
         )
 
     def contains(self, points):
+        points = self.backend.build_tensor(points)
+        self.set_center_device(points)
         norm = self.backend.linalg.norm(points - self.center, order=2, axis=1).reshape(
             -1, 1
         )
         return norm <= self.radius
+
+    def set_center_device(self, points):
+        p_device = points.device if hasattr(points, "device") else cpu
+        self.center = self.backend.to(self.center, p_device)
 
     def bounding_box(self):
         bounds = []
@@ -150,6 +159,8 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
         self.geometry: Circle = geometry  # type: ignore
 
     def contains(self, points):
+        points = self.backend.build_tensor(points)
+        self.geometry.set_center_device(points=points)
         norm = self.backend.linalg.norm(
             points - self.geometry.center, order=2, axis=1
         ).reshape(-1, 1)

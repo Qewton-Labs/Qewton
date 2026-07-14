@@ -237,7 +237,7 @@ class Geometry(Generic[TensorType]):
         """
         return False
 
-    def create_mesh(self, max_vertex_distance: float | None = None):
+    def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
         """Meshes this geometry into a `MeshGeometry` object. The meshing can be
         controlled by providing a maximum vertex distance, which determines the
         fineness of the mesh.
@@ -305,6 +305,12 @@ class Geometry(Generic[TensorType]):
     def __sub__(self, other):
         """Returns the difference of two domains"""
         raise NotImplementedError()
+
+    def __mul__(self, other):
+        """Creates the Cartesian product of two domains."""
+        from .product import ProductGeometry
+
+        return ProductGeometry(self, other)
 
     def contains(self, points):
         """Checks for every point in points if it lays inside the domain.
@@ -483,7 +489,7 @@ class BoundaryGeometry(Geometry[TensorType]):
         n_points: int,
         device: Device | str = cpu,
         include_normals: bool = False,  # pylint: disable=unused-argument
-    ) -> TensorType:
+    ) -> TensorType | tuple[TensorType, TensorType]:
         """Samples a grid along the boundary.
 
         Args:
@@ -493,9 +499,8 @@ class BoundaryGeometry(Geometry[TensorType]):
                 each point should be returned. Defaults to False.
 
         Returns:
-            TODO: Make normals really optional
-            tuple(array, array | None): The points and normal vectors at the
-                points if include_normals is True, otherwise None.
+            TensorType | tuple(TensorType, TensorType): The points and normal
+                vectors at the points if include_normals is True, otherwise None.
         """
         return super().sample_grid(n_points)
 
@@ -504,7 +509,7 @@ class BoundaryGeometry(Geometry[TensorType]):
         n_points: int,
         device: Device | str = cpu,
         include_normals: bool = False,  # pylint: disable=unused-argument
-    ) -> TensorType:
+    ) -> TensorType | tuple[TensorType, TensorType]:
         """Samples random uniform points along the boundary.
 
         Args:
@@ -514,28 +519,18 @@ class BoundaryGeometry(Geometry[TensorType]):
                 each point should be returned. Defaults to False.
 
         Returns:
-            tuple(array, array | None): The points and normal vectors at the
-                points if include_normals is True, otherwise None.
+            TensorType | tuple(TensorType, TensorType): The points and normal
+                vectors at the points if include_normals is True, otherwise None.
         """
         return super().sample_random_uniform(n_points)
 
 
 ####################################
 ### Plan:
-# - All geometries have a sampling methods (at least grid and random)
-# - DiscreteGeo. have also a discrete sampling method (only sampling from discretization points)
-# - All geometries can be discretized by create mesh method -> returns MeshGeometry
-# - A geometry has a .boundary property (will be created when first called)
 # - We can mark CAD-geometries via lambda functions, the functions will
 #   be saved internally, and we return the corresponding subdomains for further usage.
 #   The saved markers can be used when creating a mesh.
-# - Union, etc. is only in CADGeometry
 # - Put CAD into qewton.geometry.cad
-# - Start with numpy implementation, switch to nodes etc. maybe later
 
 ### Samplers:
-# - A sampler has a flag to either use mesh based or direct sampling
 # - One can still filter points via rejection sampling
-# - Allow products in samplers (passing arguments/outputs between each other)
-# - Return Normals flag, to build output ports / And normalvector compute node
-# - Has backend and device, moves points accordingly

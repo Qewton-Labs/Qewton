@@ -421,12 +421,16 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         return torch.ones(shape, dtype=dtype, device=get_torch_device(device))
 
     @staticmethod
-    def zeros_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> torch.Tensor:
-        return torch.zeros_like(x, dtype=dtype, device=get_torch_device(device))
+    def zeros_like(
+        x: torch.Tensor, dtype: Any = None, device: Device | str = cpu
+    ) -> torch.Tensor:
+        return torch.zeros_like(x, dtype=x.dtype, device=x.device)
 
     @staticmethod
-    def ones_like(x: Any, dtype: Any = None, device: Device | str = cpu) -> torch.Tensor:
-        return torch.ones_like(x, dtype=dtype, device=get_torch_device(device))
+    def ones_like(
+        x: torch.Tensor, dtype: Any = None, device: Device | str = cpu
+    ) -> torch.Tensor:
+        return torch.ones_like(x, dtype=x.dtype, device=x.device)
 
     @staticmethod
     def empty(shape: Any, dtype: Any = None, device: Device | str = cpu) -> torch.Tensor:
@@ -554,6 +558,10 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     ravel = torch.ravel
     moveaxis = torch.moveaxis
     swapaxes = torch.swapaxes
+
+    @staticmethod
+    def shape(x: torch.Tensor):
+        return x.shape
 
     @staticmethod
     def append(x1: Any, x2: Any, axis: Any = None) -> torch.Tensor:

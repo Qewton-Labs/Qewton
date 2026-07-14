@@ -652,6 +652,12 @@ class TrackingObject:
         slice_node = Slice(key)
         return slice_node(self)
 
+    def __setitem__(self, key, value):
+        from qewton.algorithms.building_blocks.array_operations import SetItem
+
+        set_item_node = SetItem()
+        return set_item_node(self, key, value)
+
     def dot(self, other):
         from qewton.algorithms.building_blocks.math import Dot
 
