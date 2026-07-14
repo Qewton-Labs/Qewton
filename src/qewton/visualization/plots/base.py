@@ -7,10 +7,21 @@ class Plot:
         data,
         plot_config: PlotConfig,
         title=None,
+        theme=None,
     ) -> None:
         self.data = data
         self.plot_config = plot_config
         self._title = title
+        self._theme = theme
+
+    @property
+    def theme(self):
+        return self._theme
+
+    @theme.setter
+    def theme(self, value):
+        if self._theme is None:
+            self._theme = value
 
     @property
     def title(self):

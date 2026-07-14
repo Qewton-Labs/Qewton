@@ -34,6 +34,7 @@ class Figure:
         self.backend_figure = renderer.setup()
 
     def add_plot(self, plot):
+        plot.theme = self.theme
         self.plots.append(plot)
         for axis in plot.plot_config.axes:
             if isinstance(axis, ControlAxis):

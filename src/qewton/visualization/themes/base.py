@@ -6,6 +6,18 @@ class Theme:
     """Consistent theme for Qewton plots."""
 
     # TODO: these values are just any temporary values
+    default_cmap = [
+        "#0d0887",
+        "#46039f",
+        "#7201a8",
+        "#9c179e",
+        "#bd3786",
+        "#d8576b",
+        "#ed7953",
+        "#fb9f3a",
+        "#fdca26",
+        "#f0f921",
+    ]
 
     # Color scheme
     primary_color_palette: list[str] = field(
