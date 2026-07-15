@@ -1,6 +1,5 @@
 from plotly import graph_objects as go
 
-from qewton.visualization.plots.config import ColorAxis, XAxis, YAxis, ZAxis
 
 from .base import Artist, Renderer
 

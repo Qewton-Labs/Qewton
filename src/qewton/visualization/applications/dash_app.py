@@ -2,7 +2,7 @@ from dash import Dash, html, dcc
 from dash.dependencies import Input, Output
 
 from qewton.visualization.applications.base import RenderApplication
-from qewton.visualization.plots.config import SliderAxis
+from qewton.visualization.plots.spec import SliderSpec
 
 
 class DashApplication(RenderApplication):
@@ -42,14 +42,14 @@ class DashApplication(RenderApplication):
         app.layout = html.Div(widgets)
 
     @staticmethod
-    def create_slider(slideraxis: SliderAxis):
+    def create_slider(sliderspec: SliderSpec):
         return dcc.Slider(
-            id=slideraxis.name,
-            min=slideraxis.minimum,
-            max=slideraxis.maximum,
-            step=slideraxis.step,
-            value=slideraxis.state,
-            marks=slideraxis.marks,
+            id=sliderspec.name,
+            min=sliderspec.minimum,
+            max=sliderspec.maximum,
+            step=sliderspec.step,
+            value=sliderspec.state,
+            marks=sliderspec.marks,
         )
 
     @staticmethod
@@ -57,7 +57,7 @@ class DashApplication(RenderApplication):
         inputs = []
         controls = []
         for control in figure.controls:
-            if isinstance(control, SliderAxis):
+            if isinstance(control, SliderSpec):
                 inputs.append(Input(control.name, "value"))
                 controls.append(control)
 

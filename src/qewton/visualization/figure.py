@@ -1,5 +1,5 @@
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.config import ControlAxis
+from qewton.visualization.plots.spec import ControlSpec, FacetSpec
 from qewton.visualization.renderers.base import Artist, Renderer
 from qewton.visualization.themes.base import Theme
 from qewton.visualization.renderers import DEFAULT_RENDERER
@@ -33,13 +33,22 @@ class Figure:
         self.legend = None
         self.backend_figure = renderer.setup()
 
-    def add_plot(self, plot):
+    def add_plot(self, plot: Plot):
         plot.theme = self.theme
         self.plots.append(plot)
-        for axis in plot.plot_config.axes:
-            if isinstance(axis, ControlAxis):
-                if axis not in self.controls:
-                    self.controls.append(axis)
+        for spec in plot.controls:
+            if isinstance(spec, ControlSpec) and not isinstance(spec, FacetSpec):
+                if spec not in self.controls:
+                    self.controls.append(spec)
+
+    @staticmethod
+    def facet_specs(plot: Plot) -> dict[str, FacetSpec]:
+        specs = [s for s in plot.controls if isinstance(s, FacetSpec)]
+        by_orientation = {s.orientation: s for s in specs}
+        assert len(by_orientation) == len(
+            specs
+        ), "At most one FacetSpec per orientation (row/col) allowed per plot."
+        return by_orientation
 
     def draw(self):
         for plot in self.plots:

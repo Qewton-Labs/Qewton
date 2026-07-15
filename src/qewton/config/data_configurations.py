@@ -393,3 +393,74 @@ class DataConfiguration:
             else:
                 slc.extend([slice(None)] * len(axes.shape))  # type: ignore
         return tuple(slc)
+
+    def get_axes_range(self, axes: Axes) -> int | tuple[int, int]:
+        try:
+            return self._find_axes_idx(self.axes, axes)
+        except ValueError:
+            try:
+                reverse_axis_idx = self._find_axes_idx(self.axes[::-1], axes)
+                if isinstance(reverse_axis_idx, int):
+                    return -1 - reverse_axis_idx
+                else:
+                    return -1 - reverse_axis_idx[1], -1 - reverse_axis_idx[0]
+            except ValueError as exc:
+                raise ValueError(f"Axis {axes} not found in data config {self}.") from exc
+
+    @classmethod
+    def _find_axes_idx(cls, axes_list, searched_axes: Axes) -> int | tuple[int, int]:
+        counter = 0
+        for axes in axes_list:
+            if axes is searched_axes:
+                if len(axes.shape) == 1:
+                    return counter
+                else:
+                    return (counter, counter + len(axes.shape))
+            if isinstance(axes, EllipsisAxes) or any(
+                isinstance(d, EllipsisDim) for d in axes.shape
+            ):
+                raise ValueError
+            counter += len(axes.shape)
+        raise ValueError
+
+    def get_slice(self, data_config: DataConfiguration):
+        try:
+            axis_idx, slc = self._find_axis_idx(self.variable_or_axes, data_config.axes)
+        except ValueError:
+            try:
+                reverse_axis_idx, slc = self._find_axis_idx(
+                    self.variable_or_axes, data_config.axes[::-1]
+                )
+                axis_idx = -1 - reverse_axis_idx
+            except ValueError as exc:
+                raise ValueError(f"Axis {self.variable_or_axes} not found in data \
+                        config {data_config}.") from exc
+        return axis_idx, slc
+
+    def _find_axis_idx(
+        self, variable_or_axis, axes: list[Axes]
+    ) -> tuple[int | slice, slice | None]:
+        counter = 0
+        for i_axis in axes:
+            if isinstance(i_axis, EllipsisAxes):
+                raise ValueError
+            if any(isinstance(i_dim, EllipsisDim) for i_dim in i_axis.shape):
+                raise ValueError
+
+            if i_axis is variable_or_axis:
+
+                if len(i_axis.shape) == 1:
+                    return counter, None
+                else:
+                    return slice(counter, counter + len(i_axis.shape)), None
+            if isinstance(variable_or_axis, Variable):
+                if isinstance(i_axis, (FeatureAxes, GeometryAxes)):
+                    i_var = i_axis.variables
+                    if variable_or_axis in i_var:
+                        if len(i_axis.shape) == 1:
+                            return counter
+                        return counter, i_var.get_slice(variable_or_axis)
+
+            counter += len(i_axis.shape)
+
+        raise ValueError
