@@ -66,7 +66,6 @@ class PlotlyRenderer(Renderer):
                 if c is not None and c.cmap is not None
                 else plot.theme.default_cmap
             )
-            print(cmap, data.shape)
             if color is not None:
                 data = color
 
@@ -126,9 +125,13 @@ class PlotlyRenderer(Renderer):
                 type="log" if plot.y.log_scale else "linear",
             )
             if plot.z is not None:
-                backend_figure.update_zaxes(
-                    title=plot.z.name,
-                    type="log" if plot.z.log_scale else "linear",
+                backend_figure.update_layout(
+                    scene=dict(
+                        zaxis=dict(
+                            title=plot.z.name,
+                            type="log" if plot.z.log_scale else "linear",
+                        )
+                    )
                 )
 
             return cls(len(backend_figure.data) - 1)

@@ -8,6 +8,7 @@ from .plots.spec import (
     SliderSpec,
     TimeSpec,
     ColorSpec,
+    AxisSpec,
 )
 from .plots.geometry import GeometryPlot
 from .plots.feature import ImagePlot, SurfacePlot, HeatmapPlot

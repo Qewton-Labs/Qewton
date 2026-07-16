@@ -144,7 +144,6 @@ class Variable:
             raise KeyError(f"Variable '{variable.name}' not found in '{self.name}'")
         running_idx = 0
         for child in self.children:
-            print(child._hash_name(), variable._hash_name())
             if variable == child:
                 return slice(running_idx, running_idx + child.dim)  # type: ignore
             if variable in child.leaves:

@@ -145,7 +145,6 @@ class StructuredGridPlot(Plot):
 
     def evaluate(self):
         data, index_map, slice_map = self.apply_controls()
-        print(data.shape)
 
         # 1) X/Y strukturell aufloesen - jeweils gegen das ORIGINAL self.data,
         #    danach durch index_map auf die Position im bereits reduzierten
@@ -187,8 +186,6 @@ class StructuredGridPlot(Plot):
         # could be moved to resolve also
         # self.x.coordinates = self._coordinates_for(self.x)
         # self.y.coordinates = self._coordinates_for(self.y)
-        print(oriented.shape)
-        print(color)
         return oriented, color
 
     def _resolve_structural_dim(self, spec) -> int:
@@ -209,24 +206,6 @@ class StructuredGridPlot(Plot):
         else:
             real_idx = axis_slc
         return real_idx if real_idx >= 0 else self.data.ndim + real_idx
-
-    # def _coordinates_for(self, spec) -> np.ndarray:
-    #     """Tick-Label-Werte, falls die Geometrie sie liefert - sonst Fallback
-    #     auf reine Indizes. Passe das an eure tatsaechliche Geometry-API an,
-    #     falls coordinates_for() dort noch nicht existiert."""
-    #     geom_axes = self.data_config.get_axis(GeometryAxes)
-    #     variable = spec.variable_or_axes
-    #     if (
-    #         geom_axes is not None
-    #         and isinstance(variable, Variable)
-    #         and hasattr(geom_axes.geometry, "coordinates_for")
-    #     ):
-    #         try:
-    #             return geom_axes.geometry.coordinates_for(variable)
-    #         except Exception:
-    #             pass
-    #     idx = self._resolve_structural_dim(spec)
-    #     return np.arange(self.data.shape[idx])
 
 
 class UnstructuredPointPlot(Plot):
