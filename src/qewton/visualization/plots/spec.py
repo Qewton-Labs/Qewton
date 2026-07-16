@@ -91,7 +91,8 @@ class AxisSpec(PlotSpec):
 
 
 class ColorSpec(PlotSpec):
-    def __init__(self, variable_or_axes, cmap=None) -> None:
+    def __init__(self, variable_or_axes: Variable, cmap=None) -> None:
+        assert isinstance(variable_or_axes, Variable), "ColorSpec only supports Variables"
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
         self.cmap = cmap  # if not specified, plots resort to default cmap of theme
 

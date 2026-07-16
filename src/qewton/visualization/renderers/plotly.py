@@ -19,46 +19,38 @@ class PlotlyRenderer(Renderer):
         return fig
 
     class ImageArtist(PlotlyArtist):
-        axis_order = [XAxis, YAxis, ColorAxis]
-
         @classmethod
         def create(
             cls,
             backend_figure,
             plot,
         ):
-            image = plot.evaluate(cls.axis_order)
+            image, _ = plot.evaluate()
             trace = trace = go.Image(z=image)
 
             backend_figure.add_trace(trace)
             if plot.title is not None:
                 backend_figure.update_layout(title=plot.title)
 
-            x = plot.plot_config.get_axis(XAxis)
-            y = plot.plot_config.get_axis(YAxis)
-            if x is not None:
-                backend_figure.update_xaxes(
-                    title=x.name,
-                    type="log" if x.log_scale else "linear",
-                )
-
-            if y is not None:
-                backend_figure.update_yaxes(
-                    title=y.name,
-                    type="log" if y.log_scale else "linear",
-                )
+            backend_figure.update_xaxes(
+                title=plot.x.name,
+                type="log" if plot.x.log_scale else "linear",
+            )
+            backend_figure.update_yaxes(
+                title=plot.y.name,
+                type="log" if plot.y.log_scale else "linear",
+            )
 
             return cls(len(backend_figure.data) - 1)
 
         def update(self, backend_figure, plot):
-            image = plot.evaluate(self.axis_order)
+            image = plot.evaluate()
             backend_figure.data[self.figure_idx].z = image
 
         def remove(self, backend_figure):
             pass
 
     class HeatmapArtist(PlotlyArtist):
-        axis_order = [XAxis, YAxis, ColorAxis]
 
         @classmethod
         def create(
@@ -66,8 +58,8 @@ class PlotlyRenderer(Renderer):
             backend_figure,
             plot,
         ):
-            data = plot.evaluate(cls.axis_order)
-            c = plot.plot_config.get_axis(ColorAxis)
+            data, color = plot.evaluate()
+            c = plot.color
 
             cmap = (
                 c.cmap
@@ -75,38 +67,37 @@ class PlotlyRenderer(Renderer):
                 else plot.theme.default_cmap
             )
             print(cmap, data.shape)
-            trace = trace = go.Heatmap(z=data[..., 0], colorscale=cmap)
+            if color is not None:
+                data = color
+
+            trace = go.Heatmap(z=data[..., 0], colorscale=cmap)
 
             backend_figure.add_trace(trace)
             if plot.title is not None:
                 backend_figure.update_layout(title=plot.title)
 
-            x = plot.plot_config.get_axis(XAxis)
-            y = plot.plot_config.get_axis(YAxis)
-            if x is not None:
-                backend_figure.update_xaxes(
-                    title=x.name,
-                    type="log" if x.log_scale else "linear",
-                )
-
-            if y is not None:
-                backend_figure.update_yaxes(
-                    title=y.name,
-                    type="log" if y.log_scale else "linear",
-                )
+            backend_figure.update_xaxes(
+                title=plot.x.name,
+                type="log" if plot.x.log_scale else "linear",
+            )
+            backend_figure.update_yaxes(
+                title=plot.y.name,
+                type="log" if plot.y.log_scale else "linear",
+            )
 
             return cls(len(backend_figure.data) - 1)
 
         def update(self, backend_figure, plot):
-            image = plot.evaluate(self.axis_order)
-            backend_figure.data[self.figure_idx].z = image[..., 0]
+            data, color = plot.evaluate()
+            if color is not None:
+                data = color
+            backend_figure.data[self.figure_idx].z = data[..., 0]
+            backend_figure.data[self.figure_idx].coloraxis = color
 
         def remove(self, backend_figure):
             pass
 
     class SurfaceArtist(PlotlyArtist):
-        axis_order = [XAxis, YAxis, ZAxis]
-
         @classmethod
         def create(
             cls,
@@ -114,43 +105,38 @@ class PlotlyRenderer(Renderer):
             plot,
         ):
             cmap = plot.theme.default_cmap
-            c = plot.plot_config.get_axis(ColorAxis)
-            if c is not None:
-                if c.cmap is not None:
-                    cmap = c.cmap
+            if plot.color is not None:
+                if plot.color.cmap is not None:
+                    cmap = plot.color.cmap
 
-            data = plot.evaluate(cls.axis_order)
-            trace = trace = go.Surface(z=data[..., 0])
+            data, color = plot.evaluate()
+            trace = trace = go.Surface(
+                z=data[..., 0], surfacecolor=color, colorscale=cmap
+            )
             backend_figure.add_trace(trace)
             if plot.title is not None:
-                backend_figure.update_layout(title=plot.title, colorscale=cmap)
+                backend_figure.update_layout(title=plot.title)
 
-            x = plot.plot_config.get_axis(XAxis)
-            y = plot.plot_config.get_axis(YAxis)
-            z = plot.plot_config.get_axis(ZAxis)
-            if x is not None:
-                backend_figure.update_xaxes(
-                    title=x.name,
-                    type="log" if x.log_scale else "linear",
-                )
-
-            if y is not None:
-                backend_figure.update_yaxes(
-                    title=y.name,
-                    type="log" if y.log_scale else "linear",
-                )
-
-            if z is not None:
-                backend_figure.update_yaxes(
-                    title=z.name,
-                    type="log" if z.log_scale else "linear",
+            backend_figure.update_xaxes(
+                title=plot.x.name,
+                type="log" if plot.x.log_scale else "linear",
+            )
+            backend_figure.update_yaxes(
+                title=plot.y.name,
+                type="log" if plot.y.log_scale else "linear",
+            )
+            if plot.z is not None:
+                backend_figure.update_zaxes(
+                    title=plot.z.name,
+                    type="log" if plot.z.log_scale else "linear",
                 )
 
             return cls(len(backend_figure.data) - 1)
 
         def update(self, backend_figure, plot):
-            data = plot.evaluate(self.axis_order)
+            data, color = plot.evaluate()
             backend_figure.data[self.figure_idx].z = data[..., 0]
+            backend_figure.data[self.figure_idx].surfacecolor = color
 
         def remove(self, backend_figure):
             pass
