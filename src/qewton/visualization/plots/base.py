@@ -1,8 +1,9 @@
 import numpy as np
 
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.axes import Axes
+from qewton.config.axes import Axes, GeometryAxes
 from qewton.config.variables import Variable
+from qewton.geometries.discrete.mesh_domain import MeshGeometry
 from qewton.visualization.plots.spec import PlotSpec, ColorSpec, ControlSpec, AxisSpec
 
 
@@ -213,4 +214,42 @@ class UnstructuredPointPlot(Plot):
 
 
 class UnstructuredMeshPlot(Plot):
-    pass
+    """Fuer echte Mesh-Geometrien (2D/3D) MIT zugehoerigen Daten - PDE-Loesung,
+    NN-Aktivierung, etc. 'cells' ist reine Topologie und laeuft nie durch ein
+    AxisSpec-Mapping, 'color' ist eine ganz normale FeatureAxes-Variable wie
+    bei jedem anderen Plot-Typ."""
+
+    def __init__(
+        self,
+        data,
+        data_config,
+        color: ColorSpec | Variable | None = None,
+        controls: list[ControlSpec] | None = None,
+        show_edges: bool = True,
+        **kwargs,
+    ):
+        super().__init__(data, data_config, controls=controls, **kwargs)
+
+        geom_axes = data_config.get_axis(GeometryAxes)
+        if geom_axes is None or not isinstance(geom_axes.geometry, MeshGeometry):
+            raise ValueError(
+                f"{type(self).__name__} requires a GeometryAxes wrapping a MeshGeometry."
+            )
+        self.mesh = geom_axes.geometry.mesh
+        self.color = (
+            (color if isinstance(color, ColorSpec) else ColorSpec(color))
+            if color
+            else None
+        )
+        self.show_edges = show_edges
+
+    def evaluate(self):
+        data, index_map, slice_map = self.apply_controls()
+        color = None
+        if self.color is not None:
+            slc = self.data_config.get_variable_slice(self.color.variable_or_axes)
+            color = data[slice_map(slc)]
+        return self.coord_transform.apply(self.mesh.vertices), self.mesh.cells, color
+
+    def create_artist(self, backend_figure, renderer):
+        return renderer.MeshArtist.create(backend_figure, self)
