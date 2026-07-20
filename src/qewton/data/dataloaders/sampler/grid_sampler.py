@@ -1,5 +1,6 @@
 from typing import Callable
 
+from qewton.config.devices import Device
 from qewton.backends import DEFAULT_DL_BACKEND, ComputingBackend, TensorType
 from qewton.config.variables import Variable
 from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
@@ -74,6 +75,13 @@ class GridSampler(PointSampler[TensorType]):
             return self.point_cache, self.normal_cache
         self.point_cache, self.normal_cache = self._sample_with_filter()
         return self.point_cache, self.normal_cache
+
+    def to(self, device: str | Device):
+        super().to(device)
+        if self.point_cache is not None:
+            self.point_cache = self.backend.to(self.point_cache, self._device)
+            if self.compute_normals:
+                self.normal_cache = self.backend.to(self.normal_cache, self._device)
 
     def _sample_with_filter(self):
         # With filters sample first, then increase number of points:
