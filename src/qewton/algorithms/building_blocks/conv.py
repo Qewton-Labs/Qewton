@@ -3,7 +3,14 @@ from typing import Annotated, Literal, Generic
 from qewton.algorithms.building_blocks.parameters import ParameterNode
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType, DeepLearningBackend
 from qewton.config.data_configurations import DataConfiguration as DC
-from qewton.config.axes import FeatureAxes, AxesDim, BatchAxes, GeometryAxes, EllipsisAxes
+from qewton.config.axes import (
+    EllipsisDim,
+    FeatureAxes,
+    AxesDim,
+    BatchAxes,
+    GeometryAxes,
+    EllipsisAxes,
+)
 from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -329,46 +336,27 @@ class DoubleConv(GraphNode, Generic[TensorType]):
         self,
         in_channels: int | HyperParameter,
         out_channels: int | HyperParameter,
-        kernel_size: int | tuple[int | HyperParameter, ...] | HyperParameter,
-        activation: type[Node] = ReLU,
-        bias: bool = True,
-        stride: int | tuple[int, ...] = 1,
-        padding: int | tuple[int, ...] = 0,
-        dilation: int | tuple[int, ...] = 1,
+        kernel_size: int | tuple[int, ...] | HyperParameter,
+        activation: type[Node] | HyperParameter = ReLU,
+        bias: bool | HyperParameter = True,
+        stride: int | HyperParameter | tuple[int, ...] = 1,
+        padding: int | HyperParameter | tuple[int, ...] = 0,
+        dilation: int | HyperParameter | tuple[int, ...] = 1,
         groups: int = 1,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
         **kwargs,
     ) -> None:
-        self.conv1 = Conv(
-            in_channels,
-            out_channels,
-            kernel_size,
-            bias,
-            stride,
-            padding,
-            dilation,
-            groups,
-            backend,
-        )
-        self.activation1 = activation(name="activation1", backend=backend)
-        self.conv2 = Conv(
-            out_channels,
-            out_channels,
-            kernel_size,
-            bias,
-            stride,
-            padding,
-            dilation,
-            groups,
-            backend,
-        )
-        self.activation2 = activation(name="activation1", backend=backend)
+        self.in_channels = HyperParameter.from_value(in_channels, "InChannels")
+        self.out_channels = HyperParameter.from_value(out_channels, "OutChannels")
+        self.kernel_size = HyperParameter.from_value(kernel_size, "Kernel")
+        self.activation = HyperParameter.from_value(activation, "ActivationFunction")
+        self.bias = HyperParameter.from_value(bias, "Bias")
+        self.stride = HyperParameter.from_value(stride, "Stride")
+        self.padding = HyperParameter.from_value(padding, "Padding")
+        self.dilation = HyperParameter.from_value(dilation, "Dilation")
+        self.groups = groups
 
-        graph = Graph()
-        graph.connect(self.conv1.output, self.activation1)
-        graph.connect(self.activation1, self.conv2.input)
-        graph.connect(self.conv2.output, self.activation2)
-
+        graph = self._build_network(backend=backend)
         super().__init__(
             graph=graph,
             input_ports=[self.conv1.input],
@@ -377,6 +365,82 @@ class DoubleConv(GraphNode, Generic[TensorType]):
             **kwargs,
         )
         self._graph.setup()
+        self.input = self.input_ports[0]
+        self.output = self.output_ports[0]
+
+    @property
+    def hyperparameters(self) -> list[HyperParameter]:
+        return [
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            self.activation,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+        ]
+
+    def _build_network(self, backend):
+        dim = (
+            1
+            if isinstance(self.kernel_size.current_value, int)
+            else len(self.kernel_size.current_value)
+        )
+        if dim not in (1, 2, 3):
+            raise ValueError(f"Convolution are not implemented for dimension {dim}.")
+
+        self.conv1 = Conv(
+            self.in_channels.current_value,
+            self.out_channels.current_value,
+            self.kernel_size.current_value,
+            self.bias.current_value,
+            self.stride.current_value,
+            self.padding.current_value,
+            self.dilation.current_value,
+            self.groups,
+            backend,
+        )
+        self.batch_norm1 = BatchNorm(
+            num_features=self.out_channels.current_value, dim=dim
+        )
+        self.activation1 = self.activation.current_value(
+            name="activation1", backend=backend
+        )
+        self.conv2 = Conv(
+            self.out_channels.current_value,
+            self.out_channels.current_value,
+            self.kernel_size.current_value,
+            self.bias.current_value,
+            self.stride.current_value,
+            self.padding.current_value,
+            self.dilation.current_value,
+            self.groups,
+            backend,
+        )
+        self.batch_norm2 = BatchNorm(
+            num_features=self.out_channels.current_value, dim=dim
+        )
+        self.activation2 = self.activation.current_value(
+            name="activation1", backend=backend
+        )
+
+        graph = Graph()
+        graph.connect(self.conv1.output, self.batch_norm1)
+        graph.connect(self.batch_norm1.output, self.activation1)
+        graph.connect(self.activation1, self.conv2.input)
+        graph.connect(self.conv2.output, self.batch_norm2)
+        graph.connect(self.batch_norm2.output, self.activation2)
+
+        return graph
+
+    def setup(self) -> None:
+        new_graph = self._build_network(self.backend)
+        self.setup_graph(
+            new_graph,
+            input_ports=[self.conv1.input],
+            output_ports=[self.activation2.output_ports[0]],
+        )
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
 
@@ -688,9 +752,6 @@ class Interpolate(Node[TensorType]):
         name: str = "InterpolateNode",
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
-        assert (
-            size is not None or scale_factor is not None
-        ), "Either the goal size or a scale factor need to provided"
         self.size = (size,) if isinstance(size, int) else size
         self.scale_factor = (
             (scale_factor,) if isinstance(scale_factor, int) else scale_factor
@@ -708,16 +769,23 @@ class Interpolate(Node[TensorType]):
             )
             self.geo_axes_out = GeometryAxes(shape=self.size)
         # For scaling we need to couple input and output
-        else:
-            assert self.scale_factor is not None
+        elif self.scale_factor is not None:
             axes_dims = tuple(AxesDim(None) for _ in range(len(self.scale_factor)))
             self.geo_axes_in = GeometryAxes(shape=axes_dims)
             self.geo_axes_out = GeometryAxes(
                 shape=tuple(a * s for a, s in zip(axes_dims, self.scale_factor))
             )
+        else:
+            ell_dim = EllipsisDim()
+            self.geo_axes_in = GeometryAxes(shape=(ell_dim,))
+            self.geo_axes_out = GeometryAxes(shape=(ell_dim,))
 
         super().__init__(name, NodeState.FIXED, backend)
         self.backend: DeepLearningBackend = self.backend
+        self.input_ports[1].default = self.size
+
+        self.input_port = self.input_ports[0]
+        self.size_port = self.input_ports[1]
 
     def in_data_config(self):
         return DC(
@@ -736,11 +804,18 @@ class Interpolate(Node[TensorType]):
         )
 
     def forward(
-        self, x: Annotated[TensorType, in_data_config]
+        self,
+        x: Annotated[TensorType, in_data_config],
+        size: Annotated[
+            int | tuple[int] | tuple[int, int] | tuple[int, int, int] | None,
+            FeatureAxes(shape=(AxesDim(None),)),
+        ] = None,
     ) -> Annotated[TensorType, out_data_config]:
+        if size is None and self.size is not None:
+            size = self.size
         return self.backend.nn.interpolate(
             x,
-            size=self.size,
+            size=size,
             scale_factor=self.scale_factor,  # type: ignore
             mode=self.interpolate_mode,  # type: ignore
             align_corners=self.align_corners,
@@ -751,7 +826,6 @@ class Interpolate(Node[TensorType]):
 
 
 # region: BatchNorm
-# TODO: Add state dependent evaluation!
 class FunctionalBatchNorm(Node[TensorType]):
     """A node implementing a batch normalization operation for 1D data.
 
@@ -834,7 +908,7 @@ class BatchNorm(GraphNode, Generic[TensorType]):
     """A node implementing a batch normalization operation for 1D data.
 
     Args:
-        num_features (int): The number of features in the input data.
+        num_features (int | HyperParameter): The number of features in the input data.
         dim (Literal[1, 2, 3]): The dimension of the input data.
         weight (bool, optional): If a trainable weight should be added. Defaults to False.
         bias (bool, optional): If a trainable bias should be added. Defaults to False.
@@ -849,7 +923,7 @@ class BatchNorm(GraphNode, Generic[TensorType]):
 
     def __init__(
         self,
-        num_features: int,
+        num_features: int | HyperParameter,
         dim: Literal[1, 2, 3],
         weight: bool = False,
         bias: bool = False,
@@ -858,46 +932,14 @@ class BatchNorm(GraphNode, Generic[TensorType]):
         name: str = "BatchNorm",
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
-        # Build all the nodes and the graph:
-        graph = Graph()
-        self.functional_batch_norm = FunctionalBatchNorm(
-            dim=dim,
-            momentum=momentum,
-            eps=eps,
-            backend=backend,
-        )
-        self.running_mean = ParameterNode(
-            (num_features,),
-            initial_value=backend.math.zeros((num_features,)),
-            name="running_mean",
-            backend=backend,
-        )
-        self.running_var = ParameterNode(
-            (num_features,),
-            initial_value=backend.math.ones((num_features,)),
-            name="running_var",
-            backend=backend,
-        )
+        self.num_features = HyperParameter.from_value(num_features, "BatchNorm Feat.")
+        self.dim = dim
+        self.use_weight = weight
+        self.use_bias = bias
+        self.momentum = momentum
+        self.eps = eps
+        graph = self._build_graph(backend)
 
-        graph.connect(self.running_mean, self.functional_batch_norm.input_ports[1])
-        graph.connect(self.running_var, self.functional_batch_norm.input_ports[2])
-        # Add optional arguments
-        if weight:
-            self.weight = ParameterNode(
-                (num_features,),
-                initial_value=backend.math.ones((num_features,)),
-                name="weight",
-                backend=backend,
-            )
-            graph.connect(self.weight, self.functional_batch_norm.input_ports[3])
-        if bias:
-            self.bias = ParameterNode(
-                (num_features,),
-                initial_value=backend.math.zeros((num_features,)),
-                name="bias",
-                backend=backend,
-            )
-            graph.connect(self.bias, self.functional_batch_norm.input_ports[4])
         super().__init__(
             graph=graph,
             input_ports=[self.functional_batch_norm.input_ports[0]],
@@ -906,6 +948,61 @@ class BatchNorm(GraphNode, Generic[TensorType]):
             name=name,
         )
         self._graph.setup()
+        self.running_mean.fix_node_state()  # no automatic gradient tracking
+        self.running_var.fix_node_state()
+        self.input = self.input_ports[0]
+        self.output = self.output_ports[0]
+
+    def _build_graph(self, backend: type[DeepLearningBackend] = DEFAULT_DL_BACKEND):
+        # Build all the nodes and the graph:
+        graph = Graph()
+        self.functional_batch_norm = FunctionalBatchNorm(
+            dim=self.dim,  # type: ignore
+            momentum=self.momentum,
+            eps=self.eps,
+            backend=backend,
+        )
+        self.running_mean = ParameterNode(
+            (self.num_features.current_value,),
+            initial_value=backend.math.zeros((self.num_features.current_value,)),
+            name="running_mean",
+            backend=backend,
+        )
+        self.running_var = ParameterNode(
+            (self.num_features.current_value,),
+            initial_value=backend.math.ones((self.num_features.current_value,)),
+            name="running_var",
+            backend=backend,
+        )
+
+        graph.connect(self.running_mean, self.functional_batch_norm.input_ports[1])
+        graph.connect(self.running_var, self.functional_batch_norm.input_ports[2])
+        # Add optional arguments
+        if self.use_weight:
+            self.weight = ParameterNode(
+                (self.num_features.current_value,),
+                initial_value=backend.math.ones((self.num_features.current_value,)),
+                name="weight",
+                backend=backend,
+            )
+            graph.connect(self.weight, self.functional_batch_norm.input_ports[3])
+        if self.use_bias:
+            self.bias = ParameterNode(
+                (self.num_features.current_value,),
+                initial_value=backend.math.zeros((self.num_features.current_value,)),
+                name="bias",
+                backend=backend,
+            )
+            graph.connect(self.bias, self.functional_batch_norm.input_ports[4])
+        return graph
+
+    def setup(self) -> None:
+        new_graph = self._build_graph(self.backend)  # type: ignore
+        self.setup_graph(
+            new_graph,
+            input_ports=[self.functional_batch_norm.input_ports[0]],
+            output_ports=[self.functional_batch_norm.output_ports[0]],
+        )
         self.running_mean.fix_node_state()  # no automatic gradient tracking
         self.running_var.fix_node_state()
         self.input = self.input_ports[0]
@@ -921,7 +1018,7 @@ class BatchNorm1D(BatchNorm[TensorType]):
     """A node implementing a batch normalization operation for 1D data.
 
     Args:
-        num_features (int): The number of features in the input data.
+        num_features (int| HyperParameter): The number of features in the input data.
         weight (bool, optional): If a trainable weight should be added. Defaults to False.
         bias (bool, optional): If a trainable bias should be added. Defaults to False.
         momentum (float, optional): The momentum used to update the running bias.
@@ -959,7 +1056,7 @@ class BatchNorm2D(BatchNorm[TensorType]):
     """A node implementing a batch normalization operation for 2D data.
 
     Args:
-        num_features (int): The number of features in the input data.
+        num_features (int | HyperParameter): The number of features in the input data.
         weight (bool, optional): If a trainable weight should be added. Defaults to False.
         bias (bool, optional): If a trainable bias should be added. Defaults to False.
         momentum (float, optional): The momentum used to update the running bias.
@@ -997,7 +1094,7 @@ class BatchNorm3D(BatchNorm[TensorType]):
     """A node implementing a batch normalization operation for 3D data.
 
     Args:
-        num_features (int): The number of features in the input data.
+        num_features (int | HyperParameter): The number of features in the input data.
         weight (bool, optional): If a trainable weight should be added. Defaults to False.
         bias (bool, optional): If a trainable bias should be added. Defaults to False.
         momentum (float, optional): The momentum used to update the running bias.

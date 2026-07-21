@@ -52,9 +52,11 @@ class Slice(Node[TensorType]):
         super().__init__(name if name is not None else "SliceNode", backend=backend)
 
     def forward(
-        self, inp: Annotated[TensorType, DataConfiguration.empty()]
-    ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.backend.math.slice(inp, self.slice_config)
+        self, inp: Annotated[Any, DataConfiguration.empty()]
+    ) -> Annotated[Any, DataConfiguration.empty()]:
+        if isinstance(inp, self.backend.default_dtype):
+            return self.backend.math.slice(inp, self.slice_config)
+        return inp[self.slice_config]
 
     def update_data_configs(
         self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
@@ -140,6 +142,7 @@ class ConcatVariables(Node[TensorType]):
     def __init__(
         self,
         in_variables,
+        concat_dim: int = -1,
         name=None,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
@@ -149,7 +152,7 @@ class ConcatVariables(Node[TensorType]):
 
         self.in_variables = in_variables
         self.check_unique_var_keys()
-        self.concat_dim = -1
+        self.concat_dim = concat_dim
         self.concat_sections = None
 
         ellipsis_axes = EllipsisAxes()
@@ -194,6 +197,19 @@ class ConcatVariables(Node[TensorType]):
 
     def forward(self, *inp):
         return self.backend.math.concatenate(inp, axis=self.concat_dim)
+
+
+class ConcatNode(Node[TensorType]):
+    def __init__(self, concat_dim: int, backend=DEFAULT_DL_BACKEND):
+        self.concat_dim = concat_dim
+        super().__init__(name=None, backend=backend)
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DataConfiguration.empty()],
+        y: Annotated[TensorType, DataConfiguration.empty()],
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        return self.backend.math.concatenate((x, y), axis=self.concat_dim)
 
 
 # endregion
@@ -279,7 +295,6 @@ class Unsqueeze(Node[TensorType]):
                 new_axes, new_dim = new_output_config.get_axes_and_dim(self.dim)
                 dim_idx = new_axes.get_dim_idx(new_dim)  # type: ignore
                 new_axes.add_dim(AxesDim(1), dim_idx + 1)  # type: ignore
-                print(new_output_config)
                 # Check if the old config is the same anyway
                 old_output_config = dynamic_configs[self.output_ports[0]]
                 unify_config = old_output_config.unify_with(new_output_config)[0]
@@ -288,6 +303,19 @@ class Unsqueeze(Node[TensorType]):
                 if output_changed:
                     updated_ports.add(self.output_ports[0])
         return updated_ports
+
+
+# endregion
+
+# region: Array info
+
+
+class GetShapeNode(Node[TensorType]):
+
+    def forward(
+        self, x: Annotated[TensorType, DataConfiguration.empty()]
+    ) -> Annotated[tuple[int, ...], DataConfiguration.empty()]:
+        return tuple(x.shape)
 
 
 # endregion

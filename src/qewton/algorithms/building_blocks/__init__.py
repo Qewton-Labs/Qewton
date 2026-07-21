@@ -18,6 +18,7 @@ from .conv import (
     BatchNorm1D,
     BatchNorm2D,
     BatchNorm3D,
+    Interpolate,
 )
 
 from .math import (
@@ -52,6 +53,7 @@ from .array_operations import (
     Squeeze,
     Unsqueeze,
     ConcatVariables,
+    ConcatNode,
     SetItem,
 )
 from .derivatives import (
@@ -64,4 +66,4 @@ from .derivatives import (
     Partial,
     Hessian,
 )
-from .creation import Zeros, ZerosLike, Ones, OnesLike
+from .creation import Zeros, ZerosLike, Ones, OnesLike, Identity

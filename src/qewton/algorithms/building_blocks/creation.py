@@ -7,6 +7,19 @@ from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.axes import EllipsisAxes
 
 
+class Identity(Node[TensorType]):
+    """A node that just returns the provided input. Helpful to
+    track some operations and and inputs.
+    """
+
+    ell_axis = EllipsisAxes()
+
+    def forward(
+        self, x: Annotated[TensorType, DC(ell_axis)]
+    ) -> Annotated[TensorType, DC(ell_axis)]:
+        return x
+
+
 class Zeros(Node[TensorType]):
     def __init__(
         self,
