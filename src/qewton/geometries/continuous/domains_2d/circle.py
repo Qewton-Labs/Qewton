@@ -41,19 +41,32 @@ class Circle(ContinuousGeometry[TensorType]):
         self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshGeometry:
         self.center = self.backend.to(self.center, device=device)
+        vertices, triangles = self.triangulate_circle(
+            max_vertex_distance, self.radius, self.backend
+        )
+
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(vertices=vertices, cells=triangles),
+            discretization_of=self,
+            backend=self.backend,
+        )
+
+    @classmethod
+    def triangulate_circle(cls, max_vertex_distance, radius, backend):
         if max_vertex_distance is None:
             power_n = 4
             n = 16
         else:
             power_n = int(
-                math.ceil(math.log2(2 * math.pi * self.radius / max_vertex_distance))
+                math.ceil(math.log2(2 * math.pi * radius / max_vertex_distance))
             )
             n = int(max(4, 2**power_n))
         vertices = []
         triangles = []
         while_counter = 0
         while n >= 4:
-            current_radius = ((power_n - while_counter) / power_n) ** 1.3 * self.radius
+            current_radius = ((power_n - while_counter) / power_n) ** 1.3 * radius
             for i in range(n):
                 angle = 2 * math.pi * i / n
                 vertices.append(
@@ -83,18 +96,17 @@ class Circle(ContinuousGeometry[TensorType]):
             while_counter += 1
 
         v_count = len(vertices) - 1
-        triangles.append([v_count, v_count - 1, v_count - 2])
-        triangles.append([v_count, v_count - 2, v_count - 3])
+        # Connect the last four points to the center point
+        center_point = [0.0, 0.0]
+        vertices.append(center_point)
+        triangles.append([v_count + 1, v_count, v_count - 1])
+        triangles.append([v_count + 1, v_count - 1, v_count - 2])
+        triangles.append([v_count + 1, v_count - 2, v_count - 3])
+        triangles.append([v_count + 1, v_count, v_count - 3])
 
-        triangles = self.backend.build_tensor(triangles)
-        vertices = self.backend.build_tensor(vertices)
-
-        return MeshGeometry(
-            variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=triangles),
-            discretization_of=self,
-            backend=self.backend,
-        )
+        triangles = backend.build_tensor(triangles)
+        vertices = backend.build_tensor(vertices)
+        return vertices, triangles
 
     def contains(self, points):
         points = self.backend.build_tensor(points)
