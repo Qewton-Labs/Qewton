@@ -257,6 +257,8 @@ class Node(ABC, Generic[TensorType]):
 
     @classmethod
     def get_dtype(cls, type_hint, backend: type[Backend[TensorType]]):
+        if type_hint == Any:
+            return type_hint
         if type_hint is not TensorType and isinstance(type_hint, type):
             if type_hint is not inspect.Signature.empty:
                 return type_hint
@@ -267,6 +269,7 @@ class Node(ABC, Generic[TensorType]):
     @classmethod
     def _unwrap_annotated(cls, type_hint, owner, backend):
         """Return (base_type, config)."""
+
         if get_origin(type_hint) in [Optional, Union]:
             type_hint = get_args(type_hint)[0]
         if get_origin(type_hint) is Annotated:

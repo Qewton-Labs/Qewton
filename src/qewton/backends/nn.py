@@ -205,6 +205,6 @@ class NNBackend(Backend[TensorType]):
         mode: Literal[
             "nearest", "linear", "bilinear", "bicubic", "trilinear"
         ] = "nearest",
-        align_corners: bool = False,
+        align_corners: bool | None = False,
     ) -> TensorType:
         pass
