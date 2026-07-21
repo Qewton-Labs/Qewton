@@ -9,6 +9,8 @@ from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Float32
+from qewton.geometries.continuous.domains_2d.circle import Circle
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry, Mesh
 
 
 class Cylinder(ContinuousGeometry[TensorType]):
@@ -145,6 +147,41 @@ class Cylinder(ContinuousGeometry[TensorType]):
 
     def create_boundary(self):
         return CylinderBoundary(self)
+
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
+        vertices, triangles = Circle.triangulate_circle(
+            max_vertex_distance, radius=self.radius, backend=self.backend
+        )
+        zeros = self.backend.math.zeros((len(vertices), 1), device=device)
+        vertices = self.backend.math.concatenate([vertices, zeros], axis=1)
+        all_vertices = []
+        tetrahedra = []
+        nz = math.ceil(self.height / max_vertex_distance) + 1
+        for k in range(nz):
+            vertices_copy = self.backend.math.copy(vertices)
+            # triangles_copy = self.backend.math.copy(triangles)
+            vertices_copy[:, 2] = self.height * (k / (nz - 1))
+            all_vertices.append(vertices_copy)
+            if k == nz - 1:
+                continue
+            # Build tetraheder
+            v_count = len(vertices)
+            for tri in triangles:
+                a, b, c = tri + v_count * k
+                a1, b1, c1 = tri + v_count * (k + 1)
+                tetrahedra.append([a1, b1, c1, b])
+                tetrahedra.append([a1, b, a, c1])
+                tetrahedra.append([a, b, c1, c])
+        all_vertices = self.backend.math.concatenate(all_vertices, axis=0)
+        tetrahedra = self.backend.build_tensor(tetrahedra)
+
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(vertices=all_vertices, cells=tetrahedra),
+            discretization_of=self,
+        )
 
 
 class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
