@@ -14,6 +14,25 @@ from qewton.config.data_configurations import DataConfiguration
 
 
 class PCANode(DataProcessingNode[TensorType]):
+    """A node that performs a principal component analysis (PCA) on its
+    input data.
+    To construct the PCA, in the setup phase all training data is collect
+    by (partially) evaluating the graph it belongs to.
+
+    Args:
+        n (int | HyperParameter): The number of principal components to
+            keep.
+        data_source_node (DataNode): The original source of data. Does
+            not have to be node which is directly connected to this PCANode, only
+            the original data loader providing the original data set.
+        scale (bool | HyperParameter, optional): If the input
+            data after the representation in the PCA-basis should be
+            scaled by the principal components. Defaults to True.
+        name (str | None, optional): Defaults to "PCA Node".
+        backend (type[ComputingBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
+
     def __init__(
         self,
         n: int | HyperParameter,
@@ -125,6 +144,14 @@ class PCANode(DataProcessingNode[TensorType]):
 
 
 class InversePCANode(DataProcessingNode[TensorType]):
+    """Applies a inverse PCA, given some coefficients it uses the
+    PCA-basis to map back to the original one.
+
+    Args:
+        pca_node (PCANode[TensorType]): The PCANode that yields the PCA basis
+            that is required for the inverse transformation.
+        name (str | None, optional): Defaults to "Inverse PCA Node"
+    """
 
     def __init__(
         self,

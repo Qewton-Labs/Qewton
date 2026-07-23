@@ -14,6 +14,20 @@ from qewton.config.data_configurations import DataConfiguration
 
 
 class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]):
+    """Applies a normalization of the input data by a mean shift and afterwards
+    a normalization with the standard derivation.
+
+    Args:
+        data_source_node (DataNode): The original source of data. Does
+            not have to be node which is directly to this node, only
+            the original data loader providing the original data set.
+        eps (float, optional): A small tolerance added to the standard derivation,
+            to avoid dividing by 0. Defaults to 1.0e-6.
+        name (str, optional): Defaults to "Normalization Node".
+        backend (type[ComputingBackend[TensorType]], optional):
+            Defaults to DEFAULT_DL_BACKEND.
+    """
+
     data_axes = EllipsisAxes()
     batch_axes = BatchAxes(None)
 
@@ -24,7 +38,6 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
         name: str = "Normalization Node",
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
-
         graph = Graph()
         self.sub_node = Subtract(backend=backend)
         self.divide_node = Divide(backend=backend)
@@ -88,30 +101,38 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
 
 
 class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]):
+    """Inverts a normalization.
+
+    Args:
+        std_node (StdNormalizationNode[TensorType]): The node that applies
+            the initial normalization we want to invert.
+        name (str, optional): Defaults to "Inverse Std. Norm. Node".
+    """
+
     data_axes = EllipsisAxes()
     batch_axes = BatchAxes(None)
 
     def __init__(
         self,
-        data_source_node: StdNormalizationNode,
+        std_node: StdNormalizationNode[TensorType],
         name: str = "Inverse Std. Norm. Node",
-        backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
+
         graph = Graph()
-        self.add_node = Add(backend=backend)
-        self.multiply_node = Multiply(backend=backend)
+        self.add_node = Add(backend=std_node.backend)
+        self.multiply_node = Multiply(backend=std_node.backend)
         graph.connect(self.multiply_node, self.add_node.input_ports[0])
 
         super().__init__(
             graph=graph,
             input_ports=[self.multiply_node.input_ports[0]],
             output_ports=[self.add_node.output_ports[0]],
-            data_source_node=data_source_node,
+            data_source_node=std_node,
             name=name,
-            backend=backend,
+            backend=std_node.backend,
         )
         self._graph.setup()
-        self.data_source_node: StdNormalizationNode = data_source_node
+        self.data_source_node: StdNormalizationNode = std_node
 
     def setup(self, graph: Graph) -> None:  # pylint: disable=W0613
         if self.data_source_node.state == NodeState.UNINITIALIZED:
