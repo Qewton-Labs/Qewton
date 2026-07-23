@@ -9,6 +9,7 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.errors import DataConfigMismatchError
 
 from qewton.graphs.nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
+from qewton.graphs.control_nodes.data_processing_node import DataProcessingNode
 from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
 from qewton.graphs.edges import Edge
 
@@ -192,14 +193,17 @@ class Graph:
 
         from_ports = get_ports(from_, return_output_ports=True)
         to_ports = get_ports(to_, return_output_ports=False)
-        if len(from_ports) != len(to_ports):
-            raise ValueError(
-                "When connecting two nodes directly, they should have the"
-                + "same number of output and input ports!"
-            )
 
         from_node = from_ports[0].node
         to_node = to_ports[0].node
+
+        if len(from_ports) != len(to_ports):
+            raise ValueError(
+                "When connecting two nodes directly, they should have the "
+                + f"same number of output and input ports! Got node {from_node.name}"
+                + f" with {len(from_ports)} output ports and node {to_node.name}"
+                + f" with {len(to_ports)} input ports!"
+            )
 
         # before doing anything, check for validity
         for to_port in to_ports:
@@ -461,9 +465,13 @@ class Graph:
 
     def setup(self):
         """Setup all nodes for evaluation."""
-        for node in self.nodes:
-            node.setup()
         self.sort()
+        for node in self.sorted_nodes:
+            if isinstance(node, DataProcessingNode):
+                if node.data_source_node in self.nodes:
+                    node.setup(self)
+            else:
+                node.setup()
 
     def run(self, mode: EvaluationPhase = EvaluationPhase.ALWAYS):
         """
@@ -480,6 +488,29 @@ class Graph:
         for edge in self.edges_to_outside + self.skip_connections:
             edge.to_port.set_value(edge.from_port.value)
 
+    def run_to(
+        self, last_node: Node, mode: EvaluationPhase = EvaluationPhase.ALWAYS
+    ) -> dict[Port, Edge]:
+        """
+        Runs the graph execution by iterating through the topologically sorted nodes,
+        only up to the provided node.
+        Then it returns the last_node and all incoming edges of this node in this
+        graph as a dictionary of [Port, Edge].
+        """
+        # TODO: Maybe build backwards the graph to only run over needed
+        # nodes to reach the last_node
+        for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
+            if node == last_node:
+                return edges
+            node.set_mode(mode)
+            for in_port in node.input_ports:
+                if in_port in edges:
+                    in_port.set_value(edges[in_port].from_port.value)
+                else:
+                    in_port.clear_value()
+            node.run()
+        return {}
+
     def collect_trainable_parameters(self):
         """
         Collects all trainable parameters from all nodes within the graph.
@@ -489,7 +520,7 @@ class Graph:
         """
         params_collection = TrainableParametersCollection()
         for node in self.nodes:
-            p = node._trainable_parameters
+            p = node._trainable_parameters  # pylint: disable=W0212
             if not p.empty:
                 params_collection.extend(p)
         return params_collection

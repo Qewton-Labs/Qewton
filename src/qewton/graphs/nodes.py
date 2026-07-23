@@ -186,6 +186,7 @@ class Node(ABC, Generic[TensorType]):
         name: str | None = None,
         state: NodeState = NodeState.FIXED,
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        **kwargs,
     ) -> None:
         super().__init__()
         self._name = name

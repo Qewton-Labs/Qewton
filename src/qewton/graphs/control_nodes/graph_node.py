@@ -1,17 +1,15 @@
 from __future__ import annotations
-from typing import get_origin, get_args, Annotated, Callable
+from typing import Callable
 import inspect
-
 
 from qewton.graphs.nodes import InputPort, Node, OutputPort, Port
 from qewton.graphs import Graph
-from qewton.config.data_configurations import DataConfiguration
 from qewton.backends import Backend, TensorType
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
 
 
-class GraphNode(Node):
+class GraphNode(Node[TensorType]):
     """
     A node that encapsulates an entire graph.
 
@@ -50,7 +48,7 @@ class GraphNode(Node):
         backend: type[Backend[TensorType]] = Backend,
         **kwargs,
     ) -> None:
-        super().__init__(name=name, backend=backend)
+        super().__init__(name=name, backend=backend, **kwargs)
 
         self._graph = graph
 
@@ -86,7 +84,9 @@ class GraphNode(Node):
                 if output_ports[p].node == self:
                     self._graph.add_skip_connection(output_ports[p], p)
                 else:
-                    self._graph.connect_to_outside_of_graph(output_ports[p], p)
+                    self._graph.connect_to_outside_of_graph(
+                        output_ports[p], p  # type: ignore
+                    )
             else:
                 if self.configs_defined_in_forward:
                     port_config = out_forward_ports[i].data_configuration

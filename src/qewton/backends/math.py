@@ -914,7 +914,7 @@ class MathBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def reshape(x: Any, newshape: Any) -> TensorType:
+    def reshape(x: Any, shape: Any) -> TensorType:
         pass
 
     @staticmethod

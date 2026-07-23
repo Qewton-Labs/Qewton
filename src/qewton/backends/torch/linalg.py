@@ -10,6 +10,10 @@ class TorchLinAlgBackend(LinAlgBackend[torch.Tensor]):
         return torch.svd(x)
 
     @staticmethod
+    def pca(x: torch.Tensor, q=None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return torch.pca_lowrank(x, q=q, center=False)
+
+    @staticmethod
     def norm(x: torch.Tensor, order="fro", axis=None, keepdims=False) -> torch.Tensor:
         return torch.norm(x, p=order, dim=axis, keepdim=keepdims)
 
