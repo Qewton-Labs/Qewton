@@ -96,7 +96,7 @@ def test_std_and_inverse_roundtrip(backend):
     data_node = DummyDataNode([b], n_batches=1, batch_size=6, backend=backend)
 
     norm = StdNormalizationNode(data_source_node=data_node, backend=backend)
-    inv = InverseStdNormalizationNode(data_source_node=norm, backend=backend)
+    inv = InverseStdNormalizationNode(std_node=norm)
 
     graph = Graph()
     graph.connect(data_node, norm)
@@ -121,7 +121,7 @@ def test_std_normalization_device_transfer(backend, device):
     b = backend.build_tensor([[float(i + j * 0.1) for j in range(4)] for i in range(6)])
     data_node = DummyDataNode([b], n_batches=1, batch_size=6, backend=backend)
     norm = StdNormalizationNode(data_source_node=data_node, backend=backend)
-    inv = InverseStdNormalizationNode(data_source_node=norm, backend=backend)
+    inv = InverseStdNormalizationNode(std_node=norm)
 
     graph = Graph()
     graph.connect(data_node, norm)
