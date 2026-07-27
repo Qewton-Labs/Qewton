@@ -552,12 +552,17 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     def flatten(x: Any, start_dim: int = 0, end_dim: int = -1) -> torch.Tensor:
         return torch.flatten(x, start_dim=start_dim, end_dim=end_dim)
 
+    @staticmethod
+    def unflatten(x: Any, axis: int, sizes: tuple[int, ...]) -> torch.Tensor:
+        return torch.unflatten(x, dim=axis, sizes=sizes)
+
     copy = torch.clone
     squeeze = torch.squeeze
     unsqueeze = torch.unsqueeze
     ravel = torch.ravel
     moveaxis = torch.moveaxis
     swapaxes = torch.swapaxes
+    narrow = torch.narrow
 
     @staticmethod
     def shape(x: torch.Tensor):

@@ -350,6 +350,18 @@ class Dot(Node[TensorType]):
         return self.backend.math.inner(x, y)
 
 
+class Inner(Node[TensorType]):
+    dim_1 = AxesDim(None)
+    ell_ax = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+        y: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(1,)))]:
+        return self.backend.math.sum(x * y, axis=-1, keepdims=False)
+
+
 # endregion
 
 

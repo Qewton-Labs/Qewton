@@ -44,6 +44,7 @@ from .math import (
     MatMul,
     Mean,
     Negative,
+    Inner,
 )
 
 from .array_operations import (
@@ -55,6 +56,7 @@ from .array_operations import (
     ConcatVariables,
     ConcatNode,
     SetItem,
+    Reshape,
 )
 from .derivatives import (
     GradientTracking,

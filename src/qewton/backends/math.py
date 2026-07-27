@@ -1219,3 +1219,13 @@ class MathBackend(Backend[TensorType]):
     @abstractmethod
     def flatten(x: Any, start_dim: int = 0, end_dim: int = -1) -> TensorType:
         pass
+
+    @staticmethod
+    @abstractmethod
+    def unflatten(x: Any, axis: int, sizes: tuple[int, ...]) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def narrow(x: Any, dim: int, start: int, length: int) -> TensorType:
+        pass
