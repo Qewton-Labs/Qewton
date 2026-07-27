@@ -95,7 +95,7 @@ class CNN(GraphNode, Generic[TensorType]):
         for i, k in enumerate(kernel_size):
             self.kernel_size.append(HyperParameter.from_value(k, f"CCN Kernel Size {i}"))
             assert (
-                self.kernel_size[i].current_value % 2 == 1
+                self.kernel_size[i].value % 2 == 1
             ), f"Kernel size must be always odd, got {self.kernel_size[i]}"
 
         self._graph = self._build_network(backend)
@@ -223,7 +223,7 @@ class UNet(GraphNode, Generic[TensorType]):
             self.output_var = None
         # Compute image dimension
         if isinstance(conv_kernel_size, HyperParameter):
-            self.image_dim = len(conv_kernel_size.current_value)
+            self.image_dim = len(conv_kernel_size.value)
         else:
             self.image_dim = len(conv_kernel_size)
         # Register all parameters
@@ -291,22 +291,22 @@ class UNet(GraphNode, Generic[TensorType]):
         for i in range(len(down_channels) - 1):
             # Downsampling step:
             assert all(
-                k % 2 == 1 for k in self.conv_kernel_size.current_value
+                k % 2 == 1 for k in self.conv_kernel_size.value
             ), "Only odd kernel sizes are supported by default."
-            padding = tuple((k - 1) // 2 for k in self.conv_kernel_size.current_value)
+            padding = tuple((k - 1) // 2 for k in self.conv_kernel_size.value)
             conv_block_list_down.append(
                 DoubleConv(
-                    in_channels=down_channels[i].current_value,
-                    out_channels=down_channels[i + 1].current_value,
-                    kernel_size=self.conv_kernel_size.current_value,
+                    in_channels=down_channels[i].value,
+                    out_channels=down_channels[i + 1].value,
+                    kernel_size=self.conv_kernel_size.value,
                     padding=padding,
-                    activation=self.activation.current_value,
-                    bias=self.bias.current_value,
+                    activation=self.activation.value,
+                    bias=self.bias.value,
                     backend=backend,
                 )
             )
             pooling_list.append(
-                self.pooling_node(self.pooling_kernel_size.current_value, stride=2)
+                self.pooling_node(self.pooling_kernel_size.value, stride=2)
             )
             graph.connect(conv_block_list_down[i], pooling_list[i])
 
@@ -316,18 +316,18 @@ class UNet(GraphNode, Generic[TensorType]):
             slice_node_list.append(Slice(slice_config=slice(2, None), backend=backend))
             # In the upwards conv. we switch the order of the index, since
             # we want to invert the steps from above:
-            if self.skip_connections.current_value:
+            if self.skip_connections.value:
                 skip_list.append(ConcatNode(concat_dim=1, backend=backend))
-                in_channels = 2 * up_channels[i + 1].current_value
+                in_channels = 2 * up_channels[i + 1].value
             else:
-                in_channels = up_channels[i + 1].current_value
+                in_channels = up_channels[i + 1].value
             if i == 0:  # For the final step we want to just use a convolution
                 conv_block_list_up.append(
                     Conv(
                         in_channels=in_channels,
-                        out_channels=up_channels[i].current_value,
+                        out_channels=up_channels[i].value,
                         kernel_size=tuple(1 for _ in range(self.image_dim)),
-                        bias=self.bias.current_value,
+                        bias=self.bias.value,
                         backend=backend,
                     )
                 )
@@ -335,10 +335,10 @@ class UNet(GraphNode, Generic[TensorType]):
                 conv_block_list_up.append(
                     DoubleConv(
                         in_channels=in_channels,
-                        out_channels=up_channels[i].current_value,
+                        out_channels=up_channels[i].value,
                         kernel_size=tuple(1 for _ in range(self.image_dim)),
-                        activation=self.activation.current_value,
-                        bias=self.bias.current_value,
+                        activation=self.activation.value,
+                        bias=self.bias.value,
                         backend=backend,
                     )
                 )
@@ -396,7 +396,7 @@ class UNet(GraphNode, Generic[TensorType]):
         skip_list,
         i,
     ):
-        if self.skip_connections.current_value:
+        if self.skip_connections.value:
             graph.connect(interpolate_list[i], skip_list[i].input_ports[0])
             graph.connect(conv_block_list_down[i], skip_list[i].input_ports[1])
             graph.connect(skip_list[i], conv_block_list_up[i])

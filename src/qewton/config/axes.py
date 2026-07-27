@@ -779,9 +779,9 @@ class AxesDim:
         return True
 
 
-class AddedDim(AxesDim):
+class OperationDim(AxesDim):
     """
-    Represents a dimension whose size is the sum of two other dimensions.
+    Represents a dimension that is derived from an operation on other dimensions.
     This is for automatic referencing, to build symbolic relations.
     """
 
@@ -796,6 +796,13 @@ class AddedDim(AxesDim):
 
     def update_size(self, new_size):
         raise RuntimeError("Can not update operation dims in place.")
+
+
+class AddedDim(OperationDim):
+    """
+    Represents a dimension whose size is the sum of two other dimensions.
+    This is for automatic referencing, to build symbolic relations.
+    """
 
     @property
     def size(self):
@@ -819,14 +826,24 @@ class AddedDim(AxesDim):
         if self.dim_1.size is None and self.dim_2.size is None:
             return False  # we can not update from this side
         if self.dim_1.size is None:
-            self.dim_1.update_size(new_dim.size - self.dim_2.size)  # type: ignore
+            self.dim_1.update_dim(
+                AxesDim(
+                    new_dim.size - self.dim_2.size,  # type: ignore
+                    broadcastable=self.broadcastable,
+                )
+            )
         else:
-            self.dim_2.update_size(new_dim.size - self.dim_1.size)
+            self.dim_2.update_dim(
+                AxesDim(
+                    new_dim.size - self.dim_1.size,  # type: ignore
+                    broadcastable=self.broadcastable,
+                )
+            )
         self.broadcastable = new_dim.broadcastable
         return True
 
 
-class SubDim(AddedDim):
+class SubDim(OperationDim):
     """
     Represents a dimension whose size is the difference of two other dimensions.
     This is for automatic referencing, to build symbolic relations.
@@ -854,14 +871,24 @@ class SubDim(AddedDim):
         if self.dim_1.size is None and self.dim_2.size is None:
             return False  # we can not update from this side
         if self.dim_1.size is None:
-            self.dim_1.update_size(new_dim.size + self.dim_2.size)  # type: ignore
+            self.dim_1.update_dim(
+                AxesDim(
+                    new_dim.size + self.dim_2.size,  # type: ignore
+                    broadcastable=self.broadcastable,
+                )
+            )
         else:
-            self.dim_2.update_size(new_dim.size + self.dim_1.size)
+            self.dim_2.update_dim(
+                AxesDim(
+                    self.dim_1.size - new_dim.size,  # type: ignore
+                    broadcastable=self.broadcastable,
+                )
+            )
         self.broadcastable = new_dim.broadcastable
         return True
 
 
-class ProductDim(AddedDim):
+class ProductDim(OperationDim):
     """
     Represents a dimension whose size is the product of two other dimensions.
     """
@@ -888,14 +915,24 @@ class ProductDim(AddedDim):
         if self.dim_1.size is None and self.dim_2.size is None:
             return False  # we can not update from this side
         if self.dim_1.size is None:
-            self.dim_1.update_size(new_dim.size // self.dim_2.size)  # type: ignore
+            self.dim_1.update_dim(
+                AxesDim(
+                    new_dim.size // self.dim_2.size,  # type: ignore
+                    broadcastable=self.broadcastable,
+                )
+            )
         else:
-            self.dim_2.update_size(new_dim.size // self.dim_1.size)
+            self.dim_2.update_dim(
+                AxesDim(
+                    new_dim.size // self.dim_1.size,  # type: ignore
+                    broadcastable=self.broadcastable,
+                )
+            )
         self.broadcastable = new_dim.broadcastable
         return True
 
 
-class DivideDim(AddedDim):
+class DivideDim(OperationDim):
     """
     Represents a dimension whose size is the division of two other dimensions.
     """
@@ -922,26 +959,27 @@ class DivideDim(AddedDim):
         if self.dim_1.size is None and self.dim_2.size is None:
             return False  # we can not update from this side
         if self.dim_1.size is None:
-            self.dim_1.update_size(new_dim.size * self.dim_2.size)  # type: ignore
+            self.dim_1.update_dim(
+                AxesDim(
+                    new_dim.size * self.dim_2.size,  # type: ignore
+                    broadcastable=self.broadcastable,
+                )
+            )
         else:
-            self.dim_2.update_size(new_dim.size * self.dim_1.size)
+            self.dim_2.update_dim(
+                AxesDim(
+                    self.dim_1.size // new_dim.size,  # type: ignore
+                    broadcastable=self.broadcastable,
+                )
+            )
         self.broadcastable = new_dim.broadcastable
         return True
 
 
-class MinimumDim(AxesDim):
+class MinimumDim(OperationDim):
     """
     Represents a dimension whose size is the minimum of two other dimensions.
     """
-
-    def __new__(cls, *args, **kwargs):
-        return super().__new__(cls)
-
-    def __init__(self, dim_1, dim_2):
-        self.dim_1 = dim_1
-        self.dim_2 = dim_2
-        broadcastable = dim_1.broadcastable and dim_2.broadcastable
-        super().__init__(self.size, broadcastable)
 
     @property
     def size(self):
