@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any
+from types import EllipsisType
 
 from qewton.config.axes import (
     Axes,
@@ -73,6 +74,22 @@ class DataConfiguration:
             if isinstance(axes, FeatureAxes):
                 return axes.variables.name
         return ""
+
+    @property
+    def shape(self) -> tuple[int | None | EllipsisType, ...]:
+        shape_list = []
+        for axes in self.axes:
+            if isinstance(axes, EllipsisAxes):
+                shape_list.append(Ellipsis)
+            else:
+                for dim in axes.shape:
+                    if isinstance(dim, EllipsisDim):
+                        shape_list.append(Ellipsis)
+                    elif isinstance(dim, AxesDim):
+                        shape_list.append(dim.size)
+                    else:
+                        shape_list.append(dim)
+        return tuple(shape_list)
 
     def __str__(self):
         """Returns a readable representation of the configuration.

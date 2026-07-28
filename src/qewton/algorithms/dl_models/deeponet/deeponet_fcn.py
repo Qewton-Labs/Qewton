@@ -1,9 +1,14 @@
 from typing import Literal
+import math
 
 from qewton.algorithms.dl_models.deeponet.base import DeepONet
 from qewton.algorithms.dl_models.fcn import FCN
 from qewton.algorithms.building_blocks.math import Inner, Multiply, Sum
-from qewton.algorithms.building_blocks.array_operations import Reshape, Unsqueeze
+from qewton.algorithms.building_blocks.array_operations import (
+    ReshapeAtDim,
+    Unsqueeze,
+    Flatten,
+)
 from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.backends import DEFAULT_DL_BACKEND, ComputingBackend, TensorType
 from qewton.graphs.nodes import Node
@@ -18,7 +23,13 @@ class FCNDeepONet(DeepONet[TensorType]):
     for both the branch and trunk networks.
     The merge node can be configured to handle different output strategies,
     allowing for flexibility in how the outputs of the branch and trunk networks
-    are combined.
+    are combined. All inputs of the branch network will be flattened before
+    being passed to the FCN. This DeepONet expects inputs of shape:
+    - Branch input: (batch_size, discretization_shape, branch_input_dim)
+    - Trunk input: (batch_size, discretization_shape, trunk_input_dim)
+    where discretization_shape can be any shape, only trunk and branch
+    need to be on the same discretization shape. The output will have shape:
+    - Output: (batch_size, discretization_shape, output_dim)
 
     Args:
         trunk_input (int | Variable): The input dimension for
@@ -32,9 +43,9 @@ class FCNDeepONet(DeepONet[TensorType]):
             in each layer of the trunk network.
         branch_hidden_neurons (int | HyperParameter): The number of hidden neurons
             in each layer of the branch network.
-        trunk_n_hidden_layers (int | HyperParameter): The number of hidden layers
+        trunk_hidden_layers (int | HyperParameter): The number of hidden layers
             in the trunk network.
-        branch_n_hidden_layers (int | HyperParameter): The number of hidden layers
+        branch_hidden_layers (int | HyperParameter): The number of hidden layers
             in the branch network.
         intermediate_neurons (int | HyperParameter): The number of neurons in
             the intermediate layer which is the output of both the branch and
@@ -69,8 +80,8 @@ class FCNDeepONet(DeepONet[TensorType]):
         output: int | Variable,
         trunk_hidden_neurons: int | HyperParameter,
         branch_hidden_neurons: int | HyperParameter,
-        trunk_n_hidden_layers: int | HyperParameter,
-        branch_n_hidden_layers: int | HyperParameter,
+        trunk_hidden_layers: int | HyperParameter,
+        branch_hidden_layers: int | HyperParameter,
         intermediate_neurons: int | HyperParameter,
         output_strategy: Literal["split", "split_branch", "split_trunk"] = "split",
         activations: type[Node] | HyperParameter = ReLU,
@@ -92,10 +103,10 @@ class FCNDeepONet(DeepONet[TensorType]):
             branch_hidden_neurons, "Branch hidden neurons"
         )
         self.trunk_n_hidden_layers = HyperParameter.from_value(
-            trunk_n_hidden_layers, "Trunk hidden layers"
+            trunk_hidden_layers, "Trunk hidden layers"
         )
         self.branch_n_hidden_layers = HyperParameter.from_value(
-            branch_n_hidden_layers, "Branch hidden layers"
+            branch_hidden_layers, "Branch hidden layers"
         )
         self.activations = HyperParameter.from_value(activations, "Activations")
 
@@ -110,38 +121,45 @@ class FCNDeepONet(DeepONet[TensorType]):
             **kwargs,
         )
 
+        self.branch_port = self.input_ports[0]
+        self.trunk_port = self.input_ports[1]
+
     def _build_network(self, backend):
         trunk_out = self.intermediate_neurons.value
         branch_out = self.intermediate_neurons.value
         if self.output_dim == 1:
-            merge_node = Inner(backend=backend)
+            merge_node = Inner(backend=backend, keepdims=True)
         else:
             merge_graph = Graph()
             if self.output_strategy == "split":
                 # Both trunk and branch network will have
                 # output_dim * intermediate_neurons neurons in the last layer.
                 # Which we just reshape to (output_dim, intermediate_neurons).
-                reshape_branch = Reshape(
-                    new_shape=(-1, self.output_dim, self.intermediate_neurons.value),
+                reshape_branch = ReshapeAtDim(
+                    dim=-1,
+                    new_shape=(self.output_dim, self.intermediate_neurons.value),
                     backend=backend,
                 )
-                reshape_trunk = Reshape(
-                    new_shape=(-1, self.output_dim, self.intermediate_neurons.value),
+                reshape_trunk = ReshapeAtDim(
+                    dim=-1,
+                    new_shape=(self.output_dim, self.intermediate_neurons.value),
                     backend=backend,
                 )
                 branch_out *= self.output_dim
                 trunk_out *= self.output_dim
             elif self.output_strategy == "split_branch":
-                reshape_branch = Reshape(
-                    new_shape=(-1, self.output_dim, self.intermediate_neurons.value),
+                reshape_branch = ReshapeAtDim(
+                    dim=-1,
+                    new_shape=(self.output_dim, self.intermediate_neurons.value),
                     backend=backend,
                 )
                 reshape_trunk = Unsqueeze(dim=-2, backend=backend)
                 branch_out *= self.output_dim
             else:  # self.output_strategy == "split_trunk"
                 reshape_branch = Unsqueeze(dim=-2, backend=backend)
-                reshape_trunk = Reshape(
-                    new_shape=(-1, self.output_dim, self.intermediate_neurons.value),
+                reshape_trunk = ReshapeAtDim(
+                    dim=-1,
+                    new_shape=(self.output_dim, self.intermediate_neurons.value),
                     backend=backend,
                 )
                 trunk_out *= self.output_dim
@@ -169,7 +187,9 @@ class FCNDeepONet(DeepONet[TensorType]):
             activation=self.activations,
             backend=backend,
         )
-        branch_net = FCN(
+        branch_flatting = Flatten(start_dim=1, backend=backend)
+        branch_unsqueeze = Unsqueeze(dim=1, backend=backend)
+        branch_fcn = FCN(
             in_neurons=self.branch_input,
             hidden_neurons=self.branch_hidden_neurons,
             out_neurons=branch_out,
@@ -177,8 +197,28 @@ class FCNDeepONet(DeepONet[TensorType]):
             activation=self.activations,
             backend=backend,
         )
+        branch_graph = Graph()
+        branch_graph.connect(branch_flatting, branch_fcn)
+        branch_graph.connect(branch_fcn, branch_unsqueeze)
+        branch_net = GraphNode(
+            graph=branch_graph,
+            input_ports=branch_flatting.input_ports,
+            output_ports=branch_unsqueeze.output_ports,
+            name="BranchNet",
+            backend=backend,
+        )
 
         return merge_node, branch_net, trunk_net
+
+    def update_data_configs(self, updated_port, config_dict, dynamic_configs):
+        ports = super().update_data_configs(updated_port, config_dict, dynamic_configs)
+        if updated_port == self._input_ports[0]:
+            branch_config_shape = dynamic_configs[updated_port].shape[1:]
+            if len(branch_config_shape) > 0 and all(
+                isinstance(dim, int) for dim in branch_config_shape
+            ):
+                self.branch_input = math.prod(branch_config_shape)
+        return ports
 
     def setup(self) -> None:
         self.merge_node, self.branch_net, self.trunk_net = self._build_network(

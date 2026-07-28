@@ -55,7 +55,6 @@ class DeepONet(GraphNode[TensorType]):
             backend=backend,
             **kwargs,
         )
-        self._graph.setup()
         self.setup()
 
     def _check_nodes(self, branch_net, trunk_net, merge_node, backend):
@@ -79,10 +78,10 @@ class DeepONet(GraphNode[TensorType]):
         ), "Trunk network must have exactly one output port."
 
     def setup(self) -> None:
+        self._graph.setup()
         self.branch_net.setup()
         self.trunk_net.setup()
         self.merge_node.setup()
-        return super().setup()
 
     @property
     def hyperparameters(self) -> list:

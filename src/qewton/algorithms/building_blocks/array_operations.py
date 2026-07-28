@@ -341,6 +341,30 @@ class Reshape(Node[TensorType]):
         return self.backend.math.reshape(inp, self.new_shape)
 
 
+class ReshapeAtDim(Node[TensorType]):
+
+    def __init__(
+        self,
+        dim: int,
+        new_shape: tuple[int, ...],
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        self.new_shape = new_shape
+        self.dim = dim
+
+        super().__init__(name if name is not None else "ReshapeNode", backend=backend)
+        self.backend: type[DeepLearningBackend[TensorType]] = backend
+
+    def forward(
+        self, inp: Annotated[TensorType, DataConfiguration.empty()]
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        if self.dim < 0:
+            self.dim = len(inp.shape) + self.dim
+        new_shape = inp.shape[: self.dim] + self.new_shape + inp.shape[self.dim + 1 :]
+        return self.backend.math.reshape(inp, new_shape)
+
+
 class Flatten(Node[TensorType]):
 
     def __init__(

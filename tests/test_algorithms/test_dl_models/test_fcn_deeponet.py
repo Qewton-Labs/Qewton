@@ -72,15 +72,15 @@ def test_fcn_deeponet_eval_single_output(backend, device):
         intermediate_neurons=8,
         backend=backend,
     )
-    branch_points = backend.math.zeros((5, 3), device=device)
-    trunk_points = backend.math.zeros((5, 2), device=device)
+    branch_points = backend.math.zeros((5, 3, 1), device=device)
+    trunk_points = backend.math.zeros((5, 3, 2), device=device)
     model.to(device=device)
 
     output = model(branch_points, trunk_points)
     print(output.shape)
     assert output.shape[0] == 5
-    if len(output.shape) > 1:
-        assert output.shape[1] == 1
+    assert output.shape[1] == 3
+    assert output.shape[2] == 1
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -99,13 +99,13 @@ def test_fcn_deeponet_eval_multi_output_strategies(backend, device, output_strat
         output_strategy=output_strategy,
         backend=backend,
     )
-    branch_points = backend.math.zeros((6, 3), device=device)
-    trunk_points = backend.math.zeros((6, 2), device=device)
+    branch_points = backend.math.zeros((6, 3, 1), device=device)
+    trunk_points = backend.math.zeros((6, 3, 2), device=device)
     model.to(device=device)
 
     output = model(branch_points, trunk_points)
 
-    assert output.shape == (6, 4)
+    assert output.shape == (6, 3, 4)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -137,8 +137,8 @@ def test_fcn_deeponet_setup_reinitializes_graph(backend, device):
     assert model.merge_node is not original_merge_node
     assert model.intermediate_neurons.current_value == 4
 
-    branch_points = backend.math.zeros((4, 3), device=device)
-    trunk_points = backend.math.zeros((4, 2), device=device)
+    branch_points = backend.math.zeros((4, 3, 1), device=device)
+    trunk_points = backend.math.zeros((4, 3, 2), device=device)
     model.to(device=device)
     output = model(branch_points, trunk_points)
-    assert output.shape == (4, 3)
+    assert output.shape == (4, 3, 3)
