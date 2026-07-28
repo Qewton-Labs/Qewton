@@ -59,12 +59,11 @@ class PointSampler(DataNode[TensorType]):
         self.geometry = geometry
         self.compute_normals = compute_normals
         self.normal_name = normal_name
-        self.is_boundary_geometry = isinstance(geometry, BoundaryGeometry)
+        self.has_boundary_geometry = isinstance(geometry, BoundaryGeometry)
         self.is_static = False
-        if compute_normals and not self.is_boundary_geometry:
-            raise ValueError(
-                f"{geometry} is not a boundary geometry, can not compute normals."
-            )
+        if compute_normals:
+            self._check_normal_sampling_possible()
+
         super().__init__(batch_size=n_points, name=name, state=state, backend=backend)
         self.backend: type[ComputingBackend[TensorType]] = backend
 
@@ -93,6 +92,12 @@ class PointSampler(DataNode[TensorType]):
                     self.filter_indices.append(
                         self.geometry.variable.get_slice(var.annotation)  # type: ignore
                     )
+
+    def _check_normal_sampling_possible(self):
+        if not self.has_boundary_geometry:
+            raise ValueError(
+                f"{self.geometry} is not a boundary geometry, can not compute normals."
+            )
 
     def _evaluate_filter(self, points):
         filter_output = self.filter_fn(  # type: ignore

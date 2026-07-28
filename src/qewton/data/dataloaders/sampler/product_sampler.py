@@ -38,6 +38,15 @@ class ProductSampler(PointSampler[TensorType]):
             backend=sampler_a.backend,
         )
 
+    def _check_normal_sampling_possible(self):
+        if (
+            not self.sampler_a.has_boundary_geometry
+            and not self.sampler_b.has_boundary_geometry
+        ):
+            raise ValueError(
+                f"{self.geometry} is not a boundary geometry, can not compute normals."
+            )
+
     def _build_port(self, variable: Variable):
         a_config = self.sampler_a.output_ports[0].data_configuration
         b_config = self.sampler_b.output_ports[0].data_configuration
