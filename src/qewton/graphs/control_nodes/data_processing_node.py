@@ -17,3 +17,6 @@ class DataProcessingNode(Node[TensorType]):
 
     def setup(self, graph) -> None:
         pass
+
+    def fit(self, data_batch):
+        pass

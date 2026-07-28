@@ -72,8 +72,11 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
         for _ in range(self.data_source_node.training_batches):
             in_edge = graph.run_to(last_node=self, mode=EvaluationPhase.TRAIN)
             total_data.append(in_edge[self.input_ports[0]].from_port.value)
+        self.fit(total_data)
+
+    def fit(self, data_batch):
         # The batch is assumed to be on axis = 0 (see also data configs.)
-        total_data = self.backend.math.concatenate(total_data, axis=0)
+        total_data = self.backend.math.concatenate(data_batch, axis=0)
         # Now compute the mean and std, save them also into the ports:
         self.mean = self.backend.math.mean(total_data, axis=0, keepdims=True)
         self.std = self.backend.math.std(total_data, axis=0, keepdims=True)
@@ -149,6 +152,7 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
 
     def to(self, device):
         if self.data_source_node.state != NodeState.UNINITIALIZED:
+            self.data_source_node.to(device)
             self._set_port_values(self.data_source_node.mean, self.data_source_node.std)
         return super().to(device)
 

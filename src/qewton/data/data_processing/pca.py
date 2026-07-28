@@ -80,9 +80,12 @@ class PCANode(DataProcessingNode[TensorType]):
         for _ in range(self.data_source_node.training_batches):
             in_edge = graph.run_to(last_node=self, mode=EvaluationPhase.TRAIN)
             total_data.append(in_edge[self.input_ports[0]].from_port.value)
+        self.fit(total_data)
+
+    def fit(self, data_batch):
         # The batch is assumed to be on axis = 0
-        self.original_shape = tuple(total_data[0].shape)
-        total_data = self.backend.math.concatenate(total_data, axis=0)
+        self.original_shape = tuple(data_batch[0].shape)
+        total_data = self.backend.math.concatenate(data_batch, axis=0)
         self.flattened_dim.update_size(total_data.shape[-1])
         # Now apply the PCA, for this flatten everything except the first
         # axis:
