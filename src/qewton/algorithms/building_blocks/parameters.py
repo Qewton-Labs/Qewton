@@ -44,10 +44,10 @@ class ParameterNode(Node[TensorType]):
             self.output.set_value(self._trainable_parameter)
             self._state = NodeState.INITIALIZED
 
-    def set_trainable_parameter(self, new_value: TensorType) -> None:
+    def set_trainable_parameter(self, new_value: TrainableParameters) -> None:
         if self.state == NodeState.FIXED:
             raise ValueError("Cannot set trainable parameter when node is fixed.")
-        self._trainable_parameter = new_value
+        self._trainable_parameter = new_value.parameters
         self.output.set_value(self._trainable_parameter)
 
     def output_config(self):
@@ -139,6 +139,10 @@ class ParameterNode(Node[TensorType]):
         )
         node.set_mode(config.mode)
         node.node_id = config.node_id
-        node.set_trainable_parameter(config.other_args.get("trainable_parameters", None))
+        node.set_trainable_parameter(
+            config.other_args.get(
+                "trainable_parameters", TrainableParameters.create_empty(node.node_id)
+            )
+        )
         node.set_state(config.state)
         return node

@@ -227,9 +227,11 @@ class Node(ABC, Generic[TensorType]):
 
     _node_id_counter = 0
     _tracking_phase: bool = False
+    # Identifier for this node type. Used to reconstruct the node from
+    # its configuration. If it is None, the class name will be used as the
+    # identifier (but this is unsafe if it will be changed at some point).
     _type_identifier: str | None = None
 
-    # TODO: Save and load methods
     def __init__(
         self,
         name: str | None = None,
@@ -253,9 +255,12 @@ class Node(ABC, Generic[TensorType]):
         Node._node_id_counter += 1
 
     def __init_subclass__(cls) -> None:
-        if cls._type_identifier is not None:
-            if cls._type_identifier not in NODE_REGISTRY:
-                NODE_REGISTRY[cls._type_identifier] = cls
+        if cls._type_identifier is None:
+            type_id = cls.__name__
+        else:
+            type_id = cls._type_identifier
+        if type_id not in NODE_REGISTRY:
+            NODE_REGISTRY[type_id] = cls
         return super().__init_subclass__()
 
     @property
@@ -597,10 +602,9 @@ class Node(ABC, Generic[TensorType]):
             NodeConfig: The configuration object.
         """
         if self._type_identifier is None:
-            raise ValueError(
-                f"Node {self.name} does not have a type identifier. "
-                "This is required to reconstruct the node from its configuration."
-            )
+            type_id = self.__class__.__name__
+        else:
+            type_id = self._type_identifier
         # Read needed information from the constructor of this node to
         # reconstruct it later
         other_args = {}
@@ -616,7 +620,7 @@ class Node(ABC, Generic[TensorType]):
                 other_args[name] = class_atri
 
         return NodeConfig(
-            node_identifier=self._type_identifier,
+            node_identifier=type_id,
             node_id=self.node_id,
             mode=self.mode,
             hyperparameters=hyperparameters,

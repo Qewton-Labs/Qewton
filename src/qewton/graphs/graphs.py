@@ -16,6 +16,7 @@ from qewton.graphs.nodes import (
     OutputPort,
     Port,
     NodeConfig,
+    NODE_REGISTRY,
 )
 from qewton.graphs.control_nodes.data_processing_node import DataProcessingNode
 from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
@@ -631,10 +632,10 @@ class Graph:
         edges_config = []
         for node in self.nodes:
             for edge in self.incoming_edges[node]:
-                port_idx_from = edge.to_port.node.input_ports.index(
+                port_idx_to = edge.to_port.node.input_ports.index(
                     edge.to_port  # type: ignore
                 )
-                port_idx_to = edge.from_port.node.output_ports.index(
+                port_idx_from = edge.from_port.node.output_ports.index(
                     edge.from_port  # type: ignore
                 )
                 edges_config.append(
@@ -657,11 +658,18 @@ class Graph:
         node_dict: dict[int, Node] = {}
 
         for node_id, node_config in graph_config.node_configs.items():
-            node = Node.load_from_config(node_config)
+            if node_config.node_identifier is not None:
+                node_class = NODE_REGISTRY.get(node_config.node_identifier)
+            else:
+                node_class = Node
+            node = node_class.load_from_config(node_config)
             node_dict[node_id] = node
 
         for edge in graph_config.edges:
             from_node_id, from_port_idx, to_node_id, to_port_idx = edge
+            print(
+                f"Connecting {from_node_id}:{from_port_idx} to {to_node_id}:{to_port_idx}"
+            )
             from_port = node_dict[from_node_id].output_ports[from_port_idx]
             to_port = node_dict[to_node_id].input_ports[to_port_idx]
             graph.connect(from_port, to_port)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 from typing import Generic, TypeVar, ClassVar, TYPE_CHECKING, Protocol, Any
 
 from qewton.config import dtypes as qt_dtypes
@@ -139,6 +140,31 @@ class ComputingBackend(Backend[TensorType]):
             TensorType: The data with the new type.
         """
         raise NotImplementedError("The type changing is backend dependent")
+
+    @classmethod
+    def save(cls, data, path: str | Path):
+        """Saves the given data to the given path.
+
+        Args:
+            data (TensorType): The data to save.
+            path (str | Path): The path to save the data to.
+        """
+        raise NotImplementedError(
+            "The saving method must be implemented by subclasses of Backend."
+        )
+
+    @classmethod
+    def load(cls, path: str | Path) -> TensorType:
+        """Loads the data from the given path.
+
+        Args:
+            path (str | Path): The path to load the data from.
+        Returns:
+            TensorType: The loaded data.
+        """
+        raise NotImplementedError(
+            "The loading method must be implemented by subclasses of Backend."
+        )
 
 
 class DeepLearningBackend(ComputingBackend[TensorType]):

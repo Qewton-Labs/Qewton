@@ -1,3 +1,4 @@
+from pathlib import Path
 import torch
 
 from qewton.backends.torch.device import get_torch_device
@@ -71,10 +72,6 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
         return data.to(cls.get_device(device))
 
     @classmethod
-    def load(cls, path, **kwargs):
-        return torch.load(path, **kwargs)
-
-    @classmethod
     def from_numpy(cls, data, dtype=Float32):
         converted_type = cls.dtypes.get(dtype, dtype)
         return torch.from_numpy(data).to(converted_type)
@@ -95,3 +92,17 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     @classmethod
     def cast_dtype(cls, data: torch.Tensor, dtype):
         return data.type(cls.dtypes.get(dtype, dtype))
+
+    @classmethod
+    def save(cls, data, path: str | Path):
+        path = Path(path)
+        if path.suffix != ".pt":
+            path = path.with_suffix(".pt")
+        return torch.save(data, path)
+
+    @classmethod
+    def load(cls, path: str | Path):
+        path = Path(path)
+        if path.suffix != ".pt":
+            path = path.with_suffix(".pt")
+        return torch.load(path)

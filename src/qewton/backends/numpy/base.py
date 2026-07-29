@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 
 from qewton.config.dtypes import (
@@ -54,10 +55,6 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
         Bool: np.bool,
     }
 
-    @staticmethod
-    def load(path, **kwargs):
-        return np.load(path, **kwargs)
-
     @classmethod
     def from_numpy(cls, data, dtype=Float32):
         converted_type = cls.dtypes.get(dtype, dtype)
@@ -79,3 +76,17 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
     @classmethod
     def cast_dtype(cls, data: np.ndarray, dtype):
         return data.astype(cls.dtypes.get(dtype, dtype))
+
+    @classmethod
+    def save(cls, data, path: str | Path):
+        path = Path(path)
+        if path.suffix != ".np":
+            path = path.with_suffix(".np")
+        np.save(path, data)
+
+    @classmethod
+    def load(cls, path: str | Path):
+        path = Path(path)
+        if path.suffix != ".np":
+            path = path.with_suffix(".np")
+        return np.load(path, allow_pickle=True)
