@@ -13,6 +13,7 @@ class ReLU(Node[TensorType]):
     Returns max(0, x) for each element, effectively zeroing out negative values.
     """
 
+    _type_identifier = "ReLUNode"
     ellipsis_axes = EllipsisAxes()
 
     def forward(
@@ -37,6 +38,7 @@ class Tanh(Node[TensorType]):
     Maps input values to the range [-1, 1], providing a smooth, differentiable activation.
     """
 
+    _type_identifier = "TanhNode"
     ellipsis_axes = EllipsisAxes()
 
     def forward(
@@ -71,6 +73,7 @@ class Sigmoid(Node[TensorType]):
         >>> # output: approximately [[0.12, 0.5], [0.88, 0.98]]
     """
 
+    _type_identifier = "SigmoidNode"
     ellipsis_axes = EllipsisAxes()
 
     def forward(

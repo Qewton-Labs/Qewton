@@ -12,6 +12,11 @@ from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort, Node
 
 # region: Slicing and value setting
 class SetItem(Node[TensorType]):
+    """Set item node that assigns values to specific indices of an input tensor.
+    Has variable input ports for tensor and indices, and one output port.
+    """
+
+    _type_identifier = "SetItemNode"
     data_axis = EllipsisAxes()
 
     def forward(
@@ -38,6 +43,12 @@ class SetItem(Node[TensorType]):
 
 
 class Slice(Node[TensorType]):
+    """Slice node that extracts a portion of the input tensor based on slice configuration.
+    Supports integer indices, slices, variables, and ellipsis notation.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "SliceNode"
 
     def __init__(
         self,
@@ -78,6 +89,11 @@ class Slice(Node[TensorType]):
 
 
 class SplitVariables(Node[TensorType]):
+    """Split variables node that separates an input tensor into multiple outputs based on variable configuration.
+    Has one input port and multiple output ports (one per variable).
+    """
+
+    _type_identifier = "SplitVariablesNode"
 
     def __init__(
         self,
@@ -139,9 +155,12 @@ class SplitVariables(Node[TensorType]):
 
 
 class ConcatVariables(Node[TensorType]):
-    """
+    """Concatenate variables node that combines multiple input tensors with different variables along a dimension.
     Assumes the feature axes are all the last axes.
+    Has multiple input ports (one per variable) and one output port.
     """
+
+    _type_identifier = "ConcatVariablesNode"
 
     def __init__(
         self,
@@ -205,6 +224,12 @@ class ConcatVariables(Node[TensorType]):
 
 
 class ConcatNode(Node[TensorType]):
+    """Concatenate node that combines multiple input tensors along a specified dimension.
+    Has multiple input ports and one output port.
+    """
+
+    _type_identifier = "ConcatNode"
+
     def __init__(
         self, concat_dim: int, num_of_input_ports: int = 2, backend=DEFAULT_DL_BACKEND
     ):
@@ -231,6 +256,12 @@ class ConcatNode(Node[TensorType]):
 
 
 class Narrow(Node[TensorType]):
+    """Narrow node that returns a narrowed view of the input tensor along a specified dimension.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "NarrowNode"
+
     def __init__(self, dim=None, start=0, length=None, backend=DEFAULT_DL_BACKEND):
         self.dim = dim if dim is not None else NO_DEFAULT
         self.start = start
@@ -247,6 +278,11 @@ class Narrow(Node[TensorType]):
 
 
 class Squeeze(Node[TensorType]):
+    """Squeeze node that removes a single dimension of size 1 from the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "SqueezeNode"
 
     def __init__(
         self,
@@ -283,6 +319,11 @@ class Squeeze(Node[TensorType]):
 
 
 class Unsqueeze(Node[TensorType]):
+    """Unsqueeze node that adds a new dimension of size 1 at the specified position.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "UnsqueezeNode"
 
     def __init__(
         self,
@@ -324,6 +365,11 @@ class Unsqueeze(Node[TensorType]):
 
 
 class Reshape(Node[TensorType]):
+    """Reshape node that changes the shape of the input tensor to a specified new shape.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "ReshapeNode"
 
     def __init__(
         self,
@@ -342,6 +388,11 @@ class Reshape(Node[TensorType]):
 
 
 class ReshapeAtDim(Node[TensorType]):
+    """Reshape at dimension node that reshapes a portion of the input tensor at a specified dimension.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "ReshapeAtDimNode"
 
     def __init__(
         self,
@@ -366,6 +417,11 @@ class ReshapeAtDim(Node[TensorType]):
 
 
 class Flatten(Node[TensorType]):
+    """Flatten node that flattens the input tensor between specified dimensions.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "FlattenNode"
 
     def __init__(
         self,
@@ -386,6 +442,11 @@ class Flatten(Node[TensorType]):
 
 
 class Unflatten(Node[TensorType]):
+    """Unflatten node that reshapes a single dimension into multiple dimensions.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "UnflattenNode"
 
     def __init__(
         self,
@@ -411,6 +472,11 @@ class Unflatten(Node[TensorType]):
 
 
 class GetShapeNode(Node[TensorType]):
+    """Get shape node that returns the shape tuple of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "GetShapeNode"
 
     def forward(
         self, x: Annotated[TensorType, DataConfiguration.empty()]

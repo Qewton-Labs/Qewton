@@ -27,6 +27,11 @@ from qewton.graphs.nodes import InputPort, Port
 
 
 class Add(Node[TensorType]):
+    """A summation node that adds two input tensors together.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "AddNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -38,6 +43,11 @@ class Add(Node[TensorType]):
 
 
 class Subtract(Node[TensorType]):
+    """A subtraction node that subtracts the second input from the first input tensor.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "SubtractNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -49,6 +59,11 @@ class Subtract(Node[TensorType]):
 
 
 class Multiply(Node[TensorType]):
+    """Element-wise multiplication of two input tensors.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "MultiplyNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -60,6 +75,11 @@ class Multiply(Node[TensorType]):
 
 
 class Divide(Node[TensorType]):
+    """Element-wise division of the first input by the second input tensor.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "DivideNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -71,6 +91,11 @@ class Divide(Node[TensorType]):
 
 
 class Mod(Node[TensorType]):
+    """Element-wise modulo (remainder) operation on two input tensors.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "ModNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -82,6 +107,11 @@ class Mod(Node[TensorType]):
 
 
 class Negative(Node[TensorType]):
+    """Negation node that returns the negative of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "NegativeNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -97,6 +127,11 @@ class Negative(Node[TensorType]):
 
 
 class Square(Node[TensorType]):
+    """Element-wise squaring of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "SquareNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -107,6 +142,11 @@ class Square(Node[TensorType]):
 
 
 class Sqrt(Node[TensorType]):
+    """Element-wise square root of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "SqrtNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -117,6 +157,11 @@ class Sqrt(Node[TensorType]):
 
 
 class Power(Node[TensorType]):
+    """Element-wise exponentiation node that raises the first input to the power of the second input.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "PowerNode"
     ellipsis_dims = EllipsisAxes()
 
     def __init__(
@@ -144,6 +189,11 @@ class Power(Node[TensorType]):
 
 
 class Exp(Node[TensorType]):
+    """Element-wise exponential (e^x) of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "ExpNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -154,6 +204,11 @@ class Exp(Node[TensorType]):
 
 
 class Log(Node[TensorType]):
+    """Element-wise natural logarithm of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "LogNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -164,6 +219,11 @@ class Log(Node[TensorType]):
 
 
 class Log2(Node[TensorType]):
+    """Element-wise base-2 logarithm of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "Log2Node"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -174,6 +234,11 @@ class Log2(Node[TensorType]):
 
 
 class Log10(Node[TensorType]):
+    """Element-wise base-10 logarithm of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "Log10Node"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -190,6 +255,11 @@ class Log10(Node[TensorType]):
 
 
 class Sin(Node[TensorType]):
+    """Element-wise sine of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "SinNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -200,6 +270,11 @@ class Sin(Node[TensorType]):
 
 
 class Cos(Node[TensorType]):
+    """Element-wise cosine of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "CosNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -209,6 +284,11 @@ class Cos(Node[TensorType]):
 
 
 class Tan(Node[TensorType]):
+    """Element-wise tangent of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "TanNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -218,6 +298,11 @@ class Tan(Node[TensorType]):
 
 
 class ArcSin(Node[TensorType]):
+    """Element-wise inverse sine (arcsine) of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "ArcSinNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -227,6 +312,11 @@ class ArcSin(Node[TensorType]):
 
 
 class ArcCos(Node[TensorType]):
+    """Element-wise inverse cosine (arccosine) of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "ArcCosNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -236,6 +326,11 @@ class ArcCos(Node[TensorType]):
 
 
 class ArcTan(Node[TensorType]):
+    """Element-wise inverse tangent (arctangent) of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "ArcTanNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -251,6 +346,11 @@ class ArcTan(Node[TensorType]):
 
 
 class Abs(Node[TensorType]):
+    """Element-wise absolute value of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "AbsNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -261,6 +361,11 @@ class Abs(Node[TensorType]):
 
 
 class Floor(Node[TensorType]):
+    """Element-wise floor operation on the input tensor (rounds down).
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "FloorNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -271,6 +376,11 @@ class Floor(Node[TensorType]):
 
 
 class Ceil(Node[TensorType]):
+    """Element-wise ceiling operation on the input tensor (rounds up).
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "CeilNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -281,6 +391,11 @@ class Ceil(Node[TensorType]):
 
 
 class Maximum(Node[TensorType]):
+    """Element-wise maximum of two input tensors.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "MaximumNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -292,6 +407,11 @@ class Maximum(Node[TensorType]):
 
 
 class Minimum(Node[TensorType]):
+    """Element-wise minimum of two input tensors.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "MinimumNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -309,6 +429,12 @@ class Minimum(Node[TensorType]):
 
 
 class MatMul(Node[TensorType]):
+    """Matrix multiplication node that multiplies two tensors along their matrix dimensions.
+    Supports batch dimensions and ellipsis dimensions.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "MatMulNode"
     ell_ax = EllipsisAxes()
     dim_1 = AxesDim(None)
     dim_ellipsis = EllipsisDim()
@@ -323,6 +449,11 @@ class MatMul(Node[TensorType]):
 
 
 class SVD(Node[TensorType]):
+    """Singular Value Decomposition node that decomposes an input matrix into U, S, V components.
+    Has one input port and three output ports (U, S, V).
+    """
+
+    _type_identifier = "SVDNode"
     dim_1 = AxesDim(None)
     dim_2 = AxesDim(None)
     min_dim = MinimumDim(dim_1, dim_2)
@@ -340,6 +471,11 @@ class SVD(Node[TensorType]):
 
 
 class Dot(Node[TensorType]):
+    """Dot product node that computes the inner product of two vectors.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "DotNode"
     dim_1 = AxesDim(None)
     ell_ax = EllipsisAxes()
 
@@ -352,6 +488,12 @@ class Dot(Node[TensorType]):
 
 
 class Inner(Node[TensorType]):
+    """Inner product node that computes the element-wise product sum along the last axis.
+    Supports keepdims option to retain dimension after reduction.
+    Has two input ports and one output port.
+    """
+
+    _type_identifier = "InnerNode"
     dim_1 = AxesDim(None)
     ell_ax = EllipsisAxes()
 
@@ -379,6 +521,11 @@ class Inner(Node[TensorType]):
 
 # region: Statistic operations
 class ReductionNode(Node[TensorType]):
+    """Base class for reduction operations (Mean, Sum, Std) that reduce tensor dimensions.
+    Supports axis specification and keepdims option.
+    """
+
+    _type_identifier = "ReductionNode"
 
     def __init__(
         self,
@@ -506,9 +653,11 @@ class ReductionNode(Node[TensorType]):
 
 
 class Mean(ReductionNode[TensorType]):
+    """Mean reduction node that computes the average of input tensor along the specified axis.
+    Has one input port and one output port.
     """
-    Computes the mean of the input tensor along the specified axis.
-    """
+
+    _type_identifier = "MeanNode"
 
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
@@ -517,9 +666,11 @@ class Mean(ReductionNode[TensorType]):
 
 
 class Sum(ReductionNode[TensorType]):
+    """Sum reduction node that computes the total of input tensor elements along the specified axis.
+    Has one input port and one output port.
     """
-    Computes the sum of the input tensor along the specified axis.
-    """
+
+    _type_identifier = "SumNode"
 
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
@@ -528,6 +679,11 @@ class Sum(ReductionNode[TensorType]):
 
 
 class Std(ReductionNode[TensorType]):
+    """Standard deviation reduction node that computes the standard deviation along the specified axis.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "StdNode"
 
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
@@ -542,6 +698,12 @@ class Std(ReductionNode[TensorType]):
 
 
 class Flatten(Node[TensorType]):
+    """Flatten node that reshapes input tensor to 2D by flattening dimensions between start_dim and end_dim.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "FlattenNode"
+
     def __init__(
         self,
         start_dim: int = 0,
@@ -562,6 +724,12 @@ class Flatten(Node[TensorType]):
 
 
 class Transpose(Node[TensorType]):
+    """Transpose node that permutes the dimensions of the input tensor.
+    Has one input port and one output port.
+    """
+
+    _type_identifier = "TransposeNode"
+
     def __init__(
         self,
         perm: list | None = None,

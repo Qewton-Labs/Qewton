@@ -2,7 +2,7 @@ from typing import Annotated, Generic
 
 from qewton.algorithms.building_blocks.math import MatMul, Add
 from qewton.algorithms.building_blocks.parameters import ParameterNode
-from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
 from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -11,6 +11,7 @@ from qewton.graphs.control_nodes.graph_node import GraphNode
 
 
 class FunctionalLinear(GraphNode, Generic[TensorType]):
+    _type_identifier = "FunctionalLinearNode"
     ell_ax = EllipsisAxes()
     dim_1 = AxesDim(None)
     dim_2 = AxesDim(None)
@@ -19,7 +20,7 @@ class FunctionalLinear(GraphNode, Generic[TensorType]):
         self,
         name="functional_linear",
         bias=True,
-        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.matmul_node = MatMul(backend=backend)
         self.add_node = Add(backend=backend)
@@ -65,13 +66,15 @@ class Linear(GraphNode, Generic[TensorType]):
     algorithm that is applied element-wise to the input data.
     """
 
+    _type_identifier = "LinearNode"
+
     def __init__(
         self,
         in_neurons: int | HyperParameter,
         out_neurons: int | HyperParameter,
         bias=True,
         name="linear",
-        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.ellipsis_axes: (
             EllipsisAxes  # defined in x_data_config to allow usage in multiple graphs

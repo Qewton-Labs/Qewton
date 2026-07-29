@@ -1,9 +1,19 @@
 from __future__ import annotations
 from abc import ABC
 from copy import deepcopy
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Generic, Optional, Union
-from typing import Annotated, get_type_hints, get_origin, get_args
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Optional,
+    Union,
+    Annotated,
+    get_type_hints,
+    get_origin,
+    get_args,
+)
 import inspect
 import warnings
 
@@ -15,6 +25,8 @@ from qewton.optim.parameters.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )
+
+# region: Ports
 
 
 class NO_DEFAULT:
@@ -146,6 +158,14 @@ class OutputPort(Port):
         super().__init__(data_configuration, node, name)
 
 
+# endregion
+# region: Node Properties
+# A registry of all node types that have been defined. This is used to
+# reconstruct nodes from their type identifier when loading a graph
+# from a file.
+NODE_REGISTRY: dict[str, type[Node]] = {}
+
+
 class NodeState(Enum):
     """Denotes different states a node can be in.
 
@@ -166,6 +186,34 @@ class NodeState(Enum):
     TRAINED = 4
 
 
+@dataclass
+class NodeConfig:
+    """Immutable constructor configuration for reconstructing a node.
+
+    Args:
+        node_identifier (str | None): The type identifier of the node. Used to
+            reconstruct the node from the NODE_REGISTRY.
+        node_id (int): The unique identifier of the node.
+        mode (EvaluationPhase): The evaluation phase of the node.
+        hyperparameters (dict[str, HyperParameter]): The hyperparameters of
+            the node.
+        other_args (dict[str, Any]): Any other arguments that were used to
+            construct the node.
+        state (NodeState): The state of the node.
+    """
+
+    node_identifier: str | None
+    node_id: int
+    mode: EvaluationPhase
+    hyperparameters: dict[str, HyperParameter]
+    other_args: dict[str, Any]
+    state: NodeState
+
+
+# endregion
+# region: Main Node Class
+
+
 class Node(ABC, Generic[TensorType]):
     """Base class for all nodes to create a graph.
 
@@ -179,6 +227,7 @@ class Node(ABC, Generic[TensorType]):
 
     _node_id_counter = 0
     _tracking_phase: bool = False
+    _type_identifier: str | None = None
 
     # TODO: Save and load methods
     def __init__(
@@ -189,6 +238,8 @@ class Node(ABC, Generic[TensorType]):
         **kwargs,
     ) -> None:
         super().__init__()
+        _ = kwargs  # unused for now, but can be used in subclasses to
+        # pass additional arguments
         self._name = name
         self._state = state
         self.backend = backend
@@ -198,8 +249,14 @@ class Node(ABC, Generic[TensorType]):
             self.forward, self, backend
         )
 
-        self.node_id = type(self)._node_id_counter
-        type(self)._node_id_counter += 1
+        self.node_id = Node._node_id_counter
+        Node._node_id_counter += 1
+
+    def __init_subclass__(cls) -> None:
+        if cls._type_identifier is not None:
+            if cls._type_identifier not in NODE_REGISTRY:
+                NODE_REGISTRY[cls._type_identifier] = cls
+        return super().__init_subclass__()
 
     @property
     def name(self):
@@ -529,3 +586,69 @@ class Node(ABC, Generic[TensorType]):
         from .control_nodes.graph_node import CopiedNode
 
         return CopiedNode(self)
+
+    def config_dict(self) -> NodeConfig:
+        """Returns a configuration object that can be used to reconstruct
+        this node. By default we just return the hyperparameters and other
+        arguments, but this can be overridden in subclasses to include
+        additional information.
+
+        Returns:
+            NodeConfig: The configuration object.
+        """
+        if self._type_identifier is None:
+            raise ValueError(
+                f"Node {self.name} does not have a type identifier. "
+                "This is required to reconstruct the node from its configuration."
+            )
+        # Read needed information from the constructor of this node to
+        # reconstruct it later
+        other_args = {}
+        hyperparameters = {}
+        for name in inspect.signature(self.__class__.__init__).parameters:
+            if name in ["self", "kwargs", "args"]:
+                continue
+
+            class_atri = getattr(self, name)
+            if isinstance(class_atri, HyperParameter):
+                hyperparameters[name] = class_atri
+            else:
+                other_args[name] = class_atri
+
+        return NodeConfig(
+            node_identifier=self._type_identifier,
+            node_id=self.node_id,
+            mode=self.mode,
+            hyperparameters=hyperparameters,
+            other_args=other_args,
+            state=self.state,
+        )
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        """Reconstructs a node from a configuration object. By default we just
+        use the hyperparameters and other arguments, but this can be overridden
+        in subclasses to include additional information.
+
+        Args:
+            config (NodeConfig): The configuration object.
+
+        Returns:
+            Node: The reconstructed node.
+        """
+        if config.node_identifier is None:
+            raise ValueError(
+                "Cannot reconstruct node from config, "
+                "node_identifier is None. This is required to reconstruct the node."
+            )
+        node: Node = NODE_REGISTRY[config.node_identifier](
+            **config.other_args,  # type: ignore
+            **config.hyperparameters,
+        )
+        node.set_mode(config.mode)
+        node.set_state(config.state)
+        node.node_id = config.node_id
+        return node
+
+
+# endregion

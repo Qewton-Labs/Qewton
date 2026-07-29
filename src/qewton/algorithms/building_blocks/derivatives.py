@@ -8,6 +8,7 @@ from qewton.graphs.nodes import Node
 
 
 class GradientTracking(Node[TensorType]):
+    _type_identifier = "GradientTrackingNode"
     ell_axes = EllipsisAxes()
 
     def forward(
@@ -18,6 +19,7 @@ class GradientTracking(Node[TensorType]):
 
 
 class Gradient(Node[TensorType]):
+    _type_identifier = "GradientNode"
     ell_axes = EllipsisAxes()
     x_dim = AxesDim(None)
 
@@ -33,6 +35,7 @@ class Laplacian(Node[TensorType]):
     """Computes the laplacian (sum of second derivatives) of a scalar output
     with respect to the input variable."""
 
+    _type_identifier = "LaplacianNode"
     ell_axes = EllipsisAxes()
 
     def forward(
@@ -46,6 +49,7 @@ class Laplacian(Node[TensorType]):
 class NormalDerivative(Node[TensorType]):
     """Computes the normal derivative (gradient · normals) of a scalar output."""
 
+    _type_identifier = "NormalDerivativeNode"
     ell_axes = EllipsisAxes()
     x_dim = AxesDim(None)
     u_dim = AxesDim(1)
@@ -63,6 +67,7 @@ class Divergence(Node[TensorType]):
     """Computes the divergence of a vector field (model output) with
     respect to spatial variables."""
 
+    _type_identifier = "DivergenceNode"
     ell_axes = EllipsisAxes()
     x_dim = AxesDim(None)
 
@@ -77,6 +82,7 @@ class Divergence(Node[TensorType]):
 class Jacobian(Node[TensorType]):
     """Computes the Jacobian matrix of a vector output with respect to input variables."""
 
+    _type_identifier = "JacobianNode"
     ell_axes = EllipsisAxes()
     x_dim = AxesDim(None)
 
@@ -92,6 +98,7 @@ class Partial(Node[TensorType]):
     """Computes n-th order partial derivatives recursively with
     respect to multiple variables."""
 
+    _type_identifier = "PartialNode"
     ell_axes = EllipsisAxes()
     x_dim = AxesDim(None)
 
@@ -107,6 +114,7 @@ class Hessian(Node[TensorType]):
     """Computes the Hessian matrix (second partial derivatives) of a scalar
     output."""
 
+    _type_identifier = "HessianNode"
     ell_axes = EllipsisAxes()
     x_dim = AxesDim(None)
 
@@ -125,6 +133,7 @@ class MatrixDivergence(Node[TensorType]):
     matrix field with respect to the spatial input.
     """
 
+    _type_identifier = "MatrixDivergenceNode"
     ell_axes = EllipsisAxes()
     u_dim = AxesDim(None)
     x_dim = AxesDim(None)
@@ -140,6 +149,7 @@ class MatrixDivergence(Node[TensorType]):
 class Rotation(Node[TensorType]):
     """Computes the curl/rotation of a 3D vector field."""
 
+    _type_identifier = "RotationNode"
     ell_axes = EllipsisAxes()
     x_dim = AxesDim(None)
 
@@ -154,6 +164,7 @@ class Rotation(Node[TensorType]):
 class SymmetricGradient(Node[TensorType]):
     """Computes the symmetric gradient 0.5 * (∇u + (∇u)^T)."""
 
+    _type_identifier = "SymmetricGradientNode"
     ell_axes = EllipsisAxes()
     u_dim = AxesDim(None)
     x_dim = AxesDim(None)
