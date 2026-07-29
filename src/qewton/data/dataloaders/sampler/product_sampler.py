@@ -54,7 +54,10 @@ class ProductSampler(PointSampler[TensorType]):
             a_config.variables != b_config.variables
         ), f"ProductSampler can only work on samplers of different variables. \
               Found {a_config.variables} and {b_config.variables}"
-        combined_variable = a_config.variables * b_config.variables  # type: ignore
+        if variable == self.normal_name:
+            combined_variable = self.normal_name
+        else:
+            combined_variable = a_config.variables * b_config.variables  # type: ignore
         axes = []
         for axis in a_config.axes + b_config.axes:
             if isinstance(axis, GeometryAxes):
