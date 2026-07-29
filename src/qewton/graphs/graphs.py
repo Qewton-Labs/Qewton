@@ -488,20 +488,59 @@ class Graph:
         for edge in self.edges_to_outside + self.skip_connections:
             edge.to_port.set_value(edge.from_port.value)
 
+    def _build_path_to_node(self, node: Node) -> set[Node]:
+        """
+        Builds a path from the root nodes to the specified node.
+
+        Args:
+            node (Node): The target node for which the path is to be built.
+
+        Returns:
+            set[Node]: A set of nodes that need to be evaluated to reach
+                the specified node. Note that the specified node itself is not
+                included in the returned set and the nodes are not ordered
+                for evaluation.
+        """
+        nodes_to_run = set[Node]()
+        nodes_to_check = deque[Node]([node])
+        while nodes_to_check:
+            n = nodes_to_check.popleft()
+            if n in nodes_to_run:
+                continue
+            nodes_to_run.add(n)
+            for edge in self.incoming_edges[n]:
+                if not edge.connects_to_outside:
+                    nodes_to_check.append(edge.from_port.node)
+        # Remove the last node, since we want to return all nodes
+        # needed to reach it
+        nodes_to_run.remove(node)
+        return nodes_to_run
+
     def run_to(
         self, last_node: Node, mode: EvaluationPhase = EvaluationPhase.ALWAYS
     ) -> dict[Port, Edge]:
-        """
-        Runs the graph execution by iterating through the topologically sorted nodes,
-        only up to the provided node.
+        """Runs the graph execution by iterating through the topologically
+        sorted nodes, only up to the provided node.
         Then it returns the last_node and all incoming edges of this node in this
         graph as a dictionary of [Port, Edge].
+
+        Args:
+            last_node (Node): The node we want to run the graph up to,
+                and return the incoming edges of this node.
+            mode (EvaluationPhase, optional): The mode the graph should be run
+                in. Defaults to EvaluationPhase.ALWAYS.
+
+        Returns:
+            dict[Port, Edge]: The incoming edges of the last_node in this
+                graph as a dictionary of [Port, Edge].
         """
-        # TODO: Maybe build backwards the graph to only run over needed
-        # nodes to reach the last_node
+        self._check_graph_was_sorted()
+        nodes_to_run = self._build_path_to_node(last_node)
         for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
             if node == last_node:
                 return edges
+            if node not in nodes_to_run:
+                continue
             node.set_mode(mode)
             for in_port in node.input_ports:
                 if in_port in edges:
