@@ -1,5 +1,6 @@
 from __future__ import annotations
 from collections import deque
+from dataclasses import dataclass
 from contextlib import contextmanager
 import inspect
 from typing import Callable
@@ -8,10 +9,26 @@ from warnings import warn
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.errors import DataConfigMismatchError
 
-from qewton.graphs.nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
+from qewton.graphs.nodes import (
+    InputPort,
+    Node,
+    EvaluationPhase,
+    OutputPort,
+    Port,
+    NodeConfig,
+)
 from qewton.graphs.control_nodes.data_processing_node import DataProcessingNode
 from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
 from qewton.graphs.edges import Edge
+
+
+@dataclass
+class GraphConfig:
+    node_configs: dict[int, NodeConfig]
+    edges: list[tuple[int, int, int, int]]
+    graph_was_sorted: bool
+
+    # TODO: How handle outside connections???
 
 
 class Graph:
@@ -600,6 +617,56 @@ class Graph:
             TrackingObject.current_graph_tracked = prev_tracked_graph
             if TrackingObject.current_graph_tracked is None:
                 Node.set_tracking(False)
+
+    def graph_config(self) -> GraphConfig:
+        """
+        Generates a configuration object representing the current state of the graph.
+
+        Returns:
+            GraphConfig: A configuration object containing node configurations,
+                edges, and sorting status.
+        """
+        node_configs = {node.node_id: node.config_dict() for node in self.nodes}
+
+        edges_config = []
+        for node in self.nodes:
+            for edge in self.incoming_edges[node]:
+                port_idx_from = edge.to_port.node.input_ports.index(
+                    edge.to_port  # type: ignore
+                )
+                port_idx_to = edge.from_port.node.output_ports.index(
+                    edge.from_port  # type: ignore
+                )
+                edges_config.append(
+                    (
+                        edge.from_port.node.node_id,
+                        port_idx_from,
+                        edge.to_port.node.node_id,
+                        port_idx_to,
+                    )
+                )
+        return GraphConfig(
+            node_configs=node_configs,
+            edges=edges_config,
+            graph_was_sorted=self.graph_was_sorted,
+        )
+
+    @classmethod
+    def load_from_graph_config(cls, graph_config: GraphConfig) -> Graph:
+        graph = Graph()
+        node_dict: dict[int, Node] = {}
+
+        for node_id, node_config in graph_config.node_configs.items():
+            node = Node.load_from_config(node_config)
+            node_dict[node_id] = node
+
+        for edge in graph_config.edges:
+            from_node_id, from_port_idx, to_node_id, to_port_idx = edge
+            from_port = node_dict[from_node_id].output_ports[from_port_idx]
+            to_port = node_dict[to_node_id].input_ports[to_port_idx]
+            graph.connect(from_port, to_port)
+
+        return graph
 
 
 class SequentialGraph(Graph):
