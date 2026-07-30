@@ -659,7 +659,7 @@ class Graph:
 
         for node_id, node_config in graph_config.node_configs.items():
             if node_config.node_identifier is not None:
-                node_class = NODE_REGISTRY.get(node_config.node_identifier)
+                node_class = NODE_REGISTRY.get(node_config.node_identifier, Node)
             else:
                 node_class = Node
             node = node_class.load_from_config(node_config)
@@ -667,9 +667,6 @@ class Graph:
 
         for edge in graph_config.edges:
             from_node_id, from_port_idx, to_node_id, to_port_idx = edge
-            print(
-                f"Connecting {from_node_id}:{from_port_idx} to {to_node_id}:{to_port_idx}"
-            )
             from_port = node_dict[from_node_id].output_ports[from_port_idx]
             to_port = node_dict[to_node_id].input_ports[to_port_idx]
             graph.connect(from_port, to_port)

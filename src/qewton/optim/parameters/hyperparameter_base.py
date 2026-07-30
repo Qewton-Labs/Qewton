@@ -112,6 +112,8 @@ class HyperParameter:
         HyperParameters. The concrete values of the Parameters are provided in
         the config.
         """
+        if config is None:
+            config = {}
         return True if self.condition is None else self.condition.evaluate(config)
 
     def set_value(self, new_value):

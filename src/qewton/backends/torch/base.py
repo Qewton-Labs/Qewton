@@ -105,4 +105,4 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
         path = Path(path)
         if path.suffix != ".pt":
             path = path.with_suffix(".pt")
-        return torch.load(path)
+        return torch.load(path, weights_only=True)
