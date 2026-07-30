@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
     Any,
@@ -200,6 +200,8 @@ class NodeConfig:
         other_args (dict[str, Any]): Any other arguments that were used to
             construct the node.
         state (NodeState): The state of the node.
+        nested_graphs (dict[str, Graphs]): Any nested graphs that are part
+            of this node.
     """
 
     node_identifier: str | None
@@ -208,6 +210,7 @@ class NodeConfig:
     hyperparameters: dict[str, HyperParameter]
     other_args: dict[str, Any]
     state: NodeState
+    nested_graphs: dict = field(default_factory=dict)
 
 
 # endregion

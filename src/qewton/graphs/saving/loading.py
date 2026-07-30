@@ -12,6 +12,7 @@ from qewton.graphs.nodes import (
 )
 from qewton.graphs.graphs import Graph, GraphConfig
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.parameters.categorical_hyperparameter import BooleanHyperparameter
 from qewton.optim.parameters.helpers import HyperParameterState
 from qewton.optim.parameters.trainable_parameters import (
     TrainableParameters,
@@ -39,9 +40,9 @@ def _load_hyperparameter(data: dict[str, Any]) -> HyperParameter:
     hp_class: type[HyperParameter] = _get_class(data["module"], data["class"])
     state = HyperParameterState[data["state"]]
     name = data.get("name", "")
-    current_value = data.get("current_value")
-    parameter_range = data.get("parameter_range")
-    default_grid = data.get("default_grid", 0)
+    current_value = _hp_load_values(data.get("current_value", {}))
+    parameter_range = _hp_load_values(data.get("parameter_range", []))
+    default_grid = _hp_load_values(data.get("default_grid"))
 
     sig = inspect.signature(hp_class.__init__)
     params = set(sig.parameters.keys()) - {"self"}
@@ -49,8 +50,10 @@ def _load_hyperparameter(data: dict[str, Any]) -> HyperParameter:
     kwargs: dict[str, Any] = {"state": state, "name": name}
 
     # Handle the common variants — each subclass uses different field names.
-    if "categories" in params:
-        # CategoricalHyperparameter / BooleanHyperparameter
+    if hp_class == BooleanHyperparameter:
+        kwargs["initial_value"] = current_value
+    elif "categories" in params:
+        # CategoricalHyperparameter
         categories = (
             parameter_range if isinstance(parameter_range, list) else [current_value]
         )
@@ -103,11 +106,27 @@ def _load_other_args(
         return loaded
 
     if isinstance(value, dict):
+        if _check_if_class_object(value):
+            return _get_class(value["module"], value["class"])
         return {
             k: _load_other_args(v, root_dir, backend_class, node_id)
             for k, v in value.items()
         }
 
+    return value
+
+
+def _check_if_class_object(value: dict):
+    return "class" in value and "module" in value and len(value) == 2
+
+
+def _hp_load_values(value: Any):
+    if isinstance(value, dict):
+        if _check_if_class_object(value):
+            return _get_class(value["module"], value["class"])
+        return {k: _hp_load_values(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_hp_load_values(v) for v in value]
     return value
 
 
@@ -132,7 +151,8 @@ def load(path: str | Path) -> Node | Graph:
 
     object_type = config_data.get("object_type", None)
     if object_type == "Graph":
-        return load_graph(root_dir, config_data)
+        graph_config = load_graph(root_dir, config_data)
+        return Graph.load_from_graph_config(graph_config)
     if object_type == "Node":
         node_config = load_node(root_dir, config_data)
         if node_config.node_identifier is not None:
@@ -179,6 +199,16 @@ def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
     )
     other_args["backend"] = backend_class  # Ensure backend is set correctly
 
+    # Check for nested graphs and construct them
+    nested_graphs = {}
+    if "nested_graphs" in config_data:
+        for graph_name, graph_path in config_data["nested_graphs"].items():
+            graph_root_dir = root_dir / graph_path
+            graph_json_path = graph_root_dir / "config.json"
+            with graph_json_path.open("r", encoding="utf-8") as f:
+                graph_config_data: dict[str, Any] = json.load(f)
+            nested_graphs[graph_name] = load_graph(graph_root_dir, graph_config_data)
+
     # Rebuild NodeConfig and use load_from_config for the given node
     node_config = NodeConfig(
         node_identifier=config_data["node_identifier"],
@@ -187,22 +217,12 @@ def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
         state=NodeState[config_data["state"]],
         hyperparameters=hyperparameters,
         other_args=other_args,
+        nested_graphs=nested_graphs,
     )
     return node_config
 
 
-def load_graph(root_dir: Path, config_data: dict[str, Any]) -> Graph:
-    """Load a graph from a given path.
-
-    Reads the *graph_config.json* from *path*, reconstructs all nodes and
-    edges, and returns a fully configured *Graph* instance.
-
-    Args:
-        path (str | Path): Directory produced by *save_graph*.
-
-    Returns:
-        Graph: The reconstructed graph.
-    """
+def load_graph(root_dir: Path, config_data: dict[str, Any]) -> GraphConfig:
     # First, load all nodes
     node_configs = {}
     for node_id in config_data["nodes_included"]:
@@ -217,19 +237,30 @@ def load_graph(root_dir: Path, config_data: dict[str, Any]) -> Graph:
     # Transform edges into a list of tuples
     edges = []
     for edge in config_data["edges"]:
-        edges.append(
-            (
-                edge["from_node_id"],
-                edge["from_port"],
-                edge["to_node_id"],
-                edge["to_port"],
-            )
-        )
+        edges.append(_edge_format_to_tuple(edge))
+    # Transform edges from outside into a list of tuples
+    edges_from_outside = []
+    for edge in config_data.get("from_outside", []):
+        edges_from_outside.append(_edge_format_to_tuple(edge))
+    # Transform edges to outside into a list of tuples
+    edges_to_outside = []
+    for edge in config_data.get("to_outside", []):
+        edges_to_outside.append(_edge_format_to_tuple(edge))
 
-    # Build the config and load the graph
-    graph_config = GraphConfig(
+    # Build the config
+    return GraphConfig(
         node_configs=node_configs,
         edges=edges,
         graph_was_sorted=config_data.get("sorted", False),
+        edges_from_outside=edges_from_outside,
+        edges_to_outside=edges_to_outside,
     )
-    return Graph.load_from_graph_config(graph_config)
+
+
+def _edge_format_to_tuple(edge):
+    return (
+        edge["from_node_id"],
+        edge["from_port"],
+        edge["to_node_id"],
+        edge["to_port"],
+    )

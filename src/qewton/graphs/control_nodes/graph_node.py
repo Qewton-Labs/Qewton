@@ -2,8 +2,8 @@ from __future__ import annotations
 from typing import Callable
 import inspect
 
-from qewton.graphs.nodes import InputPort, Node, OutputPort, Port
-from qewton.graphs import Graph
+from qewton.graphs.nodes import InputPort, Node, NodeConfig, OutputPort, Port
+from qewton.graphs.graphs import Graph, GraphConfig
 from qewton.backends import Backend, TensorType
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
@@ -410,6 +410,38 @@ class GraphNode(Node[TensorType]):
         input_ports_dict = dict(zip(outer_input_ports, input_port_list))
         output_ports_dict = dict(zip(outer_output_ports, output_ports))
         return graph, input_ports_dict, output_ports_dict
+
+    def config_dict(self) -> NodeConfig:
+        default_dict = super().config_dict()
+        default_dict.nested_graphs = {"graph": self._graph}
+        return default_dict
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        g_node: GraphNode = super().load_from_config(config)  # type: ignore
+        graph_config: GraphConfig = config.nested_graphs["graph"]
+        saved_graph = Graph.load_from_graph_config(graph_config)
+
+        old_input_connections = []
+        old_output_connections = []
+        print("Name of this node", g_node.name)
+        for node in saved_graph.nodes:
+            for e in graph_config.edges_from_outside:
+                if e[2] == node.node_id:
+                    print("Connection from outside to node", node.name, "to port", e[3])
+                    old_input_connections.append(node.input_ports[e[3]])
+            for e in graph_config.edges_to_outside:
+                if e[0] == node.node_id:
+                    print(
+                        "Connection from node", node.name, "from port", e[1], "to outside"
+                    )
+                    old_output_connections.append(node.output_ports[e[1]])
+        g_node.setup_graph(
+            saved_graph,
+            input_ports=old_input_connections,
+            output_ports=old_output_connections,
+        )
+        return g_node
 
 
 class FromFunctionNode(GraphNode):

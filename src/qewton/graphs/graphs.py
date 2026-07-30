@@ -1,6 +1,6 @@
 from __future__ import annotations
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from contextlib import contextmanager
 import inspect
 from typing import Callable
@@ -28,8 +28,8 @@ class GraphConfig:
     node_configs: dict[int, NodeConfig]
     edges: list[tuple[int, int, int, int]]
     graph_was_sorted: bool
-
-    # TODO: How handle outside connections???
+    edges_from_outside: list[tuple[int, int, int, int]] = field(default_factory=list)
+    edges_to_outside: list[tuple[int, int, int, int]] = field(default_factory=list)
 
 
 class Graph:
@@ -632,25 +632,54 @@ class Graph:
         edges_config = []
         for node in self.nodes:
             for edge in self.incoming_edges[node]:
-                port_idx_to = edge.to_port.node.input_ports.index(
-                    edge.to_port  # type: ignore
-                )
-                port_idx_from = edge.from_port.node.output_ports.index(
-                    edge.from_port  # type: ignore
-                )
-                edges_config.append(
-                    (
-                        edge.from_port.node.node_id,
-                        port_idx_from,
-                        edge.to_port.node.node_id,
-                        port_idx_to,
-                    )
-                )
+                if edge.from_port.node not in self.nodes:
+                    continue
+                edges_config.append(self._build_edge_mapping(edge))
+
+        from_outside_edges_config = []
+        for edge in self.edges_from_outside:
+            from_outside_edges_config.append(self._build_edge_mapping(edge))
+
+        to_outside_edges_config = []
+        for edge in self.edges_to_outside:
+            to_outside_edges_config.append(self._build_edge_mapping(edge))
+
         return GraphConfig(
             node_configs=node_configs,
             edges=edges_config,
             graph_was_sorted=self.graph_was_sorted,
+            edges_from_outside=from_outside_edges_config,
+            edges_to_outside=to_outside_edges_config,
         )
+
+    def _build_edge_mapping(self, edge: Edge) -> tuple[int, int, int, int]:
+        """
+        Constructs a tuple representing the mapping of an edge in the graph.
+
+        Args:
+            edge (Edge): The edge for which the mapping is to be built.
+
+        Returns:
+            tuple[int, int, int, int]: A tuple containing the IDs and port indices
+                of the source and destination nodes connected by the edge.
+        """
+        from_node_id = edge.from_port.node.node_id
+        to_node_id = edge.to_port.node.node_id
+        if isinstance(edge.from_port, OutputPort):
+            from_port_idx = edge.from_port.node.output_ports.index(edge.from_port)
+        elif isinstance(edge.from_port, InputPort):
+            from_port_idx = edge.from_port.node.input_ports.index(edge.from_port)
+        else:
+            raise ValueError(
+                f"Unexpected port type for from_port: {type(edge.from_port)}"
+            )
+        if isinstance(edge.to_port, InputPort):
+            to_port_idx = edge.to_port.node.input_ports.index(edge.to_port)
+        elif isinstance(edge.to_port, OutputPort):
+            to_port_idx = edge.to_port.node.output_ports.index(edge.to_port)
+        else:
+            raise ValueError(f"Unexpected port type for to_port: {type(edge.to_port)}")
+        return (from_node_id, from_port_idx, to_node_id, to_port_idx)
 
     @classmethod
     def load_from_graph_config(cls, graph_config: GraphConfig) -> Graph:

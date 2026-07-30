@@ -194,6 +194,18 @@ def save_node(node_config: NodeConfig, path: str | Path, backend: type[Backend])
         # Remove the parameters directory if no parameters were saved
         constants_dir.rmdir()
 
+    # check for nested graphs inside the node:
+    if len(node_config.nested_graphs) > 0:
+        graphs_dir = output_dir / "nested_graphs"
+        graphs_dir.mkdir(parents=True, exist_ok=True)
+        config_payload["nested_graphs"] = {}
+        for graph_name, graph in node_config.nested_graphs.items():
+            graph_path = graphs_dir / graph_name
+            save_graph(graph, graph_path)
+            config_payload["nested_graphs"][graph_name] = str(
+                graph_path.relative_to(output_dir)
+            )
+
     with (output_dir / "config.json").open("w", encoding="utf-8") as f:
         json.dump(config_payload, f, indent=2)
 
@@ -215,19 +227,15 @@ def save_graph(graph: Graph, path: str | Path) -> None:
     # Improve edge readability by converting node objects to their IDs
     edges_config = []
     for e in graph_config.edges:
-        edges_config.append(
-            {
-                "from_node_id": e[0],
-                "from_port": e[1],
-                "to_node_id": e[2],
-                "to_port": e[3],
-            }
-        )
+        edges_config.append(_edge_format_save(e))
+
     graph_config_payload = {
         "object_type": "Graph",
         "nodes_included": list(graph_config.node_configs.keys()),
         "edges": edges_config,
         "sorted": graph_config.graph_was_sorted,
+        "from_outside": [_edge_format_save(e) for e in graph_config.edges_from_outside],
+        "to_outside": [_edge_format_save(e) for e in graph_config.edges_to_outside],
     }
 
     if len(graph.nodes) > 0:
@@ -242,3 +250,12 @@ def save_graph(graph: Graph, path: str | Path) -> None:
 
     with (output_dir / "config.json").open("w", encoding="utf-8") as f:
         json.dump(graph_config_payload, f, indent=2)
+
+
+def _edge_format_save(edge: tuple[int, int, int, int]) -> dict[str, Any]:
+    return {
+        "from_node_id": edge[0],
+        "from_port": edge[1],
+        "to_node_id": edge[2],
+        "to_port": edge[3],
+    }
