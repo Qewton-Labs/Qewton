@@ -77,8 +77,8 @@ class PointSampler(DataNode[TensorType]):
                 self.normal_name = normal_name
             self._build_port(self.normal_name)
 
-        self.point_cache: TensorType | None = None
-        self.normal_cache: TensorType | None = None
+        self.point_cache: list[TensorType] = []
+        self.normal_cache: list[TensorType | None] = []
         self.created_cache: bool = False
         self.cache_idx: int = 0
 
@@ -137,22 +137,19 @@ class PointSampler(DataNode[TensorType]):
                 hence one batch of points is sampled.
         """
         run_sampling = max(n_batches, 1)
-        point_list, normal_list = [], []
+        self.point_cache, self.normal_cache = [], []
         for _ in range(run_sampling):
             points, normals = self.sample_points()
-            point_list.append(self.backend.math.unsqueeze(points, axis=0))
+            self.point_cache.append(points)
             if self.compute_normals:
-                normal_list.append(self.backend.math.unsqueeze(normals, axis=0))
-        self.point_cache = self.backend.math.concatenate(point_list, axis=0)
-        if self.compute_normals:
-            self.normal_cache = self.backend.math.concatenate(normal_list, axis=0)
+                self.normal_cache.append(normals)
         self.created_cache = True
         self.cache_idx = 0
 
     def clear_cache(self):
         """Clears the cache and goes back to *online* sampling."""
-        self.point_cache = None
-        self.normal_cache = None
+        self.point_cache = []
+        self.normal_cache = []
         self.created_cache = False
 
     def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
@@ -170,15 +167,19 @@ class PointSampler(DataNode[TensorType]):
         """
         # Use the cache
         if self.created_cache:
-            point_slice = slice(self.cache_idx, self.cache_idx + 1)
+            # point_slice = slice(self.cache_idx, self.cache_idx + 1)
+            # Take a slice and remove the first axis by taking [0]
+            points = self.point_cache[self.cache_idx]
+            normals = None
+            if self.compute_normals:
+                normals = self.normal_cache[self.cache_idx]
+
             # Update the index for next time:
             self.cache_idx += 1
-            if self.cache_idx >= len(self.point_cache):  # type: ignore
+            if self.cache_idx >= len(self.point_cache):
                 self.cache_idx = 0
-            # Take a slice and remove the first axis by taking [0]
-            points = self.point_cache[point_slice][0]  # type: ignore
+
             if self.compute_normals:
-                normals = self.normal_cache[point_slice][0]  # type: ignore
                 return points, normals
             return points
 
@@ -191,9 +192,13 @@ class PointSampler(DataNode[TensorType]):
     def to(self, device: str | Device):
         super().to(device)
         if self.created_cache:
-            self.point_cache = self.backend.to(self.point_cache, self._device)
+            self.point_cache = [
+                self.backend.to(p, self._device) for p in self.point_cache
+            ]
             if self.compute_normals:
-                self.normal_cache = self.backend.to(self.normal_cache, self._device)
+                self.normal_cache = [
+                    self.backend.to(n, self._device) for n in self.normal_cache
+                ]
 
     def __mul__(self, other):
         from .product_sampler import ProductSampler

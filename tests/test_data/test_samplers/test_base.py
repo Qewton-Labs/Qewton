@@ -88,8 +88,8 @@ def test_point_sampler_cache_and_clear_cache(backend):
 
     sampler.clear_cache()
     assert sampler.created_cache is False
-    assert sampler.point_cache is None
-    assert sampler.normal_cache is None
+    assert sampler.point_cache == []
+    assert sampler.normal_cache == []
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
