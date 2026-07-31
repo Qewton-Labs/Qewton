@@ -4,7 +4,10 @@ from qewton.algorithms.building_blocks import ParameterNode
 from qewton import save, load
 from qewton.algorithms.building_blocks import Add, Multiply, ReLU
 from qewton.algorithms.building_blocks import Reshape
+from qewton.algorithms.dl_models.fcn import FCN, DeepRitzNet
+from qewton.algorithms.dl_models.cnn import CNN
 from qewton.graphs.graphs import Graph
+from qewton.backends import DEFAULT_DL_BACKEND, _backend_found
 
 
 def test_simple_graph_save_and_load(tmp_path):
@@ -30,3 +33,64 @@ def test_simple_graph_save_and_load(tmp_path):
                 assert type(node) == type(old_node)
                 break
     assert len(graph.incoming_edges) == len(loaded_graph.incoming_edges)
+
+
+def test_save_and_load_fcn(tmp_path):
+    fcn = FCN(in_neurons=2, hidden_neurons=4, out_neurons=1, n_hidden_layers=3)
+    save_path = tmp_path / "fcn_test"
+    save(fcn, save_path)
+    loaded_fcn = load(save_path)
+    assert isinstance(loaded_fcn, FCN)
+    if _backend_found:
+        input_data = DEFAULT_DL_BACKEND.build_tensor([[1.0, 2.0], [3.0, 4.0]])
+        output_original = fcn(input_data)
+        output_loaded = loaded_fcn(input_data)
+        assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
+
+
+def test_save_and_load_fcn_more_complex(tmp_path):
+    fcn = FCN(
+        in_neurons=2, hidden_neurons=25, out_neurons=2, n_hidden_layers=5, bias=False
+    )
+    save_path = tmp_path / "fcn_test"
+    save(fcn, save_path)
+    loaded_fcn = load(save_path)
+    assert isinstance(loaded_fcn, FCN)
+    if _backend_found:
+        input_data = DEFAULT_DL_BACKEND.build_tensor([[1.0, 2.0], [3.0, 4.0]])
+        output_original = fcn(input_data)
+        output_loaded = loaded_fcn(input_data)
+        assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
+
+
+def test_save_and_load_deep_ritz_net(tmp_path):
+    fcn = DeepRitzNet(in_neurons=2, width=10, out_neurons=1, depth=1)
+    save_path = tmp_path / "deepritz_test"
+    save(fcn, save_path)
+    loaded_fcn = load(save_path)
+    assert isinstance(loaded_fcn, DeepRitzNet)
+    if _backend_found:
+        input_data = DEFAULT_DL_BACKEND.build_tensor([[1.0, 2.0], [3.0, 4.0]])
+        output_original = fcn(input_data)
+        output_loaded = loaded_fcn(input_data)
+        assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
+
+
+def test_save_and_load_cnn(tmp_path):
+    save_path = tmp_path / "cnn_test"
+    cnn = CNN(
+        in_channels=2,
+        hidden_channels=16,
+        out_channels=1,
+        n_hidden_layers=3,
+        kernel_size=(3, 3),
+    )
+    cnn.setup()
+    save(cnn, save_path, replace=True)
+    cnn_loaded = load(save_path)
+    assert isinstance(cnn_loaded, CNN)
+    if _backend_found:
+        input_data = DEFAULT_DL_BACKEND.random.uniform((1, 2, 5, 5))
+        output_original = cnn(input_data)
+        output_loaded = cnn_loaded(input_data)
+        assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)

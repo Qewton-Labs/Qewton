@@ -57,6 +57,7 @@ def _load_hyperparameter(data: dict[str, Any]) -> HyperParameter:
         categories = (
             parameter_range if isinstance(parameter_range, list) else [current_value]
         )
+
         kwargs["categories"] = categories
         kwargs["initial_value"] = current_value
     elif "parameter_range" in params:
@@ -94,7 +95,7 @@ def _load_other_args(
         abs_path = root_dir / value
         return backend_class.load(abs_path)
 
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple, set)):
         # Could be a list of parameter paths (multiple groups)
         loaded = [_load_other_args(v, root_dir, backend_class, node_id) for v in value]
         # If every item became a TrainableParameters, combine them
@@ -106,6 +107,13 @@ def _load_other_args(
         return loaded
 
     if isinstance(value, dict):
+        tuple_set_encoded = _check_if_tuple_or_set(value)
+        if tuple_set_encoded is not None:
+            loaded = [
+                _load_other_args(v, root_dir, backend_class, node_id)
+                for v in value["VALUES"]
+            ]
+            return tuple_set_encoded(loaded)
         if _check_if_class_object(value):
             return _get_class(value["module"], value["class"])
         return {
@@ -120,8 +128,21 @@ def _check_if_class_object(value: dict):
     return "class" in value and "module" in value and len(value) == 2
 
 
+def _check_if_tuple_or_set(value: dict) -> type[tuple] | type[set] | None:
+    if isinstance(value, dict) and "TYPE" in value and "VALUES" in value:
+        if value["TYPE"] == "tuple":
+            return tuple
+        elif value["TYPE"] == "set":
+            return set
+    return None
+
+
 def _hp_load_values(value: Any):
     if isinstance(value, dict):
+        tuple_set_encoded = _check_if_tuple_or_set(value)
+        if tuple_set_encoded is not None:
+            loaded = [_hp_load_values(v) for v in value["VALUES"]]
+            return tuple_set_encoded(loaded)
         if _check_if_class_object(value):
             return _get_class(value["module"], value["class"])
         return {k: _hp_load_values(v) for k, v in value.items()}
@@ -185,13 +206,28 @@ def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
     backend_class: type[Backend] = BACKEND_DICT.get(backend_ref, DEFAULT_DL_BACKEND)
 
     # Load hyperparameters
-    hyperparameters: dict[str, HyperParameter] = {}
+    hyperparameters: dict[
+        str, HyperParameter | list[HyperParameter] | tuple[HyperParameter, ...]
+    ] = {}
     hp_file = root_dir / config_data.get("hyperparameters_file", "hyperparameters.json")
     if hp_file.exists():
         with hp_file.open("r", encoding="utf-8") as f:
             hp_data: dict[str, Any] = json.load(f)
         for hp_name, hp_dict in hp_data.items():
-            hyperparameters[hp_name] = _load_hyperparameter(hp_dict)
+            if isinstance(hp_dict, dict):
+                hyperparameters[hp_name] = _load_hyperparameter(hp_dict)
+            elif isinstance(hp_dict, list):
+                hyperparameters[hp_name] = [
+                    _load_hyperparameter(hp) for hp in hp_dict if isinstance(hp, dict)
+                ]
+            elif isinstance(hp_dict, tuple):
+                hyperparameters[hp_name] = tuple(
+                    _load_hyperparameter(hp) for hp in hp_dict if isinstance(hp, dict)
+                )
+            else:
+                raise ValueError(
+                    f"Unexpected hyperparameter format for '{hp_name}': {hp_dict}"
+                )
 
     # Reconstruct other_args
     other_args = _load_other_args(
@@ -215,7 +251,7 @@ def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
         node_id=config_data["node_id"],
         mode=EvaluationPhase[config_data["mode"]],
         state=NodeState[config_data["state"]],
-        hyperparameters=hyperparameters,
+        hyperparameters=hyperparameters,  # type: ignore
         other_args=other_args,
         nested_graphs=nested_graphs,
     )

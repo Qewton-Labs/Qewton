@@ -157,8 +157,8 @@ class Sqrt(Node[TensorType]):
 
 
 class Power(Node[TensorType]):
-    """Element-wise exponentiation node that raises the first input to the power of the second input.
-    Has two input ports and one output port.
+    """Element-wise exponentiation node that raises the first input to the
+    power of the second input. Has two input ports and one output port.
     """
 
     _type_identifier = "PowerNode"
@@ -170,7 +170,8 @@ class Power(Node[TensorType]):
         name=None,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
-        super().__init__(name, backend)
+        super().__init__(name, backend=backend)
+        self.power = power
         if power is not None:
             self.input_ports[-1].default = power
 
@@ -179,6 +180,7 @@ class Power(Node[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        out = self.backend.math.power(x, y)
         return self.backend.math.power(x, y)
 
 

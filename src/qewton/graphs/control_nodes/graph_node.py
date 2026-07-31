@@ -419,22 +419,23 @@ class GraphNode(Node[TensorType]):
     @classmethod
     def load_from_config(cls, config: NodeConfig) -> Node:
         g_node: GraphNode = super().load_from_config(config)  # type: ignore
+        # If the graph was not saved, we cannot load it,
+        # so we return the node as is (for example some nodes just have
+        # a simple computation graph which we can always reconstruct
+        # from the given input parameters instead of saving it)
+        if "graph" not in config.nested_graphs:
+            return g_node
         graph_config: GraphConfig = config.nested_graphs["graph"]
         saved_graph = Graph.load_from_graph_config(graph_config)
 
         old_input_connections = []
         old_output_connections = []
-        print("Name of this node", g_node.name)
         for node in saved_graph.nodes:
             for e in graph_config.edges_from_outside:
                 if e[2] == node.node_id:
-                    print("Connection from outside to node", node.name, "to port", e[3])
                     old_input_connections.append(node.input_ports[e[3]])
             for e in graph_config.edges_to_outside:
                 if e[0] == node.node_id:
-                    print(
-                        "Connection from node", node.name, "from port", e[1], "to outside"
-                    )
                     old_output_connections.append(node.output_ports[e[1]])
         g_node.setup_graph(
             saved_graph,

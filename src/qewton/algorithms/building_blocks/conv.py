@@ -15,7 +15,7 @@ from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.graphs.graphs import Graph
-from qewton.graphs.nodes import Node, NodeState
+from qewton.graphs.nodes import Node, NodeState, NodeConfig
 from qewton.graphs.control_nodes.graph_node import GraphNode
 
 # region: Convolutions
@@ -41,6 +41,7 @@ class FunctionalConv(Node[TensorType]):
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
         self.backend: type[DeepLearningBackend[TensorType]] = backend
+        self.dim = dim
         if dim == 1:
             self.conv_fn = self.backend.nn.conv1d
         elif dim == 2:
@@ -209,6 +210,45 @@ class Conv(GraphNode, Generic[TensorType]):
         self.input.set_value(x)
         self.run()
         return self.output.value
+
+    def config_dict(self) -> NodeConfig:
+        other_args = {
+            "name": self.name,
+            "backend": self.backend,
+            "bias": hasattr(self, "bias"),
+            "stride": self.conv_node.stride,
+            "padding": self.conv_node.padding,
+            "dilation": self.conv_node.dilation,
+            "groups": self.conv_node.groups,
+        }
+        hyperparameters = {
+            "in_channels": self.kernel.shape[1],
+            "out_channels": self.kernel.shape[0],
+        }
+        for kernel_hp in self.kernel.shape[2:]:
+            hyperparameters[kernel_hp.name] = kernel_hp
+
+        return NodeConfig(
+            node_identifier=self._type_identifier,
+            node_id=self.node_id,
+            mode=self.mode,
+            hyperparameters=hyperparameters,
+            other_args=other_args,
+            state=self.state,
+            nested_graphs={"graph": self._graph},
+        )
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        hp_dict = {}
+        hp_dict["in_channels"] = config.hyperparameters.pop("in_channels")
+        hp_dict["out_channels"] = config.hyperparameters.pop("out_channels")
+        hp_dict["kernel_size"] = []
+        for v in config.hyperparameters.values():
+            hp_dict["kernel_size"].append(v)
+        hp_dict["kernel_size"] = tuple(hp_dict["kernel_size"])
+        config.hyperparameters = hp_dict
+        return super().load_from_config(config)
 
 
 class Conv1D(Conv[TensorType]):

@@ -7,7 +7,7 @@ from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.graphs.graphs import Graph
-from qewton.graphs.nodes import Node, NodeConfig
+from qewton.graphs.nodes import NodeConfig
 from qewton.graphs.control_nodes.graph_node import GraphNode
 
 
@@ -26,27 +26,26 @@ class FunctionalLinear(GraphNode, Generic[TensorType]):
         self.matmul_node = MatMul(backend=backend)
         self.add_node = Add(backend=backend)
         graph = Graph()
+        in_ports = [self.matmul_node.input_ports[0], self.matmul_node.input_ports[1]]
         if bias:
             graph.connect(self.matmul_node.output_ports[0], self.add_node.input_ports[0])
             output_port = self.add_node.output_ports[0]
+            in_ports.append(self.add_node.input_ports[1])
         else:
             graph.add_node(self.matmul_node)
             output_port = self.matmul_node.output_ports[0]
 
         super().__init__(
             graph=graph,
-            input_ports=[
-                self.matmul_node.input_ports[0],
-                self.matmul_node.input_ports[1],
-                self.add_node.input_ports[1],
-            ],
+            input_ports=in_ports,
             output_ports=[output_port],
             name=name,
             backend=backend,
         )
         self.input = self.input_ports[0]
         self.weight = self.input_ports[1]
-        self.bias = self.input_ports[2]
+        if bias:
+            self.bias = self.input_ports[2]
         self.output = self.output_ports[0]
 
     def forward(
@@ -60,6 +59,21 @@ class FunctionalLinear(GraphNode, Generic[TensorType]):
         self.bias.set_value(bias)
         self.run()
         return self.output.value  # type: ignore
+
+    def config_dict(self) -> NodeConfig:
+        other_args = {
+            "name": self.name,
+            "backend": self.backend,
+            "bias": hasattr(self, "bias"),
+        }
+        return NodeConfig(
+            node_identifier=self._type_identifier,
+            node_id=self.node_id,
+            mode=self.mode,
+            hyperparameters={},
+            other_args=other_args,
+            state=self.state,
+        )
 
 
 class Linear(GraphNode, Generic[TensorType]):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import json
 import inspect
 from enum import Enum
@@ -36,8 +37,12 @@ def _jsonify(value: Any) -> Any:
         return str(value)
     if isinstance(value, dict):
         return {str(k): _jsonify(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, list):
         return [_jsonify(v) for v in value]
+    if isinstance(value, tuple):
+        return {"TYPE": "tuple", "VALUES": [_jsonify(v) for v in value]}
+    if isinstance(value, set):
+        return {"TYPE": "set", "VALUES": [_jsonify(v) for v in value]}
     if isinstance(value, type):
         return {
             "class": value.__name__,
@@ -99,7 +104,7 @@ def _serialize_other_args(
             )
             for k, v in value.items()
         }
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, list):
         return [
             _serialize_other_args(
                 v,
@@ -112,6 +117,22 @@ def _serialize_other_args(
             )
             for v in value
         ]
+    if isinstance(value, (tuple, set)):
+        return {
+            "TYPE": type(value).__name__,
+            "VALUES": [
+                _serialize_other_args(
+                    v,
+                    parameters_dir,
+                    root_dir,
+                    constants_dir,
+                    file_counter,
+                    constants_file_counter,
+                    backend=backend,
+                )
+                for v in value
+            ],
+        }
     if inspect.isclass(value) and issubclass(value, Backend):
         return next(k for k, v in BACKEND_DICT.items() if v == value)
     return _jsonify(value)
@@ -120,19 +141,28 @@ def _serialize_other_args(
 #############################################################################
 
 
-def save(obj: Node | Graph, path: str | Path) -> None:
+def save(obj: Node | Graph, path: str | Path, replace: bool = False) -> None:
     """Saves a Node or Graph to a file.
 
     Args:
         obj (Node | Graph): The Node or Graph to save.
         path (str): The path to the file where the object will be saved.
     """
+    if Path(path).exists():
+        if replace:
+            # delete the existing directory and its contents
+            shutil.rmtree(path)
+        else:
+            raise FileExistsError(f"The path {path} already exists. Use replace=True \
+                    to allow to overwrite it.")
+    print(f"Saving {obj.__class__.__name__} to {path}")
     if isinstance(obj, Node):
         save_node(obj.config_dict(), path, obj.backend)
     elif isinstance(obj, Graph):
         save_graph(obj, path)
     else:
         raise TypeError(f"Object of type {type(obj)} is not supported for saving.")
+    print("Saving completed")
 
 
 def save_node(node_config: NodeConfig, path: str | Path, backend: type[Backend]):

@@ -23,7 +23,7 @@ def test_save_and_load_reshape_node(tmp_path):
     save(reshape_node, save_path)
     loaded_reshape_node = load(save_path)
     assert isinstance(loaded_reshape_node, Reshape)
-    assert loaded_reshape_node.new_shape == [2, 3]
+    assert loaded_reshape_node.new_shape == (2, 3)
     assert loaded_reshape_node.node_id == reshape_node.node_id
     assert loaded_reshape_node.name == reshape_node.name
     assert loaded_reshape_node.backend == reshape_node.backend

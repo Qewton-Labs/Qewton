@@ -8,7 +8,7 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.config.axes import FeatureAxes, EllipsisAxes
 from qewton.graphs.graphs import SequentialGraph, Graph
-from qewton.graphs.nodes import Node, NodeState
+from qewton.graphs.nodes import Node, NodeState, NodeConfig
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
@@ -32,6 +32,8 @@ class FCN(GraphNode, Generic[TensorType]):
         backend (type[Backend[TensorType]], optional): What backend this
             model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
     """
+
+    _type_identifier = "FCNNode"
 
     def __init__(
         self,
@@ -192,7 +194,12 @@ class DeepRitzNet(FCN[TensorType]):
     Notes:
         [1] Weinan E and Bing Yu, "The Deep Ritz method: A deep learning-based numerical
         algorithm for solving variational problems", 2017
+
+    TODO: Improve initialization of the network-weights, as the current one can
+    blow-up for deeper networks.
     """
+
+    _type_identifier = "DeepRitzNetNode"
 
     def __init__(
         self,
@@ -261,3 +268,22 @@ class DeepRitzNet(FCN[TensorType]):
         graph.connect(last_node, linear_out)
         graph.sort()
         return graph
+
+    def config_dict(self) -> NodeConfig:
+        other_args = {"name": self.name, "backend": self.backend}
+        hyperparameters = {
+            "in_neurons": self.in_neurons,
+            "out_neurons": self.out_neurons,
+            "width": self.hidden_neurons,
+            "depth": self.n_hidden_layers,
+            "bias": self.bias,
+        }
+        return NodeConfig(
+            node_identifier=self._type_identifier,
+            node_id=self.node_id,
+            mode=self.mode,
+            hyperparameters=hyperparameters,
+            other_args=other_args,
+            state=self.state,
+            nested_graphs={"graph": self._graph},
+        )

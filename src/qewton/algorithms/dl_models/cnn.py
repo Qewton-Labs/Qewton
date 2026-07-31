@@ -21,7 +21,7 @@ from qewton.algorithms.building_blocks.creation import Identity
 from qewton.backends import DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
 from qewton.config.variables import Variable
 from qewton.graphs.graphs import SequentialGraph, Graph
-from qewton.graphs.nodes import Node, NodeState
+from qewton.graphs.nodes import Node, NodeState, NodeConfig
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
@@ -54,6 +54,8 @@ class CNN(GraphNode, Generic[TensorType]):
         backend (type[DeepLearningBackend[TensorType]], optional): The computation
             backend. Defaults to DEFAULT_DL_BACKEND.
     """
+
+    _type_identifier = "CNNNode"
 
     def __init__(
         self,
@@ -123,7 +125,7 @@ class CNN(GraphNode, Generic[TensorType]):
                         if i == layers - 1
                         else self.hidden_channels.value
                     ),
-                    kernel_size=tuple(k.value for k in self.kernel_size),
+                    kernel_size=tuple(self.kernel_size),
                     padding=tuple((k.value - 1) // 2 for k in self.kernel_size),
                     bias=self.bias.value,
                     name=f"conv_{i}",
@@ -155,12 +157,50 @@ class CNN(GraphNode, Generic[TensorType]):
             self.n_hidden_layers,
             self.bias,
             self.activation,
-        ]
+        ] + self.kernel_size
 
     def forward(self, x):
         self.input_ports[0].set_value(x)
         self.run()
         return self.output_ports[0].value
+
+    def config_dict(self) -> NodeConfig:
+        other_args = {
+            "name": self.name,
+            "backend": self.backend,
+        }
+        hyperparameters = {
+            "in_channels": self.in_channels,
+            "out_channels": self.out_channels,
+            "hidden_channels": self.hidden_channels,
+            "n_hidden_layers": self.n_hidden_layers,
+            "bias": self.bias,
+            "activation": self.activation,
+        }
+        for kernel_hp in self.kernel_size:
+            hyperparameters[kernel_hp.name] = kernel_hp
+
+        return NodeConfig(
+            node_identifier=self._type_identifier,
+            node_id=self.node_id,
+            mode=self.mode,
+            hyperparameters=hyperparameters,
+            other_args=other_args,
+            state=self.state,
+            nested_graphs={"graph": self._graph},
+        )
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        config.hyperparameters["kernel_size"] = list[HyperParameter]()  # type: ignore
+        pop_list = []
+        for k, v in config.hyperparameters.items():
+            if k.startswith("CCN Kernel Size"):
+                config.hyperparameters["kernel_size"].append(v)
+                pop_list.append(k)
+        for k in pop_list:
+            config.hyperparameters.pop(k, None)
+        return super().load_from_config(config)
 
 
 class UNet(GraphNode, Generic[TensorType]):
