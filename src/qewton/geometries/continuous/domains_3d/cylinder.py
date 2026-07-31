@@ -169,8 +169,14 @@ class Cylinder(ContinuousGeometry[TensorType]):
             # Build tetraheder
             v_count = len(vertices)
             for tri in triangles:
-                a, b, c = tri + v_count * k
-                a1, b1, c1 = tri + v_count * (k + 1)
+                a_original, b_original, c_original = tri
+                a, b, c = self.ordering_vertices(
+                    vertices, a_original, b_original, c_original
+                )
+                a += v_count * k
+                b += v_count * k
+                c += v_count * k
+                a1, b1, c1 = a + v_count, b + v_count, c + v_count
                 tetrahedra.append([a1, b1, c1, b])
                 tetrahedra.append([a1, b, a, c1])
                 tetrahedra.append([a, b, c1, c])
@@ -182,6 +188,30 @@ class Cylinder(ContinuousGeometry[TensorType]):
             mesh=Mesh(vertices=all_vertices, cells=tetrahedra),
             discretization_of=self,
         )
+
+    def ordering_vertices(self, vertices, a_original, b_original, c_original):
+        print(a_original, b_original, c_original)
+        for i in [0, 1]:
+            a_vertex, b_vertex, c_vertex = (
+                vertices[int(a_original)],
+                vertices[int(b_original)],
+                vertices[int(c_original)],
+            )
+            if a_vertex[i] <= b_vertex[i] <= c_vertex[i]:
+                a, b, c = a_original, b_original, c_original
+            elif a_vertex[i] <= c_vertex[i] <= b_vertex[i]:
+                a, b, c = a_original, c_original, b_original
+            elif b_vertex[i] <= a_vertex[i] <= c_vertex[i]:
+                a, b, c = b_original, a_original, c_original
+            elif b_vertex[i] <= c_vertex[i] <= a_vertex[i]:
+                a, b, c = b_original, c_original, a_original
+            elif c_vertex[i] <= a_vertex[i] <= b_vertex[i]:
+                a, b, c = c_original, a_original, b_original
+            else:  # c_vertex[i] <= b_vertex[i] <= a_vertex[i]
+                a, b, c = c_original, b_original, a_original
+            a_original, b_original, c_original = a, b, c
+        print(a_original, b_original, c_original)
+        return a_original, b_original, c_original
 
 
 class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
