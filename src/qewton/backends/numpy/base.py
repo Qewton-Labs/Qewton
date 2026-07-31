@@ -80,13 +80,13 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
     @classmethod
     def save(cls, data, path: str | Path):
         path = Path(path)
-        if path.suffix != ".np":
-            path = path.with_suffix(".np")
+        if path.suffix != ".npy":
+            path = path.with_suffix(".npy")
         np.save(path, data)
 
     @classmethod
     def load(cls, path: str | Path):
         path = Path(path)
-        if path.suffix != ".np":
-            path = path.with_suffix(".np")
+        if path.suffix != ".npy":
+            path = path.with_suffix(".npy")
         return np.load(path, allow_pickle=True)
