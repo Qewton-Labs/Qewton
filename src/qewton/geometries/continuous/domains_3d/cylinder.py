@@ -170,16 +170,16 @@ class Cylinder(ContinuousGeometry[TensorType]):
             v_count = len(vertices)
             for tri in triangles:
                 a_original, b_original, c_original = tri
-                a, b, c = self.ordering_vertices(
+                a_0, b_0, c_0 = self.ordering_vertices(
                     vertices, a_original, b_original, c_original
                 )
-                a += v_count * k
-                b += v_count * k
-                c += v_count * k
+                a = a_0 + v_count * k
+                b = b_0 + v_count * k
+                c = c_0 + v_count * k
                 a1, b1, c1 = a + v_count, b + v_count, c + v_count
-                tetrahedra.append([a1, b1, c1, b])
-                tetrahedra.append([a1, b, a, c1])
-                tetrahedra.append([a, b, c1, c])
+                tetrahedra.append([a, b, c, a1])
+                tetrahedra.append([c, a1, b, b1])
+                tetrahedra.append([c, a1, b1, c1])
         all_vertices = self.backend.math.concatenate(all_vertices, axis=0)
         tetrahedra = self.backend.build_tensor(tetrahedra)
 
@@ -190,7 +190,6 @@ class Cylinder(ContinuousGeometry[TensorType]):
         )
 
     def ordering_vertices(self, vertices, a_original, b_original, c_original):
-        print(a_original, b_original, c_original)
         for i in [0, 1]:
             a_vertex, b_vertex, c_vertex = (
                 vertices[int(a_original)],
@@ -210,7 +209,6 @@ class Cylinder(ContinuousGeometry[TensorType]):
             else:  # c_vertex[i] <= b_vertex[i] <= a_vertex[i]
                 a, b, c = c_original, b_original, a_original
             a_original, b_original, c_original = a, b, c
-        print(a_original, b_original, c_original)
         return a_original, b_original, c_original
 
 
