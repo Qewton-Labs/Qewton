@@ -1,4 +1,5 @@
 import importlib
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -11,14 +12,52 @@ from qewton.graphs.nodes import (
     NODE_REGISTRY,
 )
 from qewton.graphs.graphs import Graph, GraphConfig
-from qewton.optim.parameters.hyperparameter_base import HyperParameter
-from qewton.optim.parameters.categorical_hyperparameter import BooleanHyperparameter
-from qewton.optim.parameters.helpers import HyperParameterState
 from qewton.optim.parameters.trainable_parameters import (
     TrainableParameters,
     TrainableParametersCollection,
 )
 from qewton.backends import BACKEND_DICT, DEFAULT_DL_BACKEND, Backend
+
+from qewton.graphs.saving.hyperparameter_codec import (
+    deserialize_hyperparameter,
+    _inverse_hp_dict,
+)
+from qewton.graphs.saving.schema import (
+    DIR_NODES,
+    FILE_CONFIG,
+    FILE_HYPERPARAMETERS,
+    KEY_BACKEND_KEY,
+    KEY_CLASS,
+    KEY_EDGES,
+    KEY_FROM_NODE_ID,
+    KEY_FROM_OUTSIDE,
+    KEY_FROM_PORT,
+    KEY_HYPERPARAMETERS_FILE,
+    KEY_MODE,
+    KEY_MODULE,
+    KEY_NESTED_GRAPHS,
+    KEY_NODE_ID,
+    KEY_NODE_IDENTIFIER,
+    KEY_NODES_INCLUDED,
+    KEY_OBJECT_TYPE,
+    KEY_OTHER_ARGS,
+    KEY_PATH,
+    KEY_SORTED,
+    KEY_STATE,
+    KEY_TO_NODE_ID,
+    KEY_TO_OUTSIDE,
+    KEY_TO_PORT,
+    KEY_TYPE,
+    KEY_VALUES,
+    OBJECT_TYPE_GRAPH,
+    OBJECT_TYPE_NODE,
+    TYPE_BACKEND_REF,
+    TYPE_CLASS_REF,
+    TYPE_CONSTANT_REF,
+    TYPE_SET,
+    TYPE_TRAINABLE_PARAMETER_REF,
+    TYPE_TUPLE,
+)
 
 
 def _get_class(module: str, classname: str) -> type:
@@ -27,55 +66,35 @@ def _get_class(module: str, classname: str) -> type:
     return getattr(mod, classname)
 
 
-def _load_hyperparameter(data: dict[str, Any]) -> HyperParameter:
-    """Reconstruct a HyperParameter from its serialized dict.
+def _load_hyperparameter_entry(value: Any) -> Any:
+    if isinstance(value, dict):
+        value_type = value.get(KEY_TYPE)
+        if value_type == TYPE_TUPLE:
+            return tuple(_load_hyperparameter_entry(v) for v in value[KEY_VALUES])
+        if value_type == TYPE_SET:
+            return set(_load_hyperparameter_entry(v) for v in value[KEY_VALUES])
+        if KEY_CLASS in value and value[KEY_CLASS] in _inverse_hp_dict:
+            return deserialize_hyperparameter(value)
+    if isinstance(value, list):
+        return [_load_hyperparameter_entry(v) for v in value]
+    raise ValueError(f"Unexpected hyperparameter payload: {value}")
 
-    Uses the stored *class*/*module* to find the concrete subclass, then
-    passes only the arguments that the constructor actually accepts so that
-    subclasses with different signatures (e.g. CategoricalHyperparameter
-    uses *categories* instead of *parameter_range*) are handled safely.
-    """
-    import inspect
 
-    hp_class: type[HyperParameter] = _get_class(data["module"], data["class"])
-    state = HyperParameterState[data["state"]]
-    name = data.get("name", "")
-    current_value = _hp_load_values(data.get("current_value", {}))
-    parameter_range = _hp_load_values(data.get("parameter_range", []))
-    default_grid = _hp_load_values(data.get("default_grid"))
-
-    sig = inspect.signature(hp_class.__init__)
-    params = set(sig.parameters.keys()) - {"self"}
-
-    kwargs: dict[str, Any] = {"state": state, "name": name}
-
-    # Handle the common variants — each subclass uses different field names.
-    if hp_class == BooleanHyperparameter:
-        kwargs["initial_value"] = current_value
-    elif "categories" in params:
-        # CategoricalHyperparameter
-        categories = (
-            parameter_range if isinstance(parameter_range, list) else [current_value]
-        )
-
-        kwargs["categories"] = categories
-        kwargs["initial_value"] = current_value
-    elif "parameter_range" in params:
-        # ContinuousHyperparameter / DiscreteHyperparameter
-        kwargs["parameter_range"] = parameter_range
-        kwargs["initial_value"] = current_value
-    else:
-        # Fallback: base HyperParameter
-        kwargs["parameter_range"] = parameter_range if parameter_range is not None else []
-        kwargs["initial_value"] = current_value
-
-    if "default_grid" in params:
-        kwargs["default_grid"] = default_grid
-
-    hp: HyperParameter = hp_class(**kwargs)
-    # Restore the current (possibly tuned) value.
-    hp.current_value = current_value
-    return hp
+def _resolve_backend_class(value: Any) -> type[Backend]:
+    if isinstance(value, dict):
+        value_type = value.get(KEY_TYPE)
+        if value_type == TYPE_BACKEND_REF:
+            backend_key = value.get(KEY_BACKEND_KEY)
+            if isinstance(backend_key, str):
+                return BACKEND_DICT.get(backend_key, DEFAULT_DL_BACKEND)
+            return DEFAULT_DL_BACKEND
+        if value_type == TYPE_CLASS_REF:
+            maybe_cls = _get_class(value[KEY_MODULE], value[KEY_CLASS])
+            if inspect.isclass(maybe_cls) and issubclass(maybe_cls, Backend):
+                return maybe_cls
+    if isinstance(value, str):
+        return BACKEND_DICT.get(value, DEFAULT_DL_BACKEND)
+    return DEFAULT_DL_BACKEND
 
 
 def _load_other_args(
@@ -86,16 +105,38 @@ def _load_other_args(
 ) -> Any:
     """Recursively walk *other_args* and replace parameter paths with
     loaded *TrainableParameters* instances."""
-    if isinstance(value, str) and value.startswith("trainable_parameters/"):
-        abs_path = root_dir / value
-        tensor = backend_class.load(abs_path)
-        return TrainableParameters(node_id=node_id, parameters=tensor)
-    # Constant values that are not trained:
-    if isinstance(value, str) and value.startswith("constants/"):
-        abs_path = root_dir / value
-        return backend_class.load(abs_path)
+    if isinstance(value, dict):
+        value_type = value.get(KEY_TYPE)
+        if value_type == TYPE_TRAINABLE_PARAMETER_REF:
+            abs_path = root_dir / value[KEY_PATH]
+            tensor = backend_class.load(abs_path)
+            return TrainableParameters(node_id=node_id, parameters=tensor)
+        if value_type == TYPE_CONSTANT_REF:
+            abs_path = root_dir / value[KEY_PATH]
+            return backend_class.load(abs_path)
+        if value_type == TYPE_TUPLE:
+            return tuple(
+                _load_other_args(v, root_dir, backend_class, node_id)
+                for v in value[KEY_VALUES]
+            )
+        if value_type == TYPE_SET:
+            return set(
+                _load_other_args(v, root_dir, backend_class, node_id)
+                for v in value[KEY_VALUES]
+            )
+        if value_type == TYPE_CLASS_REF:
+            return _get_class(value[KEY_MODULE], value[KEY_CLASS])
+        if value_type == TYPE_BACKEND_REF:
+            backend_key = value.get(KEY_BACKEND_KEY)
+            if isinstance(backend_key, str):
+                return BACKEND_DICT.get(backend_key, DEFAULT_DL_BACKEND)
+            return DEFAULT_DL_BACKEND
+        return {
+            k: _load_other_args(v, root_dir, backend_class, node_id)
+            for k, v in value.items()
+        }
 
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, list):
         # Could be a list of parameter paths (multiple groups)
         loaded = [_load_other_args(v, root_dir, backend_class, node_id) for v in value]
         # If every item became a TrainableParameters, combine them
@@ -106,48 +147,6 @@ def _load_other_args(
             return collection
         return loaded
 
-    if isinstance(value, dict):
-        tuple_set_encoded = _check_if_tuple_or_set(value)
-        if tuple_set_encoded is not None:
-            loaded = [
-                _load_other_args(v, root_dir, backend_class, node_id)
-                for v in value["VALUES"]
-            ]
-            return tuple_set_encoded(loaded)
-        if _check_if_class_object(value):
-            return _get_class(value["module"], value["class"])
-        return {
-            k: _load_other_args(v, root_dir, backend_class, node_id)
-            for k, v in value.items()
-        }
-
-    return value
-
-
-def _check_if_class_object(value: dict):
-    return "class" in value and "module" in value and len(value) == 2
-
-
-def _check_if_tuple_or_set(value: dict) -> type[tuple] | type[set] | None:
-    if isinstance(value, dict) and "TYPE" in value and "VALUES" in value:
-        if value["TYPE"] == "tuple":
-            return tuple
-        elif value["TYPE"] == "set":
-            return set
-    return None
-
-
-def _hp_load_values(value: Any):
-    if isinstance(value, dict):
-        tuple_set_encoded = _check_if_tuple_or_set(value)
-        if tuple_set_encoded is not None:
-            loaded = [_hp_load_values(v) for v in value["VALUES"]]
-            return tuple_set_encoded(loaded)
-        if _check_if_class_object(value):
-            return _get_class(value["module"], value["class"])
-        return {k: _hp_load_values(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_hp_load_values(v) for v in value]
     return value
 
 
@@ -164,17 +163,17 @@ def load(path: str | Path) -> Node | Graph:
     root_dir = Path(path)
 
     # Read config.json
-    config_path = root_dir / "config.json"
+    config_path = root_dir / FILE_CONFIG
     if not config_path.exists():
-        raise FileNotFoundError(f"No config.json found in {root_dir}")
+        raise FileNotFoundError(f"No {FILE_CONFIG} found in {root_dir}")
     with config_path.open("r", encoding="utf-8") as f:
         config_data: dict[str, Any] = json.load(f)
 
-    object_type = config_data.get("object_type", None)
-    if object_type == "Graph":
+    object_type = config_data.get(KEY_OBJECT_TYPE, None)
+    if object_type == OBJECT_TYPE_GRAPH:
         graph_config = load_graph(root_dir, config_data)
         return Graph.load_from_graph_config(graph_config)
-    if object_type == "Node":
+    if object_type == OBJECT_TYPE_NODE:
         node_config = load_node(root_dir, config_data)
         if node_config.node_identifier is not None:
             node_class = NODE_REGISTRY.get(node_config.node_identifier, Node)
@@ -199,59 +198,40 @@ def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
     Returns:
         NodeConfig: The reconstructed NodeConfig.
     """
-
     # Resolve the backend, since we need it to load the tensors
-    other_args_raw: dict[str, Any] = config_data.get("other_args", {})
-    backend_ref: str = other_args_raw.get("backend", "")
-    backend_class: type[Backend] = BACKEND_DICT.get(backend_ref, DEFAULT_DL_BACKEND)
+    other_args_raw: dict[str, Any] = config_data.get(KEY_OTHER_ARGS, {})
+    backend_class = _resolve_backend_class(other_args_raw.get(KEY_BACKEND_KEY))
 
     # Load hyperparameters
-    hyperparameters: dict[
-        str, HyperParameter | list[HyperParameter] | tuple[HyperParameter, ...]
-    ] = {}
-    hp_file = root_dir / config_data.get("hyperparameters_file", "hyperparameters.json")
+    hyperparameters: dict[str, Any] = {}
+    hp_file = root_dir / config_data.get(KEY_HYPERPARAMETERS_FILE, FILE_HYPERPARAMETERS)
     if hp_file.exists():
         with hp_file.open("r", encoding="utf-8") as f:
             hp_data: dict[str, Any] = json.load(f)
-        for hp_name, hp_dict in hp_data.items():
-            if isinstance(hp_dict, dict):
-                hyperparameters[hp_name] = _load_hyperparameter(hp_dict)
-            elif isinstance(hp_dict, list):
-                hyperparameters[hp_name] = [
-                    _load_hyperparameter(hp) for hp in hp_dict if isinstance(hp, dict)
-                ]
-            elif isinstance(hp_dict, tuple):
-                hyperparameters[hp_name] = tuple(
-                    _load_hyperparameter(hp) for hp in hp_dict if isinstance(hp, dict)
-                )
-            else:
-                raise ValueError(
-                    f"Unexpected hyperparameter format for '{hp_name}': {hp_dict}"
-                )
+        for hp_name, hp_value in hp_data.items():
+            hyperparameters[hp_name] = _load_hyperparameter_entry(hp_value)
 
     # Reconstruct other_args
     other_args = _load_other_args(
-        other_args_raw, root_dir, backend_class, config_data["node_id"]
+        other_args_raw, root_dir, backend_class, config_data[KEY_NODE_ID]
     )
-    other_args["backend"] = backend_class  # Ensure backend is set correctly
-
     # Check for nested graphs and construct them
     nested_graphs = {}
-    if "nested_graphs" in config_data:
-        for graph_name, graph_path in config_data["nested_graphs"].items():
+    if KEY_NESTED_GRAPHS in config_data:
+        for graph_name, graph_path in config_data[KEY_NESTED_GRAPHS].items():
             graph_root_dir = root_dir / graph_path
-            graph_json_path = graph_root_dir / "config.json"
+            graph_json_path = graph_root_dir / FILE_CONFIG
             with graph_json_path.open("r", encoding="utf-8") as f:
                 graph_config_data: dict[str, Any] = json.load(f)
             nested_graphs[graph_name] = load_graph(graph_root_dir, graph_config_data)
 
     # Rebuild NodeConfig and use load_from_config for the given node
     node_config = NodeConfig(
-        node_identifier=config_data["node_identifier"],
-        node_id=config_data["node_id"],
-        mode=EvaluationPhase[config_data["mode"]],
-        state=NodeState[config_data["state"]],
-        hyperparameters=hyperparameters,  # type: ignore
+        node_identifier=config_data[KEY_NODE_IDENTIFIER],
+        node_id=config_data[KEY_NODE_ID],
+        mode=EvaluationPhase[config_data[KEY_MODE]],
+        state=NodeState[config_data[KEY_STATE]],
+        hyperparameters=hyperparameters,
         other_args=other_args,
         nested_graphs=nested_graphs,
     )
@@ -261,33 +241,33 @@ def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
 def load_graph(root_dir: Path, config_data: dict[str, Any]) -> GraphConfig:
     # First, load all nodes
     node_configs = {}
-    for node_id in config_data["nodes_included"]:
-        node_path = root_dir / f"nodes/node_{node_id}"
-        node_config_path = node_path / "config.json"
+    for node_id in config_data[KEY_NODES_INCLUDED]:
+        node_path = root_dir / f"{DIR_NODES}/node_{node_id}"
+        node_config_path = node_path / FILE_CONFIG
         if not node_config_path.exists():
-            raise FileNotFoundError(f"No config.json found for node {node_id}")
+            raise FileNotFoundError(f"No {FILE_CONFIG} found for node {node_id}")
         with node_config_path.open("r", encoding="utf-8") as f:
             node_config_data: dict[str, Any] = json.load(f)
         node_configs[node_id] = load_node(node_path, node_config_data)
 
     # Transform edges into a list of tuples
     edges = []
-    for edge in config_data["edges"]:
+    for edge in config_data[KEY_EDGES]:
         edges.append(_edge_format_to_tuple(edge))
     # Transform edges from outside into a list of tuples
     edges_from_outside = []
-    for edge in config_data.get("from_outside", []):
+    for edge in config_data.get(KEY_FROM_OUTSIDE, []):
         edges_from_outside.append(_edge_format_to_tuple(edge))
     # Transform edges to outside into a list of tuples
     edges_to_outside = []
-    for edge in config_data.get("to_outside", []):
+    for edge in config_data.get(KEY_TO_OUTSIDE, []):
         edges_to_outside.append(_edge_format_to_tuple(edge))
 
     # Build the config
     return GraphConfig(
         node_configs=node_configs,
         edges=edges,
-        graph_was_sorted=config_data.get("sorted", False),
+        graph_was_sorted=config_data.get(KEY_SORTED, False),
         edges_from_outside=edges_from_outside,
         edges_to_outside=edges_to_outside,
     )
@@ -295,8 +275,8 @@ def load_graph(root_dir: Path, config_data: dict[str, Any]) -> GraphConfig:
 
 def _edge_format_to_tuple(edge):
     return (
-        edge["from_node_id"],
-        edge["from_port"],
-        edge["to_node_id"],
-        edge["to_port"],
+        edge[KEY_FROM_NODE_ID],
+        edge[KEY_FROM_PORT],
+        edge[KEY_TO_NODE_ID],
+        edge[KEY_TO_PORT],
     )

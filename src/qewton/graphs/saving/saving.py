@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import shutil
 import json
 import inspect
+import logging
+import shutil
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -10,22 +11,54 @@ from typing import Any
 from qewton.graphs.nodes import Node, NodeConfig
 from qewton.graphs.graphs import Graph
 from qewton.backends.base import ComputingBackend
-from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
 from qewton.backends import BACKEND_DICT, Backend
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.graphs.saving.hyperparameter_codec import (
+    encode_value,
+    serialize_hyperparameter,
+)
+from qewton.graphs.saving.schema import (
+    DIR_CONSTANTS,
+    DIR_NESTED_GRAPHS,
+    DIR_NODES,
+    DIR_TRAINABLE_PARAMETERS,
+    FILE_CONFIG,
+    FILE_HYPERPARAMETERS,
+    KEY_BACKEND_KEY,
+    KEY_CLASS,
+    KEY_EDGES,
+    KEY_FROM_NODE_ID,
+    KEY_FROM_OUTSIDE,
+    KEY_FROM_PORT,
+    KEY_HYPERPARAMETERS_FILE,
+    KEY_MODE,
+    KEY_NESTED_GRAPHS,
+    KEY_NODE_ID,
+    KEY_NODE_IDENTIFIER,
+    KEY_NODES_INCLUDED,
+    KEY_OBJECT_TYPE,
+    KEY_OTHER_ARGS,
+    KEY_PATH,
+    KEY_SCHEMA_VERSION,
+    KEY_SORTED,
+    KEY_STATE,
+    KEY_TO_NODE_ID,
+    KEY_TO_OUTSIDE,
+    KEY_TO_PORT,
+    KEY_TYPE,
+    KEY_VALUES,
+    OBJECT_TYPE_GRAPH,
+    OBJECT_TYPE_NODE,
+    SCHEMA_VERSION,
+    TYPE_BACKEND_REF,
+    TYPE_CONSTANT_REF,
+    TYPE_SET,
+    TYPE_TRAINABLE_PARAMETER_REF,
+    TYPE_TUPLE,
+)
 
-
-def _serialize_hyperparameter(param: HyperParameter) -> dict[str, Any]:
-    return {
-        "class": param.__class__.__name__,
-        "module": param.__class__.__module__,
-        "name": param.name,
-        "state": param.state.name,
-        "parameter_range": _jsonify(param.parameter_range),
-        "current_value": _jsonify(param.current_value),
-        "default_grid": _jsonify(param.default_grid),
-        "condition": None if param.condition is None else repr(param.condition),
-    }
+logger = logging.getLogger(__name__)
 
 
 def _jsonify(value: Any) -> Any:
@@ -40,12 +73,12 @@ def _jsonify(value: Any) -> Any:
     if isinstance(value, list):
         return [_jsonify(v) for v in value]
     if isinstance(value, tuple):
-        return {"TYPE": "tuple", "VALUES": [_jsonify(v) for v in value]}
+        return {KEY_TYPE: TYPE_TUPLE, KEY_VALUES: [_jsonify(v) for v in value]}
     if isinstance(value, set):
-        return {"TYPE": "set", "VALUES": [_jsonify(v) for v in value]}
+        return {KEY_TYPE: TYPE_SET, KEY_VALUES: [_jsonify(v) for v in value]}
     if isinstance(value, type):
         return {
-            "class": value.__name__,
+            KEY_CLASS: value.__name__,
             "module": value.__module__,
         }
     return repr(value)
@@ -57,15 +90,20 @@ def _save_trainable_parameters(
     root_dir: Path,
     file_counter: list[int],
     backend: ComputingBackend,
-) -> str | list[str]:
+) -> dict[str, Any] | list[dict[str, Any]]:
     # Save each parameter group separately to keep files small and composable.
-    rel_paths: list[str] = []
+    rel_paths: list[dict[str, Any]] = []
     for group in value:
         file_name = f"param_{file_counter[0]}_node_{group.node_id}"
         file_counter[0] += 1
         param_path = parameters_dir / file_name
         backend.save(group.parameters, param_path)
-        rel_paths.append(str(param_path.relative_to(root_dir)))
+        rel_paths.append(
+            {
+                KEY_TYPE: TYPE_TRAINABLE_PARAMETER_REF,
+                KEY_PATH: str(param_path.relative_to(root_dir)),
+            }
+        )
 
     if len(rel_paths) == 1:
         return rel_paths[0]
@@ -90,7 +128,10 @@ def _serialize_other_args(
         constants_file_counter[0] += 1
         param_path = constants_dir / file_name
         backend.save(value, param_path)
-        return str(param_path.relative_to(root_dir))
+        return {
+            KEY_TYPE: TYPE_CONSTANT_REF,
+            KEY_PATH: str(param_path.relative_to(root_dir)),
+        }
     if isinstance(value, dict):
         return {
             str(k): _serialize_other_args(
@@ -119,8 +160,8 @@ def _serialize_other_args(
         ]
     if isinstance(value, (tuple, set)):
         return {
-            "TYPE": type(value).__name__,
-            "VALUES": [
+            KEY_TYPE: type(value).__name__,
+            KEY_VALUES: [
                 _serialize_other_args(
                     v,
                     parameters_dir,
@@ -134,8 +175,24 @@ def _serialize_other_args(
             ],
         }
     if inspect.isclass(value) and issubclass(value, Backend):
-        return next(k for k, v in BACKEND_DICT.items() if v == value)
-    return _jsonify(value)
+        return {
+            KEY_TYPE: TYPE_BACKEND_REF,
+            KEY_BACKEND_KEY: next(k for k, v in BACKEND_DICT.items() if v == value),
+        }
+    return encode_value(value)
+
+
+def _serialize_hyperparameter_entry(value: Any) -> Any:
+    if isinstance(value, HyperParameter):
+        return serialize_hyperparameter(value)
+    if isinstance(value, list):
+        return [_serialize_hyperparameter_entry(v) for v in value]
+    if isinstance(value, tuple):
+        return {
+            KEY_TYPE: TYPE_TUPLE,
+            KEY_VALUES: [_serialize_hyperparameter_entry(v) for v in value],
+        }
+    raise TypeError(f"Unsupported hyperparameter payload type: {type(value)}")
 
 
 #############################################################################
@@ -155,14 +212,14 @@ def save(obj: Node | Graph, path: str | Path, replace: bool = False) -> None:
         else:
             raise FileExistsError(f"The path {path} already exists. Use replace=True \
                     to allow to overwrite it.")
-    print(f"Saving {obj.__class__.__name__} to {path}")
+    logger.info("Saving %s to %s", obj.__class__.__name__, path)
     if isinstance(obj, Node):
         save_node(obj.config_dict(), path, obj.backend)
     elif isinstance(obj, Graph):
         save_graph(obj, path)
     else:
         raise TypeError(f"Object of type {type(obj)} is not supported for saving.")
-    print("Saving completed")
+    logger.info("Saving completed")
 
 
 def save_node(node_config: NodeConfig, path: str | Path, backend: type[Backend]):
@@ -175,32 +232,33 @@ def save_node(node_config: NodeConfig, path: str | Path, backend: type[Backend])
     # Build path and create directories if they don't exist
     output_dir = Path(path)
     output_dir.mkdir(parents=True, exist_ok=True)
-    parameters_dir = output_dir / "trainable_parameters"
+    parameters_dir = output_dir / DIR_TRAINABLE_PARAMETERS
     parameters_dir.mkdir(parents=True, exist_ok=True)
 
-    constants_dir = output_dir / "constants"
+    constants_dir = output_dir / DIR_CONSTANTS
     constants_dir.mkdir(parents=True, exist_ok=True)
     # Serialize the node configuration and save it to a JSON file
     file_counter = [0]
     file_constants_counter = [0]
 
     config_payload = {
-        "object_type": "Node",
-        "node_identifier": node_config.node_identifier,
-        "node_id": node_config.node_id,
-        "mode": node_config.mode.name,
-        "state": node_config.state.name,
+        KEY_SCHEMA_VERSION: SCHEMA_VERSION,
+        KEY_OBJECT_TYPE: OBJECT_TYPE_NODE,
+        KEY_NODE_IDENTIFIER: node_config.node_identifier,
+        KEY_NODE_ID: node_config.node_id,
+        KEY_MODE: node_config.mode.name,
+        KEY_STATE: node_config.state.name,
     }
 
     # Hyperparameters are saved in a separate JSON file to keep the
     # main config clean and manageable.
     if len(node_config.hyperparameters) > 0:
-        config_payload["hyperparameters_file"] = "hyperparameters.json"
+        config_payload[KEY_HYPERPARAMETERS_FILE] = FILE_HYPERPARAMETERS
         hyperparameters_payload = {
-            name: _serialize_hyperparameter(hp)
+            name: _serialize_hyperparameter_entry(hp)
             for name, hp in node_config.hyperparameters.items()
         }
-        with (output_dir / "hyperparameters.json").open("w", encoding="utf-8") as f:
+        with (output_dir / FILE_HYPERPARAMETERS).open("w", encoding="utf-8") as f:
             json.dump(hyperparameters_payload, f, indent=2)
 
     # Serialize other arguments, including trainable parameters,
@@ -214,7 +272,7 @@ def save_node(node_config: NodeConfig, path: str | Path, backend: type[Backend])
         file_constants_counter,
         backend=backend,
     )
-    config_payload["other_args"] = serialized_other_args
+    config_payload[KEY_OTHER_ARGS] = serialized_other_args
 
     if file_counter[0] == 0:
         # Remove the parameters directory if no parameters were saved
@@ -226,17 +284,17 @@ def save_node(node_config: NodeConfig, path: str | Path, backend: type[Backend])
 
     # check for nested graphs inside the node:
     if len(node_config.nested_graphs) > 0:
-        graphs_dir = output_dir / "nested_graphs"
+        graphs_dir = output_dir / DIR_NESTED_GRAPHS
         graphs_dir.mkdir(parents=True, exist_ok=True)
-        config_payload["nested_graphs"] = {}
+        config_payload[KEY_NESTED_GRAPHS] = {}
         for graph_name, graph in node_config.nested_graphs.items():
             graph_path = graphs_dir / graph_name
             save_graph(graph, graph_path)
-            config_payload["nested_graphs"][graph_name] = str(
+            config_payload[KEY_NESTED_GRAPHS][graph_name] = str(
                 graph_path.relative_to(output_dir)
             )
 
-    with (output_dir / "config.json").open("w", encoding="utf-8") as f:
+    with (output_dir / FILE_CONFIG).open("w", encoding="utf-8") as f:
         json.dump(config_payload, f, indent=2)
 
 
@@ -260,16 +318,17 @@ def save_graph(graph: Graph, path: str | Path) -> None:
         edges_config.append(_edge_format_save(e))
 
     graph_config_payload = {
-        "object_type": "Graph",
-        "nodes_included": list(graph_config.node_configs.keys()),
-        "edges": edges_config,
-        "sorted": graph_config.graph_was_sorted,
-        "from_outside": [_edge_format_save(e) for e in graph_config.edges_from_outside],
-        "to_outside": [_edge_format_save(e) for e in graph_config.edges_to_outside],
+        KEY_SCHEMA_VERSION: SCHEMA_VERSION,
+        KEY_OBJECT_TYPE: OBJECT_TYPE_GRAPH,
+        KEY_NODES_INCLUDED: list(graph_config.node_configs.keys()),
+        KEY_EDGES: edges_config,
+        KEY_SORTED: graph_config.graph_was_sorted,
+        KEY_FROM_OUTSIDE: [_edge_format_save(e) for e in graph_config.edges_from_outside],
+        KEY_TO_OUTSIDE: [_edge_format_save(e) for e in graph_config.edges_to_outside],
     }
 
     if len(graph.nodes) > 0:
-        node_dir = Path(output_dir / "nodes")
+        node_dir = Path(output_dir / DIR_NODES)
         node_dir.mkdir(parents=True, exist_ok=True)
 
         for node in graph.nodes:
@@ -278,14 +337,14 @@ def save_graph(graph: Graph, path: str | Path) -> None:
                 node_config=node.config_dict(), path=node_path, backend=node.backend
             )
 
-    with (output_dir / "config.json").open("w", encoding="utf-8") as f:
+    with (output_dir / FILE_CONFIG).open("w", encoding="utf-8") as f:
         json.dump(graph_config_payload, f, indent=2)
 
 
 def _edge_format_save(edge: tuple[int, int, int, int]) -> dict[str, Any]:
     return {
-        "from_node_id": edge[0],
-        "from_port": edge[1],
-        "to_node_id": edge[2],
-        "to_port": edge[3],
+        KEY_FROM_NODE_ID: edge[0],
+        KEY_FROM_PORT: edge[1],
+        KEY_TO_NODE_ID: edge[2],
+        KEY_TO_PORT: edge[3],
     }
