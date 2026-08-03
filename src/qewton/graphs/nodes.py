@@ -207,7 +207,9 @@ class NodeConfig:
     node_identifier: str | None
     node_id: int
     mode: EvaluationPhase
-    hyperparameters: dict[str, HyperParameter]
+    hyperparameters: dict[
+        str, HyperParameter | list[HyperParameter] | tuple[HyperParameter, ...]
+    ]
     other_args: dict[str, Any]
     state: NodeState
     nested_graphs: dict = field(default_factory=dict)
@@ -250,9 +252,7 @@ class Node(ABC, Generic[TensorType]):
         self.backend = backend
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
 
-        self._input_ports, self._output_ports = self._build_ports(
-            self.forward, self, backend
-        )
+        self._input_ports, self._output_ports = self._build_ports(self.forward, self)
 
         self.node_id = Node._node_id_counter
         Node._node_id_counter += 1
@@ -278,7 +278,7 @@ class Node(ABC, Generic[TensorType]):
 
     @classmethod
     def _build_ports(
-        cls, func: Callable, owner: Node, backend: type[Backend[TensorType]]
+        cls, func: Callable, owner: Node
     ) -> tuple[list[InputPort], list[OutputPort]]:
         """Automatically builds input and output ports for this node based
         on the signature of the forward function and the type hints of its
@@ -292,7 +292,7 @@ class Node(ABC, Generic[TensorType]):
         # Build input ports:
         for name, param in call_sig.parameters.items():
             hint = type_hints.get(name, param.annotation)
-            config, _ = cls._unwrap_annotated(hint, owner, backend)
+            config, _ = cls._unwrap_annotated(hint, owner)
             input_ports.append(
                 InputPort(
                     config,
@@ -316,7 +316,7 @@ class Node(ABC, Generic[TensorType]):
             outputs = [return_values]
 
         for i, output in enumerate(outputs):
-            config, _ = cls._unwrap_annotated(output, owner, backend)
+            config, _ = cls._unwrap_annotated(output, owner)
             output_ports.append(OutputPort(config, node=owner, name=f"output_{i}"))
 
         return input_ports, output_ports
@@ -333,7 +333,7 @@ class Node(ABC, Generic[TensorType]):
         return backend.default_dtype
 
     @classmethod
-    def _unwrap_annotated(cls, type_hint, owner, backend):
+    def _unwrap_annotated(cls, type_hint, owner):
         """Return (base_type, config)."""
 
         if get_origin(type_hint) in [Optional, Union]:
@@ -617,7 +617,14 @@ class Node(ABC, Generic[TensorType]):
                 continue
 
             class_atri = getattr(self, name)
+            # Hyperparameters are stored in a separate dictionary,
+            # so we can easily check which parameters are also shared between
+            # different nodes.
             if isinstance(class_atri, HyperParameter):
+                hyperparameters[name] = class_atri
+            elif isinstance(class_atri, (list, tuple)) and all(
+                isinstance(item, HyperParameter) for item in class_atri
+            ):
                 hyperparameters[name] = class_atri
             else:
                 other_args[name] = class_atri

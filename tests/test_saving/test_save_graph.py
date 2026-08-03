@@ -5,7 +5,7 @@ from qewton import save, load
 from qewton.algorithms.building_blocks import Add, Multiply, ReLU
 from qewton.algorithms.building_blocks import Reshape
 from qewton.algorithms.dl_models.fcn import FCN, DeepRitzNet
-from qewton.algorithms.dl_models.cnn import CNN
+from qewton.algorithms.dl_models.cnn import CNN, UNet
 from qewton.graphs.graphs import Graph
 from qewton.backends import DEFAULT_DL_BACKEND, _backend_found
 
@@ -93,4 +93,23 @@ def test_save_and_load_cnn(tmp_path):
         input_data = DEFAULT_DL_BACKEND.random.uniform((1, 2, 5, 5))
         output_original = cnn(input_data)
         output_loaded = cnn_loaded(input_data)
+        assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
+
+
+def test_save_and_load_unt(tmp_path):
+    save_path = tmp_path / "unet_test"
+    unet = UNet(
+        in_channels=2,
+        channels=(16, 32, 64),
+        out_channels=1,
+        conv_kernel_size=(3, 3),
+    )
+    unet.setup()
+    save(unet, save_path, replace=True)
+    unet_loaded = load(save_path)
+    assert isinstance(unet_loaded, UNet)
+    if _backend_found:
+        input_data = DEFAULT_DL_BACKEND.random.uniform((1, 2, 20, 20))
+        output_original = unet(input_data)
+        output_loaded = unet_loaded(input_data)
         assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
