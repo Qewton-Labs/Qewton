@@ -91,6 +91,9 @@ class ParameterNode(Node[TensorType]):
             params = self._trainable_parameter
         return TrainableParameters(self.node_id, params)
 
+    def _parameters_to_save(self):
+        return TrainableParameters(self.node_id, self._trainable_parameter)
+
     def to(self, device):
         if not self._state == NodeState.UNINITIALIZED:
             self._trainable_parameter = self.backend.param.to(
@@ -104,7 +107,7 @@ class ParameterNode(Node[TensorType]):
             "name": self.name,
             "initial_value": self.initial_value,
             "backend": self.backend,
-            "trainable_parameters": self.trainable_parameters,
+            "trainable_parameters": self._parameters_to_save(),
         }
         hyperparameters = {}
         for s in self.shape:
@@ -132,7 +135,7 @@ class ParameterNode(Node[TensorType]):
             Node: The reconstructed node.
         """
         node: ParameterNode = ParameterNode(
-            shape=tuple(s for s in config.hyperparameters.values()),
+            shape=tuple(s for s in config.hyperparameters.values()),  # type: ignore
             name=config.other_args.get("name", "ParameterNode"),
             initial_value=config.other_args.get("initial_value", None),
             backend=config.other_args.get("backend", DEFAULT_DL_BACKEND),

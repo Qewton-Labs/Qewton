@@ -685,7 +685,6 @@ class Graph:
     def load_from_graph_config(cls, graph_config: GraphConfig) -> Graph:
         graph = Graph()
         node_dict: dict[int, Node] = {}
-
         for node_id, node_config in graph_config.node_configs.items():
             if node_config.node_identifier is not None:
                 node_class = NODE_REGISTRY.get(node_config.node_identifier, Node)

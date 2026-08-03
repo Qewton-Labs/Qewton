@@ -744,7 +744,7 @@ def test_interpolate_forward_bilinear_align_corners(backend, device):
     """Test Interpolate forward pass with bilinear mode and align_corners."""
     batch_size, channels, height, width = 2, 3, 8, 8
     interp = Interpolate(
-        size=(16, 16), mode="bilinear", align_corners=True, backend=backend
+        size=(16, 16), interpolate_mode="bilinear", align_corners=True, backend=backend
     )
     x = backend.build_tensor(
         np.random.randn(batch_size, channels, height, width), device=device

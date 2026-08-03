@@ -29,5 +29,6 @@ class TorchParameterBackend(ParameterBackend[torch.Tensor]):
 
     @staticmethod
     def requires_grad(data, requires_grad: bool) -> torch.Tensor:
-        data.requires_grad = requires_grad
+        if isinstance(data, torch.Tensor):
+            data.requires_grad = requires_grad
         return data

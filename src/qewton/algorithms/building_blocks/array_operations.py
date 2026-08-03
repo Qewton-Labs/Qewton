@@ -7,7 +7,7 @@ from qewton.backends.base import DeepLearningBackend
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.config.variables import Variable
-from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort, Node
+from qewton.graphs.nodes import NO_DEFAULT, NodeConfig, Port, InputPort, OutputPort, Node
 
 
 # region: Slicing and value setting
@@ -86,6 +86,37 @@ class Slice(Node[TensorType]):
                 # Could raise an assertion error if config is not concrete enough yet
                 pass
         return updated_ports
+
+    @classmethod
+    def _string_to_slice(cls, slice_str: str):
+        # Convert a string representation of a slice to an actual slice object
+        if slice_str == "...":
+            return Ellipsis
+        # Slices are saved as "slice(2, None, None)", so we split at commas
+        # and also need to remove the "slice(" and ")" parts as well as any
+        # whitespace
+        elif slice_str.startswith("slice"):
+            slice_str = slice_str.replace(" ", "")
+            slice_parts = slice_str[6:-1].split(",")
+            start = int(slice_parts[0]) if slice_parts[0] != "None" else None
+            stop = int(slice_parts[1]) if slice_parts[1] != "None" else None
+            step = int(slice_parts[2]) if slice_parts[2] != "None" else None
+            return slice(start, stop, step)
+        else:
+            return int(slice_str)
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        if isinstance(config.other_args["slice_config"], str):
+            config.other_args["slice_config"] = cls._string_to_slice(
+                config.other_args["slice_config"]
+            )
+        elif isinstance(config.other_args["slice_config"], tuple):
+            slice_tuple = tuple(
+                cls._string_to_slice(s) for s in config.other_args["slice_config"]
+            )
+            config.other_args["slice_config"] = slice_tuple
+        return super().load_from_config(config)
 
 
 class SplitVariables(Node[TensorType]):
@@ -234,6 +265,7 @@ class ConcatNode(Node[TensorType]):
         self, concat_dim: int, num_of_input_ports: int = 2, backend=DEFAULT_DL_BACKEND
     ):
         self.concat_dim = concat_dim
+        self.num_of_input_ports = num_of_input_ports
         super().__init__(name=None, backend=backend)
         self.backend: type[DeepLearningBackend[TensorType]] = backend
 

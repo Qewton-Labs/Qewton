@@ -5,6 +5,7 @@ import inspect
 from qewton.graphs.nodes import InputPort, Node, NodeConfig, OutputPort, Port
 from qewton.graphs.graphs import Graph, GraphConfig
 from qewton.backends import Backend, TensorType
+from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
 
@@ -55,9 +56,7 @@ class GraphNode(Node[TensorType]):
         self._input_ports = []
 
         self.configs_defined_in_forward = self._configs_were_defined_in_forward()
-        in_forward_ports, out_forward_ports = self._build_ports(
-            self.forward, self, backend
-        )
+        in_forward_ports, out_forward_ports = self._build_ports(self.forward, self)
         for i, p in enumerate(input_ports):
             if isinstance(input_ports, dict):
                 self._input_ports.append(p)
@@ -334,7 +333,7 @@ class GraphNode(Node[TensorType]):
         call_sig = inspect.signature(self.forward)
         for param in call_sig.parameters.values():
             hint = param.annotation
-            _, was_annotated = self._unwrap_annotated(hint, self, self.backend)
+            _, was_annotated = self._unwrap_annotated(hint, self)
             if not was_annotated:
                 return False
         return True
@@ -350,6 +349,12 @@ class GraphNode(Node[TensorType]):
         Sets up the encapsulated graph.
         """
         self._graph.setup()
+
+    def set_mode(self, new_mode: EvaluationPhase):
+        self._graph.mode = new_mode
+        for node in self._graph.nodes:
+            node.set_mode(new_mode)
+        return super().set_mode(new_mode)
 
     def reset(self):
         """
@@ -375,7 +380,7 @@ class GraphNode(Node[TensorType]):
 
     def _build_graph_from_function(self, function, backend):
         graph, input_ports, output_ports = Graph.from_function(function)
-        outer_input_ports, outer_output_ports = Node._build_ports(function, self, backend)
+        outer_input_ports, outer_output_ports = Node._build_ports(function, self)
 
         # Outputs that are integers are automatically mapped to the
         # corresponding input ports.
@@ -418,15 +423,23 @@ class GraphNode(Node[TensorType]):
 
     @classmethod
     def load_from_config(cls, config: NodeConfig) -> Node:
-        g_node: GraphNode = super().load_from_config(config)  # type: ignore
+        g_node: GraphNode = Node.load_from_config(config)  # type: ignore
         # If the graph was not saved, we cannot load it,
         # so we return the node as is (for example some nodes just have
         # a simple computation graph which we can always reconstruct
         # from the given input parameters instead of saving it)
         if "graph" not in config.nested_graphs:
             return g_node
+
         graph_config: GraphConfig = config.nested_graphs["graph"]
         saved_graph = Graph.load_from_graph_config(graph_config)
+
+        # if g_node.node_id == 78:
+        #     for node in saved_graph.nodes:
+        #         print("loaded node", node.name, node.node_id)
+        #         if isinstance(node, GraphNode):
+        #             for sub_node in node._graph.nodes:
+        #                 print("Also loaded subs", sub_node.name, sub_node.node_id)
 
         old_input_connections = []
         old_output_connections = []
@@ -442,6 +455,7 @@ class GraphNode(Node[TensorType]):
             input_ports=old_input_connections,
             output_ports=old_output_connections,
         )
+
         return g_node
 
 
