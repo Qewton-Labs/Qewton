@@ -32,7 +32,8 @@ from qewton.graphs.saving.schema import (
     KEY_FROM_NODE_ID,
     KEY_FROM_OUTSIDE,
     KEY_FROM_PORT,
-    KEY_HYPERPARAMETERS_FILE,
+    KEY_HP_KEY,
+    KEY_HYPERPARAMETERS,
     KEY_MODE,
     KEY_MODULE,
     KEY_NESTED_GRAPHS,
@@ -54,6 +55,7 @@ from qewton.graphs.saving.schema import (
     TYPE_BACKEND_REF,
     TYPE_CLASS_REF,
     TYPE_CONSTANT_REF,
+    TYPE_HP_REF,
     TYPE_SET,
     TYPE_TRAINABLE_PARAMETER_REF,
     TYPE_TUPLE,
@@ -78,6 +80,21 @@ def _load_hyperparameter_entry(value: Any) -> Any:
     if isinstance(value, list):
         return [_load_hyperparameter_entry(v) for v in value]
     raise ValueError(f"Unexpected hyperparameter payload: {value}")
+
+
+def _resolve_hp_entry(value: Any, shared_hps: dict[str, Any]) -> Any:
+    """Resolve a hyperparameter entry, following hp_ref pointers into shared_hps."""
+    if isinstance(value, dict):
+        value_type = value.get(KEY_TYPE)
+        if value_type == TYPE_HP_REF:
+            return shared_hps[value[KEY_HP_KEY]]
+        if value_type == TYPE_TUPLE:
+            return tuple(_resolve_hp_entry(v, shared_hps) for v in value[KEY_VALUES])
+        if value_type == TYPE_SET:
+            return set(_resolve_hp_entry(v, shared_hps) for v in value[KEY_VALUES])
+    if isinstance(value, list):
+        return [_resolve_hp_entry(v, shared_hps) for v in value]
+    return _load_hyperparameter_entry(value)
 
 
 def _resolve_backend_class(value: Any) -> type[Backend]:
@@ -150,6 +167,17 @@ def _load_other_args(
     return value
 
 
+def _load_hyperparameters(root_dir):
+    shared_hps = {}
+    hp_file = Path(root_dir / FILE_HYPERPARAMETERS)
+    if hp_file.exists():
+        with hp_file.open("r", encoding="utf-8") as f:
+            hp_data: dict[str, Any] = json.load(f)
+        for hp_name, hp_value in hp_data.items():
+            shared_hps[hp_name] = _load_hyperparameter_entry(hp_value)
+    return shared_hps
+
+
 #########################################################################
 def load(path: str | Path) -> Node | Graph:
     """Load a node or graph from a given path.
@@ -183,7 +211,11 @@ def load(path: str | Path) -> Node | Graph:
     raise ValueError(f"Unknown object_type '{object_type}' in config.json at {root_dir}")
 
 
-def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
+def load_node(
+    root_dir: Path,
+    config_data: dict[str, Any],
+    shared_hps: dict[str, Any] | None = None,
+) -> NodeConfig:
     """Load a node from a given path.
 
     Reads the *config.json* (and *hyperparameters.json* when present) from
@@ -203,18 +235,23 @@ def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
     backend_class = _resolve_backend_class(other_args_raw.get(KEY_BACKEND_KEY))
 
     # Load hyperparameters
-    hyperparameters: dict[str, Any] = {}
-    hp_file = root_dir / config_data.get(KEY_HYPERPARAMETERS_FILE, FILE_HYPERPARAMETERS)
-    if hp_file.exists():
-        with hp_file.open("r", encoding="utf-8") as f:
-            hp_data: dict[str, Any] = json.load(f)
-        for hp_name, hp_value in hp_data.items():
-            hyperparameters[hp_name] = _load_hyperparameter_entry(hp_value)
+    if shared_hps is None:
+        shared_hps = _load_hyperparameters(root_dir)
 
     # Reconstruct other_args
     other_args = _load_other_args(
         other_args_raw, root_dir, backend_class, config_data[KEY_NODE_ID]
     )
+    # Resolve hyperparameters, following any references into shared_hps
+    hyperparameters = {}
+    for name, hp_name in config_data.get(KEY_HYPERPARAMETERS, {}).items():
+        if isinstance(hp_name, str) and hp_name in shared_hps:
+            hyperparameters[name] = shared_hps[hp_name]
+        elif isinstance(hp_name, list):
+            hyperparameters[name] = [shared_hps[n] for n in hp_name]
+        elif isinstance(hp_name, dict) and hp_name.get(KEY_TYPE) == TYPE_TUPLE:
+            hyperparameters[name] = tuple(shared_hps[n] for n in hp_name[KEY_VALUES])
+
     # Check for nested graphs and construct them
     nested_graphs = {}
     if KEY_NESTED_GRAPHS in config_data:
@@ -223,7 +260,9 @@ def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
             graph_json_path = graph_root_dir / FILE_CONFIG
             with graph_json_path.open("r", encoding="utf-8") as f:
                 graph_config_data: dict[str, Any] = json.load(f)
-            nested_graphs[graph_name] = load_graph(graph_root_dir, graph_config_data)
+            nested_graphs[graph_name] = load_graph(
+                graph_root_dir, graph_config_data, shared_hps=shared_hps
+            )
 
     # Rebuild NodeConfig and use load_from_config for the given node
     node_config = NodeConfig(
@@ -238,7 +277,14 @@ def load_node(root_dir: Path, config_data: dict[str, Any]) -> NodeConfig:
     return node_config
 
 
-def load_graph(root_dir: Path, config_data: dict[str, Any]) -> GraphConfig:
+def load_graph(
+    root_dir: Path, config_data: dict[str, Any], shared_hps: dict[str, Any] | None = None
+) -> GraphConfig:
+
+    # Load hyperparameters
+    if shared_hps is None:
+        shared_hps = _load_hyperparameters(root_dir)
+
     # First, load all nodes
     node_configs = {}
     for node_id in config_data[KEY_NODES_INCLUDED]:
@@ -248,7 +294,9 @@ def load_graph(root_dir: Path, config_data: dict[str, Any]) -> GraphConfig:
             raise FileNotFoundError(f"No {FILE_CONFIG} found for node {node_id}")
         with node_config_path.open("r", encoding="utf-8") as f:
             node_config_data: dict[str, Any] = json.load(f)
-        node_configs[node_id] = load_node(node_path, node_config_data)
+        node_configs[node_id] = load_node(
+            node_path, node_config_data, shared_hps=shared_hps
+        )
 
     # Transform edges into a list of tuples
     edges = []

@@ -50,6 +50,19 @@ _hp_dict = {
 _inverse_hp_dict = {v: k for k, v in _hp_dict.items()}
 
 
+def _add_hp_to_collection(
+    hp: HyperParameter, collection: dict[str, HyperParameter], node_id: int
+) -> None:
+    """Add a HyperParameter to a collection, ensuring unique names."""
+    if hp.name in collection:
+        if collection[hp.name] is hp:
+            return  # Already in the collection, no action needed
+        # If a HyperParameter with the same name but different identity exists,
+        # modify the name and save it under the new name to avoid collision.
+        hp.name += f"_node_id{node_id}"
+    collection[hp.name] = hp
+
+
 def _get_class(module: str, class_name: str) -> type:
     mod = importlib.import_module(module)
     return getattr(mod, class_name)
@@ -106,6 +119,13 @@ def decode_value(value: Any) -> Any:
 
 def serialize_hyperparameter(param: HyperParameter) -> dict[str, Any]:
     """Serialize a HyperParameter instance into a JSON payload."""
+    if param.state == HyperParameterState.FIXED:
+        return {
+            KEY_CLASS: _hp_dict[type(param)],
+            KEY_NAME: param.name,
+            KEY_STATE: param.state.name,
+            KEY_CURRENT_VALUE: encode_value(param.current_value),
+        }
     payload: dict[str, Any] = {
         KEY_CLASS: _hp_dict[type(param)],
         KEY_NAME: param.name,
@@ -141,8 +161,13 @@ def deserialize_hyperparameter(data: dict[str, Any]) -> HyperParameter:
     state = HyperParameterState[data[KEY_STATE]]
     name = data.get(KEY_NAME, "")
     current_value = decode_value(data.get(KEY_CURRENT_VALUE))
-    parameter_range = decode_value(data.get(KEY_PARAMETER_RANGE, []))
-    default_grid = decode_value(data.get(KEY_DEFAULT_GRID))
+
+    if state == HyperParameterState.FIXED:
+        parameter_range = [current_value, current_value]
+        default_grid = 1
+    else:
+        parameter_range = decode_value(data.get(KEY_PARAMETER_RANGE, []))
+        default_grid = decode_value(data.get(KEY_DEFAULT_GRID))
 
     sig = inspect.signature(hp_class.__init__)
     accepted = set(sig.parameters.keys()) - {"self"}

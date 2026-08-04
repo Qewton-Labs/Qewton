@@ -80,6 +80,10 @@ class FCN(GraphNode, Generic[TensorType]):
         self._graph.setup()
         self._state = NodeState.UNINITIALIZED
 
+    def reset(self):
+        self.set_state(NodeState.UNINITIALIZED)
+        return super().reset()
+
     def _build_network(self, backend):
         nodes: list[Node] = []
         layers = self.n_hidden_layers.value + 1
@@ -107,12 +111,14 @@ class FCN(GraphNode, Generic[TensorType]):
         """Initializes the neural network itself for the current
         set of parameters.
         """
-        new_graph = self._build_network(self.backend)
-        self.setup_graph(
-            new_graph,
-            input_ports=new_graph.sorted_nodes[0].input_ports,
-            output_ports=new_graph.sorted_nodes[-1].output_ports,
-        )
+        if self.state == NodeState.UNINITIALIZED:
+            new_graph = self._build_network(self.backend)
+            self.setup_graph(
+                new_graph,
+                input_ports=new_graph.sorted_nodes[0].input_ports,
+                output_ports=new_graph.sorted_nodes[-1].output_ports,
+            )
+            self.set_state(NodeState.INITIALIZED)
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:

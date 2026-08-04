@@ -10,7 +10,7 @@ from qewton.backends import DEFAULT_DL_BACKEND, ComputingBackend, TensorType
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import FeatureAxes, EllipsisAxes, AxesDim
 from qewton.graphs.graphs import Graph
-from qewton.graphs.nodes import NodeState, Node
+from qewton.graphs.nodes import NodeConfig, NodeState, Node
 from qewton.config.variables import Variable
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -105,6 +105,7 @@ class HarmonicEmbedding(GraphNode[TensorType]):
             input_ports=[new_in],
             output_ports=[new_out],
         )
+        self.set_state(NodeState.INITIALIZED)
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -161,9 +162,11 @@ class HarmonicFCN(GraphNode[TensorType]):
             The backend to use for computations. Defaults to DEFAULT_DL_BACKEND.
     """
 
+    _type_identifier = "HarmonicFCN"
+
     def __init__(
         self,
-        input_dim: int | Variable,
+        input_dim: int | Variable | HyperParameter,
         hidden_neurons: int | HyperParameter,
         output_dim: int | HyperParameter | Variable,
         n_hidden_layers: int | HyperParameter,
@@ -177,8 +180,7 @@ class HarmonicFCN(GraphNode[TensorType]):
     ) -> None:
         if isinstance(input_dim, Variable):
             self.in_neurons = input_dim.dim
-        else:
-            self.in_neurons = input_dim
+        self.in_neurons = HyperParameter.from_value(input_dim, "Input dimension")
 
         self.embedding = HarmonicEmbedding(
             max_harmonic=max_harmonic,
@@ -195,6 +197,7 @@ class HarmonicFCN(GraphNode[TensorType]):
             backend=backend,
         )
         graph = Graph()
+        self._state = NodeState.UNINITIALIZED
         self.setup()
         graph.connect(self.embedding, self.fcn)
         super().__init__(
@@ -206,20 +209,64 @@ class HarmonicFCN(GraphNode[TensorType]):
             **kwargs,
         )
         self._graph.setup()
+        self.set_state(NodeState.UNINITIALIZED)
 
     def _compute_network_input_dim(self) -> int:
         embedding_multiplier = 2 * self.embedding.max_harmonic.value
         if self.embedding.include_input.value:
             embedding_multiplier += 1
-        return embedding_multiplier * self.in_neurons
+        return embedding_multiplier * self.in_neurons.value
+
+    def reset(self):
+        self.set_state(NodeState.UNINITIALIZED)
+        return super().reset()
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
         return self.fcn.hyperparameters + self.embedding.hyperparameters
 
     def setup(self) -> None:
-        self.embedding.setup()
-        old_in_neurons = self.fcn.in_neurons.current_value
-        self.fcn.in_neurons.current_value = self._compute_network_input_dim()
-        self.fcn.setup()
-        self.fcn.in_neurons.current_value = old_in_neurons
+        print("setting up harmonic fcn", self.state)
+        if self.state == NodeState.UNINITIALIZED:
+            self.embedding.setup()
+            old_in_neurons = self.fcn.in_neurons.current_value
+            self.fcn.in_neurons.current_value = self._compute_network_input_dim()
+            self.fcn.setup()
+            self.fcn.in_neurons.current_value = old_in_neurons
+            self.set_state(NodeState.INITIALIZED)
+
+    def config_dict(self) -> NodeConfig:
+        other_args = {
+            "name": self.name,
+            "backend": self.backend,
+        }
+        hyperparameters = {
+            "input_dim": self.fcn.in_neurons,
+            "hidden_neurons": self.fcn.hidden_neurons,
+            "output_dim": self.fcn.out_neurons,
+            "n_hidden_layers": self.fcn.n_hidden_layers,
+            "max_harmonic": self.embedding.max_harmonic,
+            "bias": self.fcn.bias,
+            "activation": self.fcn.activation,
+            "include_input": self.embedding.include_input,
+        }
+        return NodeConfig(
+            node_identifier=self._type_identifier,
+            node_id=self.node_id,
+            mode=self.mode,
+            hyperparameters=hyperparameters,  # type: ignore
+            other_args=other_args,
+            state=self.state,
+            nested_graphs={"graph": self._graph},
+        )
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        new_node: HarmonicFCN = super().load_from_config(config)  # type: ignore
+        for node in new_node._graph.nodes:
+            if isinstance(node, HarmonicEmbedding):
+                new_node.embedding = node
+            elif isinstance(node, FCN):
+                new_node.fcn = node
+        print("loading done", new_node.state)
+        return new_node

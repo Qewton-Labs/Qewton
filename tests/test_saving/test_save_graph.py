@@ -6,6 +6,7 @@ from qewton.algorithms.building_blocks import Add, Multiply, ReLU
 from qewton.algorithms.building_blocks import Reshape
 from qewton.algorithms.dl_models.fcn import FCN, DeepRitzNet
 from qewton.algorithms.dl_models.cnn import CNN, UNet
+from qewton.algorithms.dl_models.harmonic_fcn import HarmonicFCN
 from qewton.graphs.graphs import Graph
 from qewton.backends import DEFAULT_DL_BACKEND, _backend_found
 
@@ -112,4 +113,26 @@ def test_save_and_load_unt(tmp_path):
         input_data = DEFAULT_DL_BACKEND.random.uniform((1, 2, 20, 20))
         output_original = unet(input_data)
         output_loaded = unet_loaded(input_data)
+        assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
+
+
+def test_save_and_load_harmonic_fcn(tmp_path):
+    save_path = tmp_path / "harmonic_fcn_test"
+    harmonic_fcn = HarmonicFCN(
+        input_dim=2,
+        hidden_neurons=4,
+        output_dim=1,
+        n_hidden_layers=3,
+        max_harmonic=3,
+        bias=True,
+        activation=ReLU,
+    )
+    harmonic_fcn.setup()
+    save(harmonic_fcn, save_path, replace=True)
+    loaded_harmonic_fcn = load(save_path)
+    assert isinstance(loaded_harmonic_fcn, HarmonicFCN)
+    if _backend_found:
+        input_data = DEFAULT_DL_BACKEND.build_tensor([[1.0, 2.0], [3.0, 4.0]])
+        output_original = harmonic_fcn(input_data)
+        output_loaded = loaded_harmonic_fcn(input_data)
         assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)

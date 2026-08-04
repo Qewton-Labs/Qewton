@@ -71,3 +71,8 @@ TYPE_CONSTANT_REF = "constant_ref"
 KEY_REF_KIND = "ref_kind"
 KEY_BACKEND_KEY = "backend_key"
 KEY_PATH = "path"
+
+# Shared hyperparameter ref (used when saving nodes inside a graph)
+TYPE_HP_REF = "hp_ref"
+KEY_HP_KEY = "hp_key"
+KEY_HYPERPARAMETERS = "hyperparameters"
