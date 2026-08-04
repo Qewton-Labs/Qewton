@@ -76,3 +76,6 @@ KEY_PATH = "path"
 TYPE_HP_REF = "hp_ref"
 KEY_HP_KEY = "hp_key"
 KEY_HYPERPARAMETERS = "hyperparameters"
+
+# Variable
+TYPE_VARIABLE = "variable"

@@ -17,6 +17,7 @@ from qewton.optim.parameters.trainable_parameters import (
     TrainableParametersCollection,
 )
 from qewton.backends import BACKEND_DICT, DEFAULT_DL_BACKEND, Backend
+from qewton.config.variables import Variable
 
 from qewton.graphs.saving.hyperparameter_codec import (
     deserialize_hyperparameter,
@@ -59,6 +60,7 @@ from qewton.graphs.saving.schema import (
     TYPE_SET,
     TYPE_TRAINABLE_PARAMETER_REF,
     TYPE_TUPLE,
+    TYPE_VARIABLE,
 )
 
 
@@ -124,6 +126,8 @@ def _load_other_args(
     loaded *TrainableParameters* instances."""
     if isinstance(value, dict):
         value_type = value.get(KEY_TYPE)
+        if value_type == TYPE_VARIABLE:
+            return Variable.from_dict(value[KEY_VALUES])
         if value_type == TYPE_TRAINABLE_PARAMETER_REF:
             abs_path = root_dir / value[KEY_PATH]
             tensor = backend_class.load(abs_path)

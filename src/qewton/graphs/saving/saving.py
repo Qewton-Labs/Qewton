@@ -14,6 +14,7 @@ from qewton.backends.base import ComputingBackend
 from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
 from qewton.backends import BACKEND_DICT, Backend
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.config.variables import Variable
 from qewton.graphs.saving.hyperparameter_codec import (
     encode_value,
     serialize_hyperparameter,
@@ -59,6 +60,7 @@ from qewton.graphs.saving.schema import (
     TYPE_SET,
     TYPE_TRAINABLE_PARAMETER_REF,
     TYPE_TUPLE,
+    TYPE_VARIABLE,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,6 +128,8 @@ def _serialize_other_args(
         return _save_trainable_parameters(
             value, parameters_dir, root_dir, file_counter, backend
         )
+    if isinstance(value, Variable):
+        return {KEY_TYPE: TYPE_VARIABLE, KEY_VALUES: dict(value)}
     if isinstance(value, backend.default_dtype):
         file_name = f"value_{constants_file_counter[0]}"
         constants_file_counter[0] += 1
