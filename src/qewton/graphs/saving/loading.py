@@ -63,9 +63,21 @@ from qewton.graphs.saving.schema import (
     TYPE_VARIABLE,
 )
 
+_ALLOWED_MODULE_PREFIXES = ("qewton.",)
+
 
 def _get_class(module: str, classname: str) -> type:
-    """Import and return a class by its module path and name."""
+    """Import and return a class by its module path and name.
+
+    Only modules from trusted package prefixes are allowed to prevent
+    arbitrary code execution via crafted save files.
+    """
+    if not any(module.startswith(prefix) for prefix in _ALLOWED_MODULE_PREFIXES):
+        raise ValueError(
+            f"Refusing to import '{module}.{classname}': module is not in the "
+            f"allowed prefixes {_ALLOWED_MODULE_PREFIXES}. If you need to load "
+            f"classes from another package, add its prefix to _ALLOWED_MODULE_PREFIXES."
+        )
     mod = importlib.import_module(module)
     return getattr(mod, classname)
 
