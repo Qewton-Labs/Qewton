@@ -169,14 +169,7 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
             in_edge = graph.run_to(last_node=self, mode=EvaluationPhase.TRAIN)
             total_data_input.append(in_edge[self.input_ports[0]].from_port.value)
             total_data_output.append(in_edge[self.input_ports[1]].from_port.value)
-        # Pass it into the internal nodes:
-        if self.normalize_data.current_value:
-            self.normalize_input.fit(total_data_input)
-            self.normalize_output.fit(total_data_output)
-            total_data_input = [self.normalize_input(x) for x in total_data_input]
-            total_data_output = [self.normalize_output(x) for x in total_data_output]
-        self.input_pca.fit(total_data_input)
-        self.output_pca.fit(total_data_output)
+        self.fit(total_data_input, total_data_output)
         # Build the main computation network
         new_graph, in_ports, out_port = self._build_network()
         self.setup_graph(
@@ -184,6 +177,18 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
             input_ports=in_ports,
             output_ports=[out_port],
         )
+
+    def fit(
+        self, data_batch: list[TensorType], data_batch_output: list[TensorType]
+    ) -> None:
+        # Pass it into the internal nodes:
+        if self.normalize_data.current_value:
+            self.normalize_input.fit(data_batch)
+            self.normalize_output.fit(data_batch_output)
+            data_batch = [self.normalize_input(x) for x in data_batch]
+            data_batch_output = [self.normalize_output(x) for x in data_batch_output]
+        self.input_pca.fit(data_batch)
+        self.output_pca.fit(data_batch_output)
 
     def in_data_config(self):
         return DataConfiguration(

@@ -226,11 +226,11 @@ class HarmonicFCN(GraphNode[TensorType]):
         return self.fcn.hyperparameters + self.embedding.hyperparameters
 
     def setup(self) -> None:
-        print("setting up harmonic fcn", self.state)
         if self.state == NodeState.UNINITIALIZED:
             self.embedding.setup()
             old_in_neurons = self.fcn.in_neurons.current_value
             self.fcn.in_neurons.current_value = self._compute_network_input_dim()
+            self.fcn.reset()
             self.fcn.setup()
             self.fcn.in_neurons.current_value = old_in_neurons
             self.set_state(NodeState.INITIALIZED)
@@ -268,5 +268,4 @@ class HarmonicFCN(GraphNode[TensorType]):
                 new_node.embedding = node
             elif isinstance(node, FCN):
                 new_node.fcn = node
-        print("loading done", new_node.state)
         return new_node
