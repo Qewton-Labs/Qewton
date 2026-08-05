@@ -23,6 +23,7 @@ from qewton.graphs.saving.hyperparameter_codec import (
     deserialize_hyperparameter,
     _inverse_hp_dict,
 )
+from qewton.geometries.base import GEOMETRY_REGISTRY
 from qewton.graphs.saving.schema import (
     DIR_NODES,
     FILE_CONFIG,
@@ -61,6 +62,8 @@ from qewton.graphs.saving.schema import (
     TYPE_TRAINABLE_PARAMETER_REF,
     TYPE_TUPLE,
     TYPE_VARIABLE,
+    TYPE_GEOMETRY,
+    TYPE_ELLIPSIS,
 )
 
 _ALLOWED_MODULE_PREFIXES = ("qewton.",)
@@ -138,6 +141,21 @@ def _load_other_args(
     loaded *TrainableParameters* instances."""
     if isinstance(value, dict):
         value_type = value.get(KEY_TYPE)
+        if value_type == TYPE_ELLIPSIS:
+            return ...
+        if value_type == TYPE_GEOMETRY:
+            inner = {
+                k: _load_other_args(v, root_dir, backend_class, node_id)
+                for k, v in value[KEY_VALUES].items()
+            }
+            cls_name = inner.get("class", "")
+            cls_obj = GEOMETRY_REGISTRY.get(cls_name)
+            if cls_obj is None:
+                raise ValueError(
+                    f"Unknown geometry class '{cls_name}' in saved configuration. "
+                    f"Ensure that the class is registered in GEOMETRY_REGISTRY."
+                )
+            return cls_obj.load(dict(inner))
         if value_type == TYPE_VARIABLE:
             return Variable.from_dict(value[KEY_VALUES])
         if value_type == TYPE_TRAINABLE_PARAMETER_REF:

@@ -79,3 +79,7 @@ KEY_HYPERPARAMETERS = "hyperparameters"
 
 # Variable
 TYPE_VARIABLE = "variable"
+
+# Geometry
+TYPE_GEOMETRY = "geometry"
+TYPE_ELLIPSIS = "ellipsis"

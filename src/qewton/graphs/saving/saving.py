@@ -20,6 +20,7 @@ from qewton.graphs.saving.hyperparameter_codec import (
     serialize_hyperparameter,
     _add_hp_to_collection,
 )
+from qewton.geometries.base import Geometry
 from qewton.graphs.saving.schema import (
     DIR_CONSTANTS,
     DIR_NESTED_GRAPHS,
@@ -62,6 +63,8 @@ from qewton.graphs.saving.schema import (
     TYPE_TRAINABLE_PARAMETER_REF,
     TYPE_TUPLE,
     TYPE_VARIABLE,
+    TYPE_GEOMETRY,
+    TYPE_ELLIPSIS,
 )
 
 logger = logging.getLogger(__name__)
@@ -129,6 +132,22 @@ def _serialize_other_args(
         return _save_trainable_parameters(
             value, parameters_dir, root_dir, file_counter, backend
         )
+    if value is ...:
+        return {KEY_TYPE: TYPE_ELLIPSIS}
+    if isinstance(value, Geometry):
+        raw = value.save()
+        serialized_fields = {}
+        for k, v in raw.items():
+            serialized_fields[k] = _serialize_other_args(
+                v,
+                parameters_dir,
+                root_dir,
+                constants_dir,
+                file_counter,
+                constants_file_counter,
+                backend=backend,
+            )
+        return {KEY_TYPE: TYPE_GEOMETRY, KEY_VALUES: serialized_fields}
     if isinstance(value, Variable):
         return {KEY_TYPE: TYPE_VARIABLE, KEY_VALUES: dict(value)}
     if isinstance(value, backend.default_dtype):

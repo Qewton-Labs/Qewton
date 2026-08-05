@@ -3,6 +3,7 @@ Base classes for data loading and node-based data sampling in the graph.
 """
 
 from copy import deepcopy
+from typing import Any
 from abc import abstractmethod
 import math
 import numpy as np
