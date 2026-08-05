@@ -17,7 +17,7 @@ try:
 except ImportError:
     HAS_TF = False
 
-from qewton.algorithms.dl_models.cnn import CNN
+from qewton.algorithms.dl_models.convolutions.cnn import CNN
 from qewton.algorithms.building_blocks.activation_functions import ReLU, Tanh
 from qewton.backends.base import DeepLearningBackend
 from qewton.config.devices import cpu, cuda, cuda_available
