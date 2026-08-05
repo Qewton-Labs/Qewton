@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
@@ -74,7 +75,7 @@ class Sphere(ContinuousGeometry[TensorType]):
         if scaled_n < 2:
             return self.sample_random_uniform(n_points, device=device)
         axis = self.backend.math.linspace(
-            -self.radius, self.radius, scaled_n, device=device
+            -1.0 * self.radius, self.radius, scaled_n, device=device
         )
         X, Y, Z = self.backend.math.meshgrid(axis, axis, axis, indexing="xy")
         pts = self.backend.math.stack([X.ravel(), Y.ravel(), Z.ravel()], axis=-1)
@@ -101,6 +102,12 @@ class Sphere(ContinuousGeometry[TensorType]):
 
     def create_boundary(self):
         return SphereBoundary(self)
+
+    def save(self) -> dict[str, Any]:
+        general_save = super().save()
+        general_save["center"] = self.center
+        general_save["radius"] = self.radius
+        return general_save
 
 
 class SphereBoundary(ContinuousBoundaryGeometry[TensorType]):

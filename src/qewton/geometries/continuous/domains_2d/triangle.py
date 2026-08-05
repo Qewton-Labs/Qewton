@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
@@ -169,6 +170,13 @@ class Triangle(ContinuousGeometry[TensorType]):
         dir_2 = self.corner_2 - self.origin
         area = 0.5 * abs(dir_1[0] * dir_2[1] - dir_1[1] * dir_2[0])
         return area
+
+    def save(self) -> dict[str, Any]:
+        general_save = super().save()
+        general_save["origin"] = self.origin
+        general_save["corner_1"] = self.corner_1
+        general_save["corner_2"] = self.corner_2
+        return general_save
 
     def create_boundary(self):
         return TriangleBoundary(self)

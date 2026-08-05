@@ -1,4 +1,5 @@
 from types import EllipsisType
+from typing import Any
 
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, BoundaryGeometry
@@ -45,6 +46,13 @@ class ContinuousGeometry(Geometry[TensorType]):
 
         assert isinstance(other, ContinuousGeometry)
         return IntersectionGeometry(self, other)
+
+    def save(self) -> dict[str, Any]:
+        return {
+            "class": self.__class__.__name__,
+            "variable": self.variable,
+            "backend": self.backend,
+        }
 
 
 class ContinuousBoundaryGeometry(BoundaryGeometry[TensorType]):

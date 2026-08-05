@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
@@ -149,6 +150,12 @@ class Circle(ContinuousGeometry[TensorType]):
 
     def create_boundary(self):
         return CircleBoundary(self)
+
+    def save(self) -> dict[str, Any]:
+        general_save = super().save()
+        general_save["center"] = self.center
+        general_save["radius"] = self.radius
+        return general_save
 
 
 class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):

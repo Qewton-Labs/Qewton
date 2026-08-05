@@ -1,4 +1,4 @@
-from .base import Geometry, DiscreteGeometry, BoundaryGeometry
+from .base import Geometry, DiscreteGeometry, BoundaryGeometry, GEOMETRY_REGISTRY
 
 from .continuous import *
 from .discrete import *

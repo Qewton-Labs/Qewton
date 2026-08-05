@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, DiscreteGeometry
@@ -130,7 +131,7 @@ class GridGeometry(DiscreteGeometry[TensorType]):
         slices = [slice(1, n) for n in self.discretization_points.shape[:-1]]
         cell_matrix *= self.point_filter[slices].unsqueeze(-1)
         # determinant of every cell matrix
-        self.volumes = self.backend.math.abs(self.backend.linalg.det(cell_matrix))
+        self.cell_volumes = self.backend.math.abs(self.backend.linalg.det(cell_matrix))
 
     def bounding_box(self):
         bounding_box = []
@@ -195,3 +196,11 @@ class GridGeometry(DiscreteGeometry[TensorType]):
 
     def create_boundary(self):
         raise NotImplementedError("Boundary of a point grid currently not implemented.")
+
+    def save(self) -> dict[str, Any]:
+        main_save = super().save()
+        main_save.pop("shape")
+        main_save.pop("dim")
+        main_save["point_grid"] = main_save.pop("discretization_points")
+        main_save["point_filter"] = self.point_filter
+        return main_save

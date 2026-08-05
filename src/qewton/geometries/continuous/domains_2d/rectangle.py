@@ -1,6 +1,8 @@
+from typing import Any
 from numpy import ndarray
 
 from qewton.config.variables import Variable
+from qewton.geometries.continuous.base import ContinuousGeometry
 from qewton.geometries.continuous.domains_2d.parallelogram import Parallelogram
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
@@ -31,3 +33,10 @@ class Rectangle(Parallelogram[TensorType]):
         corner_1 = [origin[0] + width, origin[1]]
         corner_2 = [origin[0], origin[1] + height]
         super().__init__(variable, origin, corner_1, corner_2, backend=backend)
+
+    def save(self) -> dict[str, Any]:
+        general_save = ContinuousGeometry.save(self)
+        general_save["origin"] = self.origin
+        general_save["width"] = self.corner_1[0] - self.origin[0]
+        general_save["height"] = self.corner_2[1] - self.origin[1]
+        return general_save

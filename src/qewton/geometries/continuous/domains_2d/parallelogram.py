@@ -198,6 +198,13 @@ class Parallelogram(ContinuousGeometry[TensorType]):
     def create_boundary(self):
         return ParallelogramBoundary(self)
 
+    def save(self) -> dict[str, Any]:
+        general_save = super().save()
+        general_save["origin"] = self.origin
+        general_save["corner_1"] = self.corner_1
+        general_save["corner_2"] = self.corner_2
+        return general_save
+
 
 class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
 

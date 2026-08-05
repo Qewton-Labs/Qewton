@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+from typing import Any
 
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, DiscreteGeometry, BoundaryGeometry
@@ -265,6 +266,28 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             discretization_of=self.discretization_of,
             backend=self.backend,
         )
+
+    def save(self) -> dict[str, Any]:
+        save_dict = {
+            "class": self.__class__.__name__,
+            "variable": self.variable,
+            "backend": self.backend,
+            "mesh": self.mesh.save_internal(),
+        }
+        if self.discretization_of is not None:
+            save_dict["discretization_of"] = self.discretization_of.save()
+        return save_dict
+
+    @classmethod
+    def load(cls, data: dict[str, Any]) -> MeshGeometry:
+        mesh_geo = cls(
+            variable=data["variable"],
+            mesh=Mesh.load_internal(data["mesh"]),
+            backend=data["backend"],
+        )
+        if "discretization_of" in data:
+            mesh_geo.discretization_of = Geometry.load(data["discretization_of"])
+        return mesh_geo
 
 
 class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):

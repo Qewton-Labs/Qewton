@@ -1,4 +1,6 @@
-from qewton.geometries.base import BoundaryGeometry, Geometry
+from typing import Any
+
+from qewton.geometries.base import BoundaryGeometry, Geometry, GEOMETRY_REGISTRY
 from qewton.config.devices import Device, cpu
 from qewton.backends.base import TensorType
 
@@ -50,3 +52,21 @@ class ProductGeometry(Geometry[TensorType]):
         points_a = self.geometry_a.sample_random_uniform(n_points, device)
         points_b = self.geometry_b.sample_random_uniform(n_points, device)
         return self.backend.math.concatenate([points_a, points_b], axis=-1)
+
+    def save(self) -> dict[str, Any]:
+        combi_dict = {
+            "class": self.__class__.__name__,
+            "geometry_a": self.geometry_a.save(),
+            "geometry_b": self.geometry_b.save(),
+        }
+        return combi_dict
+
+    @classmethod
+    def load(cls, data: dict[str, Any]):
+        geometry_a = GEOMETRY_REGISTRY[data["geometry_a"]["class"]].load(
+            data["geometry_a"]
+        )
+        geometry_b = GEOMETRY_REGISTRY[data["geometry_b"]["class"]].load(
+            data["geometry_b"]
+        )
+        return ProductGeometry(geometry_a, geometry_b)

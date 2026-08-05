@@ -29,6 +29,7 @@ from qewton.graphs.saving.schema import (
     FILE_HYPERPARAMETERS,
     KEY_BACKEND_KEY,
     KEY_CLASS,
+    KEY_MODULE,
     KEY_EDGES,
     KEY_FROM_NODE_ID,
     KEY_FROM_OUTSIDE,
@@ -84,7 +85,7 @@ def _jsonify(value: Any) -> Any:
     if isinstance(value, type):
         return {
             KEY_CLASS: value.__name__,
-            "module": value.__module__,
+            KEY_MODULE: value.__module__,
         }
     return repr(value)
 

@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
@@ -117,6 +118,14 @@ class Box(ContinuousGeometry[TensorType]):
 
     def create_boundary(self):
         return BoxBoundary(self)
+
+    def save(self) -> dict[str, Any]:
+        general_save = super().save()
+        general_save["origin"] = self.origin
+        general_save["width"] = self.width
+        general_save["height"] = self.height
+        general_save["depth"] = self.depth
+        return general_save
 
 
 class BoxBoundary(ContinuousBoundaryGeometry):
@@ -307,7 +316,7 @@ class BoxBoundary(ContinuousBoundaryGeometry):
                 grid[:, 2] *= scale_list[i_mod_2]
 
                 # Permute to correct order
-                grid = grid[:, permute_list[i]]
+                # grid = grid[:, permute_list[i]]
 
                 n_to_add = min(len(grid), n_points - current_n)
                 points[current_n : current_n + n_to_add] = grid[:n_to_add]

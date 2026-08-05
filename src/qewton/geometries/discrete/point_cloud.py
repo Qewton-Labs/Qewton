@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+from typing import Any
 
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, DiscreteGeometry
@@ -110,3 +111,9 @@ class PointCloud(DiscreteGeometry[TensorType]):
         for i, p in enumerate(points):
             point_check[i] = p in self.discretization_points
         return point_check
+
+    def save(self) -> dict[str, Any]:
+        main_save = super().save()
+        main_save.pop("shape")
+        main_save.pop("dim")
+        return main_save
