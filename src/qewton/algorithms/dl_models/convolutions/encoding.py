@@ -169,14 +169,17 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
 
         fcn_input_dim = self.channels[-1].value
         if self.input_shape is not None:
+            pooling_n = len(self.channels)  # Number of pooling operations
             if isinstance(self.pooling_kernel_size.value, int):
                 for dim in self.input_shape[1:]:
-                    fcn_input_dim *= math.ceil(dim / self.pooling_kernel_size.value)
+                    fcn_input_dim *= math.floor(
+                        dim / (self.pooling_kernel_size.value**pooling_n)
+                    )
             elif isinstance(self.pooling_kernel_size.value, tuple):
                 for dim, pool in zip(
                     self.input_shape[1:], self.pooling_kernel_size.value
                 ):
-                    fcn_input_dim *= math.ceil(dim / pool)
+                    fcn_input_dim *= math.floor(dim / (pool**pooling_n))
 
         fcn_encoding = FCN(
             in_neurons=fcn_input_dim,
@@ -200,10 +203,12 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
                 input_ports=new_graph.sorted_nodes[0].input_ports,
                 output_ports=new_graph.sorted_nodes[-1].output_ports,
             )
+
             self.set_state(NodeState.INITIALIZED)
 
     def update_data_configs(self, updated_port, config_dict, dynamic_configs):
         ports = super().update_data_configs(updated_port, config_dict, dynamic_configs)
+        # Read the expected input shape from the dynamic configs if it is not set yet
         if self.input_shape is None and updated_port == self._input_ports[0]:
             branch_config_shape = dynamic_configs[updated_port].shape[1:]
             if len(branch_config_shape) > 0 and all(
@@ -215,6 +220,7 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
     def forward(self, x):
         if self.input_shape is None:
             self.input_shape = x.shape[1:]
+        if self.state == NodeState.UNINITIALIZED:
             self.setup()
         self.input_ports[0].set_value(x)
         self.run()

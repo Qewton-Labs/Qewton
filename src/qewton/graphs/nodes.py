@@ -198,8 +198,8 @@ class Node(ABC, Generic[TensorType]):
             self.forward, self, backend
         )
 
-        self.node_id = type(self)._node_id_counter
-        type(self)._node_id_counter += 1
+        self.node_id = Node._node_id_counter
+        Node._node_id_counter += 1
 
     @property
     def name(self):
