@@ -180,7 +180,6 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
                     self.input_shape[1:], self.pooling_kernel_size.value
                 ):
                     fcn_input_dim *= math.floor(dim / (pool**pooling_n))
-
         fcn_encoding = FCN(
             in_neurons=fcn_input_dim,
             hidden_neurons=self.fcn_hidden_neurons,
@@ -220,7 +219,8 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
     def forward(self, x):
         if self.input_shape is None:
             self.input_shape = x.shape[1:]
-        if self.state == NodeState.UNINITIALIZED:
+            self.setup()
+        elif self.state == NodeState.UNINITIALIZED:
             self.setup()
         self.input_ports[0].set_value(x)
         self.run()

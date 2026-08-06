@@ -1,14 +1,9 @@
-from typing import Literal
 import math
 
 from qewton.algorithms.dl_models.deeponet.base import DeepONet
+from qewton.algorithms.dl_models.deeponet.merge_nodes import DefaultMerger
 from qewton.algorithms.dl_models.fcn import FCN
-from qewton.algorithms.building_blocks.math import Inner, Multiply, Sum
-from qewton.algorithms.building_blocks.array_operations import (
-    ReshapeAtDim,
-    Unsqueeze,
-    Flatten,
-)
+from qewton.algorithms.building_blocks.array_operations import Unsqueeze, Flatten
 from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.backends import DEFAULT_DL_BACKEND, ComputingBackend, TensorType
 from qewton.graphs.nodes import Node
@@ -83,14 +78,14 @@ class FCNDeepONet(DeepONet[TensorType]):
         trunk_hidden_layers: int | HyperParameter,
         branch_hidden_layers: int | HyperParameter,
         intermediate_neurons: int | HyperParameter,
-        output_strategy: Literal["split", "split_branch", "split_trunk"] = "split",
+        output_strategy: DefaultMerger.MERGE_TYPES = "split",
         activations: type[Node] | HyperParameter = ReLU,
         name="FCNDeepONet",
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
         **kwargs,
     ):
         self.output_dim = output if isinstance(output, int) else output.dim
-        self.output_strategy = output_strategy
+        self.output_strategy: DefaultMerger.MERGE_TYPES = output_strategy
         self.intermediate_neurons = HyperParameter.from_value(
             intermediate_neurons, "Intermediate neurons"
         )
@@ -125,64 +120,17 @@ class FCNDeepONet(DeepONet[TensorType]):
         self.trunk_port = self.input_ports[1]
 
     def _build_network(self, backend):
-        trunk_out = self.intermediate_neurons.value
-        branch_out = self.intermediate_neurons.value
-        if self.output_dim == 1:
-            merge_node = Inner(backend=backend, keepdims=True)
-        else:
-            merge_graph = Graph()
-            if self.output_strategy == "split":
-                # Both trunk and branch network will have
-                # output_dim * intermediate_neurons neurons in the last layer.
-                # Which we just reshape to (output_dim, intermediate_neurons).
-                reshape_branch = ReshapeAtDim(
-                    dim=-1,
-                    new_shape=(self.output_dim, self.intermediate_neurons.value),
-                    backend=backend,
-                )
-                reshape_trunk = ReshapeAtDim(
-                    dim=-1,
-                    new_shape=(self.output_dim, self.intermediate_neurons.value),
-                    backend=backend,
-                )
-                branch_out *= self.output_dim
-                trunk_out *= self.output_dim
-            elif self.output_strategy == "split_branch":
-                reshape_branch = ReshapeAtDim(
-                    dim=-1,
-                    new_shape=(self.output_dim, self.intermediate_neurons.value),
-                    backend=backend,
-                )
-                reshape_trunk = Unsqueeze(dim=-2, backend=backend)
-                branch_out *= self.output_dim
-            else:  # self.output_strategy == "split_trunk"
-                reshape_branch = Unsqueeze(dim=-2, backend=backend)
-                reshape_trunk = ReshapeAtDim(
-                    dim=-1,
-                    new_shape=(self.output_dim, self.intermediate_neurons.value),
-                    backend=backend,
-                )
-                trunk_out *= self.output_dim
-
-            multiply_node = Multiply(backend=backend)
-            sum_node = Sum(axis=-1, backend=backend)
-
-            merge_graph.connect(reshape_branch, multiply_node.input_ports[0])
-            merge_graph.connect(reshape_trunk, multiply_node.input_ports[1])
-            merge_graph.connect(multiply_node, sum_node)
-
-            merge_node = GraphNode(
-                graph=merge_graph,
-                input_ports=[reshape_branch.input_ports[0], reshape_trunk.input_ports[0]],
-                output_ports=sum_node.output_ports,
-                name="Merge",
-                backend=backend,
-            )
+        merge_node = DefaultMerger(
+            output_dim=self.output_dim,
+            intermediate_neurons=self.intermediate_neurons,
+            output_strategy=self.output_strategy,
+            backend=backend,
+        )
 
         trunk_net = FCN(
             in_neurons=self.trunk_input,
             hidden_neurons=self.trunk_hidden_neurons,
-            out_neurons=trunk_out,
+            out_neurons=merge_node.trunk_out,
             n_hidden_layers=self.trunk_n_hidden_layers,
             activation=self.activations,
             backend=backend,
@@ -192,7 +140,7 @@ class FCNDeepONet(DeepONet[TensorType]):
         branch_fcn = FCN(
             in_neurons=self.branch_input,
             hidden_neurons=self.branch_hidden_neurons,
-            out_neurons=branch_out,
+            out_neurons=merge_node.branch_out,
             n_hidden_layers=self.branch_n_hidden_layers,
             activation=self.activations,
             backend=backend,
