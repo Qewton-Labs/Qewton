@@ -197,6 +197,13 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
         """
         if self.state == NodeState.UNINITIALIZED:
             new_graph = self._build_network(self.backend)
+            # Update the static data configurations of the input and output ports
+            self.input_ports[0].update_static_data_configuration(
+                new_graph.sorted_nodes[0].input_ports[0].data_configuration
+            )
+            self.output_ports[0].update_static_data_configuration(
+                new_graph.sorted_nodes[-1].output_ports[0].data_configuration
+            )
             self.setup_graph(
                 new_graph,
                 input_ports=new_graph.sorted_nodes[0].input_ports,
