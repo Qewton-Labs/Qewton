@@ -3,7 +3,7 @@ import numpy as np
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import Axes, GeometryAxes
 from qewton.config.variables import Variable
-from qewton.geometries.discrete.mesh_domain import MeshGeometry
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.visualization.plots.spec import PlotSpec, ColorSpec, ControlSpec, AxisSpec
 
 

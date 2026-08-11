@@ -1,5 +1,5 @@
 from qewton.geometries.base import Geometry
-from qewton.geometries.discrete.mesh_domain import MeshGeometry
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.visualization.plots.base import Plot
 
 
