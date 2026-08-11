@@ -9,6 +9,8 @@ from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Float32
+from qewton.geometries.continuous.domains_2d.circle import Circle
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry, Mesh
 
 
 class Cylinder(ContinuousGeometry[TensorType]):
@@ -145,6 +147,69 @@ class Cylinder(ContinuousGeometry[TensorType]):
 
     def create_boundary(self):
         return CylinderBoundary(self)
+
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
+        vertices, triangles = Circle.triangulate_circle(
+            max_vertex_distance, radius=self.radius, backend=self.backend
+        )
+        zeros = self.backend.math.zeros((len(vertices), 1), device=device)
+        vertices = self.backend.math.concatenate([vertices, zeros], axis=1)
+        all_vertices = []
+        tetrahedra = []
+        nz = math.ceil(self.height / max_vertex_distance) + 1
+        for k in range(nz):
+            vertices_copy = self.backend.math.copy(vertices)
+            # triangles_copy = self.backend.math.copy(triangles)
+            vertices_copy[:, 2] = self.height * (k / (nz - 1))
+            all_vertices.append(vertices_copy)
+            if k == nz - 1:
+                continue
+            # Build tetraheder
+            v_count = len(vertices)
+            for tri in triangles:
+                a_original, b_original, c_original = tri
+                a_0, b_0, c_0 = self.ordering_vertices(
+                    vertices, a_original, b_original, c_original
+                )
+                a = a_0 + v_count * k
+                b = b_0 + v_count * k
+                c = c_0 + v_count * k
+                a1, b1, c1 = a + v_count, b + v_count, c + v_count
+                tetrahedra.append([a, b, c, a1])
+                tetrahedra.append([c, a1, b, b1])
+                tetrahedra.append([c, a1, b1, c1])
+        all_vertices = self.backend.math.concatenate(all_vertices, axis=0)
+        tetrahedra = self.backend.build_tensor(tetrahedra)
+
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(vertices=all_vertices, cells=tetrahedra),
+            discretization_of=self,
+        )
+
+    def ordering_vertices(self, vertices, a_original, b_original, c_original):
+        for i in [0, 1]:
+            a_vertex, b_vertex, c_vertex = (
+                vertices[int(a_original)],
+                vertices[int(b_original)],
+                vertices[int(c_original)],
+            )
+            if a_vertex[i] <= b_vertex[i] <= c_vertex[i]:
+                a, b, c = a_original, b_original, c_original
+            elif a_vertex[i] <= c_vertex[i] <= b_vertex[i]:
+                a, b, c = a_original, c_original, b_original
+            elif b_vertex[i] <= a_vertex[i] <= c_vertex[i]:
+                a, b, c = b_original, a_original, c_original
+            elif b_vertex[i] <= c_vertex[i] <= a_vertex[i]:
+                a, b, c = b_original, c_original, a_original
+            elif c_vertex[i] <= a_vertex[i] <= b_vertex[i]:
+                a, b, c = c_original, a_original, b_original
+            else:  # c_vertex[i] <= b_vertex[i] <= a_vertex[i]
+                a, b, c = c_original, b_original, a_original
+            a_original, b_original, c_original = a, b, c
+        return a_original, b_original, c_original
 
 
 class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
