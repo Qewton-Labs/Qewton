@@ -7,5 +7,5 @@ from .spec import (
     TimeSpec,
     ColorSpec,
 )
-from .feature import ImagePlot, SurfacePlot, HeatmapPlot
+from .feature import ImagePlot, SurfacePlot, HeatmapPlot, MeshFieldPlot, MeshSurfacePlot
 from .geometry import GeometryPlot

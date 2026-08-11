@@ -5,6 +5,7 @@ from qewton.config.axes import (
     Axes,
     EllipsisAxes,
     EllipsisDim,
+    GeometryAxes,
     _match_remainder,
     FeatureAxes,
     AxesDim,
@@ -95,6 +96,24 @@ class DataConfiguration:
         for axes in self.axes:
             if isinstance(axes, FeatureAxes):
                 return axes
+        return None
+
+    @property
+    def geometry_axes(self) -> GeometryAxes | list[GeometryAxes] | None:
+        """Returns the geometry axes of this configuration.
+
+        Returns:
+            GeometryAxes | list[GeometryAxes] | None: The geometry axes if
+                defined, otherwise None.
+        """
+        geom_axes = []
+        for axes in self.axes:
+            if isinstance(axes, GeometryAxes):
+                geom_axes.append(axes)
+        if len(geom_axes) == 1:
+            return geom_axes[0]
+        if len(geom_axes) > 1:
+            return geom_axes
         return None
 
     def replace_feature_axes(self, new_feature_axes: FeatureAxes):

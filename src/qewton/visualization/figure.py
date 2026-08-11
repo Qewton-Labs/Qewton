@@ -65,8 +65,8 @@ class Figure:
 
     def show(self):
         self.draw()
-        self.renderer.show(self)
+        self.renderer.show(self.backend_figure)
 
     def save_html(self, path):
         self.draw()
-        self.renderer.save_html(self, path)
+        self.renderer.save_html(self.backend_figure, path)

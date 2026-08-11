@@ -11,7 +11,13 @@ from .plots.spec import (
     AxisSpec,
 )
 from .plots.geometry import GeometryPlot
-from .plots.feature import ImagePlot, SurfacePlot, HeatmapPlot
+from .plots.feature import (
+    ImagePlot,
+    SurfacePlot,
+    HeatmapPlot,
+    MeshFieldPlot,
+    MeshSurfacePlot,
+)
 from .renderers.base import Artist, Renderer
 from .applications import RenderApplication, DashApplication
 from .figure import Figure

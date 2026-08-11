@@ -113,7 +113,7 @@ class Plot:
         return sliced, index_map, slice_map
 
 
-class StructuredGridPlot(Plot):
+class GridPlot3d(Plot):
     """Heatmap, Surface, Contour - using meshgrids"""
 
     def __init__(
@@ -156,7 +156,7 @@ class StructuredGridPlot(Plot):
             raise ValueError(
                 f"{type(self).__name__}: x ({self.x.variable_or_axes}) und "
                 f"y ({self.y.variable_or_axes}) refer to the same dimension. "
-                "You might use an UnstructuredPointPlot or UnstructuredMeshPlot instead."
+                "You might use an PointPlot or MeshPlot instead."
             )
 
         x_dim = index_map(x_idx)
@@ -191,7 +191,7 @@ class StructuredGridPlot(Plot):
         if entry_slc is not None:
             raise ValueError(
                 f"{spec.variable_or_axes} refers to a channel slice, not a "
-                "own dimension - not allowed for x/y in StructuredGridPlot."
+                "own dimension - not allowed for x/y in GridPlot3d."
             )
         if isinstance(axis_slc, slice):
             length = axis_slc.stop - axis_slc.start
@@ -206,45 +206,97 @@ class StructuredGridPlot(Plot):
         return real_idx if real_idx >= 0 else self.data.ndim + real_idx
 
 
-class UnstructuredPointPlot(Plot):
+class PointPlot(Plot):
     pass
 
 
-class UnstructuredMeshPlot(Plot):
-    """Visualize data on a mesh, e.g. from a MeshGeometry in the data_config's
-    GeometryAxes."""
+class MeshPlot(Plot):
+    """Base for plots on unstructured meshes (2D or 3D).
+
+    Cells carry pure topology and never pass through spec resolution. Data
+    variables are extracted per vertex, so the mesh dimension only constrains
+    which concrete plot types are applicable.
+    """
+
+    #: Accepted vertex dimensions; subclasses narrow this where needed.
+    supported_dims: tuple[int, ...] = (2, 3)
 
     def __init__(
         self,
         data,
-        data_config,
-        color: ColorSpec | Variable | None = None,
+        data_config: DataConfiguration,
         controls: list[ControlSpec] | None = None,
         show_edges: bool = True,
         **kwargs,
     ):
         super().__init__(data, data_config, controls=controls, **kwargs)
 
-        geom_axes = data_config.get_axis(GeometryAxes)
+        geom_axes = data_config.geometry_axes
+        assert isinstance(
+            geom_axes, GeometryAxes
+        ), "Currently only DataConfigurations with a single GeometryAxes are supported."
         if geom_axes is None or not isinstance(geom_axes.geometry, MeshGeometry):
             raise ValueError(
                 f"{type(self).__name__} requires a GeometryAxes wrapping a MeshGeometry."
             )
         self.mesh = geom_axes.geometry.mesh
-        self.color = (
-            (color if isinstance(color, ColorSpec) else ColorSpec(color))
-            if color
-            else None
-        )
+        self.dim = self.mesh.vertices.shape[1]
+        if self.dim not in self.supported_dims:
+            raise ValueError(
+                f"{type(self).__name__} supports {self.supported_dims}D meshes, "
+                f"got a {self.dim}D mesh."
+            )
         self.show_edges = show_edges
 
-    def evaluate(self):
-        data, index_map, slice_map = self.apply_controls()
-        color = None
-        if self.color is not None:
-            slc = self.data_config.get_variable_slice(self.color.variable_or_axes)
-            color = data[slice_map(slc)]
-        return self.coord_transform.apply(self.mesh.vertices), self.mesh.cells, color
+    @property
+    def n_vertices(self) -> int:
+        return len(self.mesh.vertices)
 
-    def create_artist(self, backend_figure, renderer):
-        return renderer.MeshArtist.create(backend_figure, self)
+    @staticmethod
+    def component_count(spec, data_config: DataConfiguration) -> int:
+        """Number of feature components a spec resolves to (1 means scalar).
+
+        Used to reject vector variables where a scalar is required, which would
+        otherwise silently render only the first component.
+        """
+        var = spec.variable_or_axes
+        if isinstance(var, Variable):
+            return var.dim
+        slc = data_config.get_variable_slice(var)
+        last = slc[-1] if isinstance(slc, tuple) else slc
+        return (last.stop - last.start) if isinstance(last, slice) else 1
+
+    def render_cells(self) -> np.ndarray:
+        """Cells to draw, as indices into the ORIGINAL vertex array.
+
+        For volumetric meshes (tetrahedra in 3D) only the boundary is visible,
+        so boundary_faces is used. Indices stay relative to mesh.vertices, which
+        keeps per-vertex data aligned - unlike get_boundary_mesh(), which may
+        reindex and is therefore only safe for data-free plots.
+        """
+        is_volumetric = self.mesh.cells.shape[1] == self.dim + 1
+        return (
+            self.mesh.boundary_faces
+            if (is_volumetric and self.dim == 3)
+            else self.mesh.cells
+        )
+
+    def scalar_at_vertices(self, spec, data, slice_map) -> np.ndarray:
+        """Extract one scalar value per mesh vertex for the given spec."""
+        slc = self.data_config.get_variable_slice(spec.variable_or_axes)
+        values = np.asarray(data[slice_map(slc)])
+        if values.size != self.n_vertices:
+            raise ValueError(
+                f"{spec.name} yields {values.size} values but the mesh has "
+                f"{self.n_vertices} vertices. Unresolved batch dimensions? "
+                "Add a SliderSpec or FixedSpec for them."
+            )
+        return values.reshape(-1)
+
+    def require_scalar(self, spec, role: str):
+        n = self.component_count(spec, self.data_config)
+        if n != 1:
+            raise ValueError(
+                f"{role} must be scalar (dim=1), got dim={n}. "
+                "Use MeshVectorPlot for vector fields, or select a single component."
+            )

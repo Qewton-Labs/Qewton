@@ -90,6 +90,26 @@ class AxisSpec(PlotSpec):
         self.coordinates: np.ndarray | None = None
 
 
+class VectorSpec(PlotSpec):
+    def __init__(
+        self,
+        variable_or_axes,
+        scale=1.0,
+        normalize=False,
+        cmap=None,
+        color_by_magnitude=False,
+        n_color_bins=8,
+    ):
+        dim = variable_or_axes.dim
+        assert dim in [2, 3], "VectorSpec only supports 2D or 3D variables"
+        super().__init__(dim, variable_or_axes)
+        self.scale = scale
+        self.normalize = normalize
+        self.cmap = cmap
+        self.color_by_magnitude = color_by_magnitude
+        self.n_color_bins = n_color_bins
+
+
 class ColorSpec(PlotSpec):
     def __init__(self, variable_or_axes: Variable, cmap=None) -> None:
         assert isinstance(variable_or_axes, Variable), "ColorSpec only supports Variables"
