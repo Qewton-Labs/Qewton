@@ -11,3 +11,4 @@ from .constraints import *
 from . import visualization as viz
 
 from . import geometries
+from . import backends

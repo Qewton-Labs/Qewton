@@ -45,3 +45,18 @@ class GradBackend(Backend[TensorType]):
     @abstractmethod
     def hessian(u: Any, x: Any) -> TensorType:
         pass
+
+    @staticmethod
+    @abstractmethod
+    def matrix_divergence(u: Any, x: Any) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def rotation(u: Any, x: Any) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def symmetric_gradient(u: Any, x: Any) -> TensorType:
+        pass

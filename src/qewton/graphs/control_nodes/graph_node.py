@@ -343,7 +343,7 @@ class GraphNode(Node):
         """
         Executes the encapsulated graph.
         """
-        self._graph.run()
+        self._graph.run(mode=self.mode)
 
     def setup(self) -> None:
         """

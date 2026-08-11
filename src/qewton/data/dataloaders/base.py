@@ -4,12 +4,14 @@ Base classes for data loading and node-based data sampling in the graph.
 
 from copy import deepcopy
 from abc import abstractmethod
+from typing import Any
 import math
 import numpy as np
 
 from qewton.graphs.nodes import NodeState
-from qewton.backends import Backend, DEFAULT_DL_BACKEND, DeepLearningBackend
+from qewton.backends import Backend, DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
 from qewton.config.variables import Variable
+from qewton.config.devices import Device, cpu
 
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -24,10 +26,8 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.graphs.nodes import Node, OutputPort, InputPort
 from qewton.data.datasets import DataSet
 
-# TODO: Add caching functionality
 
-
-class DataNode(Node):
+class DataNode(Node[TensorType]):
     """
     Creates a DataNode which task is to generate/load data for evaluation
     in the graph. This is a base class and should be subclassed for
@@ -48,12 +48,12 @@ class DataNode(Node):
         batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
         name: str = "DataNode",
         state: NodeState = NodeState.FIXED,
-        backend: type[Backend] | None = DEFAULT_DL_BACKEND,
+        backend: type[Backend[TensorType]] | None = DEFAULT_DL_BACKEND,
     ) -> None:
         self._batch_size = HyperParameter.from_value(batch_size, name="batch_size")
         self._batch_progress = 0
         self._is_cached = False
-        self._device = None
+        self._device = cpu
         if backend is None:
             backend = Backend
         super().__init__(name, state, backend=backend)
@@ -77,6 +77,9 @@ class DataNode(Node):
     def cache(self, n_batches: int = -1):
         pass
 
+    def clear_cache(self):
+        pass
+
     def provides_data_in_phase(
         self, phase: EvaluationPhase  # pylint: disable=unused-argument
     ) -> bool:
@@ -92,17 +95,17 @@ class DataNode(Node):
         """
         return False
 
-    def to(self, device: str):
+    def to(self, device: str | Device):
         """Move the data node to the specified device.
 
         Args:
-            device (str): The device to move the data node to
+            device (str, Device): The device to move the data node to
                 (e.g., 'cpu', 'cuda').
         """
         self._device = device
 
 
-class DataLoader(DataNode):
+class DataLoader(DataNode[TensorType]):
     """Standard DataLoader module for batching, shuffling, and splitting datasets.
 
     This node acts as a source in the computation graph, providing batches of
@@ -119,7 +122,7 @@ class DataLoader(DataNode):
         splitting_ratio: tuple[float, float, float] = (1.0, 0.0, 0.0),
         shuffle_data: bool | CategoricalHyperparameter = True,
         shuffle_seed: int | None = None,
-        backend: type[Backend] = DEFAULT_DL_BACKEND,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
         name: str = "DataLoader",
     ):
         """
@@ -162,7 +165,7 @@ class DataLoader(DataNode):
             ), "Batch can not be larger than dataset size."
             axes[0] = BatchAxes(AxesDim(self.batch_size))
             new_config = DataConfiguration(
-                *axes, dtype=backend.default_dtype if backend else None
+                *axes, dtype=backend.default_dtype if backend else Any
             )
             self._output_ports.append(
                 OutputPort(

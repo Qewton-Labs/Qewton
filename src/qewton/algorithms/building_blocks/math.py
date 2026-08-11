@@ -1,7 +1,7 @@
 from copy import deepcopy
 from typing import Annotated
 
-from qewton.backends import DEFAULT_DL_BACKEND, TensorType, Backend
+from qewton.backends import DEFAULT_DL_BACKEND, TensorType, DeepLearningBackend
 from qewton.graphs.nodes import Node
 from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.errors import DataConfigMismatchError
@@ -66,7 +66,6 @@ class Divide(Node[TensorType]):
         x: Annotated[TensorType, DC(ellipsis_dims)],
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        # TODO: should this rather be true divide?
         return self.backend.math.divide(x, y)
 
 
@@ -79,6 +78,15 @@ class Mod(Node[TensorType]):
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.math.mod(x, y)
+
+
+class Negative(Node[TensorType]):
+    ellipsis_dims = EllipsisAxes()
+
+    def forward(
+        self, x: Annotated[TensorType, DC(ellipsis_dims)]
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        return self.backend.math.negative(x)
 
 
 # endregion
@@ -292,13 +300,14 @@ class Minimum(Node[TensorType]):
 class MatMul(Node[TensorType]):
     ell_ax = EllipsisAxes()
     dim_1 = AxesDim(None)
+    dim_ellipsis = EllipsisDim()
     dim_2 = AxesDim(None)
 
     def forward(
         self,
-        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_ellipsis, dim_1)))],
         y: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1, dim_2)))],
-    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2,)))]:
+    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_ellipsis, dim_2)))]:
         return self.backend.math.matmul(x, y)
 
 
@@ -319,6 +328,18 @@ class SVD(Node[TensorType]):
         return self.backend.linalg.svd(x)
 
 
+class Dot(Node[TensorType]):
+    dim_1 = AxesDim(None)
+    ell_ax = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+        y: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(1,)))]:
+        return self.backend.math.inner(x, y)
+
+
 # endregion
 
 
@@ -330,7 +351,7 @@ class ReductionNode(Node[TensorType]):
         name=None,
         axis: None | int | tuple[int, ...] = None,
         keepdims=False,
-        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.axis = axis
         self.keepdims = keepdims

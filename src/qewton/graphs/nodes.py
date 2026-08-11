@@ -42,10 +42,22 @@ class Port:
         node: Node,
         name: str,
     ) -> None:
-        self.data_configuration = data_configuration
+        self._static_data_configuration = data_configuration
         self.node = node
         self.name = name
         self._value = None
+
+    @property
+    def data_configuration(self) -> DataConfiguration:
+        return self._static_data_configuration
+
+    def get_data_configuration(self, graph) -> DataConfiguration | None:
+        if self.node in graph.dynamic_data_configs:
+            return graph.dynamic_data_configs[self.node][self]
+        return None
+
+    def update_static_data_configuration(self, new_config: DataConfiguration):
+        self._static_data_configuration = new_config
 
     def duplicate_with_new_owner(
         self, new_owner: Node, new_name: str | None = None
@@ -268,10 +280,10 @@ class Node(ABC, Generic[TensorType]):
             )
             if isinstance(config, Callable):
                 config = config(owner)
-            config.set_dtype(cls.get_dtype(base, backend))
+            config.set_dtype(base)
             return config, True
         empty_conf = DataConfiguration.empty()
-        empty_conf.set_dtype(cls.get_dtype(type_hint, backend))
+        empty_conf.set_dtype(type_hint)
         return empty_conf, False
 
     def copy_data_configs(self):
@@ -281,8 +293,13 @@ class Node(ABC, Generic[TensorType]):
             dynamic_data_configs[port] = self.copy_data_config_of_port(port, copy_memo)
         return dynamic_data_configs
 
-    def copy_data_config_of_port(self, port, copy_memo):
-        return deepcopy(port.data_configuration, copy_memo)
+    def copy_data_config_of_port(self, port: Port, copy_memo):
+        copied_config = deepcopy(port.data_configuration, copy_memo)
+        # Now write the concrete type into the port:
+        copied_config.set_dtype(
+            self.get_dtype(port.data_configuration.dtype, self.backend)
+        )
+        return copied_config
 
     def setup(self) -> None:
         """Creates the underlying algorithm instance (e.g. creates the

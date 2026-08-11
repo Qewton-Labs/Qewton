@@ -2,9 +2,12 @@ from types import EllipsisType
 
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, BoundaryGeometry
+from qewton.backends.base import TensorType, ComputingBackend
+from qewton.backends import DEFAULT_DL_BACKEND
+from qewton.config.devices import cpu, Device
 
 
-class ContinuousGeometry(Geometry):
+class ContinuousGeometry(Geometry[TensorType]):
     """The parent class for all built-in continuous geometries.
     Can be used just like any other Geometry. They are allow for
     operations like union, intersection and cut with other continuous geometries.
@@ -18,8 +21,9 @@ class ContinuousGeometry(Geometry):
         self,
         variable: Variable,
         shape: tuple[int | None, ...] | EllipsisType = ...,
+        backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
-        super().__init__(variable, dim=variable.dim, shape=shape)
+        super().__init__(variable, dim=variable.dim, shape=shape, backend=backend)
 
     def create_boundary(self):
         return ContinuousBoundaryGeometry(self)
@@ -43,15 +47,18 @@ class ContinuousGeometry(Geometry):
         return IntersectionGeometry(self, other)
 
 
-class ContinuousBoundaryGeometry(BoundaryGeometry):
+class ContinuousBoundaryGeometry(BoundaryGeometry[TensorType]):
 
     def __init__(self, geometry):
         assert isinstance(geometry, ContinuousGeometry)
         super().__init__(geometry)
         self.geometry: ContinuousGeometry = geometry
 
-    def create_mesh(self, max_vertex_distance: float | None = None):
+    def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
         return self.geometry.create_mesh(max_vertex_distance=max_vertex_distance).boundary
+
+    def create_boundary(self):
+        raise ValueError("A boundary domain does not have a boundary.")
 
     def __add__(self, other):
         assert isinstance(other, ContinuousBoundaryGeometry)

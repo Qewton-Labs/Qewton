@@ -46,7 +46,8 @@ class TestGeneralWorkflow(unittest.TestCase):
             data=[self.x_data, self.u_data], data_configs=[config_x, config_u]
         )
         data_loader = DataLoader(dataset, batch_size=20)
-
+        print(data_loader.output_ports[0].data_configuration.dtype)
+        print(data_loader.backend)
         model = FCN(in_neurons=1, hidden_neurons=2, out_neurons=1, n_hidden_layers=1)
         constraint = MSEConstraint()
 
