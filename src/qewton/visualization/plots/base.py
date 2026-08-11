@@ -147,27 +147,24 @@ class StructuredGridPlot(Plot):
     def evaluate(self):
         data, index_map, slice_map = self.apply_controls()
 
-        # 1) X/Y strukturell aufloesen - jeweils gegen das ORIGINAL self.data,
-        #    danach durch index_map auf die Position im bereits reduzierten
-        #    `data` umrechnen.
+        # 1) X/Y structured - resolve to original self.data, then map to the
+        #    already reduced `data`.
         x_idx = self._resolve_structural_dim(self.x)
         y_idx = self._resolve_structural_dim(self.y)
 
         if x_idx == y_idx:
             raise ValueError(
                 f"{type(self).__name__}: x ({self.x.variable_or_axes}) und "
-                f"y ({self.y.variable_or_axes}) loesen auf dieselbe Dimension auf. "
-                "Das deutet auf eine unstrukturierte Geometrie (Punktwolke/Graph) hin - "
-                "verwende dafuer UnstructuredPointPlot statt StructuredGridPlot."
+                f"y ({self.y.variable_or_axes}) refer to the same dimension. "
+                "You might use an UnstructuredPointPlot or UnstructuredMeshPlot instead."
             )
 
         x_dim = index_map(x_idx)
         y_dim = index_map(y_idx)
 
-        # 2) Farbe/Werte VOR dem Transpose extrahieren - get_variable_slice
-        #    liefert ein Slice-Tupel gegen das URSPRUENGLICHE data_config,
-        #    daher ueber slice_map auf die bereits reduzierten Dimensionen
-        #    von `data` umrechnen, bevor es angewendet wird.
+        # 2) Color/Values BEFORE transpose - get_variable_slice returns a
+        #    slice tuple for the original data_config, so map to the already
+        #    reduced dimensions of `data` before applying it.
         values = data
         if self.color is not None:
             slc = self.data_config.get_variable_slice(self.color.variable_or_axes)
@@ -179,7 +176,7 @@ class StructuredGridPlot(Plot):
             slc = self.data_config.get_variable_slice(self.z.variable_or_axes)
             values = values[slice_map(slc)]
 
-        # 3) X/Y-Dimensionen an den Anfang bringen (y, x, ...restliche Dims)
+        # 3) X/Y-Dimensions at the beginning (y, x, ...remaining dims)
         oriented = np.moveaxis(values, [y_dim, x_dim], [0, 1])
         if color is not None:
             color = np.moveaxis(color, [y_dim, x_dim], [0, 1])
@@ -193,15 +190,15 @@ class StructuredGridPlot(Plot):
         axis_slc, entry_slc = PlotSpec.get_slice(spec.variable_or_axes, self.data_config)
         if entry_slc is not None:
             raise ValueError(
-                f"{spec.variable_or_axes} loest in eine Kanal-Slice auf, nicht in "
-                "eine eigene Dimension - fuer x/y bei StructuredGridPlot nicht zulaessig "
+                f"{spec.variable_or_axes} refers to a channel slice, not a "
+                "own dimension - not allowed for x/y in StructuredGridPlot."
             )
         if isinstance(axis_slc, slice):
             length = axis_slc.stop - axis_slc.start
             if length != 1:
                 raise ValueError(
-                    f"{spec.variable_or_axes} spannt {length} Dimensionen - "
-                    "x/y muessen genau eine Dimension referenzieren."
+                    f"{spec.variable_or_axes} spans {length} dimensions - "
+                    "x/y must refer to exactly one dimension."
                 )
             real_idx = axis_slc.start
         else:
@@ -214,10 +211,8 @@ class UnstructuredPointPlot(Plot):
 
 
 class UnstructuredMeshPlot(Plot):
-    """Fuer echte Mesh-Geometrien (2D/3D) MIT zugehoerigen Daten - PDE-Loesung,
-    NN-Aktivierung, etc. 'cells' ist reine Topologie und laeuft nie durch ein
-    AxisSpec-Mapping, 'color' ist eine ganz normale FeatureAxes-Variable wie
-    bei jedem anderen Plot-Typ."""
+    """Visualize data on a mesh, e.g. from a MeshGeometry in the data_config's
+    GeometryAxes."""
 
     def __init__(
         self,
