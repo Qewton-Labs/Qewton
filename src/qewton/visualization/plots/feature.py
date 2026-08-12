@@ -105,7 +105,7 @@ class MeshSurfacePlot(MeshPlot):
         self.color = (
             (color if isinstance(color, ColorSpec) else ColorSpec(color))
             if color is not None
-            else None
+            else ColorSpec(self.z.variable_or_axes)
         )
         if self.color is not None:
             self.require_scalar(self.color, "color")
@@ -115,9 +115,9 @@ class MeshSurfacePlot(MeshPlot):
         z = self.scalar_at_vertices(self.z, data, slice_map)
         vertices = self.coord_transform.apply(np.column_stack([self.mesh.vertices, z]))
         color = (
-            self.scalar_at_vertices(self.color, data, slice_map)
-            if self.color is not None
-            else None
+            z
+            if self.color.variable_or_axes is self.z.variable_or_axes
+            else self.scalar_at_vertices(self.color, data, slice_map)
         )
         return vertices, self.mesh.cells, color
 
