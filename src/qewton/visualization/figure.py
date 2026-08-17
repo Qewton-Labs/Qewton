@@ -1,5 +1,5 @@
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.spec import ControlSpec, FacetSpec
+from qewton.visualization.plots.spec import ControlSpec, FacetSpec, Scale
 from qewton.visualization.renderers.base import Artist, Renderer
 from qewton.visualization.themes.base import Theme
 from qewton.visualization.renderers import DEFAULT_RENDERER
@@ -50,9 +50,28 @@ class Figure:
         ), "At most one FacetSpec per orientation (row/col) allowed per plot."
         return by_orientation
 
-    def draw(self):
+    def _scales_in_use(self) -> list[Scale]:
+        seen = []
         for plot in self.plots:
+            spec = getattr(plot, "color", None)
+            scale = getattr(spec, "scale", None) if spec is not None else None
+            if scale is not None and scale not in seen:
+                seen.append(scale)
+        return seen
 
+    def draw(self):
+        # Pass 1: reset and train shared scales before anything is drawn -
+        # otherwise the colorbar claim from a previous draw() lingers and the
+        # second render loses its colorbar.
+        for scale in self._scales_in_use():
+            scale.reset()
+        for plot in self.plots:
+            values = plot.color_values()
+            if values is not None:
+                plot.color.scale.observe(values)
+
+        # Pass 2: draw with the now-trained scales.
+        for plot in self.plots:
             artist = self.artists.get(plot)
             if artist is None:
                 artist = plot.create_artist(self.backend_figure, self.renderer)

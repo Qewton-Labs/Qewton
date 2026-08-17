@@ -1,10 +1,10 @@
+import itertools
+
 import numpy as np
 
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.axes import Axes, GeometryAxes
 from qewton.config.variables import Variable
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
-from qewton.visualization.plots.spec import PlotSpec, ColorSpec, ControlSpec, AxisSpec
+from qewton.visualization.plots.spec import PlotSpec, ControlSpec, SliderSpec
 
 
 class CoordTransform:
@@ -63,11 +63,50 @@ class Plot:
         # to make it use the current state of the PlotAxis
         raise NotImplementedError
 
-    def apply_controls(self):
-        """Wendet Fixed/Slider/Facet-States an. Gibt zusaetzlich eine index_map
-        zurueck, um andere, gegen das URSPRUENGLICHE `data` berechnete reale
-        Dimensionsindizes (z.B. aus PlotSpec.get_slice) auf ihre Position im
-        bereits reduzierten Array umzurechnen."""
+    def color_values(self):
+        """Values to train this plot's shared color Scale, or None.
+
+        None both when the plot has no ColorSpec and when its ColorSpec has
+        no Scale attached - the common case, letting Figure.draw() skip the
+        extra evaluate() call entirely. Generic across plot families because
+        every evaluate() returns a result dataclass with a `.color` field.
+
+        For a plot with SliderSpec controls, trains on every slider state, not
+        just whichever is current when Figure.draw() runs - otherwise the
+        colorbar would silently reset to whatever's on screen at redraw time
+        (jumping around during scrubbing) instead of staying fixed. FixedSpec
+        controls are left alone: they never move, so only their fixed state
+        is ever drawn.
+        """
+        spec = getattr(self, "color", None)
+        if spec is None or spec.scale is None:
+            return None
+
+        sliders = [c for c in self.controls if isinstance(c, SliderSpec)]
+        if not sliders:
+            return getattr(self.evaluate(), "color", None)
+
+        originals = [s.state for s in sliders]
+        try:
+            all_values = []
+            state_ranges = (range(s.minimum, s.maximum + 1, s.step) for s in sliders)
+            for states in itertools.product(*state_ranges):
+                for slider, state in zip(sliders, states):
+                    slider.state = state
+                values = getattr(self.evaluate(), "color", None)
+                if values is not None:
+                    all_values.append(np.asarray(values).reshape(-1))
+            return np.concatenate(all_values) if all_values else None
+        finally:
+            for slider, original in zip(sliders, originals):
+                slider.state = original
+
+    def _resolve_controls(self) -> list[tuple[ControlSpec, int]]:
+        """(spec, dim index in the original self.data) for each control spec,
+        sorted by dim index descending - so collapsing one dimension during
+        apply_controls()/reduce_coordinates() never shifts the indices still
+        to be processed. Shared by both, since a control on a geometry
+        dimension must reduce data and geometry coordinates the same way."""
         resolved = []
         for spec in self.controls:
             axis_slc, entry_slc = PlotSpec.get_slice(
@@ -77,14 +116,31 @@ class Plot:
                 entry_slc is None
             ), f"It is not yet supported to use controls on variables:\
                 {spec.variable_or_axes}."
+            if isinstance(axis_slc, slice):
+                # A length-1 slice unambiguously names one dimension - e.g. a
+                # control on one child variable of a multi-dim GeometryAxes
+                # (the same mechanism HeatmapPlot's x/y already resolve
+                # through), not a multi-axis control.
+                length = axis_slc.stop - axis_slc.start
+                assert length == 1, (
+                    f"No multi-axis support for controls yet: {spec.variable_or_axes}."
+                )
+                axis_slc = axis_slc.start
             assert isinstance(
                 axis_slc, int
             ), f"No multi-axis support for controls yet: {spec.variable_or_axes}."
             real_idx = axis_slc if axis_slc >= 0 else len(self.data.shape) + axis_slc
             resolved.append((spec, real_idx))
 
-        # start from last index
         resolved.sort(key=lambda item: item[1], reverse=True)
+        return resolved
+
+    def apply_controls(self):
+        """Wendet Fixed/Slider/Facet-States an. Gibt zusaetzlich eine index_map
+        zurueck, um andere, gegen das URSPRUENGLICHE `data` berechnete reale
+        Dimensionsindizes (z.B. aus PlotSpec.get_slice) auf ihre Position im
+        bereits reduzierten Array umzurechnen."""
+        resolved = self._resolve_controls()
 
         sliced = self.data[:]
         removed_indices = []
@@ -112,152 +168,84 @@ class Plot:
 
         return sliced, index_map, slice_map
 
+    def reduce_coordinates(self, points, geometry_dims: tuple[int, int]):
+        """Applies the same control reduction as apply_controls() to an array
+        indexed by the geometry's own dimensions (e.g. discretization_points).
 
-class GridPlot3d(Plot):
-    """Heatmap, Surface, Contour - using meshgrids"""
+        `apply_controls()` only slices `self.data`; a geometry's coordinates
+        live in a separate array and are otherwise never touched, so a control
+        on a geometry dimension would desynchronize values from coordinates
+        (data reduced, coordinates still describing every state). A control
+        that reduces a geometry dimension must reduce the geometry coordinates
+        the same way.
 
-    def __init__(
-        self,
-        data,
-        data_config: DataConfiguration,
-        x: AxisSpec | Variable | Axes,  # TODO: in future we could also allow for slices
-        y: AxisSpec | Variable | Axes,
-        z: AxisSpec | Variable | Axes | None = None,
-        color: ColorSpec | Variable | None = None,
-        controls: list[ControlSpec] | None = None,
-    ):
-        super().__init__(data, data_config, controls=controls)
+        Args:
+            points: Array indexed by the geometry's dimensions, plus a
+                trailing coordinate-component axis that is never reduced
+                (e.g. discretization_points, shape (..., n_components)).
+            geometry_dims: (start, stop) range the geometry's dimensions
+                occupy in self.data - see _geometry_dims().
+        """
+        start, _ = geometry_dims
+        reduced = points
+        for spec, real_idx in self._resolve_controls():  # already sorted descending
+            local = real_idx - start
+            if 0 <= local < reduced.ndim - 1:
+                indexer = [slice(None)] * reduced.ndim
+                indexer[local] = spec.state
+                reduced = reduced[tuple(indexer)]
+        return reduced
 
-        self.x = x if isinstance(x, AxisSpec) else AxisSpec(x)
-        self.y = y if isinstance(y, AxisSpec) else AxisSpec(y)
+    def _geometry_dims(self) -> tuple[int, int]:
+        """(start, stop) range in self.data that this plot's GeometryAxes
+        occupies, for use with reduce_coordinates()."""
+        geom_axes = self.data_config.geometry_axes
+        axis_slc, entry_slc = PlotSpec.get_slice(geom_axes, self.data_config)
+        assert entry_slc is None
+        if isinstance(axis_slc, slice):
+            return axis_slc.start, axis_slc.stop
+        real_idx = axis_slc if axis_slc >= 0 else self.data.ndim + axis_slc
+        return real_idx, real_idx + 1
 
-        if isinstance(z, AxisSpec):
-            self.z = z
-        elif z is not None:
-            self.z = AxisSpec(z)
-        else:
-            self.z = None
-
-        self.color = (
-            (color if isinstance(color, ColorSpec) else ColorSpec(color))
-            if color
-            else None
+    def _count_controls_on_geometry_dims(self) -> int:
+        """How many of this plot's controls reduce a dimension that belongs
+        to the GeometryAxes, rather than a batch or feature dimension."""
+        start, stop = self._geometry_dims()
+        return sum(
+            1 for _, real_idx in self._resolve_controls() if start <= real_idx < stop
         )
 
-    def evaluate(self):
-        data, index_map, slice_map = self.apply_controls()
-
-        # 1) X/Y structured - resolve to original self.data, then map to the
-        #    already reduced `data`.
-        x_idx = self._resolve_structural_dim(self.x)
-        y_idx = self._resolve_structural_dim(self.y)
-
-        if x_idx == y_idx:
-            raise ValueError(
-                f"{type(self).__name__}: x ({self.x.variable_or_axes}) und "
-                f"y ({self.y.variable_or_axes}) refer to the same dimension. "
-                "You might use an PointPlot or MeshPlot instead."
-            )
-
-        x_dim = index_map(x_idx)
-        y_dim = index_map(y_idx)
-
-        # 2) Color/Values BEFORE transpose - get_variable_slice returns a
-        #    slice tuple for the original data_config, so map to the already
-        #    reduced dimensions of `data` before applying it.
-        values = data
-        if self.color is not None:
-            slc = self.data_config.get_variable_slice(self.color.variable_or_axes)
-            color = data[slice_map(slc)]
-        else:
-            color = None
-
-        if self.z is not None:
-            slc = self.data_config.get_variable_slice(self.z.variable_or_axes)
-            values = values[slice_map(slc)]
-
-        # 3) X/Y-Dimensions at the beginning (y, x, ...remaining dims)
-        oriented = np.moveaxis(values, [y_dim, x_dim], [0, 1])
-        if color is not None:
-            color = np.moveaxis(color, [y_dim, x_dim], [0, 1])
-
-        # could be moved to resolve also
-        # self.x.coordinates = self._coordinates_for(self.x)
-        # self.y.coordinates = self._coordinates_for(self.y)
-        return oriented, color
-
     def _resolve_structural_dim(self, spec) -> int:
+        """Resolves a PlotSpec that must refer to exactly one full array
+        dimension (not a channel slice) to its index in self.data. Shared by
+        every plot family with a structural axis role (StructuredGridPlot's
+        x/y, LinePlot's x)."""
         axis_slc, entry_slc = PlotSpec.get_slice(spec.variable_or_axes, self.data_config)
         if entry_slc is not None:
             raise ValueError(
                 f"{spec.variable_or_axes} refers to a channel slice, not a "
-                "own dimension - not allowed for x/y in GridPlot3d."
+                f"own dimension - not allowed here for {type(self).__name__}."
             )
         if isinstance(axis_slc, slice):
             length = axis_slc.stop - axis_slc.start
             if length != 1:
                 raise ValueError(
                     f"{spec.variable_or_axes} spans {length} dimensions - "
-                    "x/y must refer to exactly one dimension."
+                    "must refer to exactly one dimension."
                 )
             real_idx = axis_slc.start
         else:
             real_idx = axis_slc
         return real_idx if real_idx >= 0 else self.data.ndim + real_idx
 
-
-class PointPlot(Plot):
-    pass
-
-
-class MeshPlot(Plot):
-    """Base for plots on unstructured meshes (2D or 3D).
-
-    Cells carry pure topology and never pass through spec resolution. Data
-    variables are extracted per vertex, so the mesh dimension only constrains
-    which concrete plot types are applicable.
-    """
-
-    #: Accepted vertex dimensions; subclasses narrow this where needed.
-    supported_dims: tuple[int, ...] = (2, 3)
-
-    def __init__(
-        self,
-        data,
-        data_config: DataConfiguration,
-        controls: list[ControlSpec] | None = None,
-        show_edges: bool = True,
-        **kwargs,
-    ):
-        super().__init__(data, data_config, controls=controls, **kwargs)
-
-        geom_axes = data_config.geometry_axes
-        assert isinstance(
-            geom_axes, GeometryAxes
-        ), "Currently only DataConfigurations with a single GeometryAxes are supported."
-        if geom_axes is None or not isinstance(geom_axes.geometry, MeshGeometry):
-            raise ValueError(
-                f"{type(self).__name__} requires a GeometryAxes wrapping a MeshGeometry."
-            )
-        self.mesh = geom_axes.geometry.mesh
-        self.dim = self.mesh.vertices.shape[1]
-        if self.dim not in self.supported_dims:
-            raise ValueError(
-                f"{type(self).__name__} supports {self.supported_dims}D meshes, "
-                f"got a {self.dim}D mesh."
-            )
-        self.show_edges = show_edges
-
-    @property
-    def n_vertices(self) -> int:
-        return len(self.mesh.vertices)
-
     @staticmethod
     def component_count(spec, data_config: DataConfiguration) -> int:
         """Number of feature components a spec resolves to (1 means scalar).
 
         Used to reject vector variables where a scalar is required, which would
-        otherwise silently render only the first component.
+        otherwise silently render only the first component. Shared by every
+        plot family that can take either a scalar or vector spec (MeshPlot's
+        color/z, EmbeddedGridPlot's color).
         """
         var = spec.variable_or_axes
         if isinstance(var, Variable):
@@ -266,37 +254,10 @@ class MeshPlot(Plot):
         last = slc[-1] if isinstance(slc, tuple) else slc
         return (last.stop - last.start) if isinstance(last, slice) else 1
 
-    def render_cells(self) -> np.ndarray:
-        """Cells to draw, as indices into the ORIGINAL vertex array.
-
-        For volumetric meshes (tetrahedra in 3D) only the boundary is visible,
-        so boundary_faces is used. Indices stay relative to mesh.vertices, which
-        keeps per-vertex data aligned - unlike get_boundary_mesh(), which may
-        reindex and is therefore only safe for data-free plots.
-        """
-        is_volumetric = self.mesh.cells.shape[1] == self.dim + 1
-        return (
-            self.mesh.boundary_faces
-            if (is_volumetric and self.dim == 3)
-            else self.mesh.cells
-        )
-
-    def scalar_at_vertices(self, spec, data, slice_map) -> np.ndarray:
-        """Extract one scalar value per mesh vertex for the given spec."""
-        slc = self.data_config.get_variable_slice(spec.variable_or_axes)
-        values = np.asarray(data[slice_map(slc)])
-        if values.size != self.n_vertices:
-            raise ValueError(
-                f"{spec.name} yields {values.size} values but the mesh has "
-                f"{self.n_vertices} vertices. Unresolved batch dimensions? "
-                "Add a SliderSpec or FixedSpec for them."
-            )
-        return values.reshape(-1)
-
     def require_scalar(self, spec, role: str):
         n = self.component_count(spec, self.data_config)
         if n != 1:
             raise ValueError(
                 f"{role} must be scalar (dim=1), got dim={n}. "
-                "Use MeshVectorPlot for vector fields, or select a single component."
+                "Select a single component, or use a vector-aware plot type."
             )

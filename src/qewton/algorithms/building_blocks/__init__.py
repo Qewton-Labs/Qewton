@@ -48,3 +48,4 @@ from .derivatives import (
     Hessian,
 )
 from .creation import Zeros, ZerosLike, Ones, OnesLike
+from .geometry import MeshInterpolationNode

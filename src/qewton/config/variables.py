@@ -138,9 +138,9 @@ class Variable:
         Returns:
             tuple[slice, ...] | list[int]: The slice indices.
         """
-        if self.is_leaf and variable == self:
+        if variable == self:
             return slice(None)
-        if self.is_leaf and variable != self:
+        if self.is_leaf:
             raise KeyError(f"Variable '{variable.name}' not found in '{self.name}'")
         running_idx = 0
         for child in self.children:

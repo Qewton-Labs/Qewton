@@ -1,6 +1,7 @@
 from qewton.geometries.base import Geometry
 from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.visualization.plots.base import Plot
+from qewton.visualization.plots.result import MeshResult
 
 
 class GeometryPlot(Plot):
@@ -40,11 +41,11 @@ class GeometryPlot(Plot):
         )
 
     def evaluate(self):
-        return self.boundary_mesh.vertices, self.boundary_mesh.cells
+        return MeshResult(vertices=self.boundary_mesh.vertices, cells=self.boundary_mesh.cells)
 
     def create_artist(self, backend_figure, renderer):
         return (
             renderer.GeometryArtist2D.create(backend_figure, self)
             if self.dim == 2
-            else renderer.GeometryArtist3d.create(backend_figure, self)
+            else renderer.GeometryArtist.create(backend_figure, self)
         )

@@ -110,11 +110,75 @@ class VectorSpec(PlotSpec):
         self.n_color_bins = n_color_bins
 
 
+class Scale:
+    """Shared value range for one or more ColorSpecs.
+
+    Plots that reference the same Scale instance train it together, so e.g.
+    prediction/reference/difference heatmaps side by side get one common
+    cmin/cmax instead of each auto-scaling independently - without a shared
+    range, differently-scaled heatmaps look identical, which is misleading.
+    """
+
+    def __init__(
+        self,
+        vmin: float | None = None,
+        vmax: float | None = None,
+        symmetric: bool = False,
+    ) -> None:
+        self.vmin = vmin  # explicit bounds always win over observed ones
+        self.vmax = vmax
+        self.symmetric = symmetric  # centre the range on zero (error plots)
+        self._observed_min: float | None = None
+        self._observed_max: float | None = None
+        self._colorbar_claimed = False
+
+    def observe(self, values) -> None:
+        """Widens the observed range to cover `values`. Called in pass 1 of
+        Figure.draw() for every plot whose ColorSpec references this scale."""
+        values = np.asarray(values)
+        if values.size == 0:
+            return
+        lo, hi = float(np.nanmin(values)), float(np.nanmax(values))
+        self._observed_min = lo if self._observed_min is None else min(self._observed_min, lo)
+        self._observed_max = hi if self._observed_max is None else max(self._observed_max, hi)
+
+    @property
+    def range(self) -> tuple[float, float] | None:
+        """Merged (lo, hi), preferring explicit vmin/vmax over observed
+        values. None if neither explicit bounds nor any observation exist."""
+        lo = self.vmin if self.vmin is not None else self._observed_min
+        hi = self.vmax if self.vmax is not None else self._observed_max
+        if lo is None or hi is None:
+            return None
+        if self.symmetric:
+            bound = max(abs(lo), abs(hi))
+            lo, hi = -bound, bound
+        return lo, hi
+
+    def claim_colorbar(self) -> bool:
+        """First artist to call this each draw() cycle gets True; the rest
+        get False, so only one colorbar is shown per shared scale."""
+        if self._colorbar_claimed:
+            return False
+        self._colorbar_claimed = True
+        return True
+
+    def reset(self) -> None:
+        """Clears the observed range and colorbar claim. Must run before
+        every draw(), or the colorbar disappears on the second render."""
+        self._observed_min = None
+        self._observed_max = None
+        self._colorbar_claimed = False
+
+
 class ColorSpec(PlotSpec):
-    def __init__(self, variable_or_axes: Variable, cmap=None) -> None:
+    def __init__(
+        self, variable_or_axes: Variable, cmap=None, scale: Scale | None = None
+    ) -> None:
         assert isinstance(variable_or_axes, Variable), "ColorSpec only supports Variables"
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
         self.cmap = cmap  # if not specified, plots resort to default cmap of theme
+        self.scale = scale  # if set, shared with every other spec using the same Scale
 
 
 class ControlSpec(PlotSpec):

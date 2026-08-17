@@ -28,8 +28,13 @@ class DashApplication(RenderApplication):
             )
         )
 
-        # Controls
+        # Controls - only SliderSpec gets an interactive widget. FixedSpec is
+        # deliberately non-interactive (one plot pinned to one state, e.g.
+        # several slices shown at once via separate FixedSpec-controlled
+        # plots), and has none of the min/max/step/marks a slider needs.
         for control in figure.controls:
+            if not isinstance(control, SliderSpec):
+                continue
             widgets.append(
                 html.Div(
                     [
