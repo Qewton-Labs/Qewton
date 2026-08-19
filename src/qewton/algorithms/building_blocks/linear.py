@@ -152,8 +152,19 @@ class Linear(GraphNode, Generic[TensorType]):
             node_identifier=self._type_identifier,
             node_id=self.node_id,
             mode=self.mode,
-            hyperparameters=hyperparameters,
+            hyperparameters=hyperparameters,  # type: ignore
             other_args=other_args,
             state=self.state,
             nested_graphs={"graph": self._graph},
         )
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig):
+        linear_node: Linear = super().load_from_config(config)  # type: ignore
+        for node in linear_node._graph.sorted_nodes:
+            if isinstance(node, ParameterNode):
+                if node.name == "weight":
+                    linear_node.weight = node
+                elif node.name == "bias":
+                    linear_node.bias = node
+        return linear_node

@@ -40,10 +40,12 @@ KEY_TO_PORT = "to_port"
 
 # Directories/files
 FILE_CONFIG = "config.json"
+FILE_NODES = "nodes.json"
+FILE_GRAPHS = "graphs.json"
 FILE_HYPERPARAMETERS = "hyperparameters.json"
 DIR_NODES = "nodes"
 DIR_NESTED_GRAPHS = "nested_graphs"
-DIR_TRAINABLE_PARAMETERS = "trainable_parameters"
+DIR_PARAMETERS = "parameters"
 DIR_CONSTANTS = "constants"
 
 # Hyperparameter payload keys

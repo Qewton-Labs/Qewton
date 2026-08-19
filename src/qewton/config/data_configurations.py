@@ -260,7 +260,7 @@ class DataConfiguration:
 
         # First we check if they match from the end
         matching_end_self, matching_end_other = self._match_axes(
-            reversed(self.axes), reversed(other.axes)
+            list(reversed(self.axes)), list(reversed(other.axes))
         )
         if len(matching_end_self) == len(self.axes) and len(matching_end_other) == len(
             other.axes

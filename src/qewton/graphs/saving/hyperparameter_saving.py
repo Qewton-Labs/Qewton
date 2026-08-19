@@ -16,6 +16,7 @@ from qewton.optim.parameters.number_hyperparameter import (
     ContinuousHyperparameter,
     DiscreteHyperparameter,
 )
+from qewton.graphs.nodes import NodeState
 from qewton.optim.parameters.helpers import HyperParameterState
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
@@ -73,6 +74,8 @@ def encode_value(value: Any) -> Any:
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     if isinstance(value, Enum):
+        if value in NodeState:
+            return value.name
         return {
             KEY_TYPE: TYPE_ENUM_REF,
             KEY_CLASS: value.__class__.__name__,

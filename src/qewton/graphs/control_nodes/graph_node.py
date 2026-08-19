@@ -434,13 +434,6 @@ class GraphNode(Node[TensorType]):
         graph_config: GraphConfig = config.nested_graphs["graph"]
         saved_graph = Graph.load_from_graph_config(graph_config)
 
-        # if g_node.node_id == 78:
-        #     for node in saved_graph.nodes:
-        #         print("loaded node", node.name, node.node_id)
-        #         if isinstance(node, GraphNode):
-        #             for sub_node in node._graph.nodes:
-        #                 print("Also loaded subs", sub_node.name, sub_node.node_id)
-
         old_input_connections = []
         old_output_connections = []
         for node in saved_graph.nodes:
@@ -455,6 +448,9 @@ class GraphNode(Node[TensorType]):
             input_ports=old_input_connections,
             output_ports=old_output_connections,
         )
+        # print(f"Loaded GraphNode {g_node.name} with id {g_node.node_id}")
+        # for node in g_node._graph.sorted_nodes:
+        #     print(f"Node {node.name} with id {node.node_id}")
 
         return g_node
 

@@ -90,13 +90,9 @@ class FCN(GraphNode, Generic[TensorType]):
         for i in range(layers):
             nodes.append(
                 Linear(
-                    in_neurons=(
-                        self.in_neurons.value if i == 0 else self.hidden_neurons.value
-                    ),
+                    in_neurons=(self.in_neurons if i == 0 else self.hidden_neurons),
                     out_neurons=(
-                        self.hidden_neurons.value
-                        if i < layers - 1
-                        else self.out_neurons.value
+                        self.hidden_neurons if i < layers - 1 else self.out_neurons
                     ),
                     bias=self.bias.value,
                     backend=backend,
@@ -288,7 +284,7 @@ class DeepRitzNet(FCN[TensorType]):
             node_identifier=self._type_identifier,
             node_id=self.node_id,
             mode=self.mode,
-            hyperparameters=hyperparameters,
+            hyperparameters=hyperparameters,  # type: ignore
             other_args=other_args,
             state=self.state,
             nested_graphs={"graph": self._graph},

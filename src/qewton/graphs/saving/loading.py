@@ -2,6 +2,7 @@ import importlib
 import inspect
 import json
 from pathlib import Path
+from collections import deque
 from typing import Any
 
 from qewton.graphs.nodes import (
@@ -19,18 +20,24 @@ from qewton.optim.parameters.trainable_parameters import (
 from qewton.backends import BACKEND_DICT, DEFAULT_DL_BACKEND, Backend
 from qewton.config.variables import Variable
 
-from qewton.graphs.saving.hyperparameter_codec import (
+from qewton.graphs.saving.hyperparameter_saving import (
     deserialize_hyperparameter,
     _inverse_hp_dict,
 )
 from qewton.geometries.base import GEOMETRY_REGISTRY
 from qewton.graphs.saving.schema import (
-    DIR_NODES,
+    OBJECT_TYPE_NODE,
+    OBJECT_TYPE_GRAPH,
+    KEY_OBJECT_TYPE,
     FILE_CONFIG,
+    FILE_NODES,
+    FILE_GRAPHS,
     FILE_HYPERPARAMETERS,
     KEY_BACKEND_KEY,
     KEY_CLASS,
     KEY_EDGES,
+    KEY_SCHEMA_VERSION,
+    SCHEMA_VERSION,
     KEY_FROM_NODE_ID,
     KEY_FROM_OUTSIDE,
     KEY_FROM_PORT,
@@ -42,7 +49,6 @@ from qewton.graphs.saving.schema import (
     KEY_NODE_ID,
     KEY_NODE_IDENTIFIER,
     KEY_NODES_INCLUDED,
-    KEY_OBJECT_TYPE,
     KEY_OTHER_ARGS,
     KEY_PATH,
     KEY_SORTED,
@@ -52,8 +58,6 @@ from qewton.graphs.saving.schema import (
     KEY_TO_PORT,
     KEY_TYPE,
     KEY_VALUES,
-    OBJECT_TYPE_GRAPH,
-    OBJECT_TYPE_NODE,
     TYPE_BACKEND_REF,
     TYPE_CLASS_REF,
     TYPE_CONSTANT_REF,
@@ -224,53 +228,94 @@ def load(path: str | Path) -> Node | Graph:
     """
     root_dir = Path(path)
 
-    # Read config.json
-    config_path = root_dir / FILE_CONFIG
-    if not config_path.exists():
-        raise FileNotFoundError(f"No {FILE_CONFIG} found in {root_dir}")
-    with config_path.open("r", encoding="utf-8") as f:
-        config_data: dict[str, Any] = json.load(f)
+    # Check and read all json files
+    files = [
+        root_dir / FILE_CONFIG,
+        root_dir / FILE_NODES,
+        root_dir / FILE_GRAPHS,
+        root_dir / FILE_HYPERPARAMETERS,
+    ]
+    for file in files:
+        if not file.exists():
+            raise FileNotFoundError(f"No {file} found in {root_dir}")
 
-    object_type = config_data.get(KEY_OBJECT_TYPE, None)
-    if object_type == OBJECT_TYPE_GRAPH:
-        graph_config = load_graph(root_dir, config_data)
-        return Graph.load_from_graph_config(graph_config)
-    if object_type == OBJECT_TYPE_NODE:
-        node_config = load_node(root_dir, config_data)
-        if node_config.node_identifier is not None:
-            node_class = NODE_REGISTRY.get(node_config.node_identifier, Node)
+    # Check for version mismatch
+    with files[0].open("r", encoding="utf-8") as f:
+        config_data: dict[str, Any] = json.load(f)
+    assert config_data.get(KEY_SCHEMA_VERSION) == SCHEMA_VERSION, (
+        f"Schema version mismatch: expected {SCHEMA_VERSION}, "
+        f"found {config_data.get(KEY_SCHEMA_VERSION)} in {files[0]}"
+    )
+    # Load all hyperparameters
+    shared_hps = _load_hyperparameters(root_dir)
+    # Load the node data and graph data
+    loaded_nodes: dict[int, Node] = {}
+    with files[1].open("r", encoding="utf-8") as f:
+        node_data: dict[str, Any] = json.load(f)
+    with files[2].open("r", encoding="utf-8") as f:
+        graph_data: dict[str, Any] = json.load(f)
+
+    # Now loop over all nodes and load them, since they can depend on each other,
+    # we need to do this in a loop until all nodes are loaded.
+    unloaded_queue = deque(node_data.keys())
+    while unloaded_queue:
+        node_id = unloaded_queue.popleft()
+        loaded_node_config = load_node(
+            root_dir,
+            node_data[node_id],
+            shared_hps=shared_hps,
+            graph_data=graph_data,
+            loaded_nodes=loaded_nodes,
+        )
+        if loaded_node_config is None:
+            unloaded_queue.append(node_id)
+            if len(unloaded_queue) == 1:
+                raise ValueError(
+                    f"Could not load node {node_id} due to unresolved dependencies."
+                )
         else:
-            node_class = Node
-        return node_class.load_from_config(node_config)
-    raise ValueError(f"Unknown object_type '{object_type}' in config.json at {root_dir}")
+            if loaded_node_config.node_identifier is not None:
+                node_class = NODE_REGISTRY.get(loaded_node_config.node_identifier, Node)
+            else:
+                node_class = Node
+            loaded_nodes[int(node_id)] = node_class.load_from_config(loaded_node_config)
+
+    # Now check if we should load a graph or a single node
+    if config_data[KEY_OBJECT_TYPE] == OBJECT_TYPE_NODE:
+        return loaded_nodes[config_data[KEY_NODE_ID]]
+    if config_data[KEY_OBJECT_TYPE] == OBJECT_TYPE_GRAPH:
+        main_graph_config = load_graph(graph_data[OBJECT_TYPE_GRAPH], loaded_nodes)
+        return Graph.load_from_graph_config(main_graph_config)
+    raise ValueError(
+        f"Unknown object type '{config_data[KEY_OBJECT_TYPE]}' in {files[0]}"
+    )
 
 
 def load_node(
     root_dir: Path,
     config_data: dict[str, Any],
-    shared_hps: dict[str, Any] | None = None,
-) -> NodeConfig:
-    """Load a node from a given path.
+    shared_hps: dict[str, Any],
+    graph_data: dict[str, Any],
+    loaded_nodes: dict[int, Node],
+) -> NodeConfig | None:
+    """Load a node from a given path."""
+    # First check if there are nested graphs, and if so, can we load them:
+    nested_graphs = {}
+    if KEY_NESTED_GRAPHS in config_data:
+        # First check if they can be loaded
+        for saved_graph_names in config_data[KEY_NESTED_GRAPHS].values():
+            for node_ids in graph_data[saved_graph_names][KEY_NODES_INCLUDED]:
+                if node_ids not in loaded_nodes:
+                    return None
+        # Now we load them
+        for graph_name, saved_graph_names in config_data[KEY_NESTED_GRAPHS].items():
+            nested_graphs[graph_name] = load_graph(
+                graph_data[saved_graph_names], loaded_nodes
+            )
 
-    Reads the *config.json* (and *hyperparameters.json* when present) from
-    *path*, reconstructs all hyperparameters and trainable parameters, the
-    method returns a fully configured *NodeConfig* instance. The caller can then
-    returns a fully configured *Node* instance via the existing
-    *Node.load_from_config* method.
-
-    Args:
-        path (str | Path): Directory produced by *save_node*.
-
-    Returns:
-        NodeConfig: The reconstructed NodeConfig.
-    """
     # Resolve the backend, since we need it to load the tensors
     other_args_raw: dict[str, Any] = config_data.get(KEY_OTHER_ARGS, {})
     backend_class = _resolve_backend_class(other_args_raw.get(KEY_BACKEND_KEY))
-
-    # Load hyperparameters
-    if shared_hps is None:
-        shared_hps = _load_hyperparameters(root_dir)
 
     # Reconstruct other_args
     other_args = _load_other_args(
@@ -286,18 +331,6 @@ def load_node(
         elif isinstance(hp_name, dict) and hp_name.get(KEY_TYPE) == TYPE_TUPLE:
             hyperparameters[name] = tuple(shared_hps[n] for n in hp_name[KEY_VALUES])
 
-    # Check for nested graphs and construct them
-    nested_graphs = {}
-    if KEY_NESTED_GRAPHS in config_data:
-        for graph_name, graph_path in config_data[KEY_NESTED_GRAPHS].items():
-            graph_root_dir = root_dir / graph_path
-            graph_json_path = graph_root_dir / FILE_CONFIG
-            with graph_json_path.open("r", encoding="utf-8") as f:
-                graph_config_data: dict[str, Any] = json.load(f)
-            nested_graphs[graph_name] = load_graph(
-                graph_root_dir, graph_config_data, shared_hps=shared_hps
-            )
-
     # Rebuild NodeConfig and use load_from_config for the given node
     node_config = NodeConfig(
         node_identifier=config_data[KEY_NODE_IDENTIFIER],
@@ -311,26 +344,12 @@ def load_node(
     return node_config
 
 
-def load_graph(
-    root_dir: Path, config_data: dict[str, Any], shared_hps: dict[str, Any] | None = None
-) -> GraphConfig:
+def load_graph(config_data: dict[str, Any], loaded_nodes: dict[int, Node]) -> GraphConfig:
 
-    # Load hyperparameters
-    if shared_hps is None:
-        shared_hps = _load_hyperparameters(root_dir)
-
-    # First, load all nodes
-    node_configs = {}
-    for node_id in config_data[KEY_NODES_INCLUDED]:
-        node_path = root_dir / f"{DIR_NODES}/node_{node_id}"
-        node_config_path = node_path / FILE_CONFIG
-        if not node_config_path.exists():
-            raise FileNotFoundError(f"No {FILE_CONFIG} found for node {node_id}")
-        with node_config_path.open("r", encoding="utf-8") as f:
-            node_config_data: dict[str, Any] = json.load(f)
-        node_configs[node_id] = load_node(
-            node_path, node_config_data, shared_hps=shared_hps
-        )
+    # First read all the needed does
+    nodes = {
+        node_id: loaded_nodes[node_id] for node_id in config_data[KEY_NODES_INCLUDED]
+    }
 
     # Transform edges into a list of tuples
     edges = []
@@ -347,7 +366,7 @@ def load_graph(
 
     # Build the config
     return GraphConfig(
-        node_configs=node_configs,
+        nodes=nodes,
         edges=edges,
         graph_was_sorted=config_data.get(KEY_SORTED, False),
         edges_from_outside=edges_from_outside,

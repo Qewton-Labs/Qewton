@@ -9,15 +9,7 @@ from warnings import warn
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.errors import DataConfigMismatchError
 
-from qewton.graphs.nodes import (
-    InputPort,
-    Node,
-    EvaluationPhase,
-    OutputPort,
-    Port,
-    NodeConfig,
-    NODE_REGISTRY,
-)
+from qewton.graphs.nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
 from qewton.graphs.control_nodes.data_processing_node import DataProcessingNode
 from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
 from qewton.graphs.edges import Edge
@@ -25,7 +17,7 @@ from qewton.graphs.edges import Edge
 
 @dataclass
 class GraphConfig:
-    node_configs: dict[int, NodeConfig]
+    nodes: dict[int, Node]
     edges: list[tuple[int, int, int, int]]
     graph_was_sorted: bool
     edges_from_outside: list[tuple[int, int, int, int]] = field(default_factory=list)
@@ -627,7 +619,7 @@ class Graph:
             GraphConfig: A configuration object containing node configurations,
                 edges, and sorting status.
         """
-        node_configs = {node.node_id: node.config_dict() for node in self.nodes}
+        node_configs = {node.node_id: node for node in self.nodes}
 
         edges_config = []
         for node in self.nodes:
@@ -645,7 +637,7 @@ class Graph:
             to_outside_edges_config.append(self._build_edge_mapping(edge))
 
         return GraphConfig(
-            node_configs=node_configs,
+            nodes=node_configs,
             edges=edges_config,
             graph_was_sorted=self.graph_was_sorted,
             edges_from_outside=from_outside_edges_config,
@@ -684,21 +676,12 @@ class Graph:
     @classmethod
     def load_from_graph_config(cls, graph_config: GraphConfig) -> Graph:
         graph = Graph()
-        node_dict: dict[int, Node] = {}
-        for node_id, node_config in graph_config.node_configs.items():
-            if node_config.node_identifier is not None:
-                node_class = NODE_REGISTRY.get(node_config.node_identifier, Node)
-            else:
-                node_class = Node
-            node = node_class.load_from_config(node_config)
-            node_dict[node_id] = node
-
+        node_dict: dict[int, Node] = graph_config.nodes
         for edge in graph_config.edges:
             from_node_id, from_port_idx, to_node_id, to_port_idx = edge
             from_port = node_dict[from_node_id].output_ports[from_port_idx]
             to_port = node_dict[to_node_id].input_ports[to_port_idx]
             graph.connect(from_port, to_port)
-
         return graph
 
 

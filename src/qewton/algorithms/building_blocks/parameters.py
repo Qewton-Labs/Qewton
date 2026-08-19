@@ -42,7 +42,7 @@ class ParameterNode(Node[TensorType]):
                 int_shape = tuple(hp.value for hp in self.shape)
                 self._trainable_parameter = self.backend.param.initialize(int_shape)
             self.output.set_value(self._trainable_parameter)
-            self._state = NodeState.INITIALIZED
+            self.set_state(NodeState.INITIALIZED)
 
     def set_trainable_parameter(self, new_value: TrainableParameters) -> None:
         if self.state == NodeState.FIXED:
@@ -110,8 +110,8 @@ class ParameterNode(Node[TensorType]):
             "trainable_parameters": self._parameters_to_save(),
         }
         hyperparameters = {}
-        for s in self.shape:
-            hyperparameters[s.name] = s
+        for i, s in enumerate(self.shape):
+            hyperparameters[str(i)] = s
 
         return NodeConfig(
             node_identifier=ParameterNode._type_identifier,
@@ -140,12 +140,12 @@ class ParameterNode(Node[TensorType]):
             initial_value=config.other_args.get("initial_value", None),
             backend=config.other_args.get("backend", DEFAULT_DL_BACKEND),
         )
-        node.set_mode(config.mode)
-        node.node_id = config.node_id
         node.set_trainable_parameter(
             config.other_args.get(
                 "trainable_parameters", TrainableParameters.create_empty(node.node_id)
             )
         )
+        node.set_mode(config.mode)
         node.set_state(config.state)
+        node.node_id = config.node_id
         return node
