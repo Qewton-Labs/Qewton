@@ -3,12 +3,12 @@ import numpy as np
 from qewton.config.axes import Axes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.result import GridResult
-from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec
+from qewton.visualization.plots.data.base import DataPlot
+from qewton.visualization.plots.result import GridResult, VectorResult
+from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec, VectorSpec
 
 
-class StructuredGridPlot(Plot):
+class StructuredGridPlot(DataPlot):
     """Heatmap, Surface, Contour - using meshgrids"""
 
     def __init__(
@@ -93,13 +93,17 @@ class ImagePlot(StructuredGridPlot):
     ):
         super().__init__(data, data_config, x, y, controls=controls)
 
-    def create_artist(self, backend_figure, renderer):
-        return renderer.ImageArtist.create(backend_figure, self)
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
+        return renderer.ImageArtist.create(backend_figure, self, row=row, col=col)
 
 
 class SurfacePlot(StructuredGridPlot):
-    def create_artist(self, backend_figure, renderer):
-        return renderer.SurfaceArtist.create(backend_figure, self)
+    @property
+    def embedding_dim(self) -> int:
+        return 3
+
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
+        return renderer.SurfaceArtist.create(backend_figure, self, row=row, col=col)
 
 
 class HeatmapPlot(StructuredGridPlot):
@@ -114,11 +118,11 @@ class HeatmapPlot(StructuredGridPlot):
     ):
         super().__init__(data, data_config, x, y, color=color, controls=controls)
 
-    def create_artist(self, backend_figure, renderer):
-        return renderer.HeatmapArtist.create(backend_figure, self)
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
+        return renderer.HeatmapArtist.create(backend_figure, self, row=row, col=col)
 
 
-class EmbeddedGridPlot(Plot):
+class EmbeddedGridPlot(DataPlot):
     """Structured grid embedded in 3D space, colored by a scalar field.
 
     Unlike HeatmapPlot, coordinates are not axis indices but explicit 3D
@@ -179,6 +183,10 @@ class EmbeddedGridPlot(Plot):
         self.color = color if isinstance(color, ColorSpec) else ColorSpec(color)
         self.require_scalar(self.color, "color")
 
+    @property
+    def embedding_dim(self) -> int:
+        return 3
+
     def evaluate(self):
         data, index_map, slice_map = self.apply_controls()
         slc = self.data_config.get_variable_slice(self.color.variable_or_axes)
@@ -205,5 +213,92 @@ class EmbeddedGridPlot(Plot):
             color=values,
         )
 
-    def create_artist(self, backend_figure, renderer):
-        return renderer.ParametricSurfaceArtist.create(backend_figure, self)
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
+        return renderer.ParametricSurfaceArtist.create(
+            backend_figure, self, row=row, col=col
+        )
+
+
+class QuiverPlot(DataPlot):
+    """Vector field on a structured 3D grid, drawn as arrows - the grid
+    counterpart to MeshVectorPlot (mesh vertices) and EmbeddedGridPlot
+    (scalar color on a grid). Typical source: a mesh field resampled onto a
+    VolumeGridGeometry via MeshInterpolationNode (visualization plan, roadmap
+    item 5) - but like EmbeddedGridPlot, not resampling-specific, it draws
+    any structured grid whose coordinates are explicit 3D points.
+
+    Positions come from geometry.discretization_points via
+    reduce_coordinates(), the same mechanism EmbeddedGridPlot uses, so a
+    control on an extra grid dimension moves the drawn arrow positions
+    correctly, not just the vectors.
+
+    Points a MeshInterpolationNode's point_filter excluded (outside the
+    source mesh) come back NaN in every vector component - those grid points
+    are dropped entirely rather than drawn as degenerate zero-length arrows.
+    """
+
+    def __init__(
+        self,
+        data,
+        data_config: DataConfiguration,
+        vector: VectorSpec | Variable,
+        controls: list[ControlSpec] | None = None,
+        **kwargs,
+    ):
+        super().__init__(data, data_config, controls=controls, **kwargs)
+
+        geometry = data_config.geometry_axes.geometry
+        points = geometry.discretization_points
+        if points is None or points.shape[-1] != 3:
+            raise ValueError(
+                f"{type(self).__name__} requires discretization_points with 3 "
+                "coordinate components."
+            )
+
+        self.vector = vector if isinstance(vector, VectorSpec) else VectorSpec(vector)
+        n_components = self.component_count(self.vector, data_config)
+        if n_components != 3:
+            raise ValueError(
+                f"vector has {n_components} components, {type(self).__name__} "
+                "needs exactly 3 (one grid is embedded in 3D space)."
+            )
+
+    @property
+    def embedding_dim(self) -> int:
+        return 3
+
+    def evaluate(self):
+        data, index_map, slice_map = self.apply_controls()
+        slc = self.data_config.get_variable_slice(self.vector.variable_or_axes)
+        vectors = np.asarray(data[slice_map(slc)]).reshape(-1, 3)
+
+        geometry = self.data_config.geometry_axes.geometry
+        points = self.reduce_coordinates(
+            geometry.discretization_points, self._geometry_dims()
+        ).reshape(-1, 3)
+        if len(points) != len(vectors):
+            raise ValueError(
+                f"{self.vector.name} yields {len(vectors)} vectors but the grid "
+                f"has {len(points)} points. Unresolved batch dimensions? Add a "
+                "SliderSpec or FixedSpec for them."
+            )
+
+        magnitude = np.linalg.norm(vectors, axis=1)
+        if self.vector.normalize:
+            safe = np.where(magnitude > 0, magnitude, 1.0)[:, None]
+            vectors = vectors / safe
+        vectors = vectors * self.vector.scale
+
+        step = self.vector.subsample
+        if step > 1:
+            points, vectors, magnitude = points[::step], vectors[::step], magnitude[::step]
+
+        # Points a MeshInterpolationNode's point_filter excluded come back NaN
+        # in every component - drop them rather than draw zero-length arrows.
+        valid = ~np.isnan(vectors).any(axis=1)
+        points, vectors, magnitude = points[valid], vectors[valid], magnitude[valid]
+
+        return VectorResult(positions=points, vectors=vectors, magnitude=magnitude)
+
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
+        return renderer.ArrowField3DArtist.create(backend_figure, self, row=row, col=col)

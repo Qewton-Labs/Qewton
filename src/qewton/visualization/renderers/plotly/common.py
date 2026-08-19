@@ -17,7 +17,7 @@ def _mesh_edges(cells: np.ndarray) -> np.ndarray:
     return np.unique(edges, axis=0)
 
 
-def _edge_trace(vertices: np.ndarray, cells: np.ndarray) -> go.Scatter3d:
+def _edge_trace(vertices: np.ndarray, cells: np.ndarray, color: str = "black") -> go.Scatter3d:
     edges = _mesh_edges(cells)
     xs, ys, zs = [], [], []
     for a, b in edges:
@@ -29,7 +29,7 @@ def _edge_trace(vertices: np.ndarray, cells: np.ndarray) -> go.Scatter3d:
         y=ys,
         z=zs,
         mode="lines",
-        line=dict(color="black", width=1),
+        line=dict(color=color, width=1),
         hoverinfo="skip",
         showlegend=False,
     )
@@ -60,6 +60,25 @@ def _mask_nan_color_as_gaps(x, y, z, color):
     y[mask] = np.nan
     z[mask] = np.nan
     return x, y, z
+
+
+def _spatial_variable(geometry):
+    """The Variable naming a geometry's x/y/z axes, for artists that draw a
+    geometry's own positions and so have no AxisSpec of their own to title
+    from (mesh/geometry/vector/embedded-grid plots) - see
+    axis_names_from_variable() in plots/base.py.
+
+    The SOURCE mesh's variable when this geometry is a resampling grid built
+    from one (PlaneSliceGeometry/VolumeGridGeometry set `mesh_geometry`
+    precisely so this is recoverable) - their own `variable` names the grid's
+    parametrization (e.g. "u"/"v"/"height_level"), not the space it was
+    resampled into, which would mislabel the axes. Otherwise the geometry's
+    own variable directly - correct for a MeshGeometry (no indirection
+    needed, its variable already is the ambient space), and for a hand-built
+    parametric grid, whatever the caller named its own axes.
+    """
+    source = getattr(geometry, "mesh_geometry", None)
+    return source.variable if source is not None else geometry.variable
 
 
 def _to_numpy(tensor) -> np.ndarray:

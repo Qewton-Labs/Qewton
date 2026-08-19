@@ -6,7 +6,9 @@ from qewton.config.variables import Variable
 
 
 class PlotSpec:
-    def __init__(self, n_dimensions: int, variable_or_axes: Variable | Axes) -> None:
+    def __init__(self, n_dimensions: int, variable_or_axes: Variable | Axes | str) -> None:
+        # str is TablePlot's case: a column key, no Variable/Axes involved -
+        # see "variable_or_axes keeps its name" in the implementation plan.
         self.n_dimensions = n_dimensions
         self.variable_or_axes = variable_or_axes
 
@@ -37,6 +39,19 @@ class PlotSpec:
                 raise ValueError(f"Axis {variable_or_axes} not found in data \
                         config {data_config}.") from exc
         return axis_slc, entry_slc
+
+    @staticmethod
+    def as_single_dim(axis_slc: int | slice) -> int:
+        """Normalizes a get_slice() axis result to a plain int dimension
+        index, when it unambiguously names one dimension. A length-1 slice
+        does - e.g. one child variable of a multi-dim GeometryAxes resolves
+        this way, the same mechanism HeatmapPlot's x/y and control resolution
+        (Plot._resolve_controls) already rely on. Raises otherwise."""
+        if isinstance(axis_slc, slice):
+            length = axis_slc.stop - axis_slc.start
+            assert length == 1, "Multiple axes do not work with a single control."
+            return axis_slc.start
+        return axis_slc
 
     @staticmethod
     def _find_axis_idx(
@@ -99,6 +114,7 @@ class VectorSpec(PlotSpec):
         cmap=None,
         color_by_magnitude=False,
         n_color_bins=8,
+        subsample=1,
     ):
         dim = variable_or_axes.dim
         assert dim in [2, 3], "VectorSpec only supports 2D or 3D variables"
@@ -108,6 +124,13 @@ class VectorSpec(PlotSpec):
         self.cmap = cmap
         self.color_by_magnitude = color_by_magnitude
         self.n_color_bins = n_color_bins
+        # Naive every-n-th-arrow decimation - a pure display decision (which
+        # arrows to draw, not what the field is), so it stays a plot-local
+        # render parameter rather than node work (implementation plan,
+        # section 1's node-layer criterion only covers operations that
+        # produce a new dataset; this only changes what's shown).
+        assert subsample >= 1, "subsample must be >= 1"
+        self.subsample = subsample
 
 
 class Scale:
@@ -173,9 +196,11 @@ class Scale:
 
 class ColorSpec(PlotSpec):
     def __init__(
-        self, variable_or_axes: Variable, cmap=None, scale: Scale | None = None
+        self, variable_or_axes: Variable | str, cmap=None, scale: Scale | None = None
     ) -> None:
-        assert isinstance(variable_or_axes, Variable), "ColorSpec only supports Variables"
+        # variable_or_axes is a Variable for DataPlot families, a column key
+        # (str) for TablePlot ones - see PlotSpec's "variable_or_axes keeps
+        # its name" note in the implementation plan, section 4.
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
         self.cmap = cmap  # if not specified, plots resort to default cmap of theme
         self.scale = scale  # if set, shared with every other spec using the same Scale
@@ -194,8 +219,14 @@ class ControlSpec(PlotSpec):
     def state(self, value):
         self._state = value
 
-    def resolve(self, data_config, data):
-        pass
+    def resolve(self, values):
+        """Fills in whatever was left None - bounds, facet values, initial
+        state - from `values`, the list of selectable states. Explicit values
+        set by the user are never overwritten. `values` is computed and
+        handed in by the owning family (DataPlot: range(data.shape[dim]);
+        TablePlot: sorted(unique(column.values))) - the spec itself no longer
+        touches data_config/data, so the same ControlSpec subclasses serve
+        every input family."""
 
 
 class SliderSpec(ControlSpec):
@@ -214,16 +245,11 @@ class SliderSpec(ControlSpec):
         self.step = step
         self.marks = marks
 
-    def resolve(self, data_config, data):
+    def resolve(self, values):
         if self.minimum is None or self.maximum is None:
-            axis_slc, entry_slc = PlotSpec.get_slice(self.variable_or_axes, data_config)
-            if entry_slc is None:
-                size = data.shape[axis_slc]
-                assert isinstance(size, int), "Multiple axes do not work with a slider."
-            else:
-                size = entry_slc.stop - entry_slc.start
-            self.minimum = self.minimum if self.minimum is not None else 0
-            self.maximum = self.maximum if self.maximum is not None else size - 1
+            values = list(values)
+            self.minimum = self.minimum if self.minimum is not None else min(values)
+            self.maximum = self.maximum if self.maximum is not None else max(values)
         if self._state is None:
             self._state = self.minimum
 
@@ -251,21 +277,35 @@ class FacetSpec(ControlSpec):
         self.orientation = orientation
         self.values = values
 
-    def resolve(self, data_config, data):
+    def resolve(self, values):
         if self.values is None:
-            axis_slc, entry_slc = PlotSpec.get_slice(self.variable_or_axes, data_config)
-            if entry_slc is None:
-                size = data.shape[axis_slc]
-                assert isinstance(size, int), "Multiple axes do not work with a slider."
-            else:
-                size = entry_slc.stop - entry_slc.start
-            self.values = list(range(size))
+            self.values = list(values)
         if self._state is None:
             self._state = self.values[0]
 
 
 class TimeSpec(ControlSpec):
-    # used in animations
-    def __init__(self, variable_or_axes) -> None:
-        super().__init__(init_state=0, n_dimensions=1, variable_or_axes=variable_or_axes)
-        # TODO
+    """Declares that a dimension/column advances over animation frames,
+    rather than being an interactive widget (SliderSpec) or a grid of panels
+    (FacetSpec) - the third way a ControlSpec's declared state can be driven,
+    same "declared once, applied differently" split as every other control
+    (section 6).
+
+    Backends that materialize frames up front (Plotly) build one frame per
+    value in `values`, plus play/pause + a frame slider - genuinely backend
+    vocabulary, so Figure.draw() delegates it to Renderer.animate() once the
+    normal two-pass draw is done, the same way Renderer.setup() owns
+    subplot-grid construction. Does not get an interactive Dash widget,
+    unlike SliderSpec - DashApplication only builds those for SliderSpec.
+    """
+
+    def __init__(self, variable_or_axes, values=None, duration=500):
+        super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes, init_state=None)
+        self.values = values
+        self.duration = duration  # ms per frame while the Play button runs
+
+    def resolve(self, values):
+        if self.values is None:
+            self.values = list(values)
+        if self._state is None:
+            self._state = self.values[0]

@@ -12,23 +12,45 @@ from .plots.spec import (
     VectorSpec,
     Scale,
 )
-from .plots.result import GridResult, MeshResult, VectorResult, CurveResult, PathResult
+from .plots.result import (
+    GridResult,
+    MeshResult,
+    VectorResult,
+    CurveResult,
+    PathResult,
+    ScatterResult,
+    Column,
+    TableResult,
+    PortLayout,
+    NodeLayout,
+    ClusterBox,
+    EdgeLayout,
+    GraphLayoutResult,
+)
 from .plots.geometry import GeometryPlot
-from .plots.grid import (
+from .plots.graph import GraphPlot
+from .plots.data import (
+    DataPlot,
+    CoordTransform,
+    IdentityCoord,
     ImagePlot,
     SurfacePlot,
     HeatmapPlot,
     StructuredGridPlot,
     EmbeddedGridPlot,
-)
-from .plots.mesh import (
+    QuiverPlot,
     MeshPlot,
     MeshFieldPlot,
     MeshSurfacePlot,
     MeshVectorPlot,
+    LinePlot,
+    PathPlot,
+    ScatterPlot,
+    BarPlot,
+    PointPlot,
 )
-from .plots.curve import LinePlot, PathPlot
-from .plots.point import PointPlot
+from .plots.table import TablePlot, ParallelCoordinatesPlot
 from .renderers.base import Artist, Renderer
 from .applications import RenderApplication, DashApplication
+from .themes import Theme, DEFAULT_THEME, LIGHT_THEME, DARK_THEME
 from .figure import Figure

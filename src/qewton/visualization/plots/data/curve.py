@@ -3,12 +3,12 @@ import numpy as np
 from qewton.config.axes import Axes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.visualization.plots.base import Plot
+from qewton.visualization.plots.data.base import DataPlot
 from qewton.visualization.plots.result import CurveResult, PathResult
 from qewton.visualization.plots.spec import AxisSpec, ControlSpec, VectorSpec
 
 
-class LinePlot(Plot):
+class LinePlot(DataPlot):
     """A single curve: one value plotted over one structural domain axis.
 
     Three fields over a 1D geometry are three separate LinePlots, not one
@@ -52,11 +52,11 @@ class LinePlot(Plot):
         x_values = np.arange(y_values.shape[0])
         return CurveResult(x=x_values, y=y_values)
 
-    def create_artist(self, backend_figure, renderer):
-        return renderer.LineArtist.create(backend_figure, self)
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
+        return renderer.LineArtist.create(backend_figure, self, row=row, col=col)
 
 
-class PathPlot(Plot):
+class PathPlot(DataPlot):
     """An ordered sequence of positions in space - a trajectory or streamline.
 
     Unlike LinePlot's three-separate-curves rule, a path's components form
@@ -87,5 +87,9 @@ class PathPlot(Plot):
         positions = self.coord_transform.apply(positions)
         return PathResult(positions=positions)
 
-    def create_artist(self, backend_figure, renderer):
-        return renderer.PathArtist.create(backend_figure, self)
+    @property
+    def embedding_dim(self) -> int:
+        return self.position.n_dimensions
+
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
+        return renderer.PathArtist.create(backend_figure, self, row=row, col=col)

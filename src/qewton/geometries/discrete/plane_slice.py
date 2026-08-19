@@ -1,4 +1,3 @@
-import itertools
 import math
 
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType
@@ -6,6 +5,7 @@ from qewton.backends.base import ComputingBackend
 from qewton.config.variables import Variable
 from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.mesh_stats import mean_edge_length
 
 
 class PlaneSliceGeometry(GridGeometry[TensorType]):
@@ -131,23 +131,9 @@ class PlaneSliceGeometry(GridGeometry[TensorType]):
             (float(backend.math.min(v_coords)), float(backend.math.max(v_coords))),
         )
 
-    @staticmethod
-    def _mean_edge_length(backend, mesh) -> float:
-        vertices = mesh.vertices
-        cells = mesh.cells
-        pairs = list(itertools.combinations(range(cells.shape[1]), 2))
-        edges = backend.math.concatenate(
-            [backend.math.sort(cells[:, [a, b]], axis=1) for a, b in pairs], axis=0
-        )
-        edges = backend.math.unique(edges, axis=0)
-        lengths = backend.linalg.norm(
-            vertices[edges[:, 0]] - vertices[edges[:, 1]], axis=1
-        )
-        return float(backend.math.mean(lengths))
-
     @classmethod
     def _default_resolution(cls, backend, mesh, u_range, v_range) -> tuple[int, int]:
-        mean_edge = cls._mean_edge_length(backend, mesh)
+        mean_edge = mean_edge_length(backend, mesh)
         n1 = max(2, math.ceil((u_range[1] - u_range[0]) / mean_edge))
         n2 = max(2, math.ceil((v_range[1] - v_range[0]) / mean_edge))
         return n1, n2

@@ -1,6 +1,7 @@
 from plotly import graph_objects as go
 import numpy as np
 
+from qewton.visualization.plots.base import axis_names_from_variable
 from qewton.visualization.renderers.plotly.common import PlotlyArtist, _edge_trace, _mesh_edges
 
 
@@ -10,10 +11,10 @@ class GeometryArtist(PlotlyArtist):
         self.edges_idx = edges_idx
 
     @classmethod
-    def create(cls, backend_figure, plot):
+    def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         vertices, cells = result.vertices, result.cells
-        color = getattr(plot.theme, "geometry_color", "lightgray")
+        color = plot.theme.geometry_color
 
         mesh_idx = len(backend_figure.data)
         backend_figure.add_trace(
@@ -26,16 +27,25 @@ class GeometryArtist(PlotlyArtist):
                 k=cells[:, 2],
                 color=color,
                 flatshading=True,
-            )
+            ),
+            row=row,
+            col=col,
         )
 
         edges_idx = None
         if plot.show_edges:
             edges_idx = len(backend_figure.data)
-            backend_figure.add_trace(_edge_trace(vertices, cells))
+            backend_figure.add_trace(
+                _edge_trace(vertices, cells, color=plot.theme.line_color), row=row, col=col
+            )
 
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
+        x_name, y_name, z_name = axis_names_from_variable(plot.geometry.variable, 3)
+        backend_figure.update_scenes(
+            row=row, col=col,
+            xaxis=dict(title=x_name), yaxis=dict(title=y_name), zaxis=dict(title=z_name),
+        )
 
         return cls(mesh_idx, edges_idx)
 
@@ -98,13 +108,13 @@ class GeometryArtist2D(PlotlyArtist):
         )
 
     @classmethod
-    def create(cls, backend_figure, plot):
+    def create(cls, backend_figure, plot, row=None, col=None):
         mesh = plot.interior_mesh or plot.boundary_mesh
-        color = getattr(plot.theme, "geometry_color", "lightgray")
+        color = plot.theme.geometry_color
 
         fill_idx = len(backend_figure.data)
         backend_figure.add_trace(
-            cls._triangle_fill_trace(mesh.vertices, mesh.cells, color)
+            cls._triangle_fill_trace(mesh.vertices, mesh.cells, color), row=row, col=col
         )
 
         interior_idx = None
@@ -114,20 +124,35 @@ class GeometryArtist2D(PlotlyArtist):
                 cls._edge_trace_2d(
                     mesh.vertices,
                     _mesh_edges(mesh.cells),
-                    color="gray",
+                    color=plot.theme.line_color,
                     width=0.5,
-                )
+                ),
+                row=row,
+                col=col,
             )
 
         # boundary on top - unordered edges, holes included, no ordering needed
         boundary_idx = len(backend_figure.data)
         backend_figure.add_trace(
-            cls._edge_trace_2d(plot.boundary_mesh.vertices, plot.boundary_mesh.cells)
+            cls._edge_trace_2d(
+                plot.boundary_mesh.vertices, plot.boundary_mesh.cells, color=plot.theme.line_color
+            ),
+            row=row,
+            col=col,
         )
 
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
-        backend_figure.update_yaxes(scaleanchor="x")
+        x_name, y_name = axis_names_from_variable(plot.geometry.variable, 2)
+        backend_figure.update_xaxes(title=x_name, row=row, col=col)
+        backend_figure.update_yaxes(title=y_name, row=row, col=col)
+        # NOTE: scaleanchor="x" is exact for the non-faceted case (the only
+        # xaxis is literally named "x"); in a faceted grid each cell has its
+        # own xaxis (x2, x3, ...) so this anchors to the wrong one for cells
+        # past the first. Cosmetic only (aspect-ratio lock) and not the
+        # facet-motivating use case (EmbeddedGridPlot, 3D) - left as a known
+        # gap rather than resolved per-cell axis naming here.
+        backend_figure.update_yaxes(scaleanchor="x", row=row, col=col)
 
         return cls(fill_idx, boundary_idx, interior_idx)
 

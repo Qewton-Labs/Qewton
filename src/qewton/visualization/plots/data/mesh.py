@@ -4,12 +4,12 @@ from qewton.config.axes import GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.geometries.discrete.mesh_geometry import MeshGeometry
-from qewton.visualization.plots.base import Plot
+from qewton.visualization.plots.data.base import DataPlot
 from qewton.visualization.plots.result import MeshResult, VectorResult
 from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec, VectorSpec
 
 
-class MeshPlot(Plot):
+class MeshPlot(DataPlot):
     """Base for plots on unstructured meshes (2D or 3D).
 
     Cells carry pure topology and never pass through spec resolution. Data
@@ -100,17 +100,21 @@ class MeshFieldPlot(MeshPlot):
         self.color = color if isinstance(color, ColorSpec) else ColorSpec(color)
         self.require_scalar(self.color, "color")
 
+    @property
+    def embedding_dim(self) -> int:
+        return 3  # both FilledMeshArtist and SurfaceMeshArtist draw a 3D-space mesh
+
     def evaluate(self):
         data, index_map, slice_map = self.apply_controls()
         color = self.scalar_at_vertices(self.color, data, slice_map)
         vertices = self.coord_transform.apply(self.mesh.vertices)
         return MeshResult(vertices=vertices, cells=self.render_cells(), color=color)
 
-    def create_artist(self, backend_figure, renderer):
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
         return (
-            renderer.FilledMeshArtist.create(backend_figure, self)
+            renderer.FilledMeshArtist.create(backend_figure, self, row=row, col=col)
             if self.dim == 2
-            else renderer.SurfaceMeshArtist.create(backend_figure, self)
+            else renderer.SurfaceMeshArtist.create(backend_figure, self, row=row, col=col)
         )
 
 
@@ -157,8 +161,12 @@ class MeshSurfacePlot(MeshPlot):
         )
         return MeshResult(vertices=vertices, cells=self.mesh.cells, color=color)
 
-    def create_artist(self, backend_figure, renderer):
-        return renderer.SurfaceMeshArtist.create(backend_figure, self)
+    @property
+    def embedding_dim(self) -> int:
+        return 3
+
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
+        return renderer.SurfaceMeshArtist.create(backend_figure, self, row=row, col=col)
 
 
 class MeshVectorPlot(MeshPlot):
@@ -202,11 +210,24 @@ class MeshVectorPlot(MeshPlot):
         vectors = vectors * self.vector.scale
 
         positions = self.coord_transform.apply(self.mesh.vertices)
+
+        step = self.vector.subsample
+        if step > 1:
+            # Decimate after normalize/scale, not before: subsampling only
+            # changes which arrows are drawn, never what a drawn arrow means.
+            positions = positions[::step]
+            vectors = vectors[::step]
+            magnitude = magnitude[::step]
+
         return VectorResult(positions=positions, vectors=vectors, magnitude=magnitude)
 
-    def create_artist(self, backend_figure, renderer):
+    @property
+    def embedding_dim(self) -> int:
+        return self.dim
+
+    def create_artist(self, backend_figure, renderer, row=None, col=None):
         return (
-            renderer.ArrowField2DArtist.create(backend_figure, self)
+            renderer.ArrowField2DArtist.create(backend_figure, self, row=row, col=col)
             if self.dim == 2
-            else renderer.ArrowField3DArtist.create(backend_figure, self)
+            else renderer.ArrowField3DArtist.create(backend_figure, self, row=row, col=col)
         )

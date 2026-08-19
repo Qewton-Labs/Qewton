@@ -1,6 +1,7 @@
 from plotly import graph_objects as go
 import numpy as np
 
+from qewton.visualization.plots.base import axis_names_from_variable
 from qewton.visualization.renderers.plotly.common import PlotlyArtist, _apply_scale, _edge_trace
 
 
@@ -16,14 +17,12 @@ class SurfaceMeshArtist(PlotlyArtist):
         self.edges_idx = edges_idx
 
     @classmethod
-    def create(cls, backend_figure, plot):
+    def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         vertices, cells, color = result.vertices, result.cells, result.color
 
         spec = getattr(plot, "color", None)
-        cmap = (spec.cmap if spec is not None and spec.cmap else None) or getattr(
-            plot.theme, "default_cmap", "viridis"
-        )
+        cmap = (spec.cmap if spec is not None and spec.cmap else None) or plot.theme.default_cmap
 
         kwargs = dict(
             x=vertices[:, 0],
@@ -45,18 +44,21 @@ class SurfaceMeshArtist(PlotlyArtist):
                 **_apply_scale(spec.scale if spec is not None else None),
             )
         else:
-            kwargs["color"] = getattr(plot.theme, "geometry_color", "lightgray")
+            kwargs["color"] = plot.theme.geometry_color
 
         mesh_idx = len(backend_figure.data)
-        backend_figure.add_trace(go.Mesh3d(**kwargs))
+        backend_figure.add_trace(go.Mesh3d(**kwargs), row=row, col=col)
 
         edges_idx = None
         if plot.show_edges:
             edges_idx = len(backend_figure.data)
-            backend_figure.add_trace(_edge_trace(vertices, cells))
+            backend_figure.add_trace(
+                _edge_trace(vertices, cells, color=plot.theme.line_color), row=row, col=col
+            )
 
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
+        backend_figure.update_scenes(row=row, col=col, **cls._scene_axis_titles(plot))
 
         return cls(mesh_idx, edges_idx)
 
@@ -77,6 +79,25 @@ class SurfaceMeshArtist(PlotlyArtist):
     def remove(self, backend_figure):
         pass
 
+    @staticmethod
+    def _scene_axis_titles(plot) -> dict:
+        """x/y always come from the mesh's own ambient coordinate Variable
+        (MeshFieldPlot and MeshSurfacePlot alike - the mesh itself never
+        moves). z differs: MeshFieldPlot's z genuinely is the mesh's own
+        3rd coordinate (part of the same Variable), but MeshSurfacePlot's z
+        is a *data* value elevating a 2D mesh - it has its own named AxisSpec
+        (`plot.z`) instead, unrelated to the mesh's 2D coordinate Variable."""
+        geometry = plot.data_config.geometry_axes.geometry
+        z_spec = getattr(plot, "z", None)
+        if z_spec is not None:
+            x_name, y_name = axis_names_from_variable(geometry.variable, 2)
+            z_name = z_spec.name
+        else:
+            x_name, y_name, z_name = axis_names_from_variable(geometry.variable, 3)
+        return dict(
+            xaxis=dict(title=x_name), yaxis=dict(title=y_name), zaxis=dict(title=z_name)
+        )
+
 
 class FilledMeshArtist(PlotlyArtist):
     """Scalar field on a 2D triangulation.
@@ -91,13 +112,11 @@ class FilledMeshArtist(PlotlyArtist):
         self.edges_idx = edges_idx
 
     @classmethod
-    def create(cls, backend_figure, plot):
+    def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         vertices, cells, color = result.vertices, result.cells, result.color
         zeros = np.zeros(len(vertices))
-        cmap = (plot.color.cmap if plot.color.cmap else None) or getattr(
-            plot.theme, "default_cmap", "viridis"
-        )
+        cmap = (plot.color.cmap if plot.color.cmap else None) or plot.theme.default_cmap
 
         mesh_idx = len(backend_figure.data)
         backend_figure.add_trace(
@@ -113,23 +132,33 @@ class FilledMeshArtist(PlotlyArtist):
                 colorscale=cmap,
                 lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0),
                 **_apply_scale(plot.color.scale),
-            )
+            ),
+            row=row,
+            col=col,
         )
 
         edges_idx = None
         if plot.show_edges:
             edges_idx = len(backend_figure.data)
             backend_figure.add_trace(
-                _edge_trace(np.column_stack([vertices[:, :2], zeros]), cells)
+                _edge_trace(
+                    np.column_stack([vertices[:, :2], zeros]), cells, color=plot.theme.line_color
+                ),
+                row=row,
+                col=col,
             )
 
-        backend_figure.update_layout(
-            scene=dict(
-                camera=dict(eye=dict(x=0, y=0, z=2.0), up=dict(x=0, y=1, z=0)),
-                zaxis=dict(visible=False),
-                aspectmode="data",
-                dragmode="pan",
-            )
+        geometry = plot.data_config.geometry_axes.geometry
+        x_name, y_name = axis_names_from_variable(geometry.variable, 2)
+        backend_figure.update_scenes(
+            camera=dict(eye=dict(x=0, y=0, z=2.0), up=dict(x=0, y=1, z=0)),
+            xaxis=dict(title=x_name),
+            yaxis=dict(title=y_name),
+            zaxis=dict(visible=False),
+            aspectmode="data",
+            dragmode="pan",
+            row=row,
+            col=col,
         )
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)

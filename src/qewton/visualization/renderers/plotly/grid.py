@@ -1,34 +1,36 @@
 from plotly import graph_objects as go
 import numpy as np
 
+from qewton.visualization.plots.base import axis_names_from_variable
 from qewton.visualization.renderers.plotly.common import (
     PlotlyArtist,
     _apply_scale,
     _mask_nan_color_as_gaps,
+    _spatial_variable,
 )
 
 
 class ImageArtist(PlotlyArtist):
     @classmethod
-    def create(
-        cls,
-        backend_figure,
-        plot,
-    ):
+    def create(cls, backend_figure, plot, row=None, col=None):
         image = plot.evaluate().values
         trace = go.Image(z=image)
 
-        backend_figure.add_trace(trace)
+        backend_figure.add_trace(trace, row=row, col=col)
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
 
         backend_figure.update_xaxes(
             title=plot.x.name,
             type="log" if plot.x.log_scale else "linear",
+            row=row,
+            col=col,
         )
         backend_figure.update_yaxes(
             title=plot.y.name,
             type="log" if plot.y.log_scale else "linear",
+            row=row,
+            col=col,
         )
 
         return cls(len(backend_figure.data) - 1)
@@ -44,11 +46,7 @@ class ImageArtist(PlotlyArtist):
 class HeatmapArtist(PlotlyArtist):
 
     @classmethod
-    def create(
-        cls,
-        backend_figure,
-        plot,
-    ):
+    def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         data, color = result.values, result.color
         c = plot.color
@@ -64,17 +62,21 @@ class HeatmapArtist(PlotlyArtist):
         scale_kwargs = _apply_scale(c.scale if c is not None else None, "zmin", "zmax")
         trace = go.Heatmap(z=data[..., 0], colorscale=cmap, **scale_kwargs)
 
-        backend_figure.add_trace(trace)
+        backend_figure.add_trace(trace, row=row, col=col)
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
 
         backend_figure.update_xaxes(
             title=plot.x.name,
             type="log" if plot.x.log_scale else "linear",
+            row=row,
+            col=col,
         )
         backend_figure.update_yaxes(
             title=plot.y.name,
             type="log" if plot.y.log_scale else "linear",
+            row=row,
+            col=col,
         )
 
         return cls(len(backend_figure.data) - 1)
@@ -95,11 +97,7 @@ class HeatmapArtist(PlotlyArtist):
 
 class SurfaceArtist(PlotlyArtist):
     @classmethod
-    def create(
-        cls,
-        backend_figure,
-        plot,
-    ):
+    def create(cls, backend_figure, plot, row=None, col=None):
         cmap = plot.theme.default_cmap
         if plot.color is not None:
             if plot.color.cmap is not None:
@@ -111,27 +109,25 @@ class SurfaceArtist(PlotlyArtist):
         trace = go.Surface(
             z=data[..., 0], surfacecolor=color, colorscale=cmap, **scale_kwargs
         )
-        backend_figure.add_trace(trace)
+        backend_figure.add_trace(trace, row=row, col=col)
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
 
-        backend_figure.update_xaxes(
-            title=plot.x.name,
-            type="log" if plot.x.log_scale else "linear",
-        )
-        backend_figure.update_yaxes(
-            title=plot.y.name,
-            type="log" if plot.y.log_scale else "linear",
+        # SurfaceArtist draws into a `scene` subplot (go.Surface), which has
+        # no top-level xaxis/yaxis of its own - update_xaxes/update_yaxes
+        # would silently target the wrong (nonexistent, for this cell)
+        # cartesian axes, so x/y/z titles all go through update_scenes
+        # together, not split across two different calls the way a 2D
+        # HeatmapArtist can get away with.
+        scene_axes = dict(
+            xaxis=dict(title=plot.x.name, type="log" if plot.x.log_scale else "linear"),
+            yaxis=dict(title=plot.y.name, type="log" if plot.y.log_scale else "linear"),
         )
         if plot.z is not None:
-            backend_figure.update_layout(
-                scene=dict(
-                    zaxis=dict(
-                        title=plot.z.name,
-                        type="log" if plot.z.log_scale else "linear",
-                    )
-                )
+            scene_axes["zaxis"] = dict(
+                title=plot.z.name, type="log" if plot.z.log_scale else "linear"
             )
+        backend_figure.update_scenes(row=row, col=col, **scene_axes)
 
         return cls(len(backend_figure.data) - 1)
 
@@ -158,9 +154,9 @@ class ParametricSurfaceArtist(PlotlyArtist):
     """
 
     @classmethod
-    def create(cls, backend_figure, plot):
+    def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
-        cmap = plot.color.cmap or getattr(plot.theme, "default_cmap", "viridis")
+        cmap = plot.color.cmap or plot.theme.default_cmap
         scale_kwargs = _apply_scale(plot.color.scale)
         x, y, z = _mask_nan_color_as_gaps(result.x, result.y, result.z, result.color)
 
@@ -173,13 +169,15 @@ class ParametricSurfaceArtist(PlotlyArtist):
                 surfacecolor=result.color,
                 colorscale=cmap,
                 **scale_kwargs,
-            )
+            ),
+            row=row,
+            col=col,
         )
 
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
-        backend_figure.update_layout(
-            scene=dict(aspectmode="data", **cls._fixed_axis_ranges(plot))
+        backend_figure.update_scenes(
+            aspectmode="data", row=row, col=col, **cls._scene_axis_kwargs(plot)
         )
         return cls(idx)
 
@@ -196,22 +194,28 @@ class ParametricSurfaceArtist(PlotlyArtist):
         pass
 
     @staticmethod
-    def _fixed_axis_ranges(plot) -> dict:
+    def _scene_axis_kwargs(plot) -> dict:
         """Explicit scene axis ranges from the FULL (unreduced) geometry
-        extent, not just the currently drawn slice.
+        extent, not just the currently drawn slice, plus a title per axis
+        derived from the geometry's own coordinate Variable (EmbeddedGridPlot
+        has no x=/y=/z= AxisSpec of its own to name them from - positions
+        come straight from the geometry, see axis_names_from_variable()).
 
-        Without this, Plotly auto-scales the scene to fit whichever slice is
-        currently on screen - so as a slider moves the slice, the camera
-        silently reframes around it every redraw and the view looks static
-        even though the actual position moved.
+        Without the range part, Plotly auto-scales the scene to fit whichever
+        slice is currently on screen - so as a slider moves the slice, the
+        camera silently reframes around it every redraw and the view looks
+        static even though the actual position moved.
         """
-        points = plot.data_config.geometry_axes.geometry.discretization_points
+        geometry = plot.data_config.geometry_axes.geometry
+        points = geometry.discretization_points
+        names = axis_names_from_variable(_spatial_variable(geometry), 3)
         return {
             axis: dict(
+                title=names[i],
                 range=[
                     float(np.nanmin(points[..., i])),
                     float(np.nanmax(points[..., i])),
-                ]
+                ],
             )
             for i, axis in enumerate(("xaxis", "yaxis", "zaxis"))
         }

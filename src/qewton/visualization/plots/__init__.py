@@ -8,9 +8,41 @@ from .spec import (
     ColorSpec,
     Scale,
 )
-from .result import GridResult, MeshResult, VectorResult, CurveResult, PathResult
-from .grid import ImagePlot, SurfacePlot, HeatmapPlot, StructuredGridPlot, EmbeddedGridPlot
-from .mesh import MeshPlot, MeshFieldPlot, MeshSurfacePlot, MeshVectorPlot
-from .curve import LinePlot, PathPlot
-from .point import PointPlot
+from .result import (
+    GridResult,
+    MeshResult,
+    VectorResult,
+    CurveResult,
+    PathResult,
+    ScatterResult,
+    Column,
+    TableResult,
+    PortLayout,
+    NodeLayout,
+    ClusterBox,
+    EdgeLayout,
+    GraphLayoutResult,
+)
+from .data import (
+    DataPlot,
+    CoordTransform,
+    IdentityCoord,
+    ImagePlot,
+    SurfacePlot,
+    HeatmapPlot,
+    StructuredGridPlot,
+    EmbeddedGridPlot,
+    QuiverPlot,
+    MeshPlot,
+    MeshFieldPlot,
+    MeshSurfacePlot,
+    MeshVectorPlot,
+    LinePlot,
+    PathPlot,
+    ScatterPlot,
+    BarPlot,
+    PointPlot,
+)
+from .table import TablePlot, ParallelCoordinatesPlot
 from .geometry import GeometryPlot
+from .graph import GraphPlot
