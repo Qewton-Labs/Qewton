@@ -5,6 +5,8 @@ from qewton.visualization.renderers.plotly.common import PlotlyArtist
 
 
 class LineArtist(PlotlyArtist):
+    """Draws a LinePlot as a 2D line trace."""
+
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()

@@ -7,6 +7,18 @@ from qewton.visualization.themes import DEFAULT_THEME
 
 
 class Figure:
+    """Draws one or more Plots into a single backend figure, arranging
+    them into a facet grid when any plot declares a FacetSpec and animating
+    them when any declares a TimeSpec.
+
+    Args:
+        plots: A single Plot, a list of Plots to draw together, or None to
+            add plots later via `add_plot()`.
+        renderer: The Renderer backend used to draw and export the figure.
+        theme: The Theme applied to every plot that doesn't set its own.
+        title: Optional figure title.
+    """
+
     def __init__(
         self,
         plots: Plot | list[Plot] | None = None,
@@ -36,6 +48,8 @@ class Figure:
         self.backend_figure = renderer.setup(self)
 
     def add_plot(self, plot: Plot):
+        """Adds `plot` to this Figure, applying the Figure's theme unless
+        the plot already has its own, and registering its controls."""
         plot.theme = self.theme
         self.plots.append(plot)
         for spec in plot.controls:
@@ -180,16 +194,31 @@ class Figure:
                 col_spec.state = original_col_state
 
     def show(self):
+        """Draws the figure and displays it (e.g. opening a browser tab)."""
         self.draw()
         self.renderer.show(self.backend_figure)
 
     def save_html(self, path):
+        """Draws the figure and writes it to `path` as an interactive HTML file."""
         self.draw()
         self.renderer.save_html(self.backend_figure, path)
 
     def save_gif(self, path, fps=10):
-        """Only meaningful with a TimeSpec control somewhere in the Figure -
-        draw() must have populated backend_figure.frames, which
-        renderer.save_gif() then rasterizes and assembles."""
+        """Draws the figure and writes it to `path` as an animated GIF.
+
+        Only meaningful with a TimeSpec control somewhere in the Figure -
+        `draw()` must populate `backend_figure.frames`, which is then
+        rasterized frame by frame and assembled into the GIF.
+        """
         self.draw()
         self.renderer.save_gif(self.backend_figure, path, fps=fps)
+
+    def save_png(self, path, **kwargs):
+        """Draws the figure and writes its current state to `path` as a PNG."""
+        self.draw()
+        self.renderer.save_image(self.backend_figure, path, format="png", **kwargs)
+
+    def save_svg(self, path, **kwargs):
+        """Draws the figure and writes its current state to `path` as an SVG."""
+        self.draw()
+        self.renderer.save_image(self.backend_figure, path, format="svg", **kwargs)

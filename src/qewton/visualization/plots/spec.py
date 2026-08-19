@@ -6,9 +6,12 @@ from qewton.config.variables import Variable
 
 
 class PlotSpec:
+    """Base class declaring how a Plot maps one role (x, y, color, ...) onto
+    a Variable/Axes (for a DataPlot) or a column name (for a TablePlot)."""
+
     def __init__(self, n_dimensions: int, variable_or_axes: Variable | Axes | str) -> None:
-        # str is TablePlot's case: a column key, no Variable/Axes involved -
-        # see "variable_or_axes keeps its name" in the implementation plan.
+        # `variable_or_axes` is a plain str column key for TablePlot, a
+        # Variable/Axes for every DataPlot family.
         self.n_dimensions = n_dimensions
         self.variable_or_axes = variable_or_axes
 
@@ -96,6 +99,8 @@ class PlotSpec:
 
 
 class AxisSpec(PlotSpec):
+    """Declares a single structural domain axis (e.g. a LinePlot's `x`)."""
+
     def __init__(
         self, variable_or_axes: Variable | Axes, log_scale: bool = False
     ) -> None:
@@ -106,6 +111,25 @@ class AxisSpec(PlotSpec):
 
 
 class VectorSpec(PlotSpec):
+    """Declares a 2D or 3D vector-valued role (e.g. a QuiverPlot's arrows),
+    with the display parameters that control how it's drawn.
+
+    Args:
+        variable_or_axes: The 2D or 3D Variable/Axes the vector components
+            come from.
+        scale: Multiplier applied to every vector's length.
+        normalize: If True, normalizes each vector to unit length before
+            applying `scale`.
+        cmap: Colormap for `color_by_magnitude`; falls back to the theme's
+            default if unset.
+        color_by_magnitude: If True, colors arrows by vector magnitude.
+        n_color_bins: Number of discrete magnitude bins when
+            `color_by_magnitude` is set.
+        subsample: Draws every `subsample`-th vector only, decimated after
+            `normalize`/`scale` are applied - a display decision about which
+            arrows to draw, not a change to what the field itself is.
+    """
+
     def __init__(
         self,
         variable_or_axes,
@@ -124,11 +148,6 @@ class VectorSpec(PlotSpec):
         self.cmap = cmap
         self.color_by_magnitude = color_by_magnitude
         self.n_color_bins = n_color_bins
-        # Naive every-n-th-arrow decimation - a pure display decision (which
-        # arrows to draw, not what the field is), so it stays a plot-local
-        # render parameter rather than node work (implementation plan,
-        # section 1's node-layer criterion only covers operations that
-        # produce a new dataset; this only changes what's shown).
         assert subsample >= 1, "subsample must be >= 1"
         self.subsample = subsample
 
@@ -195,18 +214,21 @@ class Scale:
 
 
 class ColorSpec(PlotSpec):
+    """Declares which Variable/Axes (DataPlot) or column (TablePlot) colors
+    a plot, with an optional colormap and shared Scale."""
+
     def __init__(
         self, variable_or_axes: Variable | str, cmap=None, scale: Scale | None = None
     ) -> None:
-        # variable_or_axes is a Variable for DataPlot families, a column key
-        # (str) for TablePlot ones - see PlotSpec's "variable_or_axes keeps
-        # its name" note in the implementation plan, section 4.
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
         self.cmap = cmap  # if not specified, plots resort to default cmap of theme
         self.scale = scale  # if set, shared with every other spec using the same Scale
 
 
 class ControlSpec(PlotSpec):
+    """Base class for a spec that reduces or partitions a plot's data by a
+    dimension's current state (SliderSpec, FixedSpec, FacetSpec, TimeSpec)."""
+
     def __init__(self, init_state, n_dimensions, variable_or_axes) -> None:
         super().__init__(n_dimensions=n_dimensions, variable_or_axes=variable_or_axes)
         self._state = init_state
@@ -221,15 +243,17 @@ class ControlSpec(PlotSpec):
 
     def resolve(self, values):
         """Fills in whatever was left None - bounds, facet values, initial
-        state - from `values`, the list of selectable states. Explicit values
-        set by the user are never overwritten. `values` is computed and
-        handed in by the owning family (DataPlot: range(data.shape[dim]);
-        TablePlot: sorted(unique(column.values))) - the spec itself no longer
-        touches data_config/data, so the same ControlSpec subclasses serve
+        state - from `values`, the list of selectable states for this
+        control's dimension. Explicit values set by the user are never
+        overwritten. `values` is computed by the owning Plot (a DataPlot
+        passes `range(data.shape[dim])`, a TablePlot passes the column's
+        sorted unique values), so the same ControlSpec subclasses work with
         every input family."""
 
 
 class SliderSpec(ControlSpec):
+    """An interactive slider over one dimension's states."""
+
     def __init__(
         self,
         variable_or_axes,
@@ -255,7 +279,8 @@ class SliderSpec(ControlSpec):
 
 
 class FixedSpec(ControlSpec):
-    # selects just one fixed index
+    """Selects one fixed index of a dimension - never changes state."""
+
     @property
     def state(self):
         return self._state
@@ -266,6 +291,9 @@ class FixedSpec(ControlSpec):
 
 
 class FacetSpec(ControlSpec):
+    """Splits a dimension into a grid of side-by-side subplot panels, one
+    per value, instead of an interactive control."""
+
     def __init__(
         self,
         variable_or_axes,
@@ -287,16 +315,11 @@ class FacetSpec(ControlSpec):
 class TimeSpec(ControlSpec):
     """Declares that a dimension/column advances over animation frames,
     rather than being an interactive widget (SliderSpec) or a grid of panels
-    (FacetSpec) - the third way a ControlSpec's declared state can be driven,
-    same "declared once, applied differently" split as every other control
-    (section 6).
+    (FacetSpec).
 
-    Backends that materialize frames up front (Plotly) build one frame per
-    value in `values`, plus play/pause + a frame slider - genuinely backend
-    vocabulary, so Figure.draw() delegates it to Renderer.animate() once the
-    normal two-pass draw is done, the same way Renderer.setup() owns
-    subplot-grid construction. Does not get an interactive Dash widget,
-    unlike SliderSpec - DashApplication only builds those for SliderSpec.
+    A renderer that materializes frames up front (e.g. Plotly) builds one
+    frame per value in `values`, plus play/pause controls and a frame
+    slider. Unlike SliderSpec, this does not get an interactive Dash widget.
     """
 
     def __init__(self, variable_or_axes, values=None, duration=500):

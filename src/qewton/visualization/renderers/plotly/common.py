@@ -3,12 +3,13 @@ import itertools
 from plotly import graph_objects as go
 import numpy as np
 
+from qewton.backends import resolve_backend
 from qewton.visualization.renderers.base import Artist
 
 
 def _mesh_edges(cells: np.ndarray) -> np.ndarray:
-    """Alle eindeutigen Kanten einer Zellliste (Dreiecke, Tetraeder, ...) -
-    analog zu Mesh._find_boundary_facets(), nur fuer Kanten statt Facetten."""
+    """All unique edges of a cell list (triangles, tetrahedra, ...), as
+    vertex index pairs."""
     n = cells.shape[1]
     edge_pairs = list(itertools.combinations(range(n), 2))
     edges = np.concatenate(
@@ -18,6 +19,7 @@ def _mesh_edges(cells: np.ndarray) -> np.ndarray:
 
 
 def _edge_trace(vertices: np.ndarray, cells: np.ndarray, color: str = "black") -> go.Scatter3d:
+    """A 3D line trace drawing every cell edge as a wireframe."""
     edges = _mesh_edges(cells)
     xs, ys, zs = [], [], []
     for a, b in edges:
@@ -36,6 +38,9 @@ def _edge_trace(vertices: np.ndarray, cells: np.ndarray, color: str = "black") -
 
 
 class PlotlyArtist(Artist):
+    """Base class for a Plotly Artist, tracking which trace in
+    `backend_figure.data` it owns."""
+
     def __init__(self, idx) -> None:
         super().__init__()
         self.figure_idx = idx
@@ -81,14 +86,41 @@ def _spatial_variable(geometry):
     return source.variable if source is not None else geometry.variable
 
 
+def _backend_to_numpy(tensor) -> np.ndarray:
+    """Converts via the tensor's own ComputingBackend where one is
+    recognized (torch/tensorflow/...), so this stays correct for whichever
+    backend produced the data instead of duck-typing detach()/cpu(). Plain
+    numpy arrays and anything else unrecognized (python lists, scalars) fall
+    back to np.asarray directly - resolve_backend only knows about tensor
+    types wrapped by an actual ComputingBackend."""
+    try:
+        backend = resolve_backend(tensor)
+    except ValueError:
+        return np.asarray(tensor)
+    return np.asarray(backend.to_numpy(tensor))
+
+
+def _detach_to_numpy(tensor) -> np.ndarray:
+    """Like _to_numpy, but preserves dtype - for cell/index arrays, which
+    must stay integer (used for indexing elsewhere, e.g. _mesh_edges), so
+    _to_numpy's float cast isn't an option. Handing Plotly a raw torch
+    tensor directly (skipping this) triggers the same numpy>=2.0 /
+    __array__ DeprecationWarning _to_numpy works around, just for `i`/`j`/`k`
+    cell indices instead of vertex coordinates."""
+    return _backend_to_numpy(tensor)
+
+
 def _to_numpy(tensor) -> np.ndarray:
     """Plotly ultimately needs plain arrays anyway, so this is a safe place
-    to detach from whichever backend (numpy/torch/...) produced the data."""
-    if hasattr(tensor, "detach"):
-        tensor = tensor.detach()
-    if hasattr(tensor, "cpu"):
-        tensor = tensor.cpu()
-    return np.array(tensor, dtype=float, copy=True)
+    to detach from whichever backend (numpy/torch/...) produced the data.
+
+    np.array(tensor, copy=True) triggers a numpy>=2.0 DeprecationWarning for
+    a torch tensor specifically - torch's __array__ doesn't yet implement
+    numpy's copy-keyword protocol, so numpy warns and falls back. Splitting
+    into np.asarray() (the actual conversion) + .astype(copy=True) (the
+    actual copy) sidesteps that entirely, with the same result.
+    """
+    return _backend_to_numpy(tensor).astype(float, copy=True)
 
 
 def _apply_scale(scale, min_key: str = "cmin", max_key: str = "cmax") -> dict:

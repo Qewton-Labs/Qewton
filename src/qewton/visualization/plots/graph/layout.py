@@ -20,9 +20,9 @@ BARYCENTER_PASSES = 4
 
 class GraphLayout:
     """Computes node/edge positions for a Graph - the layout counterpart to
-    evaluate() (implementation plan, section 10, item 7): renderer-agnostic,
-    and reusable unchanged by a future non-Plotly renderer since it makes no
-    drawing decisions at all.
+    `evaluate()` for other plot families: renderer-agnostic, and reusable
+    unchanged by a future non-Plotly renderer since it makes no drawing
+    decisions at all.
 
     A pure layered-DAG layout: rank = longest path from a source (computed
     in one pass over Graph.sorted_nodes's topological order), then a few
@@ -369,13 +369,11 @@ def _place_cluster(
     # The top-level column allocator (_place_level, via _measure_node_width)
     # already reserved a column of exactly this composite's *measured*
     # total width, centered at x - so the cluster must actually be drawn
-    # centered at x too, or it drifts into whatever's in the next column
-    # (found the hard way: an earlier version anchored the input side at x
-    # and let everything else grow rightward from there, which matched
-    # neither the measured width's center nor its extent). Pre-measuring the
-    # inner content's width lets the cluster boundary be placed symmetrically
-    # around x up front, in one pass - no separate reconciliation needed
-    # after the real (possibly nested) recursive placement runs.
+    # centered at x too, or it drifts into whatever's in the next column.
+    # Pre-measuring the inner content's width lets the cluster boundary be
+    # placed symmetrically around x up front, in one pass - no separate
+    # reconciliation needed after the real (possibly nested) recursive
+    # placement runs.
     gap_in = CLUSTER_GAP if node.input_ports else 0.0
     gap_out = CLUSTER_GAP if node.output_ports else 0.0
     predicted_inner_width = _measure_level_width(inner_graph, remaining_depth - 1)

@@ -4,18 +4,18 @@ from qewton.visualization.renderers.plotly.common import PlotlyArtist
 
 
 class NodeLinkArtist(PlotlyArtist):
-    """Nodes and edges of a computation Graph - deliberately not a single
-    Plotly primitive (implementation plan, section 2's naming note): node
-    and cluster rectangles are layout.shapes (cheap regardless of graph
-    size, but shapes alone can't hover or show a legend); labels are
-    layout.annotations; and three go.Scatter traces carry everything
-    interactive - one invisible
+    """Draws a GraphPlot's node-link layout.
+
+    Deliberately not a single Plotly primitive: node and cluster rectangles
+    are `layout.shapes` (cheap regardless of graph size, but shapes alone
+    can't hover or show a legend); labels are `layout.annotations`; and
+    three go.Scatter traces carry everything interactive - one invisible
     marker per node for hover, one small circular marker per port (at the
     exact anchor edges connect to, so a port's position on the node border
     is never just implied by where a line happens to end), and one combined
     "lines+markers" trace for every edge (the same (start, tip, None)-
-    segment + rotated-arrowhead-marker pattern ArrowField2DArtist already
-    uses for 2D vectors).
+    segment + rotated-arrowhead-marker pattern ArrowField2DArtist uses for
+    2D vectors).
 
     Shape/annotation count scales with the graph; trace count never does
     (always exactly 3), which is what keeps a large graph fast to draw.

@@ -3,18 +3,17 @@ from qewton.visualization.plots.graph.layout import GraphLayout
 
 
 class GraphPlot(Plot):
-    """Visualizes a computation Graph as a node-link diagram - its own input
-    family (implementation plan, section 5): takes a Graph, not data mapped
-    to roles, so it has no specs and no controls at all. A computation graph
-    isn't a value source mapped to a role - trying to force one would repeat
-    the mistake PlotParameter/ParameterSpec was discarded for (section 11).
+    """Visualizes a computation Graph as a node-link diagram.
 
-    `depth` controls how many levels of composite nodes (FCN, and any other
-    GraphNode subclass - Linear included, since it wraps its own weight/bias
-    parameters) get expanded inline as a labeled cluster, rather than drawn
-    as a single collapsed box. 0 (default) collapses every composite,
-    matching how a graph is normally read at a glance; each level deeper
-    reveals one more layer of internal structure.
+    Its own input family: it takes a Graph directly, not data mapped to
+    roles via specs, so it has no `color`/`x`/`y` and accepts no controls.
+
+    `depth` controls how many levels of composite nodes (e.g. an FCN, or any
+    other GraphNode subclass - including Linear, which wraps its own
+    weight/bias parameters) are expanded inline as a labeled cluster, rather
+    than drawn as a single collapsed box. 0 (default) collapses every
+    composite, matching how a graph is normally read at a glance; each level
+    deeper reveals one more layer of internal structure.
     """
 
     def __init__(self, graph, depth: int = 0, title=None, theme=None):

@@ -2,7 +2,13 @@ from plotly import graph_objects as go
 import numpy as np
 
 from qewton.visualization.plots.base import axis_names_from_variable
-from qewton.visualization.renderers.plotly.common import PlotlyArtist, _apply_scale, _edge_trace
+from qewton.visualization.renderers.plotly.common import (
+    _detach_to_numpy,
+    PlotlyArtist,
+    _apply_scale,
+    _edge_trace,
+    _to_numpy,
+)
 
 
 class SurfaceMeshArtist(PlotlyArtist):
@@ -19,7 +25,8 @@ class SurfaceMeshArtist(PlotlyArtist):
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
-        vertices, cells, color = result.vertices, result.cells, result.color
+        vertices, cells = _to_numpy(result.vertices), _detach_to_numpy(result.cells)
+        color = _to_numpy(result.color) if result.color is not None else None
 
         spec = getattr(plot, "color", None)
         cmap = (spec.cmap if spec is not None and spec.cmap else None) or plot.theme.default_cmap
@@ -64,7 +71,8 @@ class SurfaceMeshArtist(PlotlyArtist):
 
     def update(self, backend_figure, plot):
         result = plot.evaluate()
-        vertices, color = result.vertices, result.color
+        vertices = _to_numpy(result.vertices)
+        color = _to_numpy(result.color) if result.color is not None else None
         trace = backend_figure.data[self.figure_idx]
         # z may change when a control moves (MeshSurfacePlot), x/y never do
         trace.z = vertices[:, 2]
@@ -74,7 +82,7 @@ class SurfaceMeshArtist(PlotlyArtist):
                 trace.cmin, trace.cmax = plot.color.scale.range
         if self.edges_idx is not None:
             edge_trace = backend_figure.data[self.edges_idx]
-            edge_trace.z = _edge_trace(vertices, plot.render_cells()).z
+            edge_trace.z = _edge_trace(vertices, _detach_to_numpy(plot.render_cells())).z
 
     def remove(self, backend_figure):
         pass
@@ -114,7 +122,8 @@ class FilledMeshArtist(PlotlyArtist):
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
-        vertices, cells, color = result.vertices, result.cells, result.color
+        vertices, cells = _to_numpy(result.vertices), _detach_to_numpy(result.cells)
+        color = _to_numpy(result.color) if result.color is not None else None
         zeros = np.zeros(len(vertices))
         cmap = (plot.color.cmap if plot.color.cmap else None) or plot.theme.default_cmap
 
@@ -166,7 +175,8 @@ class FilledMeshArtist(PlotlyArtist):
         return cls(mesh_idx, edges_idx)
 
     def update(self, backend_figure, plot):
-        color = plot.evaluate().color
+        result = plot.evaluate()
+        color = _to_numpy(result.color) if result.color is not None else None
         trace = backend_figure.data[self.figure_idx]
         trace.intensity = color
         if plot.color.scale is not None:

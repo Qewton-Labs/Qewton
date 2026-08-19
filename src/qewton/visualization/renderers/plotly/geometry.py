@@ -2,10 +2,18 @@ from plotly import graph_objects as go
 import numpy as np
 
 from qewton.visualization.plots.base import axis_names_from_variable
-from qewton.visualization.renderers.plotly.common import PlotlyArtist, _edge_trace, _mesh_edges
+from qewton.visualization.renderers.plotly.common import (
+    _detach_to_numpy,
+    PlotlyArtist,
+    _edge_trace,
+    _mesh_edges,
+    _to_numpy,
+)
 
 
 class GeometryArtist(PlotlyArtist):
+    """Draws a 3D GeometryPlot as an uncolored surface mesh."""
+
     def __init__(self, mesh_idx, edges_idx=None):
         super().__init__(mesh_idx)
         self.edges_idx = edges_idx
@@ -13,7 +21,7 @@ class GeometryArtist(PlotlyArtist):
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
-        vertices, cells = result.vertices, result.cells
+        vertices, cells = _to_numpy(result.vertices), _detach_to_numpy(result.cells)
         color = plot.theme.geometry_color
 
         mesh_idx = len(backend_figure.data)
@@ -57,6 +65,9 @@ class GeometryArtist(PlotlyArtist):
 
 
 class GeometryArtist2D(PlotlyArtist):
+    """Draws a 2D GeometryPlot as a filled triangulation with its boundary
+    (and, optionally, interior edges) outlined on top."""
+
     def __init__(self, fill_idx, boundary_idx=None, interior_idx=None):
         super().__init__(fill_idx)
         self.boundary_idx = boundary_idx
@@ -110,11 +121,14 @@ class GeometryArtist2D(PlotlyArtist):
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         mesh = plot.interior_mesh or plot.boundary_mesh
+        vertices, cells = _to_numpy(mesh.vertices), _detach_to_numpy(mesh.cells)
+        boundary_vertices = _to_numpy(plot.boundary_mesh.vertices)
+        boundary_cells = _detach_to_numpy(plot.boundary_mesh.cells)
         color = plot.theme.geometry_color
 
         fill_idx = len(backend_figure.data)
         backend_figure.add_trace(
-            cls._triangle_fill_trace(mesh.vertices, mesh.cells, color), row=row, col=col
+            cls._triangle_fill_trace(vertices, cells, color), row=row, col=col
         )
 
         interior_idx = None
@@ -122,8 +136,8 @@ class GeometryArtist2D(PlotlyArtist):
             interior_idx = len(backend_figure.data)
             backend_figure.add_trace(
                 cls._edge_trace_2d(
-                    mesh.vertices,
-                    _mesh_edges(mesh.cells),
+                    vertices,
+                    _mesh_edges(cells),
                     color=plot.theme.line_color,
                     width=0.5,
                 ),
@@ -135,7 +149,7 @@ class GeometryArtist2D(PlotlyArtist):
         boundary_idx = len(backend_figure.data)
         backend_figure.add_trace(
             cls._edge_trace_2d(
-                plot.boundary_mesh.vertices, plot.boundary_mesh.cells, color=plot.theme.line_color
+                boundary_vertices, boundary_cells, color=plot.theme.line_color
             ),
             row=row,
             col=col,

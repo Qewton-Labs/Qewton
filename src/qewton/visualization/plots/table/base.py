@@ -6,16 +6,14 @@ from qewton.visualization.plots.spec import ControlSpec
 
 
 class TablePlot(Plot):
-    """A Plot whose values come from named columns rather than `data` +
-    `DataConfiguration` - the input family for tuner/log analysis (see the
-    implementation plan, section 1, "The input-family boundary").
+    """Base class for a Plot whose values come from named columns rather
+    than `data` + `DataConfiguration` - the input family for tabular data
+    such as run logs and hyperparameter tuning results.
 
-    This data was never graph-tensor data: it comes from run logs, is a flat
-    table of named columns, some numeric and some categorical, with no
-    geometry and no composed feature vectors. Forcing it through
-    `DataConfiguration` was tried and discarded (plan, section 11) - it loses
-    categorical labels before the plot ever sees them and describes log data
-    as if it had tensor axis semantics it doesn't have.
+    A flat table of named columns, some numeric and some categorical, with
+    no geometry and no composed feature vectors - `DataConfiguration`
+    describes tensor axis semantics this kind of data doesn't have, and
+    would lose categorical labels before the plot ever sees them.
     """
 
     def __init__(

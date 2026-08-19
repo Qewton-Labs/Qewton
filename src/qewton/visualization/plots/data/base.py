@@ -7,22 +7,23 @@ from qewton.visualization.plots.spec import ControlSpec, PlotSpec
 
 
 class CoordTransform:
-    """transform points AFTER evaluate()"""
+    """Transforms a plot's evaluated point positions before they're drawn."""
 
     def apply(self, vertices: np.ndarray) -> np.ndarray:
         raise NotImplementedError
 
 
 class IdentityCoord(CoordTransform):
+    """A CoordTransform that leaves point positions unchanged."""
+
     def apply(self, vertices: np.ndarray) -> np.ndarray:
         return vertices
 
 
 class DataPlot(Plot):
-    """A Plot whose values come from `data` + `DataConfiguration` - the
-    original, still by far the most common, input family. Grid, mesh, curve
-    and scatter families all reparent here; nothing in this class was ever
-    meaningful without a config."""
+    """Base class for a Plot whose values come from `data` + a
+    `DataConfiguration` - the most common input family, underlying the grid,
+    mesh, curve and scatter plot families."""
 
     def __init__(
         self,
@@ -71,10 +72,17 @@ class DataPlot(Plot):
         return resolved
 
     def apply_controls(self):
-        """Wendet Fixed/Slider/Facet-States an. Gibt zusaetzlich eine index_map
-        zurueck, um andere, gegen das URSPRUENGLICHE `data` berechnete reale
-        Dimensionsindizes (z.B. aus PlotSpec.get_slice) auf ihre Position im
-        bereits reduzierten Array umzurechnen."""
+        """Slices `self.data` down to the current Fixed/Slider/Facet control
+        states, one dimension removed per control.
+
+        Returns:
+            tuple: `(sliced, index_map, slice_map)` - the reduced array,
+                plus two helpers to translate positions computed against the
+                original (unreduced) `self.data`/`self.data_config` into
+                positions in `sliced`: `index_map(original_idx)` for a
+                single dimension index, `slice_map(slc)` for a slice tuple
+                (e.g. from `DataConfiguration.get_variable_slice`).
+        """
         resolved = self._resolve_controls()
 
         sliced = self.data[:]
@@ -90,14 +98,13 @@ class DataPlot(Plot):
             return original_idx - shift
 
         def slice_map(slc: tuple) -> tuple:
-            """Rechnet ein gegen das URSPRUENGLICHE `data_config` berechnetes
-            Slice-Tupel (ein Eintrag pro urspruenglicher Dimension, z.B. aus
-            get_variable_slice) auf die bereits durch die Controls reduzierten
-            Dimensionen von `sliced` um, indem die von den Controls
-            konsumierten Eintraege entfernt werden."""
+            """Maps a slice tuple computed against the original
+            `data_config` (one entry per original dimension, e.g. from
+            `get_variable_slice`) onto `sliced`'s already-reduced
+            dimensions, by dropping the entries the controls consumed."""
             if Ellipsis in slc:
                 raise NotImplementedError(
-                    "slice_map unterstuetzt noch keine Slices mit Ellipsis."
+                    "slice_map does not yet support slices containing Ellipsis."
                 )
             return tuple(s for i, s in enumerate(slc) if i not in removed_indices)
 

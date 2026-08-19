@@ -9,13 +9,16 @@ from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec, Ve
 
 
 class StructuredGridPlot(DataPlot):
-    """Heatmap, Surface, Contour - using meshgrids"""
+    """Base class for plots over a regular (x, y) meshgrid - heatmaps,
+    surfaces, images. `x`/`y` each select one structural dimension of
+    `data`; an optional `z`/`color` supplies the values drawn at each grid
+    point."""
 
     def __init__(
         self,
         data,
         data_config: DataConfiguration,
-        x: AxisSpec | Variable | Axes,  # TODO: in future we could also allow for slices
+        x: AxisSpec | Variable | Axes,
         y: AxisSpec | Variable | Axes,
         z: AxisSpec | Variable | Axes | None = None,
         color: ColorSpec | Variable | None = None,
@@ -49,9 +52,9 @@ class StructuredGridPlot(DataPlot):
 
         if x_idx == y_idx:
             raise ValueError(
-                f"{type(self).__name__}: x ({self.x.variable_or_axes}) und "
+                f"{type(self).__name__}: x ({self.x.variable_or_axes}) and "
                 f"y ({self.y.variable_or_axes}) refer to the same dimension. "
-                "You might use an PointPlot or MeshPlot instead."
+                "You might use a PointPlot or MeshPlot instead."
             )
 
         x_dim = index_map(x_idx)
@@ -76,18 +79,17 @@ class StructuredGridPlot(DataPlot):
         if color is not None:
             color = np.moveaxis(color, [y_dim, x_dim], [0, 1])
 
-        # could be moved to resolve also
-        # self.x.coordinates = self._coordinates_for(self.x)
-        # self.y.coordinates = self._coordinates_for(self.y)
         return GridResult(values=oriented, color=color)
 
 
 class ImagePlot(StructuredGridPlot):
+    """A 2D array drawn as an image, with `x`/`y` as pixel rows/columns."""
+
     def __init__(
         self,
         data,
         data_config: DataConfiguration,
-        x: AxisSpec | Variable | Axes,  # TODO: in future we could also allow for slices
+        x: AxisSpec | Variable | Axes,
         y: AxisSpec | Variable | Axes,
         controls: list[ControlSpec] | None = None,
     ):
@@ -98,6 +100,9 @@ class ImagePlot(StructuredGridPlot):
 
 
 class SurfacePlot(StructuredGridPlot):
+    """A 2D array drawn as a 3D surface, height given by `z` (or the data
+    itself if `z` is omitted) and optionally colored by `color`."""
+
     @property
     def embedding_dim(self) -> int:
         return 3
@@ -107,11 +112,13 @@ class SurfacePlot(StructuredGridPlot):
 
 
 class HeatmapPlot(StructuredGridPlot):
+    """A 2D array drawn as a flat, colored grid (a heatmap)."""
+
     def __init__(
         self,
         data,
         data_config: DataConfiguration,
-        x: AxisSpec | Variable | Axes,  # TODO: in future we could also allow for slices
+        x: AxisSpec | Variable | Axes,
         y: AxisSpec | Variable | Axes,
         color: ColorSpec | Variable | None = None,
         controls: list[ControlSpec] | None = None,
@@ -123,26 +130,23 @@ class HeatmapPlot(StructuredGridPlot):
 
 
 class EmbeddedGridPlot(DataPlot):
-    """Structured grid embedded in 3D space, colored by a scalar field.
+    """A structured grid embedded in 3D space, colored by a scalar field.
 
     Unlike HeatmapPlot, coordinates are not axis indices but explicit 3D
-    points from geometry.discretization_points, so the grid is drawn at its
-    true position and orientation in space. Not slice-specific - the same
-    plot draws any parametric surface grid (sphere parametrization, curved
-    shell), static or control-dependent.
+    points from `geometry.discretization_points`, so the grid is drawn at
+    its true position and orientation in space - any parametric surface
+    grid (e.g. a sphere parametrization or a curved shell), static or
+    control-dependent.
 
     The geometry may have more than two dimensions: controls reduce it, so a
-    (k, N1, N2) stack of slices with a SliderSpec/FixedSpec on the first
-    dimension leaves a (N1, N2) surface to draw - both the color data and the
-    geometry's own coordinates are reduced the same way (reduce_coordinates()),
-    so the drawn position moves correctly with control state instead of
-    staying fixed while only the color changes.
+    `(k, N1, N2)` stack of slices with a SliderSpec/FixedSpec on the first
+    dimension leaves an `(N1, N2)` surface to draw. Both the color data and
+    the geometry's own coordinates are reduced the same way, so the drawn
+    position moves correctly with control state instead of staying fixed
+    while only the color changes.
 
-    Structurally the grid counterpart of MeshFieldPlot: positions come
-    entirely from the geometry, so color is the only spec. There is no x/y
-    role to assign (the grid dimensions are fixed by the geometry, not chosen
-    by the user), so this extends Plot directly rather than
-    StructuredGridPlot, whose x/y roles this plot has no use for.
+    Positions come entirely from the geometry, so `color` is the only spec -
+    there is no x/y role for the user to assign, unlike StructuredGridPlot.
     """
 
     def __init__(
@@ -220,20 +224,19 @@ class EmbeddedGridPlot(DataPlot):
 
 
 class QuiverPlot(DataPlot):
-    """Vector field on a structured 3D grid, drawn as arrows - the grid
+    """A vector field on a structured 3D grid, drawn as arrows - the grid
     counterpart to MeshVectorPlot (mesh vertices) and EmbeddedGridPlot
-    (scalar color on a grid). Typical source: a mesh field resampled onto a
-    VolumeGridGeometry via MeshInterpolationNode (visualization plan, roadmap
-    item 5) - but like EmbeddedGridPlot, not resampling-specific, it draws
-    any structured grid whose coordinates are explicit 3D points.
+    (scalar color on a grid). Draws any structured grid whose coordinates
+    are explicit 3D points, e.g. a mesh field resampled onto a
+    VolumeGridGeometry via a MeshInterpolationNode.
 
-    Positions come from geometry.discretization_points via
-    reduce_coordinates(), the same mechanism EmbeddedGridPlot uses, so a
-    control on an extra grid dimension moves the drawn arrow positions
-    correctly, not just the vectors.
+    Positions come from `geometry.discretization_points`, reduced by the
+    same mechanism EmbeddedGridPlot uses, so a control on an extra grid
+    dimension moves the drawn arrow positions correctly, not just the
+    vectors.
 
-    Points a MeshInterpolationNode's point_filter excluded (outside the
-    source mesh) come back NaN in every vector component - those grid points
+    Grid points a MeshInterpolationNode's `point_filter` excluded (outside
+    the source mesh) come back NaN in every vector component - those points
     are dropped entirely rather than drawn as degenerate zero-length arrows.
     """
 

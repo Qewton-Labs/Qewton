@@ -78,3 +78,7 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
     @classmethod
     def cast_dtype(cls, data: np.ndarray, dtype):
         return data.astype(cls.dtypes.get(dtype, dtype))
+
+    @classmethod
+    def to_numpy(cls, data: np.ndarray) -> np.ndarray:
+        return data

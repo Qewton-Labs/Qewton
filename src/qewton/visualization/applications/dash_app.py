@@ -6,8 +6,14 @@ from qewton.visualization.plots.spec import SliderSpec
 
 
 class DashApplication(RenderApplication):
+    """Serves a Figure as a Dash app, with one slider widget per SliderSpec
+    control - other control types (FixedSpec, FacetSpec, TimeSpec) are
+    non-interactive and get no widget."""
+
     @staticmethod
     def create(figure):
+        """Builds a Dash app displaying `figure`, with a callback that
+        re-draws it whenever a slider's value changes."""
         app = Dash(__name__)
         app.title = figure.title
 

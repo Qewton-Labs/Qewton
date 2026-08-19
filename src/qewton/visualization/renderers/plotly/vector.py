@@ -15,9 +15,7 @@ class ArrowField2DArtist(PlotlyArtist):
     Per-segment line color isn't supported by a single go.Scatter trace, so
     color_by_magnitude colors only the tip markers, continuously; the shafts
     stay a flat theme color. VectorSpec.n_color_bins (discrete per-arrow
-    coloring) is deliberately not wired up here - it would need one trace per
-    bin, a bigger structural change than the arrows-on-a-plot need that
-    motivated building this artist in the first place.
+    coloring) is not wired up here - it would need one trace per bin.
     """
 
     @classmethod

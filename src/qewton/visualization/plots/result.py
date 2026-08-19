@@ -7,8 +7,8 @@ import numpy as np
 class GridResult:
     """Result of a StructuredGridPlot family evaluate().
 
-    x/y/z are reserved for real coordinate labels (see the "Tick coordinates"
-    open item) - not populated yet, so artists still fall back to indices.
+    x/y/z are reserved for real coordinate values; not populated yet, so
+    artists currently fall back to plain indices.
     """
 
     values: np.ndarray
@@ -40,8 +40,7 @@ class VectorResult:
 class CurveResult:
     """Result of LinePlot.evaluate() - one curve's x/y values.
 
-    x falls back to plain indices until "Tick coordinates" lands, same as
-    GridResult.x/y.
+    x currently falls back to plain sample indices, same as GridResult.x/y.
     """
 
     x: np.ndarray
@@ -93,9 +92,7 @@ class Column:
 
 @dataclass
 class TableResult:
-    """Result of a TablePlot family evaluate() - ParallelCoordinatesPlot,
-    ScatterMatrixPlot and TableScatterPlot all share this, same reasoning as
-    one MeshResult for three mesh plots."""
+    """Result of a TablePlot family evaluate(), e.g. ParallelCoordinatesPlot."""
 
     columns: dict[str, Column]
     color: np.ndarray | None = None
@@ -155,6 +152,8 @@ class ClusterBox:
 
 @dataclass
 class EdgeLayout:
+    """One drawn edge between two ports, as a polyline."""
+
     points: list[tuple[float, float]]
     label: str = ""
 
@@ -162,24 +161,23 @@ class EdgeLayout:
 @dataclass
 class GraphLayoutResult:
     """Result of GraphLayout.compute() - the layout counterpart to
-    evaluate() for GraphPlot (implementation plan, section 10, item 7):
-    renderer-agnostic node/edge/cluster geometry, with no drawing decisions
-    made yet. Flat lists, not a nested tree: an expanded composite's inner
-    nodes/edges are already positioned in the outer frame by
-    GraphLayout.compute(), so NodeLinkArtist never needs to recurse -
-    `clusters` is only the outline rectangles drawn around expanded
-    composites' contents, not a container of their nodes.
+    `evaluate()` for GraphPlot: renderer-agnostic node/edge/cluster
+    geometry, with no drawing decisions made yet.
 
-    `ports` is every port anywhere - both the ones already reachable via
+    Flat lists, not a nested tree: an expanded composite's inner nodes/edges
+    are already positioned in the outer frame by `GraphLayout.compute()`, so
+    the artist never needs to recurse - `clusters` holds only the outline
+    rectangles drawn around expanded composites' contents, not a container
+    of their nodes.
+
+    `ports` lists every port - both those already reachable via
     `nodes[i].input_ports/output_ports` (a leaf node's own) and a
-    composite's own boundary ports, which have no owning NodeLayout at all
-    once expanded (they live on a ClusterBox's edge instead). A single flat
-    list rather than leaving the artist to reconstruct it from two
-    different places every draw.
+    composite's own boundary ports, which have no owning NodeLayout once
+    expanded (they live on a ClusterBox's edge instead).
 
-    No `color` field, unlike every other *Result: GraphPlot has no ColorSpec
-    at all (no specs of any kind, section 5) - node color comes from `kind`
-    via the theme at draw time, not from evaluate().
+    Has no `color` field, unlike every other `*Result`: GraphPlot has no
+    ColorSpec at all - node color comes from `kind` via the theme at draw
+    time, not from `evaluate()`.
     """
 
     nodes: list[NodeLayout]

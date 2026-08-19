@@ -8,20 +8,15 @@ from qewton.visualization.plots.table.base import TablePlot
 class ParallelCoordinatesPlot(TablePlot):
     """One vertical axis per named column, one polyline per row - the
     standard tool for inspecting hyperparameter tuning runs (which parameter
-    settings produced which metric values). Replaces
-    `TuningAnalyzer.plot_parallel_coordinates` (plots/tuning/analyzer.py,
-    currently disabled).
+    settings produced which metric values).
 
     `axes` names which columns to draw, in order - typically the tunable
     parameters followed by the metrics. `color` names one more column
     (usually a metric) to color lines by; like every other family, it trains
     a shared Scale if one is attached.
 
-    Deliberately not on this plot: `top_k` selection and minimize/maximize
-    "objective" semantics from the old analyzer. Selecting a subset of rows
-    produces a different dataset, so per the plan's node-layer criterion
-    (section 1) it belongs upstream of construction - the caller pre-filters
-    `columns` - which keeps this plot as reusable as ScatterPlot.
+    Row selection (e.g. keeping only the top-k runs by some metric) is not
+    part of this plot - filter `columns` before constructing it.
     """
 
     def __init__(

@@ -11,12 +11,10 @@ from qewton.visualization.plots.spec import AxisSpec, ControlSpec, VectorSpec
 class LinePlot(DataPlot):
     """A single curve: one value plotted over one structural domain axis.
 
-    Three fields over a 1D geometry are three separate LinePlots, not one
-    plot with three lines - each evaluate() stays unambiguous about what it
-    returns, same reasoning as "no universal evaluate()" for the rest of the
-    hierarchy. Multiple LinePlots in one Figure share axis ranges for free
-    (see the "Axis ranges" note in the Facets section of the plan) - no
-    special handling needed here.
+    To plot several fields at once, use one LinePlot per field rather than
+    a single multi-line plot - each keeps its own `evaluate()` unambiguous
+    about what it returns. Multiple LinePlots placed in the same Figure
+    automatically share axis ranges.
     """
 
     def __init__(
@@ -48,7 +46,7 @@ class LinePlot(DataPlot):
             )
         y_values = y_values.reshape(-1)
 
-        # x falls back to plain indices until "Tick coordinates" lands.
+        # x is the plain sample index; explicit tick coordinates aren't supported yet.
         x_values = np.arange(y_values.shape[0])
         return CurveResult(x=x_values, y=y_values)
 

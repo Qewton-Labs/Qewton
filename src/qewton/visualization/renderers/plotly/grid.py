@@ -11,6 +11,8 @@ from qewton.visualization.renderers.plotly.common import (
 
 
 class ImageArtist(PlotlyArtist):
+    """Draws an ImagePlot as a raster image."""
+
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         image = plot.evaluate().values
@@ -44,6 +46,7 @@ class ImageArtist(PlotlyArtist):
 
 
 class HeatmapArtist(PlotlyArtist):
+    """Draws a HeatmapPlot as a flat, colored grid."""
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
@@ -96,6 +99,8 @@ class HeatmapArtist(PlotlyArtist):
 
 
 class SurfaceArtist(PlotlyArtist):
+    """Draws a SurfacePlot as a 3D height field over an index grid."""
+
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         cmap = plot.theme.default_cmap

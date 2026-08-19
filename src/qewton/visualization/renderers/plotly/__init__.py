@@ -261,3 +261,17 @@ class PlotlyRenderer(Renderer):
             duration=int(1000 / fps),
             loop=0,
         )
+
+    @staticmethod
+    def save_image(backend_figure, path, format, **kwargs):
+        """Rasterizes the figure's current state via Plotly's optional
+        'kaleido' static-image backend - same lazy-import convention as
+        save_gif()."""
+        try:
+            import kaleido  # noqa: F401 - presence check
+        except ImportError as e:
+            raise ImportError(
+                "save_png()/save_svg() require the optional 'kaleido' package. "
+                "Install via: pip install kaleido"
+            ) from e
+        backend_figure.write_image(path, format=format, **kwargs)

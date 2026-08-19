@@ -10,16 +10,13 @@ from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec
 
 class ScatterPlot(DataPlot):
     """Points at (x, y), one per sample, optionally colored by a third
-    variable. A third family alongside grids (StructuredGridPlot) and meshes
-    (MeshPlot): no GeometryAxes at all, no cells, no coordinates - a good test
-    that Plot really works without a geometry.
+    variable. Unlike grid or mesh plots, there's no geometry, no cells, no
+    explicit coordinates - just data.
 
-    Unlike LinePlot, x and y are both VALUE roles (channel slices via
-    get_variable_slice), not one structural domain axis and one value -
-    there's no single "domain" a scatter plot is indexed along, just an
-    implicit samples axis that x/y/color are all extracted over and
-    flattened. Whatever's left after apply_controls() and slicing out x/y/
-    color's own channels is that samples axis (or axes, flattened together).
+    Unlike LinePlot, `x` and `y` are both value roles (channel slices), not
+    one structural domain axis and one value - there's no single "domain" a
+    scatter plot is indexed along, just an implicit samples axis that x/y/
+    color are all extracted over and flattened.
     """
 
     def __init__(
@@ -78,19 +75,11 @@ class ScatterPlot(DataPlot):
 
 
 class BarPlot(LinePlot):
-    """Bars at (x, height) - the exact same data shape as LinePlot (one value
-    over one structural domain axis), just drawn as bars instead of a line.
-    No new evaluate() needed: HeatmapPlot/SurfacePlot already establish the
-    precedent of subclassing a shared base and overriding only
-    create_artist() when two plot types agree on what data they need and
-    differ only in the mark.
+    """Bars at (x, height) - the same data shape as LinePlot (one value over
+    one structural domain axis), drawn as bars instead of a line.
 
-    The plot side of histograms: takes already-binned data (bin positions +
-    counts), not raw samples - turning samples into bins is node work (see
-    the visualization plan, roadmap item 4's "Statistical preprocessing"
-    note). A future `HistogramPlot.from_samples(data, config, bins=20)`
-    convenience constructor would build that node and hand its output to
-    BarPlot, once the node exists; BarPlot itself needs no changes for that.
+    Takes already-binned data (bin positions and counts), not raw samples -
+    turning samples into bins is a separate preprocessing step.
     """
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
