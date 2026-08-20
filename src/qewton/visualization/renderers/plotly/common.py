@@ -18,7 +18,9 @@ def _mesh_edges(cells: np.ndarray) -> np.ndarray:
     return np.unique(edges, axis=0)
 
 
-def _edge_trace(vertices: np.ndarray, cells: np.ndarray, color: str = "black") -> go.Scatter3d:
+def _edge_trace(
+    vertices: np.ndarray, cells: np.ndarray, color: str = "black", opacity: float = 1.0
+) -> go.Scatter3d:
     """A 3D line trace drawing every cell edge as a wireframe."""
     edges = _mesh_edges(cells)
     xs, ys, zs = [], [], []
@@ -32,6 +34,7 @@ def _edge_trace(vertices: np.ndarray, cells: np.ndarray, color: str = "black") -
         z=zs,
         mode="lines",
         line=dict(color=color, width=1),
+        opacity=opacity,
         hoverinfo="skip",
         showlegend=False,
     )
@@ -140,3 +143,14 @@ def _apply_scale(scale, min_key: str = "cmin", max_key: str = "cmax") -> dict:
     if rng is not None:
         kwargs[min_key], kwargs[max_key] = rng
     return kwargs
+
+
+def _cycled_color(plot) -> str:
+    """The theme's palette color for `plot`'s own position among every plot
+    in its Figure - used by artists whose family has no other data-driven
+    coloring (a fixed line, a set of bars, ...), so multiple such plots
+    overlaid in one Figure read as visually distinct traces instead of a
+    fixed, unthemed color repeated for each. Falls back to the first
+    palette color if `plot` was never added to a Figure (color_index is
+    only ever set by Figure.add_plot())."""
+    return plot.theme.get_color(plot.color_index if plot.color_index is not None else 0)

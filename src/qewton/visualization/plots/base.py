@@ -49,6 +49,13 @@ class Plot:
         self._title = title
         self._theme = theme
         self.controls = controls or []
+        #: This plot's position among every plot added to its Figure, in
+        #: add order - set once by Figure.add_plot(). None until then (or
+        #: for a plot never added to a Figure). Artists for families with
+        #: no other data-driven coloring (LineArtist, ScatterArtist without
+        #: a ColorSpec, ...) use it via `theme.get_color(index)` so multiple
+        #: overlaid traces get visually distinct colors.
+        self.color_index: int | None = None
 
     @property
     def theme(self):
@@ -58,9 +65,6 @@ class Plot:
     def theme(self, value):
         if self._theme is None:
             self._theme = value
-
-    def preprocess(self, data):
-        return data
 
     @property
     def title(self):

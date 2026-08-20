@@ -5,16 +5,29 @@ import numpy as np
 
 @dataclass
 class GridResult:
-    """Result of a StructuredGridPlot family evaluate().
+    """Result of a StructuredGridPlot family evaluate() (Heatmap/Surface/
+    Image). Positions are implicit indices, not explicit coordinates -
+    axis titles come from the plot's own AxisSpec instead."""
 
-    x/y/z are reserved for real coordinate values; not populated yet, so
-    artists currently fall back to plain indices.
+    values: np.ndarray
+    color: np.ndarray | None = None
+
+
+@dataclass
+class ParametricGridResult:
+    """Result of EmbeddedGridPlot.evaluate() - a structured grid drawn at
+    explicit 3D positions (from a geometry's `discretization_points`), not
+    implicit indices. A separate type from GridResult rather than the same
+    one with optional x/y/z: EmbeddedGridPlot has no x/y AxisSpec role at
+    all (only `color`), so those fields would be permanently unused dead
+    weight from GridResult's side of the split - a genuinely different
+    positioning model, not just sometimes-missing data.
     """
 
     values: np.ndarray
-    x: np.ndarray | None = None
-    y: np.ndarray | None = None
-    z: np.ndarray | None = None
+    x: np.ndarray
+    y: np.ndarray
+    z: np.ndarray
     color: np.ndarray | None = None
 
 
@@ -40,7 +53,7 @@ class VectorResult:
 class CurveResult:
     """Result of LinePlot.evaluate() - one curve's x/y values.
 
-    x currently falls back to plain sample indices, same as GridResult.x/y.
+    x currently falls back to plain sample indices.
     """
 
     x: np.ndarray

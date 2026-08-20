@@ -78,18 +78,56 @@ class Slice(Node[TensorType]):
 
 
 class SplitVariables(Node[TensorType]):
+    """Splits an input tensor's feature axis into one output port per
+    Variable in `split_into`.
+
+    The caller decides the exact pieces upfront - this used to auto-derive
+    them from whatever named entries its own input happened to have, which
+    forced always splitting down to the finest granularity available before
+    anything downstream could ask for less. A caller that knows every
+    downstream consumer in advance (e.g. PINNPipeline) can instead split
+    only as finely as actually needed - a variable nothing ever asks to
+    subdivide can be named whole in `split_into` and passed through with a
+    single piece.
+
+    Args:
+        split_into (list[Variable]): The pieces to split the input's
+            feature axis into, in order. Each must be a contiguous run of
+            the eventual input's own feature Variable - not necessarily a
+            single leaf, e.g. an auto-expanded 3D variable can be its own
+            whole piece.
+    """
 
     def __init__(
         self,
+        split_into: list[Variable],
         name=None,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         super().__init__(
             name if name is not None else "SplitVariablesNode", backend=backend
         )
-        self.split_dim = None
         self.backend: type[DeepLearningBackend[TensorType]] = backend
-        self.split_sections = None
+        self.split_into = split_into
+        self.split_dim = None
+        self.split_sections = [var.dim for var in split_into]
+        # A real FeatureAxes here, not a DataConfiguration.empty() placeholder
+        # later overridden only in dynamic_configs: callers that inspect a
+        # port's *static* config before anything is connected (e.g.
+        # PINNPipeline's gradient-tracking pass) need `variables` to already
+        # be correct - only the other axes (batch shape etc.), unknown until
+        # the input actually connects, stay a wildcard here.
+        ellipsis_axes = EllipsisAxes()
+        self._output_ports = [
+            OutputPort(
+                DataConfiguration(
+                    ellipsis_axes, FeatureAxes(variable=var), dtype=backend.default_dtype
+                ),
+                node=self,
+                name=var.name,
+            )
+            for var in split_into
+        ]
 
     def forward(self, inp: Annotated[TensorType, DataConfiguration.empty()]):
         return self.backend.math.split(
@@ -103,39 +141,24 @@ class SplitVariables(Node[TensorType]):
             updated_port, config_dict, dynamic_configs
         )
         if isinstance(updated_port, InputPort):
-            self.split_dim = dynamic_configs[updated_port].feature_idx
-
-        if isinstance(updated_port, InputPort) and len(self.output_ports) == 0:
-            config_vars = dynamic_configs[updated_port].variables
-            if isinstance(config_vars, Variable):
-                copy_memo = {}
-                in_config = deepcopy(dynamic_configs[updated_port], copy_memo)
-                dynamic_configs[updated_port] = in_config
-                self.split_sections = []
-                for var_name, var_dim in config_vars.items():
-                    self.split_sections.append(var_dim)
-                    out_config = deepcopy(dynamic_configs[updated_port], copy_memo)
-                    # since we iterate multiple times over the same config, we need
-                    # to avoid reuse of the previous deepcopy
-                    copy_memo.pop(id(dynamic_configs[updated_port]))
-                    out_config.replace_feature_axes(
-                        FeatureAxes(variable=Variable(var_name, var_dim))
-                    )
-                    new_out_port = OutputPort(out_config, self, name=var_name)
-                    self.output_ports.append(new_out_port)
-                    dynamic_configs[new_out_port] = out_config
+            in_config = dynamic_configs[updated_port]
+            self.split_dim = in_config.feature_idx
+            copy_memo = {}
+            for out_port, var in zip(self.output_ports, self.split_into):
+                out_config = deepcopy(in_config, copy_memo)
+                # since we iterate multiple times over the same config, we need
+                # to avoid reuse of the previous deepcopy
+                copy_memo.pop(id(in_config), None)
+                out_config.replace_feature_axes(FeatureAxes(variable=var))
+                dynamic_configs[out_port] = out_config
 
         return updated_ports
 
     def get_output_port(self, name: str | Variable):
         # TODO Merge into general node?
-        if isinstance(name, str):
-            return super().get_output_port(name)
         if isinstance(name, Variable):
-            for port in self.output_ports:
-                if port.name == name.name:
-                    return port
-        raise ValueError(f"No output port with name {name} found in node {self.name}.")
+            name = name.name
+        return super().get_output_port(name)
 
 
 class ConcatVariables(Node[TensorType]):
@@ -175,9 +198,14 @@ class ConcatVariables(Node[TensorType]):
                     name=var.name,
                 )
             )
-        out_var = Variable()
-        for var in self.in_variables:
-            out_var *= var
+        # Fold starting from the first real variable, not an empty
+        # Variable() placeholder - composing with a genuinely empty
+        # Variable leaves its dim as None (Variable.__init__ propagates
+        # "any child's dim is None" outward), which breaks arithmetic like
+        # Variable.get_slice's running_idx += child.dim on the result.
+        out_var = self.in_variables[0]
+        for var in self.in_variables[1:]:
+            out_var = out_var * var
         self._output_ports = [
             OutputPort(
                 DataConfiguration(
@@ -193,12 +221,11 @@ class ConcatVariables(Node[TensorType]):
     def check_unique_var_keys(self):
         seen_keys = set()
         for var in self.in_variables:
-            for key in var.keys():
-                if key in seen_keys:
-                    raise ValueError(
-                        f"Variable key '{key}' is not unique across input variables."
-                    )
-                seen_keys.add(key)
+            if var.name in seen_keys:
+                raise ValueError(
+                    f"Variable key '{var.name}' is not unique across input variables."
+                )
+            seen_keys.add(var.name)
 
     def forward(self, *inp):
         return self.backend.math.concatenate(inp, axis=self.concat_dim)

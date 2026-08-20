@@ -10,6 +10,7 @@ from .spec import (
 )
 from .result import (
     GridResult,
+    ParametricGridResult,
     MeshResult,
     VectorResult,
     CurveResult,
@@ -41,7 +42,6 @@ from .data import (
     PathPlot,
     ScatterPlot,
     BarPlot,
-    PointPlot,
 )
 from .table import TablePlot, ParallelCoordinatesPlot
 from .geometry import GeometryPlot

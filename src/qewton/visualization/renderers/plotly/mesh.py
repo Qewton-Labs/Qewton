@@ -42,6 +42,7 @@ class SurfaceMeshArtist(PlotlyArtist):
             lighting=dict(
                 ambient=1.0, diffuse=0.0, specular=0.0, roughness=1.0, fresnel=0.0
             ),
+            opacity=plot.theme.surface_opacity,
         )
         if color is not None:
             kwargs.update(
@@ -60,7 +61,11 @@ class SurfaceMeshArtist(PlotlyArtist):
         if plot.show_edges:
             edges_idx = len(backend_figure.data)
             backend_figure.add_trace(
-                _edge_trace(vertices, cells, color=plot.theme.line_color), row=row, col=col
+                _edge_trace(
+                    vertices, cells,
+                    color=plot.theme.line_color, opacity=plot.theme.wireframe_opacity,
+                ),
+                row=row, col=col,
             )
 
         if plot.title is not None:
@@ -83,9 +88,6 @@ class SurfaceMeshArtist(PlotlyArtist):
         if self.edges_idx is not None:
             edge_trace = backend_figure.data[self.edges_idx]
             edge_trace.z = _edge_trace(vertices, _detach_to_numpy(plot.render_cells())).z
-
-    def remove(self, backend_figure):
-        pass
 
     @staticmethod
     def _scene_axis_titles(plot) -> dict:
@@ -115,10 +117,6 @@ class FilledMeshArtist(PlotlyArtist):
     across triangles, unlike fill='toself', which allows only one color per trace.
     """
 
-    def __init__(self, mesh_idx, edges_idx=None):
-        super().__init__(mesh_idx)
-        self.edges_idx = edges_idx
-
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
@@ -140,18 +138,18 @@ class FilledMeshArtist(PlotlyArtist):
                 intensitymode="vertex",
                 colorscale=cmap,
                 lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0),
+                opacity=plot.theme.surface_opacity,
                 **_apply_scale(plot.color.scale),
             ),
             row=row,
             col=col,
         )
 
-        edges_idx = None
         if plot.show_edges:
-            edges_idx = len(backend_figure.data)
             backend_figure.add_trace(
                 _edge_trace(
-                    np.column_stack([vertices[:, :2], zeros]), cells, color=plot.theme.line_color
+                    np.column_stack([vertices[:, :2], zeros]), cells,
+                    color=plot.theme.line_color, opacity=plot.theme.wireframe_opacity,
                 ),
                 row=row,
                 col=col,
@@ -172,7 +170,7 @@ class FilledMeshArtist(PlotlyArtist):
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
 
-        return cls(mesh_idx, edges_idx)
+        return cls(mesh_idx)
 
     def update(self, backend_figure, plot):
         result = plot.evaluate()
@@ -181,6 +179,3 @@ class FilledMeshArtist(PlotlyArtist):
         trace.intensity = color
         if plot.color.scale is not None:
             trace.cmin, trace.cmax = plot.color.scale.range
-
-    def remove(self, backend_figure):
-        pass

@@ -44,6 +44,3 @@ class ParallelCoordinatesArtist(PlotlyArtist):
             trace.line.color = result.color
             if plot.color.scale is not None:
                 trace.line.cmin, trace.line.cmax = plot.color.scale.range
-
-    def remove(self, backend_figure):
-        pass

@@ -227,6 +227,3 @@ class NodeLinkArtist(PlotlyArtist):
         edge_trace.x, edge_trace.y = new_edges.x, new_edges.y
         edge_trace.hovertext = new_edges.hovertext
         edge_trace.marker.size = new_edges.marker.size
-
-    def remove(self, backend_figure):
-        pass

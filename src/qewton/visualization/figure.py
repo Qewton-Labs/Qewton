@@ -45,14 +45,15 @@ class Figure:
         # One artist per (plot, cell) - the non-faceted case degenerates to a
         # single {(None, None): artist} entry per plot.
         self.artists: dict[Plot, dict[tuple, Artist]] = {}
-        self.legend = None
         self.backend_figure = renderer.setup(self)
 
     def add_plot(self, plot: Plot):
         """Adds `plot` to this Figure, applying the Figure's theme unless
-        the plot already has its own, and registering its controls and any
-        VariableSpecs it embeds."""
+        the plot already has its own, assigning it a color_index (its
+        position among every plot in this Figure, in add order), and
+        registering its controls and any VariableSpecs it embeds."""
         plot.theme = self.theme
+        plot.color_index = len(self.plots)
         self.plots.append(plot)
         for spec in plot.controls:
             if isinstance(spec, ControlSpec) and not isinstance(spec, FacetSpec):

@@ -1,7 +1,7 @@
 from plotly import graph_objects as go
 
 from qewton.visualization.plots.base import axis_names_from_variable
-from qewton.visualization.renderers.plotly.common import PlotlyArtist
+from qewton.visualization.renderers.plotly.common import PlotlyArtist, _cycled_color
 
 
 class LineArtist(PlotlyArtist):
@@ -15,7 +15,8 @@ class LineArtist(PlotlyArtist):
             y=result.y,
             mode="lines",
             name=plot.title or plot.y.name,
-            line=dict(width=plot.theme.line_width),
+            line=dict(width=plot.theme.line_width, color=_cycled_color(plot)),
+            opacity=plot.theme.opacity_default,
         )
         backend_figure.add_trace(trace, row=row, col=col)
         if plot.title is not None:
@@ -42,9 +43,6 @@ class LineArtist(PlotlyArtist):
         trace.x = result.x
         trace.y = result.y
 
-    def remove(self, backend_figure):
-        pass
-
 
 class PathArtist(PlotlyArtist):
     """A trajectory or streamline - go.Scatter for 2D, go.Scatter3d for 3D.
@@ -60,15 +58,18 @@ class PathArtist(PlotlyArtist):
         # closest thing to an axis-naming source, e.g. X*Y*Z -> "x"/"y"/"z".
         names = axis_names_from_variable(plot.position.variable_or_axes, dim)
 
+        color = _cycled_color(plot)
         if dim == 2:
             trace = go.Scatter(
                 x=positions[:, 0], y=positions[:, 1], mode="lines",
-                line=dict(width=plot.theme.line_width),
+                line=dict(width=plot.theme.line_width, color=color),
+                opacity=plot.theme.opacity_default,
             )
         else:
             trace = go.Scatter3d(
                 x=positions[:, 0], y=positions[:, 1], z=positions[:, 2], mode="lines",
-                line=dict(width=plot.theme.line_width),
+                line=dict(width=plot.theme.line_width, color=color),
+                opacity=plot.theme.opacity_default,
             )
 
         backend_figure.add_trace(trace, row=row, col=col)
@@ -93,6 +94,3 @@ class PathArtist(PlotlyArtist):
         trace.y = positions[:, 1]
         if positions.shape[1] == 3:
             trace.z = positions[:, 2]
-
-    def remove(self, backend_figure):
-        pass

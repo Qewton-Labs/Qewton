@@ -10,4 +10,3 @@ from .grid import (
 from .mesh import MeshPlot, MeshFieldPlot, MeshSurfacePlot, MeshVectorPlot
 from .curve import LinePlot, PathPlot
 from .samples import ScatterPlot, BarPlot
-from .point import PointPlot

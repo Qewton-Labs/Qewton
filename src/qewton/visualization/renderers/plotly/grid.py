@@ -41,9 +41,6 @@ class ImageArtist(PlotlyArtist):
         image = plot.evaluate().values
         backend_figure.data[self.figure_idx].z = image
 
-    def remove(self, backend_figure):
-        pass
-
 
 class HeatmapArtist(PlotlyArtist):
     """Draws a HeatmapPlot as a flat, colored grid."""
@@ -94,9 +91,6 @@ class HeatmapArtist(PlotlyArtist):
         if plot.color is not None and plot.color.scale is not None:
             trace.zmin, trace.zmax = plot.color.scale.range
 
-    def remove(self, backend_figure):
-        pass
-
 
 class SurfaceArtist(PlotlyArtist):
     """Draws a SurfacePlot as a 3D height field over an index grid."""
@@ -145,9 +139,6 @@ class SurfaceArtist(PlotlyArtist):
         if plot.color is not None and plot.color.scale is not None:
             trace.cmin, trace.cmax = plot.color.scale.range
 
-    def remove(self, backend_figure):
-        pass
-
 
 class ParametricSurfaceArtist(PlotlyArtist):
     """Structured grid drawn at explicit 3D coordinates.
@@ -194,9 +185,6 @@ class ParametricSurfaceArtist(PlotlyArtist):
         trace.surfacecolor = result.color
         if plot.color.scale is not None:
             trace.cmin, trace.cmax = plot.color.scale.range
-
-    def remove(self, backend_figure):
-        pass
 
     @staticmethod
     def _scene_axis_kwargs(plot) -> dict:

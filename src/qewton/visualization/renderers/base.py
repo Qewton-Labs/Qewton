@@ -72,7 +72,3 @@ class Artist:
         """Re-evaluates `plot` in its current control state and refreshes
         this artist's existing trace(s) in place."""
         raise NotImplementedError
-
-    def remove(self, backend_figure):
-        """Removes this artist's trace(s) from `backend_figure`."""
-        raise NotImplementedError

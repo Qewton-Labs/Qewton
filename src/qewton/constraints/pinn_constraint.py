@@ -6,6 +6,7 @@ from qewton.config.axes import FeatureAxes, EllipsisAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 
+from qewton.graphs.control_nodes.wrapper_node import FunctionWrappingNode
 from qewton.graphs.graphs import Graph
 
 from qewton.graphs.control_nodes.graph_node import GraphNode, FromFunctionNode
@@ -52,10 +53,13 @@ class PINNConstraint(Constraint, GraphNode):
         reduction=None,
         name="PINNConstraint",
         weight: float | HyperParameter = 1,
+        track_residual: bool = True,
         objective: ConstraintObjective = ConstraintObjective.MINIMIZE,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
+        self.track_residual = track_residual
+
         if reduction is None:
             reduction = MSN()
         # construct residual node
@@ -63,7 +67,8 @@ class PINNConstraint(Constraint, GraphNode):
             self.residual_node = residual
         else:
             assert callable(residual)
-            self.residual_node = FromFunctionNode(residual, backend=backend)
+            node_cls = FromFunctionNode if track_residual else FunctionWrappingNode
+            self.residual_node = node_cls(residual, backend=backend)
 
             sig = inspect.signature(residual).parameters.values()
             for var, p in zip(sig, self.residual_node.input_ports):

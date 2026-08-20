@@ -14,10 +14,6 @@ from qewton.visualization.renderers.plotly.common import (
 class GeometryArtist(PlotlyArtist):
     """Draws a 3D GeometryPlot as an uncolored surface mesh."""
 
-    def __init__(self, mesh_idx, edges_idx=None):
-        super().__init__(mesh_idx)
-        self.edges_idx = edges_idx
-
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
@@ -35,16 +31,19 @@ class GeometryArtist(PlotlyArtist):
                 k=cells[:, 2],
                 color=color,
                 flatshading=True,
+                opacity=plot.theme.surface_opacity,
             ),
             row=row,
             col=col,
         )
 
-        edges_idx = None
         if plot.show_edges:
-            edges_idx = len(backend_figure.data)
             backend_figure.add_trace(
-                _edge_trace(vertices, cells, color=plot.theme.line_color), row=row, col=col
+                _edge_trace(
+                    vertices, cells,
+                    color=plot.theme.line_color, opacity=plot.theme.wireframe_opacity,
+                ),
+                row=row, col=col,
             )
 
         if plot.title is not None:
@@ -55,27 +54,19 @@ class GeometryArtist(PlotlyArtist):
             xaxis=dict(title=x_name), yaxis=dict(title=y_name), zaxis=dict(title=z_name),
         )
 
-        return cls(mesh_idx, edges_idx)
+        return cls(mesh_idx)
 
     def update(self, backend_figure, plot):
         pass  # Geometry is static for now, later maybe parametric geometries
-
-    def remove(self, backend_figure):
-        pass
 
 
 class GeometryArtist2D(PlotlyArtist):
     """Draws a 2D GeometryPlot as a filled triangulation with its boundary
     (and, optionally, interior edges) outlined on top."""
 
-    def __init__(self, fill_idx, boundary_idx=None, interior_idx=None):
-        super().__init__(fill_idx)
-        self.boundary_idx = boundary_idx
-        self.interior_idx = interior_idx
-
     @staticmethod
     def _triangle_fill_trace(
-        vertices: np.ndarray, cells: np.ndarray, color: str
+        vertices: np.ndarray, cells: np.ndarray, color: str, opacity: float = 1.0
     ) -> go.Scatter:
         """Fills a 2D triangulation as one trace. Each triangle is a None-separated
         segment, which Plotly fills independently - so holes and disconnected
@@ -91,6 +82,7 @@ class GeometryArtist2D(PlotlyArtist):
             mode="lines",
             fill="toself",
             fillcolor=color,
+            opacity=opacity,
             line=dict(width=0),  # no interior edges - boundary drawn separately
             hoverinfo="skip",
             showlegend=False,
@@ -102,6 +94,7 @@ class GeometryArtist2D(PlotlyArtist):
         edges: np.ndarray,
         color: str = "black",
         width: float = 1.5,
+        opacity: float = 1.0,
     ) -> go.Scatter:
         """Draws unordered 2D edges. Works for boundary_faces directly - line
         segments need no traversal order, unlike filled polygons."""
@@ -114,6 +107,7 @@ class GeometryArtist2D(PlotlyArtist):
             y=ys,
             mode="lines",
             line=dict(color=color, width=width),
+            opacity=opacity,
             hoverinfo="skip",
             showlegend=False,
         )
@@ -128,25 +122,26 @@ class GeometryArtist2D(PlotlyArtist):
 
         fill_idx = len(backend_figure.data)
         backend_figure.add_trace(
-            cls._triangle_fill_trace(vertices, cells, color), row=row, col=col
+            cls._triangle_fill_trace(vertices, cells, color, opacity=plot.theme.surface_opacity),
+            row=row, col=col,
         )
 
-        interior_idx = None
         if plot.show_edges:
-            interior_idx = len(backend_figure.data)
             backend_figure.add_trace(
                 cls._edge_trace_2d(
                     vertices,
                     _mesh_edges(cells),
                     color=plot.theme.line_color,
                     width=0.5,
+                    opacity=plot.theme.wireframe_opacity,
                 ),
                 row=row,
                 col=col,
             )
 
-        # boundary on top - unordered edges, holes included, no ordering needed
-        boundary_idx = len(backend_figure.data)
+        # boundary on top - unordered edges, holes included, no ordering
+        # needed. Always fully opaque, unlike the interior wireframe above:
+        # this is the domain's actual boundary, not a stylistic overlay.
         backend_figure.add_trace(
             cls._edge_trace_2d(
                 boundary_vertices, boundary_cells, color=plot.theme.line_color
@@ -168,10 +163,7 @@ class GeometryArtist2D(PlotlyArtist):
         # gap rather than resolved per-cell axis naming here.
         backend_figure.update_yaxes(scaleanchor="x", row=row, col=col)
 
-        return cls(fill_idx, boundary_idx, interior_idx)
+        return cls(fill_idx)
 
     def update(self, backend_figure, plot):
-        pass
-
-    def remove(self, backend_figure):
         pass

@@ -1,6 +1,6 @@
 from plotly import graph_objects as go
 
-from qewton.visualization.renderers.plotly.common import PlotlyArtist, _apply_scale
+from qewton.visualization.renderers.plotly.common import PlotlyArtist, _apply_scale, _cycled_color
 
 
 class ScatterArtist(PlotlyArtist):
@@ -16,8 +16,16 @@ class ScatterArtist(PlotlyArtist):
             cmap = plot.color.cmap or plot.theme.default_cmap
             marker.update(color=result.color, colorscale=cmap)
             marker.update(_apply_scale(plot.color.scale))
+        else:
+            # No data-driven ColorSpec - fall back to the theme's cycled
+            # palette so multiple ScatterPlots overlaid in one Figure read
+            # as distinct traces, not identical unthemed markers.
+            marker.update(color=_cycled_color(plot))
 
-        trace = go.Scatter(x=result.x, y=result.y, mode="markers", marker=marker)
+        trace = go.Scatter(
+            x=result.x, y=result.y, mode="markers", marker=marker,
+            opacity=plot.theme.opacity_default,
+        )
         backend_figure.add_trace(trace, row=row, col=col)
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
@@ -47,9 +55,6 @@ class ScatterArtist(PlotlyArtist):
             if plot.color.scale is not None:
                 trace.marker.cmin, trace.marker.cmax = plot.color.scale.range
 
-    def remove(self, backend_figure):
-        pass
-
 
 class BarArtist(PlotlyArtist):
     """Bars at (x, height) - go.Bar over the same CurveResult LineArtist
@@ -60,7 +65,11 @@ class BarArtist(PlotlyArtist):
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
-        trace = go.Bar(x=result.x, y=result.y, name=plot.title or plot.y.name)
+        trace = go.Bar(
+            x=result.x, y=result.y, name=plot.title or plot.y.name,
+            marker=dict(color=_cycled_color(plot)),
+            opacity=plot.theme.opacity_default,
+        )
         backend_figure.add_trace(trace, row=row, col=col)
         if plot.title is not None:
             backend_figure.update_layout(title=plot.title)
@@ -85,6 +94,3 @@ class BarArtist(PlotlyArtist):
         trace = backend_figure.data[self.figure_idx]
         trace.x = result.x
         trace.y = result.y
-
-    def remove(self, backend_figure):
-        pass

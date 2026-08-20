@@ -14,6 +14,7 @@ from qewton.visualization.plots.data.grid import (
     QuiverPlot,
     SurfacePlot,
 )
+from qewton.visualization.plots.result import GridResult, ParametricGridResult
 from qewton.visualization.plots.spec import AxisSpec, ColorSpec, FixedSpec, VectorSpec
 
 
@@ -31,6 +32,14 @@ class TestHeatmapPlot:
         plot = HeatmapPlot(data, config, x=x_axis, y=y_axis, color=C)
         result = plot.evaluate()
         assert result.values.shape == (6, 8, 1)  # (y, x, channel) after the x/y-first transpose
+
+    def test_evaluate_returns_a_plain_grid_result_not_the_parametric_one(self):
+        """GridResult/ParametricGridResult are separate types precisely
+        because StructuredGridPlot's family has no x/y/z coordinates at
+        all - positions are implicit indices, unlike EmbeddedGridPlot."""
+        data, config, x_axis, y_axis, C = _heatmap_setup()
+        plot = HeatmapPlot(data, config, x=x_axis, y=y_axis, color=C)
+        assert type(plot.evaluate()) is GridResult
 
     def test_x_and_y_must_differ(self):
         data, config, x_axis, y_axis, C = _heatmap_setup()
@@ -103,6 +112,7 @@ class TestEmbeddedGridPlot:
             controls=[FixedSpec(init_state=3, n_dimensions=1, variable_or_axes=i)],
         )
         result = plot.evaluate()
+        assert type(result) is ParametricGridResult
         assert result.values.shape == (6, 6)
         assert result.x.shape == (6, 6)
         point_filter = np.asarray(grid.point_filter)[3, :, :, 0]

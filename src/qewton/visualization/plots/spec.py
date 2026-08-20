@@ -129,8 +129,6 @@ class AxisSpec(PlotSpec):
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
         self.log_scale = log_scale
 
-        self.coordinates: np.ndarray | None = None
-
 
 class VectorSpec(PlotSpec):
     """Declares a 2D or 3D vector-valued role (e.g. a QuiverPlot's arrows),
@@ -146,8 +144,6 @@ class VectorSpec(PlotSpec):
         cmap: Colormap for `color_by_magnitude`; falls back to the theme's
             default if unset.
         color_by_magnitude: If True, colors arrows by vector magnitude.
-        n_color_bins: Number of discrete magnitude bins when
-            `color_by_magnitude` is set.
         subsample: Draws every `subsample`-th vector only, decimated after
             `normalize`/`scale` are applied - a display decision about which
             arrows to draw, not a change to what the field itself is.
@@ -160,7 +156,6 @@ class VectorSpec(PlotSpec):
         normalize=False,
         cmap=None,
         color_by_magnitude=False,
-        n_color_bins=8,
         subsample=1,
     ):
         dim = variable_or_axes.dim
@@ -170,7 +165,6 @@ class VectorSpec(PlotSpec):
         self.normalize = normalize
         self.cmap = cmap
         self.color_by_magnitude = color_by_magnitude
-        self.n_color_bins = n_color_bins
         assert subsample >= 1, "subsample must be >= 1"
         self.subsample = subsample
 

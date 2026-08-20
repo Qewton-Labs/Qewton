@@ -15,6 +15,7 @@ from .plots.spec import (
 )
 from .plots.result import (
     GridResult,
+    ParametricGridResult,
     MeshResult,
     VectorResult,
     CurveResult,
@@ -48,7 +49,6 @@ from .plots.data import (
     PathPlot,
     ScatterPlot,
     BarPlot,
-    PointPlot,
 )
 from .plots.table import TablePlot, ParallelCoordinatesPlot
 from .auto import auto_plot

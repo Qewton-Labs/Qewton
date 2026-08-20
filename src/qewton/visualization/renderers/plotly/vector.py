@@ -57,6 +57,7 @@ class ArrowField2DArtist(PlotlyArtist):
             mode="lines+markers",
             line=dict(color=line_color),
             marker=marker,
+            opacity=plot.theme.opacity_default,
             hoverinfo="skip",
         )
 
@@ -65,9 +66,6 @@ class ArrowField2DArtist(PlotlyArtist):
         trace = backend_figure.data[self.figure_idx]
         trace.x, trace.y = new.x, new.y
         trace.marker = new.marker
-
-    def remove(self, backend_figure):
-        pass
 
 
 class ArrowField3DArtist(PlotlyArtist):
@@ -113,6 +111,7 @@ class ArrowField3DArtist(PlotlyArtist):
             sizeref=1.0,
             colorscale=colorscale,
             showscale=plot.vector.color_by_magnitude,
+            opacity=plot.theme.opacity_default,
         )
 
     def update(self, backend_figure, plot):
@@ -120,6 +119,3 @@ class ArrowField3DArtist(PlotlyArtist):
         trace = backend_figure.data[self.figure_idx]
         trace.x, trace.y, trace.z = new.x, new.y, new.z
         trace.u, trace.v, trace.w = new.u, new.v, new.w
-
-    def remove(self, backend_figure):
-        pass

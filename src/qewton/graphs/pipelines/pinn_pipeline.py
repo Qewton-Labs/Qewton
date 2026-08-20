@@ -18,6 +18,75 @@ from qewton.graphs.nodes import Node, OutputPort
 from qewton.graphs import Graph
 
 
+def _leaf_names(variable: Variable) -> set[str]:
+    return {leaf.name for leaf in variable.leaves}
+
+
+def _prune(variable: Variable, keep_names: set[str]) -> Variable | None:
+    """Removes every leaf of `variable` whose name isn't in `keep_names`,
+    preserving as much of the original grouping as possible.
+
+    Returns `variable` itself, unchanged, if none of its leaves needed
+    dropping - so an auto-expanded multi-component variable used whole
+    stays whole instead of being flattened into its individual components
+    just because *some other, unrelated* variable needed pruning. Returns
+    None if every leaf was dropped.
+    """
+    if variable.is_leaf:
+        return variable if variable.name in keep_names else None
+    survivors = [_prune(child, keep_names) for child in variable.children]
+    survivors = [child for child in survivors if child is not None]
+    if survivors == variable.children:
+        return variable
+    if not survivors:
+        return None
+    result = survivors[0]
+    for child in survivors[1:]:
+        result = result * child
+    return result
+
+
+def _segments(leaves: list[Variable], to_vars: list[Variable]) -> list[list[Variable]]:
+    """The coarsest partition of `leaves` such that every `to_v`'s own leaf
+    range, wherever it overlaps `leaves`, aligns exactly with a run of
+    whole segments - so a variable nothing ever asks to subdivide comes
+    back as a single segment (`leaves` itself, unsplit), and only the
+    variables genuinely requested at finer granularity force a cut.
+
+    A `to_v` doesn't have to be one contiguous run itself (e.g. `X * Z`
+    when the source is `X * Y * Z` - X and Z aren't adjacent) - each
+    maximal contiguous run *within* `to_v`'s own leaf order gets its own
+    cut, so `X * Z` correctly forces `Y` into its own segment too (cut off
+    from both sides) without requiring `X`/`Z` to be adjacent to each other.
+    """
+    index = {leaf.name: i for i, leaf in enumerate(leaves)}
+    cuts = {0, len(leaves)}
+    for to_v in to_vars:
+        positions = [index[leaf.name] for leaf in to_v.leaves if leaf.name in index]
+        if not positions:
+            continue
+        run_start = prev = positions[0]
+        for pos in positions[1:]:
+            if pos != prev + 1:
+                cuts.add(run_start)
+                cuts.add(prev + 1)
+                run_start = pos
+            prev = pos
+        cuts.add(run_start)
+        cuts.add(prev + 1)
+    boundaries = sorted(cuts)
+    return [leaves[boundaries[i] : boundaries[i + 1]] for i in range(len(boundaries) - 1)]
+
+
+def _compose(leaves: list[Variable]) -> Variable:
+    if len(leaves) == 1:
+        return leaves[0]
+    result = leaves[0]
+    for leaf in leaves[1:]:
+        result = result * leaf
+    return result
+
+
 class PINNPipeline(Graph):
     """Automatically builds the computation graph for a PINN training pipeline
     based on the provided sampler, models, and constraint. The pipeline handles
@@ -52,6 +121,7 @@ class PINNPipeline(Graph):
         constraint: Constraint | None = None,
         residual: Callable | None = None,
         residual_name: str | None = None,
+        track_residual: bool = True,
         reduction: Callable | None = None,
         weight=1.0,
         backend=DEFAULT_DL_BACKEND,
@@ -63,7 +133,12 @@ class PINNPipeline(Graph):
             if residual_name is None:
                 residual_name = "PINNConstraint"
             self.constraint = PINNConstraint(
-                residual, reduction, weight=weight, backend=backend, name=residual_name
+                residual,
+                reduction,
+                weight=weight,
+                track_residual=track_residual,
+                backend=backend,
+                name=residual_name,
             )
         else:
             self.constraint = constraint
@@ -73,30 +148,34 @@ class PINNPipeline(Graph):
             p.data_configuration.variables for p in self.constraint.input_ports
         ]
         sampler_out_vars = [p.data_configuration.variables for p in sampler.output_ports]
+        sampler_leaf_names = {name for sv in sampler_out_vars for name in _leaf_names(sv)}
 
-        # TODO: reduce to the stuff which is provided by the sampler
-        # if a variable is not in the sampler but in
-
-        # Filter constraint variables: remove keys not in sampler.
-        # If no keys remain for a variable, it is omitted entirely.
+        # Drop whatever leaves the sampler can't provide - pruning, not
+        # flattening, so a constraint variable the sampler fully covers
+        # stays exactly as composed (e.g. an auto-expanded 3D variable
+        # stays whole instead of being split into its components).
         constrained_in_sampler_out = [
-            Variable.from_dict(
-                {k: d for k, d in v.items() if any(k in sv for sv in sampler_out_vars)}
-            )
+            pruned
             for v in constraint_input_vars
+            if (pruned := _prune(v, sampler_leaf_names)) is not None
         ]
-        constrained_in_sampler_out = [
-            v for v in constrained_in_sampler_out if not v.is_empty
-        ]
+
+        # Model inputs the constraint doesn't already claim - also pruned
+        # rather than flattened, and deduplicated by leaf name so two
+        # models sharing an unclaimed variable don't add it twice.
         # here, still use original data configs since nothing was connected yet
         # -> nodes were not added to graph yet, so dynamic configs are not available yet
-        only_model_input_vars = []
+        only_model_input_vars: list[Variable] = []
+        claimed_leaf_names = {
+            name for cv in constraint_input_vars for name in _leaf_names(cv)
+        }
         for model in models:
             for p in model.input_ports:
-                for k, dim in p.data_configuration.variables.items():
-                    if not any(k in cv for cv in constraint_input_vars):
-                        if not any(k in mv for mv in only_model_input_vars):
-                            only_model_input_vars.append(Variable(k, dim))
+                mv = p.data_configuration.variables
+                pruned = _prune(mv, _leaf_names(mv) - claimed_leaf_names)
+                if pruned is not None:
+                    only_model_input_vars.append(pruned)
+                    claimed_leaf_names |= _leaf_names(pruned)
 
         trackable_ports = self.split_and_join(
             sampler.output_ports,
@@ -109,10 +188,8 @@ class PINNPipeline(Graph):
                 found = False
                 for model_p in model.input_ports:
                     if any(
-                        [
-                            k in p.data_configuration.variables
-                            for k in model_p.data_configuration.variables
-                        ]
+                        leaf in p.data_configuration.variables
+                        for leaf in model_p.data_configuration.variables.leaves
                     ):
                         tracking = GradientTracking()
                         self.connect(p, tracking)
@@ -152,30 +229,59 @@ class PINNPipeline(Graph):
     def split_and_join(
         self, from_ports, to_vars, use_dynamic_data_configs=False
     ) -> list[OutputPort]:
+        """Routes each port in `from_ports` to exactly the pieces each
+        variable in `to_vars` needs.
+
+        Splits only where some `to_v` genuinely requires a finer cut than
+        what's already available - a `from_v` nothing ever asks to
+        subdivide is passed straight through, no SplitVariables/
+        ConcatVariables round-trip at all - and joins pieces back together
+        only where a `to_v` spans more than one of them.
+        """
         from_vars = [
             self.get_variables(p, dynamic=use_dynamic_data_configs) for p in from_ports
         ]
-        out_ports = []
-        split_ports = {}
-        for from_p, from_v in zip(from_ports, from_vars):
-            if len(from_v) > 1:
-                split = SplitVariables()
-                self.connect(from_p, split)
-                for var in from_v:
-                    split_ports[var] = split.get_output_port(var)
-            else:
-                split_ports[list(from_v.keys())[0]] = from_p
 
+        # leaf name -> (port carrying it, the whole Variable piece that port outputs)
+        leaf_source: dict[str, tuple] = {}
+        for from_p, from_v in zip(from_ports, from_vars):
+            leaves = from_v.leaves
+            segments = _segments(leaves, to_vars)
+            if len(segments) == 1:
+                for leaf in leaves:
+                    leaf_source[leaf.name] = (from_p, from_v)
+                continue
+            pieces = [_compose(segment) for segment in segments]
+            split = SplitVariables(pieces)
+            self.connect(from_p, split)
+            for segment, piece in zip(segments, pieces):
+                port = split.get_output_port(piece)
+                for leaf in segment:
+                    leaf_source[leaf.name] = (port, piece)
+
+        out_ports = []
         for to_v in to_vars:
-            if len(to_v) > 1:
-                join = ConcatVariables(
-                    [Variable(name, dim) for name, dim in to_v.items()]
-                )
-                for var in to_v:
-                    self.connect(split_ports[var], join.get_input_port(var))
-                out_ports.append(join.output_ports[0])
+            leaves = to_v.leaves
+            try:
+                sources = [leaf_source[leaf.name] for leaf in leaves]
+            except KeyError as exc:
+                raise ValueError(
+                    f"{to_v.name} needs a variable not provided by any of the "
+                    "given from_ports."
+                ) from exc
+
+            pieces_needed = []
+            for source in sources:
+                if not pieces_needed or pieces_needed[-1] != source:
+                    pieces_needed.append(source)
+
+            if len(pieces_needed) == 1 and pieces_needed[0][1].leaves == leaves:
+                out_ports.append(pieces_needed[0][0])
             else:
-                var_name = next(iter(to_v))
-                out_ports.append(split_ports[var_name])
+                join_vars = [piece for _, piece in pieces_needed]
+                join = ConcatVariables(join_vars)
+                for port, piece in pieces_needed:
+                    self.connect(port, join.get_input_port(piece.name))
+                out_ports.append(join.output_ports[0])
 
         return out_ports

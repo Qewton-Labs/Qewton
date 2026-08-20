@@ -4,7 +4,7 @@ from qewton.config.axes import Axes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.visualization.plots.data.base import DataPlot
-from qewton.visualization.plots.result import GridResult, VectorResult
+from qewton.visualization.plots.result import GridResult, ParametricGridResult, VectorResult
 from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec, VectorSpec
 
 
@@ -54,7 +54,7 @@ class StructuredGridPlot(DataPlot):
             raise ValueError(
                 f"{type(self).__name__}: x ({self.x.variable_or_axes}) and "
                 f"y ({self.y.variable_or_axes}) refer to the same dimension. "
-                "You might use a PointPlot or MeshPlot instead."
+                "You might use a ScatterPlot or MeshPlot instead."
             )
 
         x_dim = index_map(x_idx)
@@ -209,7 +209,7 @@ class EmbeddedGridPlot(DataPlot):
                 "FixedSpec for them."
             )
         values = values.reshape(expected)
-        return GridResult(
+        return ParametricGridResult(
             values=values,
             x=points[..., 0],
             y=points[..., 1],
