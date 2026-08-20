@@ -63,10 +63,12 @@ class ParameterNode(Node[TensorType]):
             self._trainable_parameter = None
 
     def fix_node_state(self) -> None:
+        if not self._state == NodeState.UNINITIALIZED:
+            self._trainable_parameter = self.backend.param.requires_grad(
+                self._trainable_parameter, False
+            )
+            self.output.set_value(self._trainable_parameter)
         super().fix_node_state()
-        self._trainable_parameter = self.backend.param.requires_grad(
-            self._trainable_parameter, False
-        )
 
     def set_state(self, new_state: NodeState):
         super().set_state(new_state)
@@ -82,7 +84,7 @@ class ParameterNode(Node[TensorType]):
         return TrainableParameters(self.node_id, params)
 
     def to(self, device):
-        if self._state == NodeState.INITIALIZED:
+        if not self._state == NodeState.UNINITIALIZED:
             self._trainable_parameter = self.backend.param.to(
                 self._trainable_parameter, device=device
             )

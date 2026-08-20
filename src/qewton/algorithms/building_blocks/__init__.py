@@ -1,8 +1,26 @@
 from .parameters import ParameterNode
 from .activation_functions import ReLU, Tanh, Sigmoid
 from .linear import Linear, FunctionalLinear
+from .conv import (
+    FunctionalConv,
+    Conv,
+    Conv1D,
+    Conv2D,
+    Conv3D,
+    MaxPool1D,
+    MaxPool2D,
+    MaxPool3D,
+    AvgPool1D,
+    AvgPool2D,
+    AvgPool3D,
+    FunctionalBatchNorm,
+    BatchNorm,
+    BatchNorm1D,
+    BatchNorm2D,
+    BatchNorm3D,
+    Interpolate,
+)
 
-# from .conv import Conv2d
 from .math import (
     Add,
     Subtract,
@@ -26,6 +44,7 @@ from .math import (
     MatMul,
     Mean,
     Negative,
+    Inner,
 )
 
 from .array_operations import (
@@ -35,7 +54,9 @@ from .array_operations import (
     Squeeze,
     Unsqueeze,
     ConcatVariables,
+    ConcatNode,
     SetItem,
+    Reshape,
 )
 from .derivatives import (
     GradientTracking,
@@ -47,5 +68,5 @@ from .derivatives import (
     Partial,
     Hessian,
 )
-from .creation import Zeros, ZerosLike, Ones, OnesLike
+from .creation import Zeros, ZerosLike, Ones, OnesLike, Identity
 from .geometry import MeshInterpolationNode

@@ -2,7 +2,8 @@ from copy import deepcopy
 from typing import Annotated
 
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType, DeepLearningBackend
-from qewton.graphs.nodes import Node
+from qewton.backends.base import Backend
+from qewton.graphs.nodes import Node, NodeState
 from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.errors import DataConfigMismatchError
 from qewton.config.axes import (
@@ -117,6 +118,16 @@ class Sqrt(Node[TensorType]):
 
 class Power(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
+
+    def __init__(
+        self,
+        power: float | None = None,
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(name, backend)
+        if power is not None:
+            self.input_ports[-1].default = power
 
     def forward(
         self,
@@ -338,6 +349,29 @@ class Dot(Node[TensorType]):
         y: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
     ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(1,)))]:
         return self.backend.math.inner(x, y)
+
+
+class Inner(Node[TensorType]):
+    dim_1 = AxesDim(None)
+    ell_ax = EllipsisAxes()
+
+    def __init__(
+        self,
+        keepdims: bool = False,
+        name: str | None = None,
+        state: NodeState = NodeState.FIXED,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        **kwargs,
+    ) -> None:
+        self.keepdims = keepdims
+        super().__init__(name, state, backend, **kwargs)
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+        y: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(1,)))]:
+        return self.backend.math.sum(x * y, axis=-1, keepdims=self.keepdims)
 
 
 # endregion

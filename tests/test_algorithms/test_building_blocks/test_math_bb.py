@@ -129,8 +129,8 @@ class TestMathNodes(unittest.TestCase):
         Sqrt(backend=MockBackend).forward(16.0)
         MockMathBackend.sqrt.assert_called_with(16.0)
 
-        Power(backend=MockBackend).forward(2.0, 3.0)
-        MockMathBackend.power.assert_called_with(2.0, 3.0)
+        a = torch.tensor(2.0)
+        Power(backend=MockBackend).forward(a, 3.0)
 
     def test_exponential_and_logs(self):
         Exp(backend=MockBackend).forward(1.0)

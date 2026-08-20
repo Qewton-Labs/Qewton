@@ -122,7 +122,7 @@ class GridSampler(PointSampler[TensorType]):
 
     def _direct_grid_sampling(self, n_points):
         """Samples points from the geometry in a grid-like fashion."""
-        if self.is_boundary_geometry:
+        if self.has_boundary_geometry:
             sample_out = self.geometry.sample_grid(
                 n_points,
                 device=self._device,

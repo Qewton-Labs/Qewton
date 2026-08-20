@@ -543,14 +543,18 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
 
     # Array Manipulation
     @staticmethod
-    def reshape(x: Any, newshape: Any) -> torch.Tensor:
-        if isinstance(newshape, int):
-            return torch.reshape(x, (newshape,))
-        return torch.reshape(x, newshape)
+    def reshape(x: Any, shape: Any) -> torch.Tensor:
+        if isinstance(shape, int):
+            return torch.reshape(x, (shape,))
+        return torch.reshape(x, shape)
 
     @staticmethod
     def flatten(x: Any, start_dim: int = 0, end_dim: int = -1) -> torch.Tensor:
         return torch.flatten(x, start_dim=start_dim, end_dim=end_dim)
+
+    @staticmethod
+    def unflatten(x: Any, axis: int, sizes: tuple[int, ...]) -> torch.Tensor:
+        return torch.unflatten(x, dim=axis, sizes=sizes)
 
     copy = torch.clone
     squeeze = torch.squeeze
@@ -558,6 +562,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     ravel = torch.ravel
     moveaxis = torch.moveaxis
     swapaxes = torch.swapaxes
+    narrow = torch.narrow
 
     @staticmethod
     def shape(x: torch.Tensor):

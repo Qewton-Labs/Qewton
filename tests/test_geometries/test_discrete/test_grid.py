@@ -4,7 +4,7 @@ import pytest
 from qewton.backends.base import ComputingBackend
 from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.config.variables import Variable
-from qewton.config.devices import cpu, cuda
+from qewton.config.devices import cpu, cuda, cuda_available
 
 
 def all_subclasses(cls):
@@ -17,7 +17,7 @@ def all_subclasses(cls):
 
 
 BACKENDS = all_subclasses(ComputingBackend)
-devices = [cpu, cuda(0)]
+devices = [cpu, cuda(0)] if cuda_available() else [cpu]
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

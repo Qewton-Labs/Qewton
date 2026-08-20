@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Generic, TypeVar, ClassVar, TYPE_CHECKING, Protocol, Any
 
 from qewton.config import dtypes as qt_dtypes
-from qewton.config.devices import Device
+from qewton.config.devices import Device, cpu
 
 if TYPE_CHECKING:
     from qewton.backends.param import ParameterBackend
@@ -97,7 +97,9 @@ class ComputingBackend(Backend[TensorType]):
                     {', '.join(missing)}")
 
     @classmethod
-    def build_tensor(cls, data, dtype: Any = qt_dtypes.Float32) -> TensorType:
+    def build_tensor(
+        cls, data, dtype: Any = qt_dtypes.Float32, device: Device | str = cpu
+    ) -> TensorType:
         """Builds a tensor from the given data.
 
         Args:

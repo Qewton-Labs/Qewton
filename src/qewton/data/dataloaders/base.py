@@ -4,7 +4,6 @@ Base classes for data loading and node-based data sampling in the graph.
 
 from copy import deepcopy
 from abc import abstractmethod
-from typing import Any
 import math
 import numpy as np
 
@@ -63,8 +62,12 @@ class DataNode(Node[TensorType]):
         return self._batch_size.value
 
     @abstractmethod
-    def __len__(self):
+    def __len__(self) -> int:
         pass
+
+    @property
+    def training_batches(self) -> int:
+        return len(self)
 
     @property
     def is_cached(self):
@@ -110,6 +113,20 @@ class DataLoader(DataNode[TensorType]):
 
     This node acts as a source in the computation graph, providing batches of
     data to connected algorithms.
+
+    Args:
+        data_set (DataSet): The source dataset.
+        batch_size (int | DiscreteHyperparameter | CategoricalHyperparameter):
+            Number of samples per batch.
+        splitting_ratio (tuple[float, float, float], optional): Proportions
+            for (Train, Validation, Test) splits. Defaults to (1.0, 0.0, 0.0).
+        shuffle_data (bool | CategoricalHyperparameter, optional): Whether
+            to shuffle the indices at the start of an epoch.. Defaults to True.
+        shuffle_seed (int | None, optional): Random seed for reproducibility.
+            Defaults to None.
+        backend (type[Backend] | None, optional): The backend used for data
+            types and device transfers.. Defaults to DEFAULT_DL_BACKEND.
+        name (str, optional): Name of this data loader. Defaults to "DataLoader".
     """
 
     # TODO: parallelize this, similar to pytorch dataloader
@@ -125,21 +142,6 @@ class DataLoader(DataNode[TensorType]):
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
         name: str = "DataLoader",
     ):
-        """
-        Args:
-            data_set (DataSet): The source dataset.
-            batch_size (int | DiscreteHyperparameter | CategoricalHyperparameter):
-                Number of samples per batch.
-            splitting_ratio (tuple[float, float, float], optional): Proportions
-                for (Train, Validation, Test) splits. Defaults to (1.0, 0.0, 0.0).
-            shuffle_data (bool | CategoricalHyperparameter, optional): Whether
-                to shuffle the indices at the start of an epoch.. Defaults to True.
-            shuffle_seed (int | None, optional): Random seed for reproducibility.
-                Defaults to None.
-            backend (type[Backend] | None, optional): The backend used for data
-                types and device transfers.. Defaults to DEFAULT_DL_BACKEND.
-            name (str, optional): Name of this data loader. Defaults to "DataLoader".
-        """
         self.data_set = data_set
         self.splitting_ratio = splitting_ratio
         self.shuffle_data = HyperParameter.from_value(shuffle_data, "shuffle_data")
@@ -203,6 +205,10 @@ class DataLoader(DataNode[TensorType]):
 
     def __len__(self):
         return math.ceil(len(self.data_set) / self.batch_size)
+
+    @property
+    def training_batches(self) -> int:
+        return math.ceil(len(self.data_set) * self.splitting_ratio[0] / self.batch_size)
 
     @property
     def input_ports(self) -> list[InputPort]:

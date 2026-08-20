@@ -2,7 +2,7 @@ import inspect
 import pytest
 
 from qewton.backends.base import ComputingBackend, DeepLearningBackend
-from qewton.config.devices import cpu, cuda
+from qewton.config.devices import cpu, cuda, cuda_available
 from qewton.config.variables import Variable
 from qewton.data.dataloaders.sampler.grid_sampler import GridSampler
 from qewton.data.dataloaders.sampler.point_sampler import PointSampler
@@ -24,7 +24,7 @@ def all_subclasses(cls):
 
 BACKENDS = all_subclasses(ComputingBackend)
 T = Variable("t", 1)
-devices = [cpu, cuda(0)]
+devices = [cpu, cuda(0)] if cuda_available() else [cpu]
 
 
 class DummyPointSampler(PointSampler):

@@ -7,7 +7,13 @@ class NumpyLinAlgBackend(LinAlgBackend[np.ndarray]):
 
     @staticmethod
     def svd(x: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        return np.linalg.svd(x)
+        U, S, V = np.linalg.svd(x)
+        return U, S, V.T
+
+    @staticmethod
+    def pca(x: np.ndarray, q=None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        U, S, V = np.linalg.svd(x)
+        return U[:, :q], S[:q], V[:, :q]
 
     @staticmethod
     def norm(x: np.ndarray, order="fro", axis=None, keepdims=False) -> np.ndarray:

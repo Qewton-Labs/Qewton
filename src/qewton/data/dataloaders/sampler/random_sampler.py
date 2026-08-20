@@ -35,7 +35,7 @@ class RandomUniformSampler(PointSampler):
 
     def _internal_sampling(self, n_points):
         """Samples random uniform points from the geometry."""
-        if self.is_boundary_geometry:
+        if self.has_boundary_geometry:
             sample_out = self.geometry.sample_random_uniform(
                 n_points,
                 device=self._device,

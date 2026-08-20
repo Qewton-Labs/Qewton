@@ -15,6 +15,11 @@ class LinAlgBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
+    def pca(x: TensorType, q=None) -> tuple[TensorType, TensorType, TensorType]:
+        pass
+
+    @staticmethod
+    @abstractmethod
     def norm(
         x: TensorType, order: str | int = "fro", axis=None, keepdims=False
     ) -> TensorType:

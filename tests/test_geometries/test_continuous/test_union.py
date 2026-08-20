@@ -9,7 +9,7 @@ from qewton.geometries.continuous.domains_2d.circle import Circle
 from qewton.geometries.continuous.domains_3d.box import Box
 from qewton.geometries.continuous.domains_3d.sphere import Sphere
 from qewton.config.variables import Variable
-from qewton.config.devices import cpu, cuda
+from qewton.config.devices import cpu, cuda, cuda_available
 
 
 def all_subclasses(cls):
@@ -24,7 +24,7 @@ def all_subclasses(cls):
 BACKENDS = all_subclasses(ComputingBackend)
 Y = Variable("y", 2)
 X = Variable("x", 3)
-devices = [cpu, cuda(0)]
+devices = [cpu, cuda(0)] if cuda_available() else [cpu]
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

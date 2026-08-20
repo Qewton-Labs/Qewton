@@ -4,7 +4,7 @@ import pytest
 from qewton.backends.base import ComputingBackend, DeepLearningBackend
 from qewton.geometries.continuous.domains_1d.interval import Interval
 from qewton.config.variables import Variable
-from qewton.config.devices import cpu, cuda
+from qewton.config.devices import cpu, cuda, cuda_available
 
 
 def all_subclasses(cls):
@@ -18,7 +18,7 @@ def all_subclasses(cls):
 
 BACKENDS = all_subclasses(ComputingBackend)
 T = Variable("t", 1)
-devices = [cpu, cuda(0)]
+devices = [cpu, cuda(0)] if cuda_available() else [cpu]
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
