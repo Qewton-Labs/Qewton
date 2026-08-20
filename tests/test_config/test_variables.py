@@ -4,12 +4,12 @@
 
 # def test_variable_init_default():
 #     v = Variable()
-#     assert v.is_empty()
+#     assert v.is_empty
 
 
 # def test_variable_init_single():
 #     v = Variable("x", 5)
-#     assert not v.is_empty()
+#     assert not v.is_empty
 #     assert "x" in v
 #     assert v["x"] == 5
 #     assert v.dim == 5
@@ -33,10 +33,10 @@
 
 
 # def test_is_empty():
-#     assert Variable().is_empty()
-#     assert not Variable("x", 1).is_empty()
+#     assert Variable().is_empty
+#     assert not Variable("x", 1).is_empty
 #     # A variable initialized with parameters is not empty even if dim is None
-#     assert not Variable("x", None).is_empty()
+#     assert not Variable("x", None).is_empty
 
 
 # def test_dim_calculation_mixed():

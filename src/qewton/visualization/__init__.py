@@ -10,6 +10,7 @@ from .plots.spec import (
     ColorSpec,
     AxisSpec,
     VectorSpec,
+    VariableSpec,
     Scale,
 )
 from .plots.result import (
@@ -50,7 +51,9 @@ from .plots.data import (
     PointPlot,
 )
 from .plots.table import TablePlot, ParallelCoordinatesPlot
+from .auto import auto_plot
 from .renderers.base import Artist, Renderer
 from .applications import RenderApplication, DashApplication
 from .themes import Theme, DEFAULT_THEME, LIGHT_THEME, DARK_THEME
 from .figure import Figure
+from .nodes import PlotNode

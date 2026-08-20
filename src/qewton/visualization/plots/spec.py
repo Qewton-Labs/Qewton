@@ -11,15 +11,35 @@ class PlotSpec:
 
     def __init__(self, n_dimensions: int, variable_or_axes: Variable | Axes | str) -> None:
         # `variable_or_axes` is a plain str column key for TablePlot, a
-        # Variable/Axes for every DataPlot family.
+        # Variable/Axes for every DataPlot family - or a VariableSpec
+        # (defined at the bottom of this module), transparently unwrapped to
+        # its currently selected candidate by the property below. Every
+        # consumer (get_variable_slice, this class's own `name`, artists,
+        # ...) already just reads `.variable_or_axes` as if it were a plain
+        # Variable, so none of them need to know VariableSpec exists.
         self.n_dimensions = n_dimensions
-        self.variable_or_axes = variable_or_axes
+        self._variable_or_axes = variable_or_axes
+
+    @property
+    def variable_or_axes(self):
+        if isinstance(self._variable_or_axes, VariableSpec):
+            return self._variable_or_axes.state
+        return self._variable_or_axes
+
+    @property
+    def embedded_variable_spec(self) -> "VariableSpec | None":
+        """The VariableSpec this spec's `variable_or_axes` was given, or
+        None for a plain Variable/Axes/str - used by Plot.variable_specs to
+        discover VariableSpecs for widget-building, since they're never
+        listed in a Plot's own `controls=`."""
+        return self._variable_or_axes if isinstance(self._variable_or_axes, VariableSpec) else None
 
     @property
     def name(self):
-        if isinstance(self.variable_or_axes, Variable):
-            return self.variable_or_axes.name
-        return str(self.variable_or_axes)
+        variable_or_axes = self.variable_or_axes
+        if isinstance(variable_or_axes, Variable):
+            return variable_or_axes.name
+        return str(variable_or_axes)
 
     @staticmethod
     def get_slice(variable_or_axes, data_config: DataConfiguration):
@@ -99,10 +119,12 @@ class PlotSpec:
 
 
 class AxisSpec(PlotSpec):
-    """Declares a single structural domain axis (e.g. a LinePlot's `x`)."""
+    """Declares a single structural domain axis (e.g. a LinePlot's `x`/`y`).
+    `variable_or_axes` may also be a VariableSpec, to switch which Variable
+    fills this role."""
 
     def __init__(
-        self, variable_or_axes: Variable | Axes, log_scale: bool = False
+        self, variable_or_axes: "Variable | Axes | VariableSpec", log_scale: bool = False
     ) -> None:
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
         self.log_scale = log_scale
@@ -116,7 +138,8 @@ class VectorSpec(PlotSpec):
 
     Args:
         variable_or_axes: The 2D or 3D Variable/Axes the vector components
-            come from.
+            come from - or a VariableSpec, to switch between several
+            same-dim candidates.
         scale: Multiplier applied to every vector's length.
         normalize: If True, normalizes each vector to unit length before
             applying `scale`.
@@ -215,10 +238,14 @@ class Scale:
 
 class ColorSpec(PlotSpec):
     """Declares which Variable/Axes (DataPlot) or column (TablePlot) colors
-    a plot, with an optional colormap and shared Scale."""
+    a plot, with an optional colormap and shared Scale. `variable_or_axes`
+    may also be a VariableSpec, to switch which Variable colors the plot."""
 
     def __init__(
-        self, variable_or_axes: Variable | str, cmap=None, scale: Scale | None = None
+        self,
+        variable_or_axes: "Variable | str | VariableSpec",
+        cmap=None,
+        scale: Scale | None = None,
     ) -> None:
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
         self.cmap = cmap  # if not specified, plots resort to default cmap of theme
@@ -310,6 +337,56 @@ class FacetSpec(ControlSpec):
             self.values = list(values)
         if self._state is None:
             self._state = self.values[0]
+
+
+class VariableSpec(ControlSpec):
+    """Selects which of several distinct Variables currently feeds another
+    spec's role - pass one anywhere a Variable is expected, e.g.
+    `ColorSpec(VariableSpec([temperature, pressure]))`. `PlotSpec.
+    variable_or_axes` transparently unwraps it to whichever candidate is
+    currently selected, so every existing consumer (get_variable_slice,
+    axis/colorbar titles, artists, ...) keeps working unchanged - selecting
+    a variable is exactly the same "pick a slice of the FeatureAxes"
+    operation a fixed Variable already describes, just made to react to
+    `state` instead of staying fixed.
+
+    Unlike SliderSpec/FacetSpec/TimeSpec, this is never passed via a Plot's
+    own `controls=` - it isn't a whole-axis control for apply_controls() to
+    reduce, so it never appears in Plot.controls the way those do.
+
+    All `candidates` must share the same dim, so the role they feed stays
+    valid (same required shape) regardless of which is selected.
+    """
+
+    def __init__(self, candidates: list[Variable], init_index: int = 0):
+        assert len(candidates) >= 2, "VariableSpec needs at least 2 candidates to choose between."
+        dims = {c.dim for c in candidates}
+        assert len(dims) == 1, f"All candidates must share the same dim, got {dims}."
+        self.candidates = candidates
+        super().__init__(init_state=candidates[init_index], n_dimensions=1, variable_or_axes=None)
+
+    @property
+    def dim(self):
+        return self.candidates[0].dim
+
+    @property
+    def name(self):
+        # PlotSpec.name derives from self.variable_or_axes, which is None
+        # here (this spec doesn't itself wrap a Variable - its candidates
+        # do) - override with something a widget can actually label itself
+        # with.
+        return " / ".join(c.name for c in self.candidates)
+
+    @property
+    def state(self) -> Variable:
+        return self._state
+
+    @state.setter
+    def state(self, value: int | Variable):
+        if isinstance(value, int):
+            value = self.candidates[value]
+        assert value in self.candidates, f"{value!r} is not one of this spec's candidates."
+        self._state = value
 
 
 class TimeSpec(ControlSpec):

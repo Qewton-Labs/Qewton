@@ -154,6 +154,7 @@ class Variable:
             running_idx += child.dim  # type: ignore
         raise KeyError(f"Variable '{variable.name}' not found in '{self.name}'")
 
+    @property
     def is_empty(self) -> bool:
         """Check if the variable has no children and dim is 0.
 
@@ -189,9 +190,9 @@ class Variable:
             ValueError: If the variables have multiple axes.
             ValueError: If the variable names do not agree for unification.
         """
-        if self.is_empty():
+        if self.is_empty:
             return other
-        if other.is_empty():
+        if other.is_empty:
             return self
         if isinstance(self.dim, tuple) or isinstance(other.dim, tuple):
             raise ValueError("Can not combine variables with multiple axes.")
@@ -230,7 +231,7 @@ class Variable:
         return (self.dim,)
 
     def __contains__(self, other: Variable):
-        if self.is_empty():
+        if self.is_empty:
             return False
         if other == self:
             return True

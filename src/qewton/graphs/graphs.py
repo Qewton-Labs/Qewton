@@ -8,7 +8,7 @@ from warnings import warn
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.errors import DataConfigMismatchError
 
-from qewton.graphs.nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
+from qewton.graphs.nodes import GraphAwareNode, InputPort, Node, EvaluationPhase, OutputPort, Port
 from qewton.graphs.control_nodes.data_processing_node import DataProcessingNode
 from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
 from qewton.graphs.edges import Edge
@@ -470,6 +470,8 @@ class Graph:
             if isinstance(node, DataProcessingNode):
                 if node.data_source_node in self.nodes:
                     node.setup(self)
+            elif isinstance(node, GraphAwareNode):
+                node.setup(self)
             else:
                 node.setup()
 

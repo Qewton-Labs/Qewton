@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from qewton.config.axes import BatchAxes, FeatureAxes
+from qewton.config.axes import BatchAxes, FeatureAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.visualization.plots.spec import (
@@ -12,6 +12,7 @@ from qewton.visualization.plots.spec import (
     Scale,
     SliderSpec,
     TimeSpec,
+    VariableSpec,
 )
 
 
@@ -126,10 +127,83 @@ class TestColorSpec:
 
     def test_accepts_a_plain_string_column_key(self):
         """TablePlot's own family: no Variable/Axes at all, just a column
-        name - ColorSpec must not require a Variable (see the input-family
-        boundary, implementation plan section 4)."""
+        name - ColorSpec must not require a Variable."""
         spec = ColorSpec("loss")
         assert spec.name == "loss"
+
+
+class TestVariableSpec:
+    def test_requires_at_least_two_candidates(self):
+        with pytest.raises(AssertionError):
+            VariableSpec([Variable("u", 1)])
+
+    def test_requires_matching_dims(self):
+        with pytest.raises(AssertionError):
+            VariableSpec([Variable("u", 1), Variable("v", 2)])
+
+    def test_state_defaults_to_the_first_candidate(self):
+        u, v = Variable("u", 1), Variable("v", 1)
+        spec = VariableSpec([u, v])
+        assert spec.state is u
+
+    def test_state_can_be_set_by_index_or_by_variable(self):
+        u, v = Variable("u", 1), Variable("v", 1)
+        spec = VariableSpec([u, v])
+        spec.state = 1
+        assert spec.state is v
+        spec.state = u
+        assert spec.state is u
+
+    def test_state_rejects_a_variable_outside_the_candidates(self):
+        u, v, w = Variable("u", 1), Variable("v", 1), Variable("w", 1)
+        spec = VariableSpec([u, v])
+        with pytest.raises(AssertionError):
+            spec.state = w
+
+    def test_color_spec_transparently_unwraps_the_current_selection(self):
+        """This is the whole point: ColorSpec never needs to know
+        VariableSpec exists - reading .variable_or_axes/.name just reflects
+        whichever candidate is currently selected."""
+        u, v = Variable("u", 1), Variable("v", 1)
+        selector = VariableSpec([u, v])
+        color = ColorSpec(selector)
+        assert color.variable_or_axes is u
+        assert color.name == "u"
+
+        selector.state = v
+        assert color.variable_or_axes is v
+        assert color.name == "v"
+
+    def test_get_variable_slice_follows_the_current_selection(self):
+        """Confirms selecting a variable really is just selecting indices -
+        no changes anywhere else in the DataConfiguration/PlotSpec pipeline
+        are needed for this to resolve to the right slice."""
+        u, v = Variable("u", 1), Variable("v", 1)
+        config = DataConfiguration(BatchAxes(10), FeatureAxes(u * v))
+        selector = VariableSpec([u, v])
+        color = ColorSpec(selector)
+
+        assert config.get_variable_slice(color.variable_or_axes) == (slice(None), slice(0, 1))
+        selector.state = v
+        assert config.get_variable_slice(color.variable_or_axes) == (slice(None), slice(1, 2))
+
+    def test_mesh_field_plot_draws_whichever_variable_is_currently_selected(self, small_mesh_geometry):
+        """End-to-end through a real Plot.evaluate(), not just get_slice()
+        math - confirms MeshFieldPlot needed zero changes to support this."""
+        from qewton.visualization.plots.data.mesh import MeshFieldPlot
+
+        temperature, pressure = Variable("temperature", 1), Variable("pressure", 1)
+        n = small_mesh_geometry.mesh.vertices.shape[0]
+        data = np.stack([np.full(n, 10.0), np.full(n, 20.0)], axis=-1)
+        config = DataConfiguration(
+            GeometryAxes(small_mesh_geometry), FeatureAxes(temperature * pressure)
+        )
+        selector = VariableSpec([temperature, pressure])
+        plot = MeshFieldPlot(data, config, color=ColorSpec(selector))
+
+        assert np.all(plot.evaluate().color == 10.0)
+        selector.state = pressure
+        assert np.all(plot.evaluate().color == 20.0)
 
 
 class TestScale:

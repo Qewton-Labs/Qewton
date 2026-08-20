@@ -31,6 +31,7 @@ class Figure:
         self.title = title
         self.plots = []
         self.controls = []
+        self.variable_specs = []
 
         if plots is not None:
             if isinstance(plots, list):
@@ -49,13 +50,17 @@ class Figure:
 
     def add_plot(self, plot: Plot):
         """Adds `plot` to this Figure, applying the Figure's theme unless
-        the plot already has its own, and registering its controls."""
+        the plot already has its own, and registering its controls and any
+        VariableSpecs it embeds."""
         plot.theme = self.theme
         self.plots.append(plot)
         for spec in plot.controls:
             if isinstance(spec, ControlSpec) and not isinstance(spec, FacetSpec):
                 if spec not in self.controls:
                     self.controls.append(spec)
+        for spec in plot.variable_specs:
+            if spec not in self.variable_specs:
+                self.variable_specs.append(spec)
 
     @staticmethod
     def facet_specs(plot: Plot) -> dict[str, FacetSpec]:
@@ -193,14 +198,25 @@ class Figure:
             if col_spec is not None:
                 col_spec.state = original_col_state
 
+    def _apply_variable_selectors(self):
+        """Static-export counterpart to DashApplication's dropdown widget -
+        only called by show()/save_html()/save_png()/save_svg(), not draw()
+        itself, since a Dash app already handles VariableSpec server-side
+        and would otherwise get a redundant, non-functional copy baked into
+        its figure too."""
+        for spec in self.variable_specs:
+            self.renderer.apply_variable_selector(self, self.backend_figure, spec)
+
     def show(self):
         """Draws the figure and displays it (e.g. opening a browser tab)."""
         self.draw()
+        self._apply_variable_selectors()
         self.renderer.show(self.backend_figure)
 
     def save_html(self, path):
         """Draws the figure and writes it to `path` as an interactive HTML file."""
         self.draw()
+        self._apply_variable_selectors()
         self.renderer.save_html(self.backend_figure, path)
 
     def save_gif(self, path, fps=10):

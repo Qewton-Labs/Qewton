@@ -19,6 +19,17 @@ class Renderer:
         raise NotImplementedError()
 
     @staticmethod
+    def apply_variable_selector(figure, backend_figure, spec):
+        """Adds interactive UI to an already-drawn static backend_figure
+        letting it switch which candidate a VariableSpec currently selects,
+        without needing a running Dash app. Only called for the static
+        export/display path (Figure.show()/save_html()/save_png()/
+        save_svg()) - Dash's own callback loop already handles VariableSpec
+        server-side and has no use for this. Backends without a way to
+        embed this in a static figure can leave it unimplemented."""
+        raise NotImplementedError()
+
+    @staticmethod
     def show(backend_figure):
         """Displays the figure (e.g. opening a browser tab)."""
         raise NotImplementedError()

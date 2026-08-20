@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from qewton.visualization.plots.spec import ControlSpec, SliderSpec
+from qewton.visualization.plots.spec import ControlSpec, PlotSpec, SliderSpec, VariableSpec
 
 
 def axis_names_from_variable(variable, n: int) -> list[str]:
@@ -87,6 +87,24 @@ class Plot:
         """Creates the renderer-specific Artist that draws this plot into
         `backend_figure`, evaluating it in its current control state."""
         raise NotImplementedError
+
+    @property
+    def variable_specs(self) -> list[VariableSpec]:
+        """Every VariableSpec embedded in one of this plot's own PlotSpec
+        attributes (color, vector, x, y, ...), found generically by scanning
+        for PlotSpec-typed attributes rather than needing per-role
+        registration. Unlike `self.controls` (SliderSpec/FixedSpec/...,
+        passed explicitly via the `controls=` constructor argument), a
+        VariableSpec is discovered this way because it is never itself a
+        whole-axis control - it only ever appears wrapped inside another
+        spec's `variable_or_axes`."""
+        found = []
+        for value in vars(self).values():
+            if isinstance(value, PlotSpec):
+                spec = value.embedded_variable_spec
+                if spec is not None and spec not in found:
+                    found.append(spec)
+        return found
 
     def color_values(self):
         """Values used to train this plot's shared color Scale, or None.

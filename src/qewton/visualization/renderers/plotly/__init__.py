@@ -204,6 +204,62 @@ class PlotlyRenderer(Renderer):
         return backend_figure
 
     @staticmethod
+    def apply_variable_selector(figure, backend_figure, spec):
+        """Adds one Plotly dropdown (updatemenus, method="restyle") letting
+        an already-drawn static figure itself switch which variable is
+        plotted - the static-export equivalent of DashApplication's
+        dropdown widget, since a Dash app's own client/server round-trip
+        isn't available once a figure is exported.
+
+        Only meaningful for the static/non-Dash path (Figure.show()/
+        save_html()/save_png()/save_svg() call this after draw(); Dash's
+        own callback loop already handles VariableSpec entirely server-side
+        and does not need this). Mirrors animate()'s replay-and-capture
+        approach: temporarily set `spec` to each candidate, replay
+        Artist.update() to compute what that trace would look like, and
+        capture its Plotly attributes into one restyle button per candidate.
+        """
+        affected = [
+            (plot, artist)
+            for plot, cells in figure.artists.items()
+            if spec in plot.variable_specs
+            for artist in cells.values()
+        ]
+        if not affected:
+            return backend_figure
+
+        original_state = spec.state
+        trace_indices = [artist.figure_idx for _, artist in affected]
+        buttons = []
+        for candidate in spec.candidates:
+            spec.state = candidate
+            per_key_values: dict = {}
+            for plot, artist in affected:
+                artist.update(backend_figure, plot)
+                trace_json = backend_figure.data[artist.figure_idx].to_plotly_json()
+                for key, value in trace_json.items():
+                    if key in ("type", "uid"):
+                        continue
+                    per_key_values.setdefault(key, []).append(value)
+            buttons.append(
+                dict(label=candidate.name, method="restyle", args=[per_key_values, trace_indices])
+            )
+        spec.state = original_state
+        for plot, artist in affected:
+            artist.update(backend_figure, plot)  # leave the live traces at the initial state
+
+        # animate() (TimeSpec) sets its own updatemenus wholesale, so this
+        # only ever drops/replaces entries it added itself, tagged by name -
+        # both can coexist on one figure.
+        menu_name = f"variable_selector_{id(spec)}"
+        kept = [m for m in backend_figure.layout.updatemenus if m.name != menu_name]
+        backend_figure.update_layout(
+            updatemenus=kept
+            + [dict(name=menu_name, buttons=buttons, direction="down", showactive=True)]
+        )
+        return backend_figure
+
+    @staticmethod
     def show(backend_figure):
         backend_figure.show()
 

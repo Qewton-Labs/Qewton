@@ -86,7 +86,7 @@ class PINNPipeline(Graph):
             for v in constraint_input_vars
         ]
         constrained_in_sampler_out = [
-            v for v in constrained_in_sampler_out if not v.is_empty()
+            v for v in constrained_in_sampler_out if not v.is_empty
         ]
         # here, still use original data configs since nothing was connected yet
         # -> nodes were not added to graph yet, so dynamic configs are not available yet
