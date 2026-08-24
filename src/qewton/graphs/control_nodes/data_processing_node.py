@@ -1,4 +1,4 @@
-from qewton.graphs.nodes import Node, NodeState
+from qewton.graphs.nodes import Node, NodeState, NodeConfig
 from qewton.backends.base import Backend, TensorType
 from qewton.backends import DEFAULT_DL_BACKEND
 
@@ -19,6 +19,8 @@ class DataProcessingNode(Node[TensorType]):
         backend (type[Backend[TensorType]], optional):
             Defaults to DEFAULT_DL_BACKEND.
     """
+
+    _type_identifier = "DataProcessingNode"
 
     def __init__(
         self,

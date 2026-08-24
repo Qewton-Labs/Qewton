@@ -11,6 +11,7 @@ from qewton.graphs.nodes import NodeState
 from qewton.graphs.graphs import Graph
 from qewton.config.axes import EllipsisAxes, BatchAxes, AxesDim, FeatureAxes
 from qewton.config.data_configurations import DataConfiguration
+from qewton.graphs.nodes import Node, NodeConfig
 
 
 class PCANode(DataProcessingNode[TensorType]):
@@ -33,6 +34,8 @@ class PCANode(DataProcessingNode[TensorType]):
             Defaults to DEFAULT_DL_BACKEND.
     """
 
+    _type_identifier = "PCA Node"
+
     def __init__(
         self,
         n: int | HyperParameter,
@@ -41,9 +44,9 @@ class PCANode(DataProcessingNode[TensorType]):
         name: str | None = "PCA Node",
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
-        self.n = HyperParameter.from_value(n, "PCA Components of" + self.name)
+        self.n = HyperParameter.from_value(n, "PCA Components of " + self.name)
         self.scale = HyperParameter.from_value(
-            scale, "Scale by Principal Comp." + self.name
+            scale, "Scale by Principal Comp. " + self.name
         )
         # Data config. properties:
         self.batch_axes = BatchAxes(AxesDim(None))
@@ -95,7 +98,7 @@ class PCANode(DataProcessingNode[TensorType]):
         )
         self._set_port_values(self.pca_u, self.pca_s, self.pca_v)
 
-        self._state = NodeState.INITIALIZED
+        self.set_state(NodeState.INITIALIZED)
 
     def to(self, device):
         if self.state != NodeState.UNINITIALIZED:
@@ -145,6 +148,31 @@ class PCANode(DataProcessingNode[TensorType]):
             pca_coefficients /= scaling
         return pca_coefficients, self.pca_u, self.pca_s, self.pca_v
 
+    def config_dict(self) -> NodeConfig:
+        basic_config = super().config_dict()
+        if hasattr(self, "pca_v"):
+            basic_config.other_args["pca_v"] = self.pca_v
+            basic_config.other_args["pca_s"] = self.pca_s
+            basic_config.other_args["pca_u"] = self.pca_u
+            basic_config.other_args["original_shape"] = self.original_shape
+        return basic_config
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        data_dict = {}
+        if "pca_v" in config.other_args:
+            data_dict["pca_v"] = config.other_args.pop("pca_v")
+            data_dict["pca_s"] = config.other_args.pop("pca_s")
+            data_dict["pca_u"] = config.other_args.pop("pca_u")
+            data_dict["original_shape"] = config.other_args.pop("original_shape")
+        pca_node: PCANode = super().load_from_config(config)  # type: ignore
+        if data_dict:
+            pca_node.pca_v = data_dict["pca_v"]
+            pca_node.pca_s = data_dict["pca_s"]
+            pca_node.pca_u = data_dict["pca_u"]
+            pca_node.original_shape = data_dict["original_shape"]
+        return pca_node
+
 
 class InversePCANode(DataProcessingNode[TensorType]):
     """Applies a inverse PCA, given some coefficients it uses the
@@ -155,6 +183,8 @@ class InversePCANode(DataProcessingNode[TensorType]):
             that is required for the inverse transformation.
         name (str | None, optional): Defaults to "Inverse PCA Node"
     """
+
+    _type_identifier = "Inverse PCA Node"
 
     def __init__(
         self,
@@ -200,3 +230,17 @@ class InversePCANode(DataProcessingNode[TensorType]):
         )
         original_shape = (len(flatt_x),) + self.data_source_node.original_shape[1:]
         return self.backend.math.reshape(flatt_x, shape=original_shape)
+
+    def config_dict(self) -> NodeConfig:
+        return NodeConfig(
+            node_identifier=self._type_identifier,
+            node_id=self.node_id,
+            mode=self.mode,
+            hyperparameters={},
+            other_args={
+                "pca_node": self.data_source_node,
+                "name": self.name,
+                "backend": self.backend,
+            },
+            state=self.state,
+        )

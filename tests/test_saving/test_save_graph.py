@@ -1,5 +1,3 @@
-import torch
-
 from qewton.algorithms.building_blocks import ParameterNode
 from qewton import save, load
 from qewton.algorithms.building_blocks import Add, Multiply, ReLU
@@ -12,7 +10,11 @@ from qewton.backends import DEFAULT_DL_BACKEND, _backend_found
 
 
 def test_simple_graph_save_and_load(tmp_path):
-    param_node = ParameterNode(shape=(2,), initial_value=torch.tensor([1.0, 2.0]))
+    if not _backend_found:
+        return
+    param_node = ParameterNode(
+        shape=(2,), initial_value=DEFAULT_DL_BACKEND.build_tensor([1.0, 2.0])
+    )
     add_node = Add()
     multiply_node = Multiply()
     relu_node = ReLU()
@@ -43,7 +45,7 @@ def test_save_and_load_fcn(tmp_path):
     loaded_fcn = load(save_path)
     assert isinstance(loaded_fcn, FCN)
     if _backend_found:
-        input_data = DEFAULT_DL_BACKEND.build_tensor([[1.0, 2.0], [3.0, 4.0]])
+        input_data = DEFAULT_DL_BACKEND.random.uniform((10, 2))
         output_original = fcn(input_data)
         output_loaded = loaded_fcn(input_data)
         assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
