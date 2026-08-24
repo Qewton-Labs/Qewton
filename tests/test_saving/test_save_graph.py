@@ -3,7 +3,7 @@ from qewton import save, load
 from qewton.algorithms.building_blocks import Add, Multiply, ReLU
 from qewton.algorithms.building_blocks import Reshape
 from qewton.algorithms.dl_models.fcn import FCN, DeepRitzNet
-from qewton.algorithms.dl_models.cnn import CNN, UNet
+from qewton.algorithms.dl_models.convolutions.cnn import CNN, UNet
 from qewton.algorithms.dl_models.harmonic_fcn import HarmonicFCN
 from qewton.graphs.graphs import Graph
 from qewton.backends import DEFAULT_DL_BACKEND, _backend_found

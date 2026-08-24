@@ -78,7 +78,7 @@ class FCN(GraphNode, Generic[TensorType]):
             backend=backend,
         )
         self._graph.setup()
-        self._state = NodeState.UNINITIALIZED
+        self.set_state(NodeState.UNINITIALIZED)
 
     def reset(self):
         self.set_state(NodeState.UNINITIALIZED)
@@ -102,10 +102,6 @@ class FCN(GraphNode, Generic[TensorType]):
             if i < layers - 1:
                 nodes.append(self.activation.value(backend=backend))
         return SequentialGraph(*nodes)
-
-    def reset(self):
-        self.set_state(NodeState.UNINITIALIZED)
-        return super().reset()
 
     def setup(self):
         """Initializes the neural network itself for the current
