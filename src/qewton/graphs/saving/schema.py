@@ -68,6 +68,7 @@ TYPE_ENUM_REF = "enum_ref"
 TYPE_BACKEND_REF = "backend_ref"
 TYPE_TRAINABLE_PARAMETER_REF = "trainable_parameter_ref"
 TYPE_CONSTANT_REF = "constant_ref"
+TYPE_NODE = "node_ref"
 
 # Typed-ref specific keys
 KEY_REF_KIND = "ref_kind"

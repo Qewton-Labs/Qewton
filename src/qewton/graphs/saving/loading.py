@@ -65,6 +65,7 @@ from qewton.graphs.saving.schema import (
     TYPE_SET,
     TYPE_TRAINABLE_PARAMETER_REF,
     TYPE_TUPLE,
+    TYPE_NODE,
     TYPE_VARIABLE,
     TYPE_GEOMETRY,
     TYPE_ELLIPSIS,
@@ -186,6 +187,8 @@ def _load_other_args(
             if isinstance(backend_key, str):
                 return BACKEND_DICT.get(backend_key, DEFAULT_DL_BACKEND)
             return DEFAULT_DL_BACKEND
+        if value_type == TYPE_NODE:
+            return value[KEY_NODE_ID]
         return {
             k: _load_other_args(v, root_dir, backend_class, node_id)
             for k, v in value.items()
@@ -299,7 +302,16 @@ def load_node(
     loaded_nodes: dict[int, Node],
 ) -> NodeConfig | None:
     """Load a node from a given path."""
-    # First check if there are nested graphs, and if so, can we load them:
+    # First check if there any node dependencies that are not yet loaded,
+    # if so, we return None
+    for args in config_data.get(KEY_OTHER_ARGS, {}).values():
+        if isinstance(args, dict) and args.get(KEY_TYPE) == TYPE_NODE:
+            node_id = args.get(KEY_NODE_ID)
+            if node_id not in loaded_nodes:
+                return None
+            args[KEY_NODE_ID] = loaded_nodes[node_id]
+
+    # Second check if there are nested graphs, and if so, can we load them:
     nested_graphs = {}
     if KEY_NESTED_GRAPHS in config_data:
         # First check if they can be loaded

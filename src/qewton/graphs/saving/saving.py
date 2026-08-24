@@ -57,6 +57,7 @@ from qewton.graphs.saving.schema import (
     TYPE_HP_REF,
     TYPE_TRAINABLE_PARAMETER_REF,
     TYPE_TUPLE,
+    TYPE_NODE,
     TYPE_VARIABLE,
     TYPE_GEOMETRY,
     TYPE_ELLIPSIS,
@@ -95,6 +96,7 @@ def _serialize_other_args(
     parameters_dir: Path,
     file_counter: list[int],
     constants_file_counter: list[int],
+    node_dependencies: list[Node],
     backend,
 ) -> Any:
     if isinstance(value, _TrainableParameterBase):
@@ -111,6 +113,7 @@ def _serialize_other_args(
                 file_counter,
                 constants_file_counter,
                 backend=backend,
+                node_dependencies=node_dependencies,
             )
         return {KEY_TYPE: TYPE_GEOMETRY, KEY_VALUES: serialized_fields}
     if isinstance(value, Variable):
@@ -131,6 +134,7 @@ def _serialize_other_args(
                 parameters_dir,
                 file_counter,
                 constants_file_counter,
+                node_dependencies=node_dependencies,
                 backend=backend,
             )
             for k, v in value.items()
@@ -142,6 +146,7 @@ def _serialize_other_args(
                 parameters_dir,
                 file_counter,
                 constants_file_counter,
+                node_dependencies=node_dependencies,
                 backend=backend,
             )
             for v in value
@@ -155,6 +160,7 @@ def _serialize_other_args(
                     parameters_dir,
                     file_counter,
                     constants_file_counter,
+                    node_dependencies=node_dependencies,
                     backend=backend,
                 )
                 for v in value
@@ -165,6 +171,9 @@ def _serialize_other_args(
             KEY_TYPE: TYPE_BACKEND_REF,
             KEY_BACKEND_KEY: next(k for k, v in BACKEND_DICT.items() if v == value),
         }
+    if isinstance(value, Node):
+        node_dependencies.append(value)
+        return {KEY_TYPE: TYPE_NODE, KEY_NODE_ID: value.node_id}
     return encode_value(value)
 
 
@@ -271,6 +280,9 @@ def save_node(
     constant_counter: list[int],
     backend: type[Backend],
 ):
+    if node_config.node_id in node_save_dict:
+        return  # Node already saved, skip to avoid duplicates
+
     """Saves a Node to a file."""
     # Serialize the node configuration and save it to a JSON file
     config_payload = {
@@ -281,11 +293,13 @@ def save_node(
     }
     # Serialize arguments, including trainable parameters,
     # and save them to the main config
+    node_dependencies = []
     serialized_other_args = _serialize_other_args(
         node_config.other_args,
         parameter_path,
         file_counter,
         constant_counter,
+        node_dependencies=node_dependencies,
         backend=backend,
     )
     config_payload[KEY_OTHER_ARGS] = serialized_other_args
@@ -307,11 +321,20 @@ def save_node(
             )
             config_payload[KEY_NESTED_GRAPHS][graph_name] = save_name
 
-    # Save the node configuration to the node_save_dict, ensuring no duplicate node_ids
-    if node_config.node_id in node_save_dict:
-        raise ValueError(
-            f"Duplicate node_id {node_config.node_id} found in node_save_dict."
+    # save all other nodes that are dependencies of this node
+    for dep_node in node_dependencies:
+        save_node(
+            node_config=dep_node.config_dict(),
+            node_save_dict=node_save_dict,
+            graph_save_dict=graph_save_dict,
+            hp_collection=hp_collection,
+            parameter_path=parameter_path,
+            file_counter=file_counter,
+            constant_counter=constant_counter,
+            backend=dep_node.backend,
         )
+
+    # Save the node configuration to the node_save_dict, ensuring no duplicate node_ids
     node_save_dict[node_config.node_id] = config_payload
 
     # Hyperparameters are saved on the global level, so we dont have duplicates

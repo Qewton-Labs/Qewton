@@ -655,10 +655,26 @@ class Node(ABC, Generic[TensorType]):
                 "Cannot reconstruct node from config, "
                 "node_identifier is None. This is required to reconstruct the node."
             )
-        node: Node = NODE_REGISTRY[config.node_identifier](
-            **config.other_args,  # type: ignore
-            **config.hyperparameters,
-        )
+        node_class = NODE_REGISTRY.get(config.node_identifier)
+        if node_class is None:
+            raise ValueError(
+                f"Cannot reconstruct node from config, "
+                f"node_identifier {config.node_identifier} not found in NODE_REGISTRY."
+            )
+
+        # Build the input arguments for the constructor of the node class.
+        init_inputs = {}
+        for name, param in inspect.signature(node_class.__init__).parameters.items():
+            if name in ["self", "kwargs", "args"]:
+                continue
+            if name in config.hyperparameters:
+                init_inputs[name] = config.hyperparameters[name]
+            elif name in config.other_args:
+                init_inputs[name] = config.other_args[name]
+            else:
+                init_inputs[name] = param
+
+        node: Node = node_class(**init_inputs)
         node.set_mode(config.mode)
         node.set_state(config.state)
         node.node_id = config.node_id
