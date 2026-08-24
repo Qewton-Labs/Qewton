@@ -14,7 +14,7 @@ from qewton.data.data_processing.normalization import (
     InverseStdNormalizationNode,
 )
 from qewton.optim.base import EvaluationPhase
-from qewton.graphs.nodes import NodeState
+from qewton.graphs.nodes import Node, NodeConfig, NodeState
 from qewton.graphs.graphs import Graph
 from qewton.config.axes import EllipsisAxes, FeatureAxes
 from qewton.config.data_configurations import DataConfiguration
@@ -53,6 +53,8 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
             Defaults to DEFAULT_DL_BACKEND.
     """
 
+    _type_identifier = "PCANet"
+
     def __init__(
         self,
         input_variable: Variable,
@@ -67,11 +69,18 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
         name: str = "PCANet",
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
-        pca_n_input = HyperParameter.from_value(pca_n_input, "PCA input n")
-        pca_n_output = HyperParameter.from_value(pca_n_output, "PCA output n")
+        self.pca_n_input = HyperParameter.from_value(pca_n_input, "PCA input n")
+        self.pca_n_output = HyperParameter.from_value(pca_n_output, "PCA output n")
         self.normalize_data = HyperParameter.from_value(
             normalize_data, "Normalization active"
         )
+        self.fcn_hidden_layers = HyperParameter.from_value(
+            fcn_hidden_layers, "FCN hidden layers"
+        )
+        self.fcn_hidden_neurons = HyperParameter.from_value(
+            fcn_hidden_neurons, "FCN hidden neurons"
+        )
+        self.normalization_eps = normalization_eps
 
         self.input_variable = input_variable
         self.output_variable = output_variable
@@ -79,27 +88,40 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
 
         # Inner nodes:
         self.fcn = FCN(
-            in_neurons=pca_n_input,
-            hidden_neurons=fcn_hidden_neurons,
-            out_neurons=pca_n_output,
-            n_hidden_layers=fcn_hidden_layers,
+            in_neurons=self.pca_n_input,
+            hidden_neurons=self.fcn_hidden_neurons,
+            out_neurons=self.pca_n_output,
+            n_hidden_layers=self.fcn_hidden_layers,
             backend=backend,
+            name="FCN",
         )
         self.input_pca = PCANode(
-            n=pca_n_input, data_source_node=data_source_node, backend=backend
+            n=self.pca_n_input,
+            data_source_node=data_source_node,
+            backend=backend,
+            name="Input PCA",
         )
         self.output_pca = PCANode(
-            n=pca_n_output, data_source_node=data_source_node, backend=backend
+            n=self.pca_n_output,
+            data_source_node=data_source_node,
+            backend=backend,
+            name="Output PCA",
         )
-        self.inverse_pca = InversePCANode(self.output_pca)
+        self.inverse_pca = InversePCANode(self.output_pca, name="Inverse Output PCA")
         self.normalize_input = StdNormalizationNode(
-            data_source_node=data_source_node, eps=normalization_eps, backend=backend
+            data_source_node=data_source_node,
+            eps=self.normalization_eps,
+            backend=backend,
+            name="Input Normalization",
         )
         self.normalize_output = StdNormalizationNode(
-            data_source_node=data_source_node, eps=normalization_eps, backend=backend
+            data_source_node=data_source_node,
+            eps=self.normalization_eps,
+            backend=backend,
+            name="Output Normalization",
         )
         self.inverse_normalization = InverseStdNormalizationNode(
-            std_node=self.normalize_output
+            std_node=self.normalize_output, name="Inverse Output Normalization"
         )
         graph, in_ports, out_port = self._build_network()
         self.ellipsis_axes: EllipsisAxes = EllipsisAxes()
@@ -147,7 +169,7 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
         )
 
     def reset(self):
-        self._state = NodeState.UNINITIALIZED
+        self.set_state(NodeState.UNINITIALIZED)
         self.input_pca.reset()
         self.output_pca.reset()
         self.inverse_pca.reset()
@@ -155,28 +177,22 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
         return super().reset()
 
     def setup(self, graph: Graph):
-        # First reset all internal nodes:
-        self.input_pca.reset()
-        self.output_pca.reset()
-        self.inverse_pca.reset()
-        self.fcn.reset()
-        # Now setup the nodes:
-        self.fcn.setup()
-        # Collect all data:
-        total_data_input = []
-        total_data_output = []
-        for _ in range(self.data_source_node.training_batches):
-            in_edge = graph.run_to(last_node=self, mode=EvaluationPhase.TRAIN)
-            total_data_input.append(in_edge[self.input_ports[0]].from_port.value)
-            total_data_output.append(in_edge[self.input_ports[1]].from_port.value)
-        self.fit(total_data_input, total_data_output)
-        # Build the main computation network
-        new_graph, in_ports, out_port = self._build_network()
-        self.setup_graph(
-            new_graph,
-            input_ports=in_ports,
-            output_ports=[out_port],
-        )
+        if self.state == NodeState.UNINITIALIZED:
+            # First reset all internal nodes:
+            self.input_pca.reset()
+            self.output_pca.reset()
+            self.inverse_pca.reset()
+            self.fcn.reset()
+            # Now setup the nodes:
+            self.fcn.setup()
+            # Collect all data:
+            total_data_input = []
+            total_data_output = []
+            for _ in range(self.data_source_node.training_batches):
+                in_edge = graph.run_to(last_node=self, mode=EvaluationPhase.TRAIN)
+                total_data_input.append(in_edge[self.input_ports[0]].from_port.value)
+                total_data_output.append(in_edge[self.input_ports[1]].from_port.value)
+            self.fit(total_data_input, total_data_output)
 
     def fit(
         self, data_batch: list[TensorType], data_batch_output: list[TensorType]
@@ -189,6 +205,14 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
             data_batch_output = [self.normalize_output(x) for x in data_batch_output]
         self.input_pca.fit(data_batch)
         self.output_pca.fit(data_batch_output)
+        # Build the main computation network
+        new_graph, in_ports, out_port = self._build_network()
+        self.setup_graph(
+            new_graph,
+            input_ports=in_ports,
+            output_ports=[out_port],
+        )
+        self.set_state(NodeState.INITIALIZED)
 
     def in_data_config(self):
         return DataConfiguration(
@@ -217,3 +241,25 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
         if self.normalize_data.current_value:
             pca_transformed_output = self.inverse_normalization(pca_transformed_output)
         return pca_transformed_output
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        pca_net: PCANet = super().load_from_config(config)  # type: ignore
+        # Reasign the inner nodes to the correct attributes of the PCANet
+        # instance
+        for node in pca_net._graph.nodes:  # type: ignore
+            if node.name == "Input PCA":
+                pca_net.input_pca = node
+            elif node.name == "Output PCA":
+                pca_net.output_pca = node
+            elif node.name == "Inverse Output PCA":
+                pca_net.inverse_pca = node
+            elif node.name == "FCN":
+                pca_net.fcn = node
+            elif node.name == "Input Normalization":
+                pca_net.normalize_input = node
+            elif node.name == "Output Normalization":
+                pca_net.normalize_output = node
+            elif node.name == "Inverse Output Normalization":
+                pca_net.inverse_normalization = node
+        return pca_net

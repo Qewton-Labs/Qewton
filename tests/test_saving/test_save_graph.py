@@ -5,6 +5,8 @@ from qewton.algorithms.building_blocks import Reshape
 from qewton.algorithms.dl_models.fcn import FCN, DeepRitzNet
 from qewton.algorithms.dl_models.convolutions.cnn import CNN, UNet
 from qewton.algorithms.dl_models.harmonic_fcn import HarmonicFCN
+from qewton.algorithms.dl_models.pca_net import PCANet
+from qewton.config.variables import Variable
 from qewton.graphs.graphs import Graph
 from qewton.backends import DEFAULT_DL_BACKEND, _backend_found
 
@@ -137,4 +139,29 @@ def test_save_and_load_harmonic_fcn(tmp_path):
         input_data = DEFAULT_DL_BACKEND.build_tensor([[1.0, 2.0], [3.0, 4.0]])
         output_original = harmonic_fcn(input_data)
         output_loaded = loaded_harmonic_fcn(input_data)
+        assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
+
+
+def test_save_and_load_pca_net(tmp_path):
+    if not _backend_found:
+        return
+    save_path = tmp_path / "pca_net_test"
+    pca_net = PCANet(
+        input_variable=Variable("x", dim=3),
+        output_variable=Variable("o", dim=1),
+        pca_n_input=3,
+        pca_n_output=1,
+        data_source_node=None,  # type: ignore
+        fcn_hidden_layers=1,
+        fcn_hidden_neurons=4,
+    )
+    test_in_data = DEFAULT_DL_BACKEND.random.uniform((100, 3))
+    test_out_data = DEFAULT_DL_BACKEND.random.uniform((100, 1))
+    pca_net.fit([test_in_data], [test_out_data])
+    save(pca_net, save_path, replace=True)
+    loaded_pca_net = load(save_path)
+    assert isinstance(loaded_pca_net, PCANet)
+    if _backend_found:
+        output_original = pca_net(test_in_data)
+        output_loaded = loaded_pca_net(test_in_data)
         assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
