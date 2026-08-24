@@ -7,7 +7,7 @@ from qewton.data.dataloaders.base import DataNode
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.optim.base import EvaluationPhase
-from qewton.graphs.nodes import NodeState
+from qewton.graphs.nodes import NodeState, NodeConfig, Node
 from qewton.graphs.graphs import Graph
 from qewton.config.axes import EllipsisAxes, BatchAxes
 from qewton.config.data_configurations import DataConfiguration
@@ -30,6 +30,7 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
 
     data_axes = EllipsisAxes()
     batch_axes = BatchAxes(None)
+    _type_identifier = "Std. Normalization Node"
 
     def __init__(
         self,
@@ -82,7 +83,7 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
         self.std = self.backend.math.std(total_data, axis=0, keepdims=True)
         self.std += self.eps
         self._set_port_values(self.mean, self.std)
-        self._state = NodeState.INITIALIZED
+        self.set_state(NodeState.INITIALIZED)
 
     def _set_port_values(self, mean, std):
         self.sub_node.input_ports[1].default = mean
@@ -102,6 +103,29 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
         self.run()
         return self.output_ports[0].value  # type: ignore
 
+    def config_dict(self) -> NodeConfig:
+        basic_config = super().config_dict()
+        if hasattr(self, "mean"):
+            basic_config.other_args["mean"] = self.mean
+            basic_config.other_args["std"] = self.std
+        return basic_config
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        norm_node: StdNormalizationNode = super().load_from_config(config)  # type: ignore
+        # Set the correct sub and divide nodes:
+        for node in norm_node._graph.nodes:
+            if isinstance(node, Subtract):
+                norm_node.sub_node = node
+            elif isinstance(node, Divide):
+                norm_node.divide_node = node
+        # Restore the mean and std if they are present in the config:
+        if "mean" in config.other_args:
+            norm_node.mean = config.other_args["mean"]
+            norm_node.std = config.other_args["std"]
+            norm_node._set_port_values(norm_node.mean, norm_node.std)  # type: ignore
+        return norm_node
+
 
 class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]):
     """Inverts a normalization.
@@ -114,6 +138,7 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
 
     data_axes = EllipsisAxes()
     batch_axes = BatchAxes(None)
+    _type_identifier = "Inverse Std. Normalization Node"
 
     def __init__(
         self,
@@ -144,7 +169,7 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
                     been setup yet!"
             )
         self._set_port_values(self.data_source_node.mean, self.data_source_node.std)
-        self._state = NodeState.INITIALIZED
+        self.set_state(NodeState.INITIALIZED)
 
     def _set_port_values(self, mean, std):
         self.add_node.input_ports[1].default = mean
@@ -162,3 +187,29 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
         self.input_ports[0].set_value(x)
         self.run()
         return self.output_ports[0].value  # type: ignore
+
+    def config_dict(self) -> NodeConfig:
+        return NodeConfig(
+            node_identifier=self._type_identifier,
+            node_id=self.node_id,
+            mode=self.mode,
+            hyperparameters={},
+            other_args={
+                "std_node": self.data_source_node,
+                "name": self.name,
+                "backend": self.backend,
+            },
+            state=self.state,
+        )
+
+    @classmethod
+    def load_from_config(cls, config: NodeConfig) -> Node:
+        norm_node: InverseStdNormalizationNode = super().load_from_config(
+            config
+        )  # type: ignore
+        # Restore the mean and std if they are present in the config:
+        if hasattr(norm_node.data_source_node, "mean"):
+            norm_node._set_port_values(
+                norm_node.data_source_node.mean, norm_node.data_source_node.std
+            )
+        return norm_node

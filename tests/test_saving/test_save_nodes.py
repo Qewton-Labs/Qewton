@@ -1,8 +1,13 @@
 from qewton.algorithms.building_blocks import ParameterNode
 from qewton import save, load
+from qewton.graphs.graphs import Graph
 from qewton.algorithms.building_blocks import Add
 from qewton.algorithms.building_blocks import Reshape
 from qewton.data.data_processing.pca import PCANode, InversePCANode
+from qewton.data.data_processing.normalization import (
+    StdNormalizationNode,
+    InverseStdNormalizationNode,
+)
 from qewton.backends import DEFAULT_DL_BACKEND, _backend_found
 
 
@@ -110,4 +115,45 @@ def test_save_and_load_inverse_pca_node(tmp_path):
     assert loaded_inverse_pca_node.data_source_node.name == "PCA Node"
     assert DEFAULT_DL_BACKEND.math.allclose(
         inverse_pca_node(input_data), loaded_inverse_pca_node(input_data)
+    )
+
+
+def test_save_and_load_std_node(tmp_path):
+    if not _backend_found:
+        return
+    std_node = StdNormalizationNode(
+        eps=1e-5, data_source_node=None, name="Normalization Node"  # type: ignore
+    )
+    test_data = DEFAULT_DL_BACKEND.random.uniform((10, 50, 4))
+    std_node.fit([test_data])
+    save_path = tmp_path / "std_node_test"
+    save(std_node, save_path)
+    loaded_std_node = load(save_path)
+    assert isinstance(loaded_std_node, StdNormalizationNode)
+    assert loaded_std_node.mean is not None
+    assert loaded_std_node.std is not None
+    assert loaded_std_node.eps == 1e-5
+    assert loaded_std_node.name == "Normalization Node"
+    assert DEFAULT_DL_BACKEND.math.allclose(
+        std_node(test_data)[0], loaded_std_node(test_data)[0]
+    )
+
+
+def test_save_and_load_inverse_std_node(tmp_path):
+    if not _backend_found:
+        return
+    std_node = StdNormalizationNode(
+        eps=1e-5, data_source_node=None, name="Normalization Node"  # type: ignore
+    )
+    test_data = DEFAULT_DL_BACKEND.random.uniform((10, 50, 4))
+    std_node.fit([test_data])
+    inverse_std_node = InverseStdNormalizationNode(std_node=std_node)
+    inverse_std_node.setup(Graph())
+    save_path = tmp_path / "inverse_std_node_test"
+    save(inverse_std_node, save_path)
+    loaded_inverse_std_node = load(save_path)
+    input_data = std_node(test_data)[0]
+    assert isinstance(loaded_inverse_std_node, InverseStdNormalizationNode)
+    assert DEFAULT_DL_BACKEND.math.allclose(
+        inverse_std_node(input_data), loaded_inverse_std_node(input_data)
     )

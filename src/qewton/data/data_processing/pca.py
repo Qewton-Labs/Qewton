@@ -155,22 +155,17 @@ class PCANode(DataProcessingNode[TensorType]):
             basic_config.other_args["pca_s"] = self.pca_s
             basic_config.other_args["pca_u"] = self.pca_u
             basic_config.other_args["original_shape"] = self.original_shape
+            self._set_port_values(self.pca_u, self.pca_s, self.pca_v)
         return basic_config
 
     @classmethod
     def load_from_config(cls, config: NodeConfig) -> Node:
-        data_dict = {}
-        if "pca_v" in config.other_args:
-            data_dict["pca_v"] = config.other_args.pop("pca_v")
-            data_dict["pca_s"] = config.other_args.pop("pca_s")
-            data_dict["pca_u"] = config.other_args.pop("pca_u")
-            data_dict["original_shape"] = config.other_args.pop("original_shape")
         pca_node: PCANode = super().load_from_config(config)  # type: ignore
-        if data_dict:
-            pca_node.pca_v = data_dict["pca_v"]
-            pca_node.pca_s = data_dict["pca_s"]
-            pca_node.pca_u = data_dict["pca_u"]
-            pca_node.original_shape = data_dict["original_shape"]
+        if "pca_v" in config.other_args:
+            pca_node.pca_v = config.other_args["pca_v"]
+            pca_node.pca_s = config.other_args["pca_s"]
+            pca_node.pca_u = config.other_args["pca_u"]
+            pca_node.original_shape = config.other_args["original_shape"]
         return pca_node
 
 
