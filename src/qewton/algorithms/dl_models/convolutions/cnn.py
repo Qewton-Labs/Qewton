@@ -308,9 +308,7 @@ class UNet(GraphNode, Generic[TensorType]):
                     backend=backend,
                 )
             )
-            pooling_list.append(
-                self.pooling_node(self.pooling_kernel_size.value, stride=2)
-            )
+            pooling_list.append(self.pooling_node(self.pooling_kernel_size.value))
             graph.connect(conv_block_list_down[i], pooling_list[i])
 
             # Upsampling step:

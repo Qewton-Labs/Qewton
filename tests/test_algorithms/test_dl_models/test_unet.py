@@ -2,7 +2,7 @@ import pytest
 
 from qewton.backends.base import DeepLearningBackend
 from qewton.config.devices import cpu, cuda, cuda_available
-from qewton.algorithms.dl_models.cnn import UNet
+from qewton.algorithms.dl_models.convolutions.cnn import UNet
 
 
 def all_subclasses(cls):
