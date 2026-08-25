@@ -672,7 +672,13 @@ class Node(ABC, Generic[TensorType]):
             elif name in config.other_args:
                 init_inputs[name] = config.other_args[name]
             else:
-                init_inputs[name] = param
+                if param.default is not inspect.Parameter.empty:
+                    continue  # let the constructor apply its own default
+                else:
+                    raise ValueError(
+                        f"Missing required constructor argument '{name}' for "
+                        f"{node_class.__name__} while reconstructing from config."
+                    )
 
         node: Node = node_class(**init_inputs)
         node.set_mode(config.mode)

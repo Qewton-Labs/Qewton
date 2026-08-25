@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
+import os
 import inspect
 import logging
 import shutil
@@ -66,18 +68,27 @@ from qewton.graphs.saving.schema import (
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class SaveContext:
+    parameters_dir: Path
+    file_counter: int
+    constants_file_counter: int
+    node_save_dict: dict[int, Any]
+    graph_save_dict: dict
+    hp_collection: dict[str, HyperParameter]
+
+
 def _save_trainable_parameters(
     value: _TrainableParameterBase,
-    parameters_dir: Path,
-    file_counter: list[int],
+    save_context: SaveContext,
     backend: ComputingBackend,
 ) -> dict[str, Any] | list[dict[str, Any]]:
     # Save each parameter group separately to keep files small and composable.
     rel_paths: list[dict[str, Any]] = []
     for group in value:
-        file_name = f"param_{file_counter[0]}"
-        file_counter[0] += 1
-        param_path = parameters_dir / file_name
+        file_name = f"param_{save_context.file_counter}"
+        save_context.file_counter += 1
+        param_path = save_context.parameters_dir / file_name
         backend.save(group.parameters, param_path)
         rel_paths.append(
             {
@@ -93,14 +104,12 @@ def _save_trainable_parameters(
 
 def _serialize_other_args(
     value: Any,
-    parameters_dir: Path,
-    file_counter: list[int],
-    constants_file_counter: list[int],
+    save_context: SaveContext,
     node_dependencies: list[Node],
     backend,
 ) -> Any:
     if isinstance(value, _TrainableParameterBase):
-        return _save_trainable_parameters(value, parameters_dir, file_counter, backend)
+        return _save_trainable_parameters(value, save_context, backend)
     if value is ...:
         return {KEY_TYPE: TYPE_ELLIPSIS}
     if isinstance(value, Geometry):
@@ -109,9 +118,7 @@ def _serialize_other_args(
         for k, v in raw.items():
             serialized_fields[k] = _serialize_other_args(
                 v,
-                parameters_dir,
-                file_counter,
-                constants_file_counter,
+                save_context=save_context,
                 backend=backend,
                 node_dependencies=node_dependencies,
             )
@@ -119,9 +126,9 @@ def _serialize_other_args(
     if isinstance(value, Variable):
         return {KEY_TYPE: TYPE_VARIABLE, KEY_VALUES: dict(value)}
     if isinstance(value, backend.default_dtype):
-        file_name = f"value_{constants_file_counter[0]}"
-        constants_file_counter[0] += 1
-        param_path = parameters_dir / file_name
+        file_name = f"value_{save_context.constants_file_counter}"
+        save_context.constants_file_counter += 1
+        param_path = save_context.parameters_dir / file_name
         backend.save(value, param_path)
         return {
             KEY_TYPE: TYPE_CONSTANT_REF,
@@ -131,9 +138,7 @@ def _serialize_other_args(
         return {
             str(k): _serialize_other_args(
                 v,
-                parameters_dir,
-                file_counter,
-                constants_file_counter,
+                save_context=save_context,
                 node_dependencies=node_dependencies,
                 backend=backend,
             )
@@ -143,9 +148,7 @@ def _serialize_other_args(
         return [
             _serialize_other_args(
                 v,
-                parameters_dir,
-                file_counter,
-                constants_file_counter,
+                save_context=save_context,
                 node_dependencies=node_dependencies,
                 backend=backend,
             )
@@ -157,9 +160,7 @@ def _serialize_other_args(
             KEY_VALUES: [
                 _serialize_other_args(
                     v,
-                    parameters_dir,
-                    file_counter,
-                    constants_file_counter,
+                    save_context=save_context,
                     node_dependencies=node_dependencies,
                     backend=backend,
                 )
@@ -167,10 +168,10 @@ def _serialize_other_args(
             ],
         }
     if inspect.isclass(value) and issubclass(value, Backend):
-        return {
-            KEY_TYPE: TYPE_BACKEND_REF,
-            KEY_BACKEND_KEY: next(k for k, v in BACKEND_DICT.items() if v == value),
-        }
+        key = next((k for k, v in BACKEND_DICT.items() if v == value), None)
+        if key is None:
+            raise ValueError(f"Backend class {value!r} not found in BACKEND_DICT.")
+        return {KEY_TYPE: TYPE_BACKEND_REF, KEY_BACKEND_KEY: key}
     if isinstance(value, Node):
         node_dependencies.append(value)
         return {KEY_TYPE: TYPE_NODE, KEY_NODE_ID: value.node_id}
@@ -202,88 +203,79 @@ def save(obj: Node | Graph, path: str | Path, replace: bool = False) -> None:
         obj (Node | Graph): The Node or Graph to save.
         path (str): The path to the file where the object will be saved.
     """
-    if Path(path).exists():
-        if replace:
-            # delete the existing directory and its contents
-            shutil.rmtree(path)
-        else:
-            raise FileExistsError(f"The path {path} already exists. Use replace=True \
-                    to allow to overwrite it.")
+    # Save path and create a temporary one to save the new data object
+    original_path = Path(path)
+    path = Path(str(original_path) + "_temp_save")
+
+    if Path(original_path).exists() and not replace:
+        raise FileExistsError(
+            f"The path {original_path} already exists. Use replace=True to allow to overwrite it."
+        )
+
     logger.info("Saving %s to %s", obj.__class__.__name__, path)
 
     # Setup all the necessary directories and counters for saving parameters and constants
-    node_save_dict: dict[int, Any] = {}
-    graph_save_dict = {}
-    hp_collection: dict[str, HyperParameter] = {}
-    parameter_path = Path(path) / DIR_PARAMETERS
-    file_counter = [0]  # Use a list to allow mutation within nested functions
-    constant_counter = [0]  # Use a list to allow mutation within nested functions
+    save_context = SaveContext(
+        parameters_dir=Path(path) / DIR_PARAMETERS,
+        file_counter=0,
+        constants_file_counter=0,
+        node_save_dict={},
+        graph_save_dict={},
+        hp_collection={},
+    )
+
     config_dict: dict = {KEY_SCHEMA_VERSION: SCHEMA_VERSION}
-    if not parameter_path.exists():
-        parameter_path.mkdir(parents=True, exist_ok=True)
+    if not save_context.parameters_dir.exists():
+        save_context.parameters_dir.mkdir(parents=True, exist_ok=True)
 
     if isinstance(obj, Node):
         config_dict[KEY_OBJECT_TYPE] = OBJECT_TYPE_NODE
         config_dict[KEY_NODE_ID] = obj.node_id
-        save_node(
-            obj.config_dict(),
-            node_save_dict,
-            graph_save_dict,
-            hp_collection,
-            parameter_path,
-            file_counter,
-            constant_counter,
-            obj.backend,
-        )
+        save_node(obj.config_dict(), save_context, obj.backend)
     elif isinstance(obj, Graph):
         config_dict[KEY_OBJECT_TYPE] = OBJECT_TYPE_GRAPH
-        save_graph(
-            graph=obj,
-            save_key=OBJECT_TYPE_GRAPH,
-            node_save_dict=node_save_dict,
-            graph_save_dict=graph_save_dict,
-            hp_collection=hp_collection,
-            parameter_path=parameter_path,
-            file_counter=file_counter,
-            constant_counter=constant_counter,
-        )
+        save_graph(graph=obj, save_key=OBJECT_TYPE_GRAPH, save_context=save_context)
     else:
         raise TypeError(f"Object of type {type(obj)} is not supported for saving.")
     # Save the node and graph configurations to JSON files
+
     with open(Path(path) / FILE_CONFIG, "w", encoding="utf-8") as f:
-        f.write(json.dumps(config_dict, indent=2))
+        f.write(json.dumps(config_dict, indent=4))
     with open(Path(path) / FILE_NODES, "w", encoding="utf-8") as f:
-        f.write(json.dumps(node_save_dict, indent=4))
+        f.write(json.dumps(save_context.node_save_dict, indent=4))
     with open(Path(path) / FILE_GRAPHS, "w", encoding="utf-8") as f:
-        f.write(json.dumps(graph_save_dict, indent=4))
+        f.write(json.dumps(save_context.graph_save_dict, indent=4))
     # Save the hyperparameter collection to a JSON file
     with open(Path(path) / FILE_HYPERPARAMETERS, "w", encoding="utf-8") as f:
         f.write(
             json.dumps(
-                {k: serialize_hyperparameter(v) for k, v in hp_collection.items()},
+                {
+                    k: serialize_hyperparameter(v)
+                    for k, v in save_context.hp_collection.items()
+                },
                 indent=4,
             )
         )
     # The parameters and constants are saved in their respective files during the
     # serialization process.
 
+    if Path(original_path).exists():
+        shutil.rmtree(original_path)
+    # rename the temporary save directory to the original path
+    os.rename(path, original_path)
+
     logger.info("Saving completed")
 
 
 def save_node(
     node_config: NodeConfig,
-    node_save_dict: dict[int, Any],
-    graph_save_dict: dict[str, Any],
-    hp_collection: dict[str, HyperParameter],
-    parameter_path: Path,
-    file_counter: list[int],
-    constant_counter: list[int],
+    save_context: SaveContext,
     backend: type[Backend],
 ):
-    if node_config.node_id in node_save_dict:
+    """Saves a Node to a file."""
+    if node_config.node_id in save_context.node_save_dict:
         return  # Node already saved, skip to avoid duplicates
 
-    """Saves a Node to a file."""
     # Serialize the node configuration and save it to a JSON file
     config_payload = {
         KEY_NODE_IDENTIFIER: node_config.node_identifier,
@@ -296,9 +288,7 @@ def save_node(
     node_dependencies = []
     serialized_other_args = _serialize_other_args(
         node_config.other_args,
-        parameter_path,
-        file_counter,
-        constant_counter,
+        save_context=save_context,
         node_dependencies=node_dependencies,
         backend=backend,
     )
@@ -309,33 +299,19 @@ def save_node(
         config_payload[KEY_NESTED_GRAPHS] = {}
         for graph_name, graph in node_config.nested_graphs.items():
             save_name = f"{graph_name}_id_{node_config.node_id}"
-            save_graph(
-                graph=graph,
-                save_key=save_name,
-                node_save_dict=node_save_dict,
-                graph_save_dict=graph_save_dict,
-                hp_collection=hp_collection,
-                parameter_path=parameter_path,
-                file_counter=file_counter,
-                constant_counter=constant_counter,
-            )
+            save_graph(graph=graph, save_key=save_name, save_context=save_context)
             config_payload[KEY_NESTED_GRAPHS][graph_name] = save_name
 
     # save all other nodes that are dependencies of this node
     for dep_node in node_dependencies:
         save_node(
             node_config=dep_node.config_dict(),
-            node_save_dict=node_save_dict,
-            graph_save_dict=graph_save_dict,
-            hp_collection=hp_collection,
-            parameter_path=parameter_path,
-            file_counter=file_counter,
-            constant_counter=constant_counter,
+            save_context=save_context,
             backend=dep_node.backend,
         )
 
     # Save the node configuration to the node_save_dict, ensuring no duplicate node_ids
-    node_save_dict[node_config.node_id] = config_payload
+    save_context.node_save_dict[node_config.node_id] = config_payload
 
     # Hyperparameters are saved on the global level, so we dont have duplicates
     if len(node_config.hyperparameters) > 0:
@@ -343,9 +319,11 @@ def save_node(
         for hp in node_config.hyperparameters.values():
             if isinstance(hp, (list, tuple)):
                 for sub_hp in hp:
-                    _add_hp_to_collection(sub_hp, hp_collection, node_config.node_id)
+                    _add_hp_to_collection(
+                        sub_hp, save_context.hp_collection, node_config.node_id
+                    )
             else:
-                _add_hp_to_collection(hp, hp_collection, node_config.node_id)
+                _add_hp_to_collection(hp, save_context.hp_collection, node_config.node_id)
         # Build the reference:
         config_payload[KEY_HYPERPARAMETERS] = {}
         for name, hp in node_config.hyperparameters.items():
@@ -363,12 +341,7 @@ def save_node(
 def save_graph(
     graph: Graph,
     save_key: str,
-    node_save_dict: dict[int, Any],
-    graph_save_dict: dict[str, Any],
-    hp_collection: dict[str, HyperParameter],
-    parameter_path: Path,
-    file_counter: list[int],
-    constant_counter: list[int],
+    save_context: SaveContext,
 ) -> None:
     """Saves a Graph to a file.
 
@@ -395,12 +368,7 @@ def save_graph(
         for node in graph.nodes:
             save_node(
                 node_config=node_configs[node],
-                node_save_dict=node_save_dict,
-                graph_save_dict=graph_save_dict,
-                hp_collection=hp_collection,
-                parameter_path=parameter_path,
-                file_counter=file_counter,
-                constant_counter=constant_counter,
+                save_context=save_context,
                 backend=node.backend,
             )
 
@@ -411,9 +379,9 @@ def save_graph(
         KEY_FROM_OUTSIDE: [_edge_format_save(e) for e in graph_config.edges_from_outside],
         KEY_TO_OUTSIDE: [_edge_format_save(e) for e in graph_config.edges_to_outside],
     }
-    if save_key in graph_save_dict:
+    if save_key in save_context.graph_save_dict:
         raise ValueError(f"Duplicate graph save_key {save_key} found in graph_save_dict.")
-    graph_save_dict[save_key] = graph_config_payload
+    save_context.graph_save_dict[save_key] = graph_config_payload
 
 
 def _edge_format_save(edge: tuple[int, int, int, int]) -> dict[str, Any]:

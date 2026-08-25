@@ -1,8 +1,8 @@
+from dataclasses import dataclass
 import importlib
 import inspect
 import json
 from pathlib import Path
-from collections import deque
 from typing import Any
 
 from qewton.graphs.nodes import (
@@ -17,7 +17,7 @@ from qewton.optim.parameters.trainable_parameters import (
     TrainableParameters,
     TrainableParametersCollection,
 )
-from qewton.backends import BACKEND_DICT, DEFAULT_DL_BACKEND, Backend
+from qewton.backends import BACKEND_DICT, DEFAULT_DL_BACKEND, Backend, ComputingBackend
 from qewton.config.variables import Variable
 
 from qewton.graphs.saving.hyperparameter_saving import (
@@ -72,6 +72,14 @@ from qewton.graphs.saving.schema import (
 )
 
 _ALLOWED_MODULE_PREFIXES = ("qewton.",)
+
+
+@dataclass
+class LoadContext:
+    root_dir: Path
+    backend_class: type[ComputingBackend]
+    loaded_nodes: dict[int, Node]
+    node_id: int
 
 
 def _get_class(module: str, classname: str) -> type:
@@ -136,12 +144,7 @@ def _resolve_backend_class(value: Any) -> type[Backend]:
     return DEFAULT_DL_BACKEND
 
 
-def _load_other_args(
-    value: Any,
-    root_dir: Path,
-    backend_class: type,
-    node_id: int,
-) -> Any:
+def _load_other_args(value: Any, load_context: LoadContext) -> Any:
     """Recursively walk *other_args* and replace parameter paths with
     loaded *TrainableParameters* instances."""
     if isinstance(value, dict):
@@ -150,7 +153,7 @@ def _load_other_args(
             return ...
         if value_type == TYPE_GEOMETRY:
             inner = {
-                k: _load_other_args(v, root_dir, backend_class, node_id)
+                k: _load_other_args(v, load_context=load_context)
                 for k, v in value[KEY_VALUES].items()
             }
             cls_name = inner.get("class", "")
@@ -164,21 +167,19 @@ def _load_other_args(
         if value_type == TYPE_VARIABLE:
             return Variable.from_dict(value[KEY_VALUES])
         if value_type == TYPE_TRAINABLE_PARAMETER_REF:
-            abs_path = root_dir / value[KEY_PATH]
-            tensor = backend_class.load(abs_path)
-            return TrainableParameters(node_id=node_id, parameters=tensor)
+            abs_path = load_context.root_dir / value[KEY_PATH]
+            tensor = load_context.backend_class.load(abs_path)
+            return TrainableParameters(node_id=load_context.node_id, parameters=tensor)
         if value_type == TYPE_CONSTANT_REF:
-            abs_path = root_dir / value[KEY_PATH]
-            return backend_class.load(abs_path)
+            abs_path = load_context.root_dir / value[KEY_PATH]
+            return load_context.backend_class.load(abs_path)
         if value_type == TYPE_TUPLE:
             return tuple(
-                _load_other_args(v, root_dir, backend_class, node_id)
-                for v in value[KEY_VALUES]
+                _load_other_args(v, load_context=load_context) for v in value[KEY_VALUES]
             )
         if value_type == TYPE_SET:
             return set(
-                _load_other_args(v, root_dir, backend_class, node_id)
-                for v in value[KEY_VALUES]
+                _load_other_args(v, load_context=load_context) for v in value[KEY_VALUES]
             )
         if value_type == TYPE_CLASS_REF:
             return _get_class(value[KEY_MODULE], value[KEY_CLASS])
@@ -188,15 +189,14 @@ def _load_other_args(
                 return BACKEND_DICT.get(backend_key, DEFAULT_DL_BACKEND)
             return DEFAULT_DL_BACKEND
         if value_type == TYPE_NODE:
-            return value[KEY_NODE_ID]
+            return load_context.loaded_nodes[value[KEY_NODE_ID]]
         return {
-            k: _load_other_args(v, root_dir, backend_class, node_id)
-            for k, v in value.items()
+            k: _load_other_args(v, load_context=load_context) for k, v in value.items()
         }
 
     if isinstance(value, list):
         # Could be a list of parameter paths (multiple groups)
-        loaded = [_load_other_args(v, root_dir, backend_class, node_id) for v in value]
+        loaded = [_load_other_args(v, load_context=load_context) for v in value]
         # If every item became a TrainableParameters, combine them
         if all(isinstance(v, TrainableParameters) for v in loaded):
             collection = TrainableParametersCollection()
@@ -219,6 +219,26 @@ def _load_hyperparameters(root_dir):
     return shared_hps
 
 
+def _internal_node_dependencies_loaded(iterable_obj, loaded_nodes) -> bool:
+    """Check if all node dependencies in the given iterable object are loaded.
+
+    Args:
+        iterable_obj (iterable): An iterable object containing node dependencies.
+    """
+    for item in iterable_obj:
+        if isinstance(item, dict) and item.get(KEY_TYPE) == TYPE_NODE:
+            node_id = item.get(KEY_NODE_ID)
+            if node_id not in loaded_nodes:
+                return False
+        elif isinstance(item, dict):
+            if not _internal_node_dependencies_loaded(item.values(), loaded_nodes):
+                return False
+        elif isinstance(item, (list, tuple, set)):
+            if not _internal_node_dependencies_loaded(item, loaded_nodes):
+                return False
+    return True
+
+
 #########################################################################
 def load(path: str | Path) -> Node | Graph:
     """Load a node or graph from a given path.
@@ -229,18 +249,22 @@ def load(path: str | Path) -> Node | Graph:
     Returns:
         Node | Graph: The reconstructed node or graph.
     """
-    root_dir = Path(path)
-
+    load_context = LoadContext(
+        root_dir=Path(path),
+        backend_class=DEFAULT_DL_BACKEND,
+        loaded_nodes={},
+        node_id=-1,
+    )
     # Check and read all json files
     files = [
-        root_dir / FILE_CONFIG,
-        root_dir / FILE_NODES,
-        root_dir / FILE_GRAPHS,
-        root_dir / FILE_HYPERPARAMETERS,
+        load_context.root_dir / FILE_CONFIG,
+        load_context.root_dir / FILE_NODES,
+        load_context.root_dir / FILE_GRAPHS,
+        load_context.root_dir / FILE_HYPERPARAMETERS,
     ]
     for file in files:
         if not file.exists():
-            raise FileNotFoundError(f"No {file} found in {root_dir}")
+            raise FileNotFoundError(f"No {file} found in {load_context.root_dir}")
 
     # Check for version mismatch
     with files[0].open("r", encoding="utf-8") as f:
@@ -250,9 +274,8 @@ def load(path: str | Path) -> Node | Graph:
         f"found {config_data.get(KEY_SCHEMA_VERSION)} in {files[0]}"
     )
     # Load all hyperparameters
-    shared_hps = _load_hyperparameters(root_dir)
+    shared_hps = _load_hyperparameters(load_context.root_dir)
     # Load the node data and graph data
-    loaded_nodes: dict[int, Node] = {}
     with files[1].open("r", encoding="utf-8") as f:
         node_data: dict[str, Any] = json.load(f)
     with files[2].open("r", encoding="utf-8") as f:
@@ -260,34 +283,40 @@ def load(path: str | Path) -> Node | Graph:
 
     # Now loop over all nodes and load them, since they can depend on each other,
     # we need to do this in a loop until all nodes are loaded.
-    unloaded_queue = deque(node_data.keys())
-    while unloaded_queue:
-        node_id = unloaded_queue.popleft()
-        loaded_node_config = load_node(
-            root_dir,
-            node_data[node_id],
-            shared_hps=shared_hps,
-            graph_data=graph_data,
-            loaded_nodes=loaded_nodes,
-        )
-        if loaded_node_config is None:
-            unloaded_queue.append(node_id)
-            if len(unloaded_queue) == 1:
-                raise ValueError(
-                    f"Could not load node {node_id} due to unresolved dependencies."
-                )
-        else:
-            if loaded_node_config.node_identifier is not None:
-                node_class = NODE_REGISTRY.get(loaded_node_config.node_identifier, Node)
+    unloaded = list(node_data.keys())
+    while unloaded:
+        still_unloaded = []
+        progressed = False
+        for node_id in unloaded:
+            cfg = load_node(
+                node_data[node_id],
+                load_context=load_context,
+                shared_hps=shared_hps,
+                graph_data=graph_data,
+            )
+            if cfg is None:
+                still_unloaded.append(node_id)
             else:
-                node_class = Node
-            loaded_nodes[int(node_id)] = node_class.load_from_config(loaded_node_config)
+                progressed = True
+                if cfg.node_identifier is not None:
+                    node_class = NODE_REGISTRY.get(cfg.node_identifier, Node)
+                else:
+                    node_class = Node
+                load_context.loaded_nodes[int(node_id)] = node_class.load_from_config(cfg)
+
+        if not progressed:
+            raise ValueError(
+                f"Could not resolve dependencies for nodes: {still_unloaded}"
+            )
+        unloaded = still_unloaded
 
     # Now check if we should load a graph or a single node
     if config_data[KEY_OBJECT_TYPE] == OBJECT_TYPE_NODE:
-        return loaded_nodes[config_data[KEY_NODE_ID]]
+        return load_context.loaded_nodes[config_data[KEY_NODE_ID]]
     if config_data[KEY_OBJECT_TYPE] == OBJECT_TYPE_GRAPH:
-        main_graph_config = load_graph(graph_data[OBJECT_TYPE_GRAPH], loaded_nodes)
+        main_graph_config = load_graph(
+            graph_data[OBJECT_TYPE_GRAPH], load_context.loaded_nodes
+        )
         return Graph.load_from_graph_config(main_graph_config)
     raise ValueError(
         f"Unknown object type '{config_data[KEY_OBJECT_TYPE]}' in {files[0]}"
@@ -295,21 +324,18 @@ def load(path: str | Path) -> Node | Graph:
 
 
 def load_node(
-    root_dir: Path,
     config_data: dict[str, Any],
+    load_context: LoadContext,
     shared_hps: dict[str, Any],
     graph_data: dict[str, Any],
-    loaded_nodes: dict[int, Node],
 ) -> NodeConfig | None:
     """Load a node from a given path."""
     # First check if there any node dependencies that are not yet loaded,
     # if so, we return None
-    for args in config_data.get(KEY_OTHER_ARGS, {}).values():
-        if isinstance(args, dict) and args.get(KEY_TYPE) == TYPE_NODE:
-            node_id = args.get(KEY_NODE_ID)
-            if node_id not in loaded_nodes:
-                return None
-            args[KEY_NODE_ID] = loaded_nodes[node_id]
+    if not _internal_node_dependencies_loaded(
+        config_data.get(KEY_OTHER_ARGS, {}), load_context.loaded_nodes
+    ):
+        return None
 
     # Second check if there are nested graphs, and if so, can we load them:
     nested_graphs = {}
@@ -317,12 +343,12 @@ def load_node(
         # First check if they can be loaded
         for saved_graph_names in config_data[KEY_NESTED_GRAPHS].values():
             for node_ids in graph_data[saved_graph_names][KEY_NODES_INCLUDED]:
-                if node_ids not in loaded_nodes:
+                if node_ids not in load_context.loaded_nodes:
                     return None
         # Now we load them
         for graph_name, saved_graph_names in config_data[KEY_NESTED_GRAPHS].items():
             nested_graphs[graph_name] = load_graph(
-                graph_data[saved_graph_names], loaded_nodes
+                graph_data[saved_graph_names], load_context.loaded_nodes
             )
 
     # Resolve the backend, since we need it to load the tensors
@@ -330,9 +356,9 @@ def load_node(
     backend_class = _resolve_backend_class(other_args_raw.get(KEY_BACKEND_KEY))
 
     # Reconstruct other_args
-    other_args = _load_other_args(
-        other_args_raw, root_dir, backend_class, config_data[KEY_NODE_ID]
-    )
+    load_context.node_id = config_data[KEY_NODE_ID]
+    load_context.backend_class = backend_class  # type: ignore
+    other_args = _load_other_args(other_args_raw, load_context=load_context)
     # Resolve hyperparameters, following any references into shared_hps
     hyperparameters = {}
     for name, hp_name in config_data.get(KEY_HYPERPARAMETERS, {}).items():
