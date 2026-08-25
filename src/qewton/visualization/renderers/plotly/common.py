@@ -138,10 +138,13 @@ def _apply_scale(scale, min_key: str = "cmin", max_key: str = "cmax") -> dict:
     """
     if scale is None:
         return {"showscale": True}
-    kwargs = {"showscale": scale.claim_colorbar()}
+    show = scale.claim_colorbar()
+    kwargs = {"showscale": show}
     rng = scale.range
     if rng is not None:
         kwargs[min_key], kwargs[max_key] = rng
+    if show:
+        kwargs["colorbar"] = dict(x=1.02)
     return kwargs
 
 

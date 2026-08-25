@@ -6,10 +6,20 @@ from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.visualization.plots.base import Plot
 from qewton.visualization.plots.data.curve import LinePlot
 from qewton.visualization.plots.data.grid import EmbeddedGridPlot, QuiverPlot
-from qewton.visualization.plots.data.mesh import MeshFieldPlot, MeshVectorPlot
+from qewton.visualization.plots.data.mesh import (
+    MeshFieldPlot,
+    MeshVectorPlot,
+    MeshSurfacePlot,
+)
 from qewton.visualization.plots.data.points import PointCloudPlot
 from qewton.visualization.plots.data.samples import ScatterPlot
-from qewton.visualization.plots.spec import ColorSpec, SliderSpec, VariableSpec, VectorSpec
+from qewton.visualization.plots.spec import (
+    ColorSpec,
+    SliderSpec,
+    VariableSpec,
+    VectorSpec,
+    AxisSpec,
+)
 
 
 def auto_plot(
@@ -65,7 +75,9 @@ def auto_plot(
     return _auto_flat_plot(data, data_config, **kwargs)
 
 
-def _require_named_variable(data_config: DataConfiguration, feature_axes: FeatureAxes | None) -> Variable:
+def _require_named_variable(
+    data_config: DataConfiguration, feature_axes: FeatureAxes | None
+) -> Variable:
     if feature_axes is None:
         raise ValueError(
             f"{data_config} has no FeatureAxes - there is no field data to "
@@ -106,7 +118,9 @@ def _distinct_quantities(variable: Variable) -> list[Variable]:
     return quantities
 
 
-def _auto_quantity(data_config: DataConfiguration, variable: Variable) -> "Variable | VariableSpec":
+def _auto_quantity(
+    data_config: DataConfiguration, variable: Variable
+) -> "Variable | VariableSpec":
     """The single quantity to plot, or - when the FeatureAxes bundles
     several distinct ones - a VariableSpec letting the user switch between
     them, as long as they all share one dim (so the same Plot role stays
@@ -130,7 +144,8 @@ def _other_axes(data_config: DataConfiguration, *consumed: Axes | None) -> list[
     """Every axis in `data_config` besides the ones already spoken for
     (geometry, feature) and any EllipsisAxes wildcard."""
     return [
-        axes for axes in data_config.axes
+        axes
+        for axes in data_config.axes
         if axes not in consumed and not isinstance(axes, EllipsisAxes)
     ]
 
@@ -143,7 +158,8 @@ def _default_sliders(axes: list[Axes], existing_controls: list) -> list[SliderSp
     covered = {c.variable_or_axes for c in existing_controls}
     return [
         SliderSpec(axis, init_state=None, minimum=None, maximum=None)
-        for axis in axes if axis not in covered
+        for axis in axes
+        if axis not in covered
     ]
 
 
@@ -154,12 +170,16 @@ def _with_extra_controls(kwargs: dict, axes: list[Axes]) -> dict:
     return dict(kwargs, controls=list(kwargs.get("controls") or []) + generated)
 
 
-def _auto_geometry_plot(data, data_config: DataConfiguration, geometry_axes: GeometryAxes, **kwargs) -> Plot:
+def _auto_geometry_plot(
+    data, data_config: DataConfiguration, geometry_axes: GeometryAxes, **kwargs
+) -> Plot:
     feature_axes = data_config.feature_axes
     variable = _require_named_variable(data_config, feature_axes)
     quantity = _auto_quantity(data_config, variable)
     geometry = geometry_axes.geometry
-    kwargs = _with_extra_controls(kwargs, _other_axes(data_config, geometry_axes, feature_axes))
+    kwargs = _with_extra_controls(
+        kwargs, _other_axes(data_config, geometry_axes, feature_axes)
+    )
 
     # Checked structurally (`.mesh` populated), not by isinstance(MeshGeometry)
     # - a SampledGeometry only has a mesh once mesh-mode sampling gave it real
@@ -168,19 +188,24 @@ def _auto_geometry_plot(data, data_config: DataConfiguration, geometry_axes: Geo
     # SampledGeometry exists at all.
     if getattr(geometry, "mesh", None) is not None:
         if quantity.dim == 1:
-            return MeshFieldPlot(data, data_config, color=ColorSpec(quantity), **kwargs)
+            if geometry.dim == 2:
+                return MeshSurfacePlot(data, data_config, z=AxisSpec(quantity), **kwargs)
         if quantity.dim == geometry.dim:
-            return MeshVectorPlot(data, data_config, vector=VectorSpec(quantity), **kwargs)
+            return MeshVectorPlot(
+                data, data_config, vector=VectorSpec(quantity), **kwargs
+            )
         raise ValueError(
             f"{quantity.name} has dim={quantity.dim}, but the mesh is "
-            f"{geometry.dim}D - expected dim=1 for a MeshFieldPlot or "
+            f"{geometry.dim}D - expected dim=2 for a MeshSurfacePlot or "
             f"dim={geometry.dim} for a MeshVectorPlot. Construct one "
             "explicitly if this is intentional."
         )
 
     if isinstance(geometry, GridGeometry):
         if quantity.dim == 1:
-            return EmbeddedGridPlot(data, data_config, color=ColorSpec(quantity), **kwargs)
+            return EmbeddedGridPlot(
+                data, data_config, color=ColorSpec(quantity), **kwargs
+            )
         if quantity.dim == 3:
             return QuiverPlot(data, data_config, vector=VectorSpec(quantity), **kwargs)
         raise ValueError(
@@ -193,7 +218,10 @@ def _auto_geometry_plot(data, data_config: DataConfiguration, geometry_axes: Geo
     # mesh/grid structure to them) - e.g. a SampledGeometry outside mesh
     # mode. QuiverPlot itself has no GridGeometry-specific requirement (only
     # 3D discretization_points), so it's reused as-is for the vector case.
-    if isinstance(geometry, DiscreteGeometry) and geometry.discretization_points is not None:
+    if (
+        isinstance(geometry, DiscreteGeometry)
+        and geometry.discretization_points is not None
+    ):
         if quantity.dim == 1:
             return PointCloudPlot(data, data_config, color=ColorSpec(quantity), **kwargs)
         if quantity.dim == 3:
@@ -228,7 +256,10 @@ def _auto_flat_plot(data, data_config: DataConfiguration, **kwargs) -> Plot:
         if len(leaves) == 1 and other_axes:
             domain, *rest = other_axes
             return LinePlot(
-                data, data_config, x=domain, y=quantities[0],
+                data,
+                data_config,
+                x=domain,
+                y=quantities[0],
                 **_with_extra_controls(kwargs, rest),
             )
         if len(leaves) == 2:
@@ -242,7 +273,10 @@ def _auto_flat_plot(data, data_config: DataConfiguration, **kwargs) -> Plot:
     if len(quantities) >= 3 and all_scalar and other_axes:
         domain, *rest = other_axes
         return LinePlot(
-            data, data_config, x=domain, y=VariableSpec(quantities),
+            data,
+            data_config,
+            x=domain,
+            y=VariableSpec(quantities),
             **_with_extra_controls(kwargs, rest),
         )
 

@@ -11,21 +11,21 @@ from qewton.geometries.discrete.volume_grid import VolumeGridGeometry
 from qewton.visualization.auto import auto_plot
 from qewton.visualization.plots.data.curve import LinePlot
 from qewton.visualization.plots.data.grid import EmbeddedGridPlot, QuiverPlot
-from qewton.visualization.plots.data.mesh import MeshFieldPlot, MeshVectorPlot
+from qewton.visualization.plots.data.mesh import MeshSurfacePlot, MeshVectorPlot
 from qewton.visualization.plots.data.points import PointCloudPlot
 from qewton.visualization.plots.data.samples import BarPlot, ScatterPlot
 from qewton.visualization.plots.spec import FixedSpec, SliderSpec, VariableSpec
 
 
 class TestLeftoverAxesBecomeSliders:
-    def test_leftover_batch_axis_next_to_a_mesh_field_gets_a_default_slider(self, small_mesh_geometry):
+    def test_leftover_batch_axis_next_to_a_mesh_surface_gets_a_default_slider(self, small_mesh_geometry):
         U = Variable("u", 1)
         step_axis = BatchAxes(5)
         n_vertices = small_mesh_geometry.mesh.vertices.shape[0]
         config = DataConfiguration(step_axis, GeometryAxes(small_mesh_geometry), FeatureAxes(U))
         data = np.zeros((5, n_vertices, 1))
         plot = auto_plot(data, config)
-        assert isinstance(plot, MeshFieldPlot)
+        assert isinstance(plot, MeshSurfacePlot)
         assert len(plot.controls) == 1
         assert isinstance(plot.controls[0], SliderSpec)
         assert plot.controls[0].variable_or_axes is step_axis
@@ -65,12 +65,20 @@ class TestLeftoverAxesBecomeSliders:
 
 
 class TestMeshDispatch:
-    def test_scalar_variable_becomes_mesh_field_plot(self, small_mesh_geometry):
+    def test_scalar_variable_becomes_mesh_surface_plot(self, small_mesh_geometry):
+        """A scalar field on a 2D mesh elevates it into a 3D surface (height
+        = the field) rather than a flat, z=0 colored sheet - more
+        informative, and doesn't need FilledMeshArtist's WebGL-dependent
+        flat-Mesh3d workaround. (A scalar field on a 3D mesh - a genuine
+        boundary surface - is deliberately left unhandled by auto_plot for
+        now; MeshFieldPlot's flat-mesh approach didn't fit that case
+        either.)"""
         U = Variable("u", 1)
         config = DataConfiguration(GeometryAxes(small_mesh_geometry), FeatureAxes(U))
         field = np.zeros((small_mesh_geometry.mesh.vertices.shape[0], 1))
         plot = auto_plot(field, config)
-        assert isinstance(plot, MeshFieldPlot)
+        assert isinstance(plot, MeshSurfacePlot)
+        assert plot.z.variable_or_axes is U
         assert plot.color.variable_or_axes is U
 
     def test_vector_matching_mesh_dim_becomes_mesh_vector_plot(self, small_mesh_geometry):
@@ -88,7 +96,7 @@ class TestMeshDispatch:
         with pytest.raises(ValueError, match="dim=3"):
             auto_plot(data, config)
 
-    def test_two_distinct_scalar_variables_become_a_mesh_field_plot_with_a_selector(self, small_mesh_geometry):
+    def test_two_distinct_scalar_variables_become_a_mesh_surface_plot_with_a_selector(self, small_mesh_geometry):
         temperature, pressure = Variable("temperature", 1), Variable("pressure", 1)
         n = small_mesh_geometry.mesh.vertices.shape[0]
         config = DataConfiguration(
@@ -96,9 +104,9 @@ class TestMeshDispatch:
         )
         data = np.zeros((n, 2))
         plot = auto_plot(data, config)
-        assert isinstance(plot, MeshFieldPlot)
-        assert isinstance(plot.color.variable_or_axes, Variable)
-        assert plot.color.variable_or_axes in (temperature, pressure)
+        assert isinstance(plot, MeshSurfacePlot)
+        assert isinstance(plot.z.variable_or_axes, Variable)
+        assert plot.z.variable_or_axes in (temperature, pressure)
 
     def test_distinct_variables_with_different_dims_raise_a_clear_error(self, small_mesh_geometry):
         """A scalar and a mesh-matching vector can't share one VariableSpec -

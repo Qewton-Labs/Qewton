@@ -610,7 +610,7 @@ class Graph:
         self,
         *ports: Port,
         plot_type: type["Plot"] | None = None,
-        max_vertex_distance: float | None = None,
+        max_vertex_distance: float = 0.05,
         device: Device | str | None = None,
         **plot_kwargs,
     ):
@@ -646,7 +646,8 @@ class Graph:
             **plot_kwargs: Passed through to auto_plot() for every port.
 
         Returns:
-            list[Plot]: One Plot per requested port, in the same order -
+            Plot | list[Plot]: A single Plot for one requested port; a list,
+                one Plot per port in the same order, for more than one -
                 e.g. `Figure(graph.visualize(port_a, port_b)).show()`.
         """
         from qewton.data.dataloaders.sampler.point_sampler import discretization_mode
@@ -668,7 +669,7 @@ class Graph:
         for sampler in samplers:
             sampler.sampled_geometry.to_numpy()
 
-        return [
+        out = [
             auto_plot(
                 port.node.backend.to_numpy(port.value),
                 port.get_data_configuration(self),  # type: ignore
@@ -677,6 +678,7 @@ class Graph:
             )
             for port in ports
         ]
+        return out if len(out) > 1 else out[0]
 
     def collect_trainable_parameters(self):
         """
