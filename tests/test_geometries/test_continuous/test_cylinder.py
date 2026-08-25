@@ -261,3 +261,23 @@ def test_boundary_grid_sampling_with_normals(backend):
     for n in normals:
         norm = math.sqrt(float(n[0]) ** 2 + float(n[1]) ** 2 + float(n[2]) ** 2)
         assert pytest.approx(1.0, rel=1e-3) == norm
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_create_mesh(backend):
+    cylinder = Cylinder(X, [0, 0, 0], 1.0, 2.0, backend=backend)
+    mesh_geo = cylinder.create_mesh(max_vertex_distance=0.5)
+    assert len(mesh_geo.mesh.vertices) > 0
+    assert len(mesh_geo.mesh.cells) > 0
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("device", devices)
+def test_create_mesh_on_device(backend, device):
+    """Regression: create_mesh() reuses Circle.triangulate_circle(), which
+    used to build its vertices/triangles on cpu regardless of `device` -
+    mismatching the device= zeros/tetrahedra tensors built alongside them."""
+    cylinder = Cylinder(X, [0, 0, 0], 1.0, 2.0, backend=backend)
+    mesh_geo = cylinder.create_mesh(max_vertex_distance=0.5, device=device)
+    assert len(mesh_geo.mesh.vertices) > 0
+    assert len(mesh_geo.mesh.cells) > 0

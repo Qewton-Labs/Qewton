@@ -76,7 +76,7 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
     def create_mesh(
         self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshGeometry:
-        return self
+        return self  # TODO: max_vertex_distance is currently ignored
 
     def bounding_box(self):
         bounding_box = []
@@ -181,6 +181,69 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         return grid_points
 
     def contains(self, points):
+        _, _, found = self.locate(points)
+        return found
+
+    def interpolate_to(self, points, values):
+        """Interpolates a per-vertex field onto arbitrary target points, via
+        linear (barycentric) interpolation inside whichever simplex contains
+        each point. Generic over the points, not plane-specific - a plane
+        slice is just one choice of `points`, a regular 3D resampling grid or
+        a scattered comparison set are others equally valid.
+
+        Args:
+            points: Target points, shape (n_points, dim).
+            values: Per-vertex field, shape (n_vertices,) or
+                (n_vertices, *feature_shape).
+
+        Returns:
+            Interpolated values, shape (n_points,) or (n_points, *feature_shape)
+            matching `values`'s trailing shape. Points outside the mesh are
+            NaN rather than extrapolated, so callers can render/ignore them as
+            missing (e.g. Scale.observe() already uses nanmin/nanmax).
+        """
+        cell_idx, weights, found = self.locate(points)
+        vertex_idx = self.mesh.cells[cell_idx]  # (n_points, dim + 1)
+        vertex_values = values[vertex_idx]  # (n_points, dim + 1, *feature_shape)
+
+        w = weights
+        while w.ndim < vertex_values.ndim:
+            w = w[..., None]
+        interpolated = self.backend.math.sum(w * vertex_values, axis=1)
+
+        not_found = ~found
+        while not_found.ndim < interpolated.ndim:
+            not_found = not_found[..., None]
+        nan = self.backend.build_tensor(float("nan"))
+        return self.backend.math.where(not_found, nan, interpolated)
+
+    def locate(self, points):
+        """For each point, finds a containing simplex and its barycentric
+        weights - the same search `contains()` does, but keeping the cell
+        index and weights it computes along the way instead of collapsing
+        them to a boolean. Used by interpolation onto arbitrary target points
+        (e.g. a plane slice), where those weights double as the interpolation
+        weights - no separate lookup needed.
+
+        Args:
+            points: Points to locate, shape (n_points, dim).
+
+        Returns:
+            cell_idx: int array (n_points,) - index into self.mesh.cells of a
+                simplex containing each point. Arbitrary (0) where not found.
+            weights: float array (n_points, dim + 1) - barycentric weights
+                against self.mesh.cells[cell_idx[i]]'s vertices, in vertex
+                order (v0 first). Rows for points not found are all zero.
+            found: bool array (n_points,) - whether a containing simplex was
+                found for each point.
+        """
+        self._build_barycentric_cache()
+
+        if len(points) < len(self.mesh.cells):
+            return self._locate_point_based(points)
+        return self._locate_cell_based(points)
+
+    def _build_barycentric_cache(self):
         if self.inv_A is None or self.v0 is None:
             vertices = self.mesh.vertices[self.mesh.cells]
             self.bbox_min = self.backend.math.min(vertices, axis=1)
@@ -189,42 +252,43 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             mat_A = vertices[:, 1:] - self.v0[:, None]  # type: ignore
             self.inv_A = self.backend.linalg.inv(mat_A)
 
-        if len(points) < len(self.mesh.cells):
-            return self._contains_point_based_search(points)
-        return self._contains_cell_based_search(points)
+    def _locate_point_based(self, points):
+        n_points = len(points)
+        dim = self.variable.dim
+        cell_idx = self.backend.math.zeros(n_points, dtype=self.backend.dtypes[Int32])
+        weights = self.backend.math.zeros((n_points, dim + 1))  # type: ignore
+        found = self.backend.math.zeros(n_points, dtype=self.backend.dtypes[Bool])
 
-    def _contains_point_based_search(self, points):
-        def point_in_simplex(p, v0, inv_A, tol=1e-12):
-            u = inv_A @ (p - v0)
-            l0 = 1.0 - u.sum()
-            return l0 >= -tol and self.backend.math.all(u >= -tol)
-
-        point_inside = self.backend.math.zeros(
-            len(points), dtype=self.backend.dtypes[Bool]
-        )
         for i, p in enumerate(points):
             candidates = self.backend.math.where(
                 self.backend.math.all(p >= self.bbox_min, axis=1)
                 & self.backend.math.all(p <= self.bbox_max, axis=1)
-            )
+            )[0]
             for cell in candidates:
-                if point_in_simplex(
-                    p, self.v0[cell], self.inv_A[cell], self.contains_tol  # type: ignore
+                u = (p - self.v0[cell]) @ self.inv_A[cell]  # type: ignore
+                l0 = 1.0 - u.sum()
+                if l0 >= -self.contains_tol and self.backend.math.all(
+                    u >= -self.contains_tol
                 ):
-                    point_inside[i] = True
+                    found[i] = True
+                    cell_idx[i] = cell
+                    weights[i, 0] = l0
+                    weights[i, 1:] = u
                     break
 
-        return point_inside
+        return cell_idx, weights, found
 
-    def _contains_cell_based_search(self, points):
-        point_inside = self.backend.math.zeros(
-            len(points), dtype=self.backend.dtypes[Bool]
-        )
+    def _locate_cell_based(self, points):
+        n_points = len(points)
+        dim = self.variable.dim
+        cell_idx = self.backend.math.zeros(n_points, dtype=self.backend.dtypes[Int32])
+        weights = self.backend.math.zeros((n_points, dim + 1))  # type: ignore
+        found = self.backend.math.zeros(n_points, dtype=self.backend.dtypes[Bool])
 
         for cell in range(len(self.mesh.cells)):
             # bbox filter
             mask = (
-                ~point_inside
+                ~found
                 & self.backend.math.all(
                     points >= self.bbox_min[cell], axis=1  # type: ignore
                 )
@@ -245,8 +309,12 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
                 l0 >= -self.contains_tol,
                 self.backend.math.all(u >= -self.contains_tol, axis=1),
             )
-            point_inside[idx[bary_mask]] = True
-        return point_inside
+            good = idx[bary_mask]
+            found[good] = True
+            cell_idx[good] = cell
+            weights[good, 0] = l0[bary_mask]
+            weights[good, 1:] = u[bary_mask]
+        return cell_idx, weights, found
 
     def get_submesh(self, marker: int | str) -> MeshGeometry:
         """Returns a submesh of the main mesh that only contains the provided

@@ -140,3 +140,27 @@ def test_degenerate_triangle_volume_zero(backend):
     tri = Triangle(X, [0, 0], [1.0, 1.0], [2.0, 2.0], backend=backend)
     vol = tri._get_volume()
     assert pytest.approx(0.0, abs=1e-8) == float(vol)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_create_mesh(backend):
+    """Regression: create_mesh() used to crash unconditionally (even on
+    cpu) - self.backend.math.max() was called on a plain list of tensors
+    instead of a single Tensor, and each vertex was double-wrapped in a
+    list before build_tensor(), which doesn't reconstruct a list of
+    Tensors correctly."""
+    tri = Triangle(X, [0.0, 0.0], [1.0, 0.0], [0.0, 1.0], backend=backend)
+    mesh_geo = tri.create_mesh(max_vertex_distance=0.3)
+    assert len(mesh_geo.mesh.vertices) > 0
+    assert len(mesh_geo.mesh.cells) > 0
+    assert mesh_geo.mesh.vertices.shape[1] == 2
+    assert mesh_geo.mesh.cells.shape[1] == 3
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("device", devices)
+def test_create_mesh_on_device(backend, device):
+    tri = Triangle(X, [0.0, 0.0], [1.0, 0.0], [0.0, 1.0], backend=backend)
+    mesh_geo = tri.create_mesh(max_vertex_distance=0.3, device=device)
+    assert len(mesh_geo.mesh.vertices) > 0
+    assert len(mesh_geo.mesh.cells) > 0

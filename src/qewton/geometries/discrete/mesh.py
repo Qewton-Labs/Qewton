@@ -41,20 +41,31 @@ class Mesh(Generic[TensorType]):
         face_markers: list[int] | None | TensorType = None,
         marker_labels: dict[str, tuple[int, int]] | None = None,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
+        device: Device | str = cpu,
     ) -> None:
+        # Only matters when vertices/cells are plain lists/arrays, not
+        # already-built tensors - build_tensor() preserves an existing
+        # tensor's own device untouched (its `.to(dtype=...)` branch never
+        # receives `device`), by design: the caller already placed them
+        # deliberately (e.g. a create_mesh(device=...) building on an
+        # already-moved origin/corners), so this must not silently override
+        # that. `device` is still needed below, for the boundary-facet
+        # bookkeeping this constructor builds fresh either way.
         self.backend = backend
-        self.vertices = backend.build_tensor(vertices, dtype=Float32)
-        self.cells = backend.build_tensor(cells, dtype=Int32)
+        self.vertices = backend.build_tensor(vertices, dtype=Float32, device=device)
+        self.cells = backend.build_tensor(cells, dtype=Int32, device=device)
         self.cell_markers = (
-            backend.build_tensor(cell_markers, dtype=Int32)
+            backend.build_tensor(cell_markers, dtype=Int32, device=device)
             if cell_markers is not None
             else None
         )
         self.faces = (
-            backend.build_tensor(faces, dtype=Int32) if faces is not None else None
+            backend.build_tensor(faces, dtype=Int32, device=device)
+            if faces is not None
+            else None
         )
         self.face_markers = (
-            backend.build_tensor(face_markers, dtype=Int32)
+            backend.build_tensor(face_markers, dtype=Int32, device=device)
             if face_markers is not None
             else None
         )
@@ -64,13 +75,13 @@ class Mesh(Generic[TensorType]):
         self.cell_volumes: TensorType | None = None
         self.cell_probability_weights: TensorType | None = None
         self.boundary_normals: TensorType = self.backend.math.empty(
-            (0, self.vertices.shape[1])
+            (0, self.vertices.shape[1]), device=device
         )
         self.boundary_normals_at_vertex: TensorType = self.backend.math.empty(
-            (0, self.vertices.shape[1])
+            (0, self.vertices.shape[1]), device=device
         )
 
-        self._find_boundary_facets()
+        self._find_boundary_facets(device)
 
     @property
     def vertex_count(self) -> int:
@@ -81,7 +92,7 @@ class Mesh(Generic[TensorType]):
         """
         return len(self.vertices)
 
-    def _find_boundary_facets(self):
+    def _find_boundary_facets(self, device: Device | str = cpu):
         if len(self.cells.shape) <= 1:
             return
         # Find boundary faces:
@@ -96,12 +107,14 @@ class Mesh(Generic[TensorType]):
             ],
             axis=0,
         )
-        # Also remember where they are from at what is the missing vertex
+        # Also remember where they are from at what is the missing vertex -
+        # must land on the same device as self.cells (facets, above) or the
+        # boundary_cell_ids = cell_ids[boundary_rows] indexing below raises.
         cell_ids = self.backend.math.concatenate(
-            [self.backend.math.arange(len(self.cells)) for _ in range(n)]
+            [self.backend.math.arange(len(self.cells), device=device) for _ in range(n)]
         )
         missing_vertex_ids = self.backend.math.concatenate(
-            [self.backend.math.full(len(self.cells), i) for i in range(n)]
+            [self.backend.math.full(len(self.cells), i, device=device) for i in range(n)]
         )
         # Find the elements that only appear once -> boundary face
         unique_facets, first_idx, counts = self.backend.math.unique(
@@ -123,9 +136,11 @@ class Mesh(Generic[TensorType]):
         boundary_cell_ids = cell_ids[boundary_rows]
         boundary_missing_vertex_ids = missing_vertex_ids[boundary_rows]
 
-        self._compute_normals(boundary_cell_ids, boundary_missing_vertex_ids)
+        self._compute_normals(boundary_cell_ids, boundary_missing_vertex_ids, device)
 
-    def _compute_normals(self, boundary_cell_ids, boundary_missing_vertex_ids):
+    def _compute_normals(
+        self, boundary_cell_ids, boundary_missing_vertex_ids, device: Device | str = cpu
+    ):
         b_vertex = self.vertices[self.boundary_faces]
         opposite_v = self.vertices[
             self.cells[
@@ -145,7 +160,7 @@ class Mesh(Generic[TensorType]):
             normals[:, 1] = -normals_save
             normals /= self.backend.linalg.norm(normals, order=2, axis=1, keepdims=True)
         else:  # 1d case:
-            normals = self.backend.build_tensor([[-1.0], [1.0]])
+            normals = self.backend.build_tensor([[-1.0], [1.0]], device=device)
         # Fix sign of the normal vectors:
         flip = (
             self.backend.math.sum(
@@ -162,7 +177,7 @@ class Mesh(Generic[TensorType]):
             vertex_ids = self.boundary_faces.ravel()
             num_vertices = vertex_ids.max() + 1
             self.boundary_normals_at_vertex = self.backend.math.zeros(
-                (num_vertices, self.boundary_normals.shape[1])
+                (num_vertices, self.boundary_normals.shape[1]), device=device
             )
             for f, verts in enumerate(self.boundary_faces):
                 self.boundary_normals_at_vertex[verts[0]] += normals[f]

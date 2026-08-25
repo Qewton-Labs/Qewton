@@ -9,6 +9,8 @@ from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Float32, Bool
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.mesh import Mesh
 
 
 class Box(ContinuousGeometry[TensorType]):
@@ -117,6 +119,66 @@ class Box(ContinuousGeometry[TensorType]):
 
     def create_boundary(self):
         return BoxBoundary(self)
+
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
+        self.origin = self.backend.to(self.origin, device=device)
+
+        # choose subdivision count
+        if max_vertex_distance is None:
+            nx = ny = nz = 1
+        else:
+            nx = max(1, int(math.ceil(self.width / max_vertex_distance)))
+            ny = max(1, int(math.ceil(self.height / max_vertex_distance)))
+            nz = max(1, int(math.ceil(self.depth / max_vertex_distance)))
+        # unit-square vertices
+        u = self.backend.math.linspace(0.0, 1.0, num=nx + 1)
+        v = self.backend.math.linspace(0.0, 1.0, num=ny + 1)
+        w = self.backend.math.linspace(0.0, 1.0, num=nz + 1)
+
+        U, V, W = self.backend.math.meshgrid(u, v, w, indexing="ij")
+
+        # affine map
+        vertices = self.backend.math.reshape(
+            self.origin
+            + U[..., None] * self.backend.build_tensor([self.width, 0, 0], dtype=Float32)
+            + V[..., None] * self.backend.build_tensor([0, self.height, 0], dtype=Float32)
+            + W[..., None] * self.backend.build_tensor([0, 0, self.depth], dtype=Float32),
+            (-1, 3),
+        )
+
+        # triangulation
+        tetrahedra = []
+
+        def idx(i, j, k):
+            return (i * (ny + 1) + j) * (nz + 1) + k
+
+        for i in range(nx):
+            for j in range(ny):
+                for k in range(nz):
+                    a = idx(i, j, k)
+                    b = idx(i + 1, j, k)
+                    c = idx(i + 1, j + 1, k)
+                    d = idx(i, j + 1, k)
+                    a1 = idx(i, j, k + 1)
+                    b1 = idx(i + 1, j, k + 1)
+                    c1 = idx(i + 1, j + 1, k + 1)
+                    d1 = idx(i, j + 1, k + 1)
+                    tetrahedra.append([a1, b1, c1, b])
+                    tetrahedra.append([a1, b, a, c1])
+                    tetrahedra.append([a, b, c1, c])
+                    tetrahedra.append([a, d1, c, d])
+                    tetrahedra.append([a, d1, c1, a1])
+                    tetrahedra.append([a, d1, c, c1])
+
+        tetrahedra = self.backend.build_tensor(tetrahedra)
+
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(vertices=vertices, cells=tetrahedra),
+            discretization_of=self,
+        )
 
 
 class BoxBoundary(ContinuousBoundaryGeometry):

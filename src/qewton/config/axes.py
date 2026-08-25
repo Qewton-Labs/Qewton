@@ -462,6 +462,10 @@ class GeometryAxes(Axes):
         """
         return self._geometry
 
+    @property
+    def variables(self):
+        return self.geometry.variable
+
     def unify_with(self: GeometryAxes, other: Axes) -> tuple[dict, dict]:
         """
         Unifies these `GeometryAxes` with another `Axes` object.

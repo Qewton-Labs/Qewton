@@ -95,3 +95,7 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
     @classmethod
     def cast_dtype(cls, data: torch.Tensor, dtype):
         return data.type(cls.dtypes.get(dtype, dtype))
+
+    @classmethod
+    def to_numpy(cls, data: torch.Tensor):
+        return data.detach().cpu().numpy()

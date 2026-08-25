@@ -1,11 +1,13 @@
 from __future__ import annotations
 from abc import abstractmethod
+from contextlib import contextmanager
 import inspect
 from typing import Callable
 
 from qewton.config.devices import Device
 from qewton.data.dataloaders.base import DataNode
 from qewton.geometries.base import Geometry, BoundaryGeometry
+from qewton.geometries.discrete.sampled_geometry import SampledGeometry
 from qewton.graphs.nodes import NodeState, OutputPort
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType, ComputingBackend
 from qewton.config.data_configurations import DataConfiguration
@@ -18,6 +20,25 @@ from qewton.optim.parameters.number_hyperparameter import (
 from qewton.optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
+
+
+@contextmanager
+def discretization_mode(samplers, max_vertex_distance, device: Device | str | None = None):
+    """Switch samplers to mesh mode for one run.
+
+    `device` is only where the freshly-generated mesh points themselves are
+    built (Geometry.create_mesh()'s own `device` argument defaults to cpu,
+    regardless of wherever the sampler/model actually live) - it does not
+    move the sampler or anything else; pass an explicit `device` to
+    Graph.visualize() for that.
+    """
+    for s in samplers:
+        s.set_mesh_mode(max_vertex_distance, device)
+    try:
+        yield
+    finally:
+        for s in samplers:
+            s.unset_mesh_mode()
 
 
 class PointSampler(DataNode[TensorType]):
@@ -66,6 +87,7 @@ class PointSampler(DataNode[TensorType]):
 
         super().__init__(batch_size=n_points, name=name, state=state, backend=backend)
         self.backend: type[ComputingBackend[TensorType]] = backend
+        self.sampled_geometry = SampledGeometry(self.geometry, n_points)
 
         # clear automatically build ports:
         self._output_ports = []
@@ -93,6 +115,26 @@ class PointSampler(DataNode[TensorType]):
                         self.geometry.variable.get_slice(var.annotation)  # type: ignore
                     )
 
+        self.mesh_mode = False  # used as a mode for plotting
+        self.current_mesh_max_vertex_distance = None
+        self.current_mesh_device: Device | str | None = None
+
+    def set_mesh_mode(
+        self,
+        max_vertex_distance: float | None = None,
+        device: Device | str | None = None,
+    ):
+        self.mesh_mode = True
+        self.current_mesh_max_vertex_distance = max_vertex_distance
+        # Falls back to this sampler's own current device (self._device,
+        # kept up to date by DataNode.to()) rather than Geometry.create_mesh()'s
+        # own cpu default, so mesh mode lands on wherever the sampler/model
+        # already live unless a call site (Graph.visualize()) overrides it.
+        self.current_mesh_device = device if device is not None else self._device
+
+    def unset_mesh_mode(self):
+        self.mesh_mode = False
+
     def _check_normal_sampling_possible(self):
         if not self.has_boundary_geometry:
             raise ValueError(
@@ -107,8 +149,7 @@ class PointSampler(DataNode[TensorType]):
 
     def _build_port(self, variable: Variable):
         axes = [
-            # BatchAxes(AxesDim(self.batch_size)),
-            GeometryAxes(self.geometry, (AxesDim(self.batch_size),)),
+            GeometryAxes(self.sampled_geometry, (AxesDim(self.batch_size),)),
             FeatureAxes(variable=variable),
         ]
         self._output_ports.append(
@@ -168,6 +209,19 @@ class PointSampler(DataNode[TensorType]):
         This method handles split indexing, batch slicing, and moving data to
         the appropriate device.
         """
+        if self.mesh_mode:
+            mesh = self.sampled_geometry.visualization_mesh(
+                self.current_mesh_max_vertex_distance, self.current_mesh_device
+            )
+            points = mesh.vertices
+
+            # for plotting: store the current points and cells
+            self.sampled_geometry.set_current_discretization(points, mesh.cells)
+
+            if self.compute_normals:
+                raise NotImplementedError("Mesh mode currently cannot produce normals")
+            return points
+
         # Use the cache
         if self.created_cache:
             point_slice = slice(self.cache_idx, self.cache_idx + 1)
@@ -177,6 +231,10 @@ class PointSampler(DataNode[TensorType]):
                 self.cache_idx = 0
             # Take a slice and remove the first axis by taking [0]
             points = self.point_cache[point_slice][0]  # type: ignore
+
+            # for plotting: store the current points and cells
+            self.sampled_geometry.set_current_discretization(points, None)
+
             if self.compute_normals:
                 normals = self.normal_cache[point_slice][0]  # type: ignore
                 return points, normals
@@ -184,6 +242,10 @@ class PointSampler(DataNode[TensorType]):
 
         # Sample points on the fly
         points, normals = self.sample_points()
+
+        # for plotting: store the current points and cells
+        self.sampled_geometry.set_current_discretization(points, None)
+
         if self.compute_normals:
             return points, normals
         return points

@@ -143,6 +143,28 @@ def test_bounding_box_repeat(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
+def test_create_mesh_default_subdivision(backend):
+    box = Box(X, [0.0, 0.0, 0.0], 1.0, 1.0, 1.0, backend=backend)
+    mesh_geo = box.create_mesh()
+    mesh = mesh_geo.mesh
+
+    assert len(mesh.vertices) == 8
+    assert mesh.cells.shape[0] == 6
+    assert mesh.boundary_faces.shape[0] == 12
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_create_mesh_finer_subdivision(backend):
+    box = Box(X, [0.0, 0.0, 0.0], 1.0, 1.0, 1.0, backend=backend)
+    mesh_geo = box.create_mesh(max_vertex_distance=0.5)
+    mesh = mesh_geo.mesh
+
+    assert len(mesh.vertices) == 27
+    assert mesh.cells.shape[0] == 48
+    assert mesh.boundary_faces.shape[0] == 48
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
 def test_boundary_contains_faces_and_corners(backend):
     box = Box(X, [0.0, 0.0, 0.0], 1.0, 1.0, 1.0, backend=backend)
     boundary = box.create_boundary()

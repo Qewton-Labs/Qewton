@@ -36,7 +36,7 @@ class ArrayLikeDataSet(DataSet):
         all_variables = set()
         for config in self._data_configs:
             for var in config.variables:
-                if var in all_variables:
+                if var in all_variables and not var.is_empty:
                     raise ValueError(
                         f"Variable name {var} appears in multiple data configurations.\
                             Variable names must be unique across all data configs."
