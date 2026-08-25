@@ -9,7 +9,9 @@ class PlotSpec:
     """Base class declaring how a Plot maps one role (x, y, color, ...) onto
     a Variable/Axes (for a DataPlot) or a column name (for a TablePlot)."""
 
-    def __init__(self, n_dimensions: int, variable_or_axes: Variable | Axes | str) -> None:
+    def __init__(
+        self, n_dimensions: int, variable_or_axes: Variable | Axes | str
+    ) -> None:
         # `variable_or_axes` is a plain str column key for TablePlot, a
         # Variable/Axes for every DataPlot family - or a VariableSpec
         # (defined at the bottom of this module), transparently unwrapped to
@@ -32,7 +34,11 @@ class PlotSpec:
         None for a plain Variable/Axes/str - used by Plot.variable_specs to
         discover VariableSpecs for widget-building, since they're never
         listed in a Plot's own `controls=`."""
-        return self._variable_or_axes if isinstance(self._variable_or_axes, VariableSpec) else None
+        return (
+            self._variable_or_axes
+            if isinstance(self._variable_or_axes, VariableSpec)
+            else None
+        )
 
     @property
     def name(self):
@@ -198,8 +204,12 @@ class Scale:
         if values.size == 0:
             return
         lo, hi = float(np.nanmin(values)), float(np.nanmax(values))
-        self._observed_min = lo if self._observed_min is None else min(self._observed_min, lo)
-        self._observed_max = hi if self._observed_max is None else max(self._observed_max, hi)
+        self._observed_min = (
+            lo if self._observed_min is None else min(self._observed_min, lo)
+        )
+        self._observed_max = (
+            hi if self._observed_max is None else max(self._observed_max, hi)
+        )
 
     @property
     def range(self) -> tuple[float, float] | None:
@@ -313,22 +323,30 @@ class FixedSpec(ControlSpec):
 
 class FacetSpec(ControlSpec):
     """Splits a dimension into a grid of side-by-side subplot panels, one
-    per value, instead of an interactive control."""
+    per value, instead of an interactive control.
+    """
 
     def __init__(
         self,
         variable_or_axes,
         values=None,
         orientation: str = "col",
+        labels: list[str] | None = None,
     ):
         assert orientation in ("row", "col"), "orientation must be 'row' or 'col'"
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes, init_state=0)
         self.orientation = orientation
         self.values = values
+        self.labels = labels
 
     def resolve(self, values):
         if self.values is None:
             self.values = list(values)
+        if self.labels is not None:
+            assert len(self.labels) == len(self.values), (
+                f"FacetSpec labels ({len(self.labels)}) must match its "
+                f"values ({len(self.values)})."
+            )
         if self._state is None:
             self._state = self.values[0]
 
@@ -353,11 +371,15 @@ class VariableSpec(ControlSpec):
     """
 
     def __init__(self, candidates: list[Variable], init_index: int = 0):
-        assert len(candidates) >= 2, "VariableSpec needs at least 2 candidates to choose between."
+        assert (
+            len(candidates) >= 2
+        ), "VariableSpec needs at least 2 candidates to choose between."
         dims = {c.dim for c in candidates}
         assert len(dims) == 1, f"All candidates must share the same dim, got {dims}."
         self.candidates = candidates
-        super().__init__(init_state=candidates[init_index], n_dimensions=1, variable_or_axes=None)
+        super().__init__(
+            init_state=candidates[init_index], n_dimensions=1, variable_or_axes=None
+        )
 
     @property
     def dim(self):
@@ -379,7 +401,9 @@ class VariableSpec(ControlSpec):
     def state(self, value: int | Variable):
         if isinstance(value, int):
             value = self.candidates[value]
-        assert value in self.candidates, f"{value!r} is not one of this spec's candidates."
+        assert (
+            value in self.candidates
+        ), f"{value!r} is not one of this spec's candidates."
         self._state = value
 
 
@@ -394,7 +418,9 @@ class TimeSpec(ControlSpec):
     """
 
     def __init__(self, variable_or_axes, values=None, duration=500):
-        super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes, init_state=None)
+        super().__init__(
+            n_dimensions=1, variable_or_axes=variable_or_axes, init_state=None
+        )
         self.values = values
         self.duration = duration  # ms per frame while the Play button runs
 

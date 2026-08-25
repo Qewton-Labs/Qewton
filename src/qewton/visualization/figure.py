@@ -86,6 +86,28 @@ class Figure:
                 n_cols = max(n_cols, len(facets["col"].values))
         return n_rows, n_cols
 
+    def cell_titles(self, n_rows: int, n_cols: int) -> list[str]:
+        """Row-major subplot title per grid cell (Plotly's make_subplots(
+        subplot_titles=...) order), from any FacetSpec.labels in use - ""
+        for a cell no labeled FacetSpec reaches. A cell covered by both a
+        row and a column FacetSpec (both with labels) joins the two."""
+        titles = [["" for _ in range(n_cols)] for _ in range(n_rows)]
+        for plot in self.plots:
+            facets = self.facet_specs(plot)
+            row_facet, col_facet = facets.get("row"), facets.get("col")
+            row_indices = range(len(row_facet.values)) if row_facet else [0]
+            col_indices = range(len(col_facet.values)) if col_facet else [0]
+            for row_idx in row_indices:
+                for col_idx in col_indices:
+                    parts = [
+                        facet.labels[idx]
+                        for facet, idx in ((row_facet, row_idx), (col_facet, col_idx))
+                        if facet is not None and facet.labels is not None
+                    ]
+                    if parts:
+                        titles[row_idx][col_idx] = ", ".join(parts)
+        return [title for row in titles for title in row]
+
     def cell_dimensions(self, n_rows: int, n_cols: int) -> list[list[int]]:
         """Embedding dimension (2 or 3) per grid cell, inferred from
         whichever plot(s) draw into each cell - renderer-agnostic; translating

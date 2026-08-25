@@ -8,7 +8,14 @@ from warnings import warn
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.errors import DataConfigMismatchError
 
-from qewton.graphs.nodes import GraphAwareNode, InputPort, Node, EvaluationPhase, OutputPort, Port
+from qewton.graphs.nodes import (
+    GraphAwareNode,
+    InputPort,
+    Node,
+    EvaluationPhase,
+    OutputPort,
+    Port,
+)
 from qewton.graphs.control_nodes.data_processing_node import DataProcessingNode
 from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
 from qewton.graphs.edges import Edge
@@ -551,6 +558,15 @@ class Graph:
                     in_port.clear_value()
             node.run()
         return {}
+
+    def plot(self, port: Port, plot_type: type[Plot] | None = None, **plot_kwargs):
+        """
+        ..
+        """
+        # divide between mesh and sampled points
+        return auto_plot(
+            port.value, port.get_data_configuration(self), plot_type, **plot_kwargs
+        )
 
     def collect_trainable_parameters(self):
         """

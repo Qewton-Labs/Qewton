@@ -6,7 +6,7 @@ from qewton.algorithms import FCN
 from qewton.constraints import PINNConstraint
 from qewton.graphs.control_nodes.wrapper_node import FunctionWrappingNode
 from qewton.graphs.pipelines import PINNPipeline
-from qewton.graphs.pipelines.pinn_pipeline import _compose, _prune, _segments
+from qewton.graphs.pipelines.pinn_pipeline import _variable_segments
 from qewton.optim import OptimizationPhase, Adam, GraphBasedTrainer
 
 
@@ -19,40 +19,17 @@ def simple_adam():
     )
 
 
-class TestPrune:
-    def test_returns_the_same_object_when_nothing_is_dropped(self):
-        """The whole point: a variable nothing needs to cut stays whole -
-        confirmed by identity, not just structural equality."""
-        pos = Variable("pos", 3)
-        assert _prune(pos, {"pos_0", "pos_1", "pos_2"}) is pos
-
-    def test_drops_a_leaf_not_in_keep_names(self):
-        x, y = Variable("x", 1), Variable("y", 1)
-        xy = x * y
-        pruned = _prune(xy, {"x"})
-        assert pruned is x
-
-    def test_returns_none_when_everything_is_dropped(self):
-        x, y = Variable("x", 1), Variable("y", 1)
-        assert _prune(x * y, set()) is None
-
-    def test_a_leaf_survives_or_not_on_its_own(self):
-        x = Variable("x", 1)
-        assert _prune(x, {"x"}) is x
-        assert _prune(x, set()) is None
-
-
-class TestSegments:
+class TestVariableSegments:
     def test_a_variable_nothing_subdivides_stays_one_segment(self):
         x, y, z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
         leaves = [x, y, z]
-        segments = _segments(leaves, [x * y * z])
+        segments = _variable_segments(leaves, [x * y * z])
         assert segments == [leaves]
 
     def test_a_requested_sub_leaf_forces_a_cut(self):
         x, y, z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
         leaves = [x, y, z]
-        segments = _segments(leaves, [x * y * z, y])
+        segments = _variable_segments(leaves, [x * y * z, y])
         assert segments == [[x], [y], [z]]
 
     def test_a_non_adjacent_request_cuts_out_whats_in_between_too(self):
@@ -60,27 +37,15 @@ class TestSegments:
         though nothing directly asked for Y alone."""
         x, y, z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
         leaves = [x, y, z]
-        segments = _segments(leaves, [x * z])
+        segments = _variable_segments(leaves, [x * z])
         assert segments == [[x], [y], [z]]
 
     def test_unrelated_leaves_do_not_force_a_cut(self):
         x, y = Variable("x", 1), Variable("y", 1)
         f = Variable("f", 1)
         leaves = [x, y]
-        segments = _segments(leaves, [x * y, f])  # f isn't part of these leaves at all
+        segments = _variable_segments(leaves, [x * y, f])  # f isn't part of these leaves at all
         assert segments == [leaves]
-
-
-class TestCompose:
-    def test_a_single_leaf_is_returned_unchanged(self):
-        x = Variable("x", 1)
-        assert _compose([x]) is x
-
-    def test_multiple_leaves_are_composed_in_order(self):
-        x, y = Variable("x", 1), Variable("y", 1)
-        composed = _compose([x, y])
-        assert composed.leaves == [x, y]
-        assert composed.dim == 2
 
 
 def test_pinn_pipeline_basic_execution(simple_adam):

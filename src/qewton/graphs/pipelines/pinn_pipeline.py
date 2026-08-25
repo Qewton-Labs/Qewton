@@ -18,35 +18,7 @@ from qewton.graphs.nodes import Node, OutputPort
 from qewton.graphs import Graph
 
 
-def _leaf_names(variable: Variable) -> set[str]:
-    return {leaf.name for leaf in variable.leaves}
-
-
-def _prune(variable: Variable, keep_names: set[str]) -> Variable | None:
-    """Removes every leaf of `variable` whose name isn't in `keep_names`,
-    preserving as much of the original grouping as possible.
-
-    Returns `variable` itself, unchanged, if none of its leaves needed
-    dropping - so an auto-expanded multi-component variable used whole
-    stays whole instead of being flattened into its individual components
-    just because *some other, unrelated* variable needed pruning. Returns
-    None if every leaf was dropped.
-    """
-    if variable.is_leaf:
-        return variable if variable.name in keep_names else None
-    survivors = [_prune(child, keep_names) for child in variable.children]
-    survivors = [child for child in survivors if child is not None]
-    if survivors == variable.children:
-        return variable
-    if not survivors:
-        return None
-    result = survivors[0]
-    for child in survivors[1:]:
-        result = result * child
-    return result
-
-
-def _segments(leaves: list[Variable], to_vars: list[Variable]) -> list[list[Variable]]:
+def _variable_segments(leaves: list[Variable], to_vars: list[Variable]) -> list[list[Variable]]:
     """The coarsest partition of `leaves` such that every `to_v`'s own leaf
     range, wherever it overlaps `leaves`, aligns exactly with a run of
     whole segments - so a variable nothing ever asks to subdivide comes
@@ -76,15 +48,6 @@ def _segments(leaves: list[Variable], to_vars: list[Variable]) -> list[list[Vari
         cuts.add(prev + 1)
     boundaries = sorted(cuts)
     return [leaves[boundaries[i] : boundaries[i + 1]] for i in range(len(boundaries) - 1)]
-
-
-def _compose(leaves: list[Variable]) -> Variable:
-    if len(leaves) == 1:
-        return leaves[0]
-    result = leaves[0]
-    for leaf in leaves[1:]:
-        result = result * leaf
-    return result
 
 
 class PINNPipeline(Graph):
@@ -148,7 +111,7 @@ class PINNPipeline(Graph):
             p.data_configuration.variables for p in self.constraint.input_ports
         ]
         sampler_out_vars = [p.data_configuration.variables for p in sampler.output_ports]
-        sampler_leaf_names = {name for sv in sampler_out_vars for name in _leaf_names(sv)}
+        sampler_leaf_names = {name for sv in sampler_out_vars for name in sv.leaf_names}
 
         # Drop whatever leaves the sampler can't provide - pruning, not
         # flattening, so a constraint variable the sampler fully covers
@@ -157,7 +120,7 @@ class PINNPipeline(Graph):
         constrained_in_sampler_out = [
             pruned
             for v in constraint_input_vars
-            if (pruned := _prune(v, sampler_leaf_names)) is not None
+            if (pruned := v.prune(sampler_leaf_names)) is not None
         ]
 
         # Model inputs the constraint doesn't already claim - also pruned
@@ -167,15 +130,15 @@ class PINNPipeline(Graph):
         # -> nodes were not added to graph yet, so dynamic configs are not available yet
         only_model_input_vars: list[Variable] = []
         claimed_leaf_names = {
-            name for cv in constraint_input_vars for name in _leaf_names(cv)
+            name for cv in constraint_input_vars for name in cv.leaf_names
         }
         for model in models:
             for p in model.input_ports:
                 mv = p.data_configuration.variables
-                pruned = _prune(mv, _leaf_names(mv) - claimed_leaf_names)
+                pruned = mv.prune(mv.leaf_names - claimed_leaf_names)
                 if pruned is not None:
                     only_model_input_vars.append(pruned)
-                    claimed_leaf_names |= _leaf_names(pruned)
+                    claimed_leaf_names |= pruned.leaf_names
 
         trackable_ports = self.split_and_join(
             sampler.output_ports,
@@ -246,12 +209,12 @@ class PINNPipeline(Graph):
         leaf_source: dict[str, tuple] = {}
         for from_p, from_v in zip(from_ports, from_vars):
             leaves = from_v.leaves
-            segments = _segments(leaves, to_vars)
+            segments = _variable_segments(leaves, to_vars)
             if len(segments) == 1:
                 for leaf in leaves:
                     leaf_source[leaf.name] = (from_p, from_v)
                 continue
-            pieces = [_compose(segment) for segment in segments]
+            pieces = [Variable.compose(segment) for segment in segments]
             split = SplitVariables(pieces)
             self.connect(from_p, split)
             for segment, piece in zip(segments, pieces):

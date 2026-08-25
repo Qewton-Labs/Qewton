@@ -63,7 +63,11 @@ class PlotlyRenderer(Renderer):
                 [{"type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dim]} for dim in row]
                 for row in dims
             ]
-            fig = make_subplots(rows=n_rows, cols=n_cols, specs=specs)
+            titles = figure.cell_titles(n_rows, n_cols)
+            fig = make_subplots(
+                rows=n_rows, cols=n_cols, specs=specs,
+                subplot_titles=titles if any(titles) else None,
+            )
         fig.update_layout(uirevision=True)
         PlotlyRenderer._apply_theme(fig, figure.theme)
         return fig

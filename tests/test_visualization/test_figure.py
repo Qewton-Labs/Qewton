@@ -44,6 +44,27 @@ class TestFacets:
         Figure(plot).draw()
         assert facet.state == original
 
+    def test_unlabeled_facet_produces_no_subplot_titles(self):
+        plot, facet = _scatter_with_facet(3, 5)
+        backend_figure = Figure(plot).draw()
+        assert backend_figure.layout.annotations == ()
+
+    def test_labeled_facet_produces_matching_subplot_titles(self):
+        plot, facet = _scatter_with_facet(3, 5)
+        facet.labels = ["A", "B", "C"]
+        backend_figure = Figure(plot).draw()
+        assert [a.text for a in backend_figure.layout.annotations] == ["A", "B", "C"]
+
+    def test_facet_labels_must_match_the_number_of_values(self):
+        X, Y = Variable("x", 1), Variable("y", 1)
+        facet_axis = BatchAxes(3)
+        sample_axis = BatchAxes(5)
+        data = np.random.randn(3, 5, 2)
+        config = DataConfiguration(facet_axis, sample_axis, FeatureAxes(X * Y))
+        facet = FacetSpec(facet_axis, orientation="col", labels=["only one"])
+        with pytest.raises(AssertionError, match="labels"):
+            ScatterPlot(data, config, x=X, y=Y, controls=[facet])
+
 
 class _TimeSpecFixture:
     @staticmethod

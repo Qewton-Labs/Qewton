@@ -1,3 +1,55 @@
+from qewton.config.variables import Variable
+
+
+class TestLeafNames:
+    def test_a_leaf_returns_its_own_name(self):
+        x = Variable("x", 1)
+        assert x.leaf_names == {"x"}
+
+    def test_a_composed_variable_returns_every_leaf_name(self):
+        x, y, z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
+        assert (x * y * z).leaf_names == {"x", "y", "z"}
+
+    def test_an_auto_expanded_variable_returns_its_component_names(self):
+        pos = Variable("pos", 3)
+        assert pos.leaf_names == {"pos_0", "pos_1", "pos_2"}
+
+
+class TestPrune:
+    def test_returns_the_same_object_when_nothing_is_dropped(self):
+        """The whole point: a variable nothing needs to cut stays whole -
+        confirmed by identity, not just structural equality."""
+        pos = Variable("pos", 3)
+        assert pos.prune({"pos_0", "pos_1", "pos_2"}) is pos
+
+    def test_drops_a_leaf_not_in_keep_names(self):
+        x, y = Variable("x", 1), Variable("y", 1)
+        xy = x * y
+        pruned = xy.prune({"x"})
+        assert pruned is x
+
+    def test_returns_none_when_everything_is_dropped(self):
+        x, y = Variable("x", 1), Variable("y", 1)
+        assert (x * y).prune(set()) is None
+
+    def test_a_leaf_survives_or_not_on_its_own(self):
+        x = Variable("x", 1)
+        assert x.prune({"x"}) is x
+        assert x.prune(set()) is None
+
+
+class TestCompose:
+    def test_a_single_leaf_is_returned_unchanged(self):
+        x = Variable("x", 1)
+        assert Variable.compose([x]) is x
+
+    def test_multiple_leaves_are_composed_in_order(self):
+        x, y = Variable("x", 1), Variable("y", 1)
+        composed = Variable.compose([x, y])
+        assert composed.leaves == [x, y]
+        assert composed.dim == 2
+
+
 # import pytest
 # from qewton.config.variables import Variable
 

@@ -203,9 +203,7 @@ class ConcatVariables(Node[TensorType]):
         # Variable leaves its dim as None (Variable.__init__ propagates
         # "any child's dim is None" outward), which breaks arithmetic like
         # Variable.get_slice's running_idx += child.dim on the result.
-        out_var = self.in_variables[0]
-        for var in self.in_variables[1:]:
-            out_var = out_var * var
+        out_var = Variable.compose(self.in_variables)
         self._output_ports = [
             OutputPort(
                 DataConfiguration(

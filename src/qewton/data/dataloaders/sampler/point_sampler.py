@@ -93,6 +93,9 @@ class PointSampler(DataNode[TensorType]):
                         self.geometry.variable.get_slice(var.annotation)  # type: ignore
                     )
 
+        self.sample_mesh = False  # used as a mode for plotting
+        self.active_mesh_resolution = None
+
     def _check_normal_sampling_possible(self):
         if not self.has_boundary_geometry:
             raise ValueError(
@@ -107,7 +110,6 @@ class PointSampler(DataNode[TensorType]):
 
     def _build_port(self, variable: Variable):
         axes = [
-            # BatchAxes(AxesDim(self.batch_size)),
             GeometryAxes(self.geometry, (AxesDim(self.batch_size),)),
             FeatureAxes(variable=variable),
         ]

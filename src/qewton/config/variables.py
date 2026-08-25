@@ -79,6 +79,11 @@ class Variable:
                 leaves.extend(child.leaves)
             return leaves
 
+    @property
+    def leaf_names(self) -> set[str]:
+        """The names of every leaf in this Variable's tree."""
+        return {leaf.name for leaf in self.leaves}
+
     def __getitem__(self, key):
         if isinstance(key, int):
             return self.leaves[key]
@@ -105,6 +110,21 @@ class Variable:
         return new_var
 
     __add__ = __mul__
+
+    @staticmethod
+    def compose(variables: list[Variable]) -> Variable:
+        """Folds `variables` into one Variable via `*`, left to right.
+
+        Returns the single variable itself, unchanged, when only one is
+        given - `*`-ing a lone variable would otherwise wrap it in a
+        pointless composite.
+        """
+        if len(variables) == 1:
+            return variables[0]
+        result = variables[0]
+        for variable in variables[1:]:
+            result = result * variable
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, int | tuple[int, ...]]) -> Variable:
@@ -178,6 +198,26 @@ class Variable:
         if not isinstance(other, Variable):
             return False
         return self._hash_name() == other._hash_name()
+
+    def prune(self, keep_names: set[str]) -> "Variable | None":
+        """Removes every leaf whose name isn't in `keep_names`, preserving
+        as much of the original grouping as possible.
+
+        Returns this Variable itself, unchanged, if none of its leaves
+        needed dropping - so an auto-expanded multi-component variable used
+        whole stays whole instead of being flattened into its individual
+        components just because some other, unrelated variable needed
+        pruning. Returns None if every leaf was dropped.
+        """
+        if self.is_leaf:
+            return self if self.name in keep_names else None
+        survivors = [child.prune(keep_names) for child in self.children]
+        survivors = [child for child in survivors if child is not None]
+        if survivors == self.children:
+            return self
+        if not survivors:
+            return None
+        return Variable.compose(survivors)
 
     def unify(self, other: Variable) -> Variable:
         """Unifies two variables, i.e. checks if they are compatible and returns
