@@ -13,6 +13,7 @@ from qewton.visualization.renderers.plotly.grid import (
     SurfaceArtist,
 )
 from qewton.visualization.renderers.plotly.mesh import FilledMeshArtist, SurfaceMeshArtist
+from qewton.visualization.renderers.plotly.points import PointCloud2DArtist, PointCloud3DArtist
 from qewton.visualization.renderers.plotly.table import ParallelCoordinatesArtist
 from qewton.visualization.renderers.plotly.tabular import BarArtist, ScatterArtist
 from qewton.visualization.renderers.plotly.vector import ArrowField2DArtist, ArrowField3DArtist
@@ -38,6 +39,8 @@ class PlotlyRenderer(Renderer):
     PathArtist = PathArtist
     ScatterArtist = ScatterArtist
     BarArtist = BarArtist
+    PointCloud2DArtist = PointCloud2DArtist
+    PointCloud3DArtist = PointCloud3DArtist
     ParallelCoordinatesArtist = ParallelCoordinatesArtist
     ArrowField2DArtist = ArrowField2DArtist
     ArrowField3DArtist = ArrowField3DArtist

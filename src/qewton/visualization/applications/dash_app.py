@@ -15,7 +15,12 @@ class DashApplication(RenderApplication):
         """Builds a Dash app displaying `figure`, with a callback that
         re-draws it whenever a slider's or dropdown's value changes."""
         app = Dash(__name__)
-        app.title = figure.title
+        if figure.title is not None:
+            # Left at Dash's own default ("Dash") otherwise - assigning
+            # None here crashes the very first page render, since Dash
+            # interpolates it directly into the index HTML template via
+            # str.replace(), which requires a string.
+            app.title = figure.title
 
         DashApplication._build_layout(app, figure)
         DashApplication._register_callbacks(app, figure)

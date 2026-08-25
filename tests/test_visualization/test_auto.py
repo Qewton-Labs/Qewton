@@ -5,11 +5,14 @@ from qewton.algorithms.building_blocks.geometry import MeshInterpolationNode
 from qewton.config.axes import BatchAxes, FeatureAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
+from qewton.geometries.continuous.domains_2d.circle import Circle
+from qewton.geometries.discrete.point_cloud import PointCloud
 from qewton.geometries.discrete.volume_grid import VolumeGridGeometry
 from qewton.visualization.auto import auto_plot
 from qewton.visualization.plots.data.curve import LinePlot
 from qewton.visualization.plots.data.grid import EmbeddedGridPlot, QuiverPlot
 from qewton.visualization.plots.data.mesh import MeshFieldPlot, MeshVectorPlot
+from qewton.visualization.plots.data.points import PointCloudPlot
 from qewton.visualization.plots.data.samples import BarPlot, ScatterPlot
 from qewton.visualization.plots.spec import FixedSpec, SliderSpec, VariableSpec
 
@@ -224,3 +227,51 @@ class TestExplicitPlotType:
         )
         with pytest.raises(ValueError, match="multiple GeometryAxes"):
             auto_plot(np.zeros((1,)), config)
+
+
+class TestPointCloudDispatch:
+    """A DiscreteGeometry with neither a mesh nor a grid shape - e.g. a
+    PointCloud - still has discretization_points, so auto_plot falls back
+    to PointCloudPlot/QuiverPlot instead of raising, the same way MeshGeometry/
+    GridGeometry are dispatched to."""
+
+    def test_scalar_quantity_becomes_a_point_cloud_plot(self):
+        U = Variable("u", 1)
+        points = np.random.rand(5, 2)
+        geometry = PointCloud(Variable("x", 2), points)
+        data = np.random.rand(5, 1)
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(U))
+        plot = auto_plot(data, config)
+        assert isinstance(plot, PointCloudPlot)
+
+    def test_three_component_vector_quantity_becomes_a_quiver_plot(self):
+        V3 = Variable("v", 3)
+        points = np.random.rand(5, 3)
+        geometry = PointCloud(Variable("x", 3), points)
+        data = np.random.rand(5, 3)
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(V3))
+        plot = auto_plot(data, config)
+        assert isinstance(plot, QuiverPlot)
+
+    def test_wrong_dim_quantity_raises_a_clear_error(self):
+        V2 = Variable("v", 2)
+        points = np.random.rand(5, 3)
+        geometry = PointCloud(Variable("x", 3), points)
+        data = np.random.rand(5, 2)
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(V2))
+        with pytest.raises(ValueError, match="PointCloudPlot"):
+            auto_plot(data, config)
+
+
+class TestContinuousGeometryRaises:
+    def test_a_continuous_geometry_with_no_discretization_is_the_only_error_case(self):
+        """The one case auto_plot genuinely can't handle: a continuous
+        Geometry that was never discretized has no known point positions at
+        all - unlike any DiscreteGeometry, which always has
+        discretization_points even without mesh/grid structure."""
+        U = Variable("u", 1)
+        circle = Circle(variable=Variable("x", 2), center=[0, 0], radius=1.0)
+        data = np.random.rand(5, 1)
+        config = DataConfiguration(GeometryAxes(circle), FeatureAxes(U))
+        with pytest.raises(ValueError, match="no known discretization"):
+            auto_plot(data, config)

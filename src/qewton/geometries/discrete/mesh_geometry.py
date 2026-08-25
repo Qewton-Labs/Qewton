@@ -76,7 +76,7 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
     def create_mesh(
         self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshGeometry:
-        return self
+        return self  # TODO: max_vertex_distance is currently ignored
 
     def bounding_box(self):
         bounding_box = []

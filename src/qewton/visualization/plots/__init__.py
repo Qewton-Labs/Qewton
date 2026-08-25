@@ -11,6 +11,7 @@ from .spec import (
 from .result import (
     GridResult,
     ParametricGridResult,
+    PointCloudResult,
     MeshResult,
     VectorResult,
     CurveResult,
@@ -38,6 +39,7 @@ from .data import (
     MeshFieldPlot,
     MeshSurfacePlot,
     MeshVectorPlot,
+    PointCloudPlot,
     LinePlot,
     PathPlot,
     ScatterPlot,

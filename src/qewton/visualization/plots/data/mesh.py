@@ -3,7 +3,6 @@ import numpy as np
 from qewton.config.axes import GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.visualization.plots.data.base import DataPlot
 from qewton.visualization.plots.result import MeshResult, VectorResult
 from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec, VectorSpec
@@ -34,9 +33,10 @@ class MeshPlot(DataPlot):
         assert isinstance(
             geom_axes, GeometryAxes
         ), "Currently only DataConfigurations with a single GeometryAxes are supported."
-        if geom_axes is None or not isinstance(geom_axes.geometry, MeshGeometry):
+        if geom_axes is None or getattr(geom_axes.geometry, "mesh", None) is None:
             raise ValueError(
-                f"{type(self).__name__} requires a GeometryAxes wrapping a MeshGeometry."
+                f"{type(self).__name__} requires a GeometryAxes whose geometry "
+                "currently has a mesh (vertices + cell connectivity)."
             )
         self.mesh = geom_axes.geometry.mesh
         self.dim = self.mesh.vertices.shape[1]

@@ -42,18 +42,18 @@ class Circle(ContinuousGeometry[TensorType]):
     ) -> MeshGeometry:
         self.center = self.backend.to(self.center, device=device)
         vertices, triangles = self.triangulate_circle(
-            max_vertex_distance, self.radius, self.backend
+            max_vertex_distance, self.radius, self.backend, device=device
         )
 
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=triangles),
+            mesh=Mesh(vertices=vertices, cells=triangles, device=device),
             discretization_of=self,
             backend=self.backend,
         )
 
     @classmethod
-    def triangulate_circle(cls, max_vertex_distance, radius, backend):
+    def triangulate_circle(cls, max_vertex_distance, radius, backend, device: Device = cpu):
         if max_vertex_distance is None:
             power_n = 4
             n = 16
@@ -104,8 +104,8 @@ class Circle(ContinuousGeometry[TensorType]):
         triangles.append([v_count + 1, v_count - 2, v_count - 3])
         triangles.append([v_count + 1, v_count, v_count - 3])
 
-        triangles = backend.build_tensor(triangles)
-        vertices = backend.build_tensor(vertices)
+        triangles = backend.build_tensor(triangles, device=device)
+        vertices = backend.build_tensor(vertices, device=device)
         return vertices, triangles
 
     def contains(self, points):

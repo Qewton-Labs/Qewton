@@ -22,6 +22,21 @@ def _mesh_field_plot_with_selector(small_mesh_geometry):
     return plot, selector
 
 
+class TestAppTitle:
+    def test_a_figure_with_no_title_renders_the_index_page_without_error(self, small_mesh_geometry):
+        """Regression: Dash interpolates app.title into its index HTML via
+        str.replace(), which crashes on None - Figure's own default title
+        is None, so this is the common case, not an edge case."""
+        plot, _ = _mesh_field_plot_with_selector(small_mesh_geometry)
+        app = DashApplication.create(Figure(plot))
+        assert app.index()  # must not raise
+
+    def test_an_explicit_figure_title_is_used_as_the_app_title(self, small_mesh_geometry):
+        plot, _ = _mesh_field_plot_with_selector(small_mesh_geometry)
+        app = DashApplication.create(Figure(plot, title="My Figure"))
+        assert app.title == "My Figure"
+
+
 class TestCreateDropdown:
     def test_options_are_candidate_indices_labeled_by_name(self):
         temperature, pressure = Variable("temperature", 1), Variable("pressure", 1)

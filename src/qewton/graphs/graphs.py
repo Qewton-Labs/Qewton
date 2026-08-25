@@ -2,10 +2,11 @@ from __future__ import annotations
 from collections import deque
 from contextlib import contextmanager
 import inspect
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
 from warnings import warn
 
 from qewton.config.data_configurations import DataConfiguration
+from qewton.config.devices import Device
 from qewton.config.errors import DataConfigMismatchError
 
 from qewton.graphs.nodes import (
@@ -19,6 +20,14 @@ from qewton.graphs.nodes import (
 from qewton.graphs.control_nodes.data_processing_node import DataProcessingNode
 from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
 from qewton.graphs.edges import Edge
+
+if TYPE_CHECKING:
+    # Deferred (not just for typing - see visualize()'s own local imports):
+    # qewton.visualization / qewton.data.dataloaders.sampler.point_sampler
+    # both transitively import qewton.optim, which imports GraphBasedTrainer,
+    # which imports Graph itself - a module-level import here would make
+    # `import qewton` circular.
+    from qewton.visualization.plots.base import Plot
 
 
 class Graph:
@@ -559,14 +568,115 @@ class Graph:
             node.run()
         return {}
 
-    def plot(self, port: Port, plot_type: type[Plot] | None = None, **plot_kwargs):
+    def _nodes_needed_for(self, target_nodes: set[Node]) -> set[Node]:
+        """Every node needed to produce a value for `target_nodes`,
+        including the target nodes themselves."""
+        nodes_to_run = set(target_nodes)
+        for node in target_nodes:
+            nodes_to_run |= self._build_path_to_node(node)
+        return nodes_to_run
+
+    def _samplers_on_path_to(self, ports: tuple[Port, ...]) -> list:
+        """Every PointSampler needed to produce a value for any of `ports` -
+        on the path to them, or one of their own owning nodes."""
+        from qewton.data.dataloaders.sampler.point_sampler import PointSampler
+
+        nodes_to_run = self._nodes_needed_for({p.node for p in ports})
+        return [n for n in nodes_to_run if isinstance(n, PointSampler)]
+
+    def _run_nodes_needed_for(
+        self, ports: tuple[Port, ...], mode: EvaluationPhase
+    ) -> None:
+        """Runs every node needed to produce a value for each of `ports`, in
+        topological order - including each port's own owning node (unlike
+        run_to(), which stops just before its target so a caller can take
+        over from there instead). Unlike run_to()/connect(), this doesn't
+        warn via _check_graph_was_sorted() - an already-sorted graph is the
+        expected, normal precondition here (visualize() is meant to run
+        after setup()), not a stale-sort hazard to flag."""
+        nodes_to_run = self._nodes_needed_for({p.node for p in ports})
+        for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
+            if node not in nodes_to_run:
+                continue
+            node.set_mode(mode)
+            for in_port in node.input_ports:
+                if in_port in edges:
+                    in_port.set_value(edges[in_port].from_port.value)
+                else:
+                    in_port.clear_value()
+            node.run()
+
+    def visualize(
+        self,
+        *ports: Port,
+        plot_type: type["Plot"] | None = None,
+        max_vertex_distance: float | None = None,
+        device: Device | str | None = None,
+        **plot_kwargs,
+    ):
+        """Runs just enough of the graph to produce a value for each of
+        `ports`, and builds one Plot per port via auto_plot().
+
+        Every PointSampler needed to reach a requested port is switched into
+        mesh mode for this run (discretization_mode) - a deterministic
+        mesh/grid discretization of its geometry, instead of whatever random
+        batch it would otherwise produce - since a Plot needs points that
+        form a coherent, complete domain, not one training batch.
+
+        Args:
+            *ports: One or more Ports (or lists of Ports) to visualize.
+            plot_type: Passed through to auto_plot() for every port - an
+                explicit Plot type if auto-selection doesn't apply, or None
+                (default) to auto-select per port.
+            max_vertex_distance: Passed to discretization_mode() - caps the
+                mesh resolution used while sampling in mesh mode.
+            device: If given, every node needed to reach `ports` is moved
+                there before running - the same explicit control
+                GraphBasedTrainer's own `device=` gives at training time.
+                Left alone (default None) otherwise, which normally just
+                works, but not always: e.g. after a training run is
+                interrupted (KeyboardInterrupt) partway through moving nodes
+                to a device, they can be left in an inconsistent mix - this
+                is the escape hatch for that, not something needed on every
+                call. Also controls where mesh-mode's own freshly-generated
+                points are built (Geometry.create_mesh()'s own `device`
+                otherwise defaults to cpu regardless of where the sampler/
+                model already live, which would itself raise a device
+                mismatch against a GPU-resident model).
+            **plot_kwargs: Passed through to auto_plot() for every port.
+
+        Returns:
+            list[Plot]: One Plot per requested port, in the same order -
+                e.g. `Figure(graph.visualize(port_a, port_b)).show()`.
         """
-        ..
-        """
-        # divide between mesh and sampled points
-        return auto_plot(
-            port.value, port.get_data_configuration(self), plot_type, **plot_kwargs
-        )
+        from qewton.data.dataloaders.sampler.point_sampler import discretization_mode
+        from qewton.visualization.auto import auto_plot
+
+        nodes_to_run = self._nodes_needed_for({p.node for p in ports})
+        if device is not None:
+            for node in nodes_to_run:
+                node.to(device)
+
+        samplers = self._samplers_on_path_to(ports)
+        with discretization_mode(samplers, max_vertex_distance, device):
+            self._run_nodes_needed_for(ports, mode=EvaluationPhase.ALWAYS)
+
+        # Move right before plotting, not before running - the sampler(s)
+        # and model can stay on whatever device they were trained on for
+        # the run itself; only the values a Plot actually reads need to be
+        # plain, already-detached numpy by the time auto_plot() sees them.
+        for sampler in samplers:
+            sampler.sampled_geometry.to_numpy()
+
+        return [
+            auto_plot(
+                port.node.backend.to_numpy(port.value),
+                port.get_data_configuration(self),  # type: ignore
+                plot_type,
+                **plot_kwargs,
+            )
+            for port in ports
+        ]
 
     def collect_trainable_parameters(self):
         """

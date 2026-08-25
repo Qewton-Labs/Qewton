@@ -152,7 +152,7 @@ class Cylinder(ContinuousGeometry[TensorType]):
         self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshGeometry:
         vertices, triangles = Circle.triangulate_circle(
-            max_vertex_distance, radius=self.radius, backend=self.backend
+            max_vertex_distance, radius=self.radius, backend=self.backend, device=device
         )
         zeros = self.backend.math.zeros((len(vertices), 1), device=device)
         vertices = self.backend.math.concatenate([vertices, zeros], axis=1)
@@ -181,11 +181,11 @@ class Cylinder(ContinuousGeometry[TensorType]):
                 tetrahedra.append([c, a1, b, b1])
                 tetrahedra.append([c, a1, b1, c1])
         all_vertices = self.backend.math.concatenate(all_vertices, axis=0)
-        tetrahedra = self.backend.build_tensor(tetrahedra)
+        tetrahedra = self.backend.build_tensor(tetrahedra, device=device)
 
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=all_vertices, cells=tetrahedra),
+            mesh=Mesh(vertices=all_vertices, cells=tetrahedra, device=device),
             discretization_of=self,
         )
 

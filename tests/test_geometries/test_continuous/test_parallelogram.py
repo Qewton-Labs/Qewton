@@ -80,6 +80,19 @@ def test_create_mesh(backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("device", devices)
+def test_create_mesh_on_device(backend, device):
+    """Regression: create_mesh() used to build its internal linspace/
+    triangle-index tensors on cpu regardless of `device`, mismatching the
+    already-moved origin/corner_1/corner_2 the moment a non-cpu device was
+    requested."""
+    para = Parallelogram(X, [0, 0], [1.0, 0.0], [0.0, 1.0], backend=backend)
+    mesh_geo = para.create_mesh(max_vertex_distance=0.6, device=device)
+    assert len(mesh_geo.mesh.vertices) == 9
+    assert len(mesh_geo.mesh.cells) == 8
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("device", devices)
 def test_sample_grid(backend, device):
     para = Parallelogram(X, [0, 0], [1.0, 0.0], [0.0, 1.0], backend=backend)
     points = para.sample_grid(4, device=device)

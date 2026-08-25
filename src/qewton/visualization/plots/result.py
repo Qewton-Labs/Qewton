@@ -32,6 +32,15 @@ class ParametricGridResult:
 
 
 @dataclass
+class PointCloudResult:
+    """Result of PointCloudPlot.evaluate() - one color value per point, at
+    arbitrary positions (2D or 3D) with no structure or connectivity."""
+
+    positions: np.ndarray
+    color: np.ndarray | None = None
+
+
+@dataclass
 class MeshResult:
     """Result of a MeshPlot family evaluate(), and of GeometryPlot."""
 

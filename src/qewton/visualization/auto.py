@@ -1,12 +1,13 @@
 from qewton.config.axes import Axes, EllipsisAxes, FeatureAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
+from qewton.geometries.base import DiscreteGeometry
 from qewton.geometries.discrete.grid_geometry import GridGeometry
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.visualization.plots.base import Plot
 from qewton.visualization.plots.data.curve import LinePlot
 from qewton.visualization.plots.data.grid import EmbeddedGridPlot, QuiverPlot
 from qewton.visualization.plots.data.mesh import MeshFieldPlot, MeshVectorPlot
+from qewton.visualization.plots.data.points import PointCloudPlot
 from qewton.visualization.plots.data.samples import ScatterPlot
 from qewton.visualization.plots.spec import ColorSpec, SliderSpec, VariableSpec, VectorSpec
 
@@ -160,7 +161,12 @@ def _auto_geometry_plot(data, data_config: DataConfiguration, geometry_axes: Geo
     geometry = geometry_axes.geometry
     kwargs = _with_extra_controls(kwargs, _other_axes(data_config, geometry_axes, feature_axes))
 
-    if isinstance(geometry, MeshGeometry):
+    # Checked structurally (`.mesh` populated), not by isinstance(MeshGeometry)
+    # - a SampledGeometry only has a mesh once mesh-mode sampling gave it real
+    # cell connectivity, so this correctly falls through to the point-cloud
+    # branch below outside of that, without auto_plot needing to know
+    # SampledGeometry exists at all.
+    if getattr(geometry, "mesh", None) is not None:
         if quantity.dim == 1:
             return MeshFieldPlot(data, data_config, color=ColorSpec(quantity), **kwargs)
         if quantity.dim == geometry.dim:
@@ -183,10 +189,26 @@ def _auto_geometry_plot(data, data_config: DataConfiguration, geometry_axes: Geo
             "explicitly if this is intentional."
         )
 
+    # Any other DiscreteGeometry still has discretization_points (just no
+    # mesh/grid structure to them) - e.g. a SampledGeometry outside mesh
+    # mode. QuiverPlot itself has no GridGeometry-specific requirement (only
+    # 3D discretization_points), so it's reused as-is for the vector case.
+    if isinstance(geometry, DiscreteGeometry) and geometry.discretization_points is not None:
+        if quantity.dim == 1:
+            return PointCloudPlot(data, data_config, color=ColorSpec(quantity), **kwargs)
+        if quantity.dim == 3:
+            return QuiverPlot(data, data_config, vector=VectorSpec(quantity), **kwargs)
+        raise ValueError(
+            f"{quantity.name} has dim={quantity.dim} - expected dim=1 for a "
+            "PointCloudPlot or dim=3 for a QuiverPlot. Construct one "
+            "explicitly if this is intentional."
+        )
+
     raise ValueError(
-        f"{type(geometry).__name__} is neither a MeshGeometry nor a "
-        "GridGeometry - auto_plot has no default for it. Construct a Plot "
-        "explicitly (e.g. GeometryPlot to just see the domain)."
+        f"{type(geometry).__name__} has no known discretization - auto_plot "
+        "can't infer point positions for a continuous geometry. Discretize "
+        "it first (e.g. via create_mesh(), or a PointSampler run in mesh "
+        "mode), or construct a Plot explicitly."
     )
 
 

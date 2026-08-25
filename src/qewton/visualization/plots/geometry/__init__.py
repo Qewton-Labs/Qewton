@@ -1,5 +1,4 @@
 from qewton.geometries.base import Geometry
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.visualization.plots.base import Plot
 from qewton.visualization.plots.result import MeshResult
 
@@ -31,8 +30,9 @@ class GeometryPlot(Plot):
 
     @staticmethod
     def _resolve_mesh(geometry: Geometry, max_vertex_distance):
-        if isinstance(geometry, MeshGeometry):
-            return geometry.mesh
+        mesh = getattr(geometry, "mesh", None)
+        if mesh is not None:
+            return mesh
         if hasattr(geometry, "create_mesh"):
             return geometry.create_mesh(max_vertex_distance=max_vertex_distance).mesh
         raise ValueError(

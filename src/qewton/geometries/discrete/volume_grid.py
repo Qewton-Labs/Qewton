@@ -11,19 +11,7 @@ from qewton.geometries.discrete.mesh_stats import mean_edge_length
 class VolumeGridGeometry(GridGeometry[TensorType]):
     """A (N1, N2, N3) structured grid of points covering a volumetric mesh's
     bounding box - the solid-box counterpart to PlaneSliceGeometry, for
-    resampling a mesh field onto a regular 3D grid (visualization plan,
-    roadmap item 5) instead of a stack of 2D plane slices.
-
-    A special case of GridGeometry, exactly like PlaneSliceGeometry: the grid
-    points are computed from a mesh's bounding box instead of given directly,
-    and `point_filter` marks points outside the mesh via
-    `mesh_geometry.contains()`. Feed a VolumeGridGeometry and a
-    MeshInterpolationNode's output (e.g. a 3-component vector field) into a
-    grid-based vector plot to draw arrows on the resampled field.
-
-    All tensor math runs through mesh_geometry.backend - no numpy dependency.
-    Everything computed here is a structural constant (grid geometry, not the
-    field), so nothing in this class needs to be differentiable.
+    resampling a mesh field onto a regular 3D grid instead of a stack of 2D plane slices.
 
     Args:
         mesh_geometry: The volumetric (3D) mesh whose bounding box the grid
@@ -98,6 +86,4 @@ class VolumeGridGeometry(GridGeometry[TensorType]):
     def _default_resolution(backend, mesh, mins, maxs) -> tuple[int, int, int]:
         mean_edge = mean_edge_length(backend, mesh)
         extent = maxs - mins
-        return tuple(
-            max(2, math.ceil(float(extent[i]) / mean_edge)) for i in range(3)
-        )
+        return tuple(max(2, math.ceil(float(extent[i]) / mean_edge)) for i in range(3))

@@ -102,8 +102,8 @@ class Parallelogram(ContinuousGeometry[TensorType]):
                 ),
             )
         # unit-square vertices
-        u = self.backend.math.linspace(0.0, 1.0, num=nx + 1)
-        v = self.backend.math.linspace(0.0, 1.0, num=ny + 1)
+        u = self.backend.math.linspace(0.0, 1.0, num=nx + 1, device=device)
+        v = self.backend.math.linspace(0.0, 1.0, num=ny + 1, device=device)
 
         U, V = self.backend.math.meshgrid(u, v, indexing="ij")
 
@@ -128,11 +128,11 @@ class Parallelogram(ContinuousGeometry[TensorType]):
                 triangles.append([a, b, c])
                 triangles.append([a, c, d])
 
-        triangles = self.backend.build_tensor(triangles)
+        triangles = self.backend.build_tensor(triangles, device=device)
 
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=triangles),
+            mesh=Mesh(vertices=vertices, cells=triangles, device=device),
             discretization_of=self,
         )
 
