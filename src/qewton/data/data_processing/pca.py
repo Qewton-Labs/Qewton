@@ -149,14 +149,13 @@ class PCANode(DataProcessingNode[TensorType]):
         return pca_coefficients, self.pca_u, self.pca_s, self.pca_v
 
     def config_dict(self) -> NodeConfig:
-        basic_config = super().config_dict()
+        cfg = super().config_dict()
         if hasattr(self, "pca_v"):
-            basic_config.other_args["pca_v"] = self.pca_v
-            basic_config.other_args["pca_s"] = self.pca_s
-            basic_config.other_args["pca_u"] = self.pca_u
-            basic_config.other_args["original_shape"] = self.original_shape
-            self._set_port_values(self.pca_u, self.pca_s, self.pca_v)
-        return basic_config
+            cfg.other_args["pca_v"] = self.pca_v
+            cfg.other_args["pca_s"] = self.pca_s
+            cfg.other_args["pca_u"] = self.pca_u
+            cfg.other_args["original_shape"] = self.original_shape
+        return cfg
 
     @classmethod
     def load_from_config(cls, config: NodeConfig) -> Node:
@@ -166,6 +165,7 @@ class PCANode(DataProcessingNode[TensorType]):
             pca_node.pca_s = config.other_args["pca_s"]
             pca_node.pca_u = config.other_args["pca_u"]
             pca_node.original_shape = config.other_args["original_shape"]
+            pca_node._set_port_values(pca_node.pca_u, pca_node.pca_s, pca_node.pca_v)
         return pca_node
 
 

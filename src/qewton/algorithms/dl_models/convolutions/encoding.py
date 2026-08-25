@@ -115,6 +115,7 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
             pooling_kernel_size, "Encoder Pooling Size"
         )
         self.activation = HyperParameter.from_value(activation, "UNet Activations")
+        self.pooling_type = pooling_type
         self.pooling_node = self._pick_pooling_type(pooling_type=pooling_type)
         self.fcn_hidden_neurons = HyperParameter.from_value(
             fcn_hidden_neurons, "Encoder FCN Hidden Neurons"

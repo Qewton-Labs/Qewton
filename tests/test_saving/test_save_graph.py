@@ -4,6 +4,7 @@ from qewton.algorithms.building_blocks import Add, Multiply, ReLU
 from qewton.algorithms.building_blocks import Reshape
 from qewton.algorithms.dl_models.fcn import FCN, DeepRitzNet
 from qewton.algorithms.dl_models.convolutions.cnn import CNN, UNet
+from qewton.algorithms.dl_models.convolutions.encoding import ConvolutionalEncoder
 from qewton.algorithms.dl_models.harmonic_fcn import HarmonicFCN
 from qewton.algorithms.dl_models.pca_net import PCANet
 from qewton.config.variables import Variable
@@ -101,7 +102,7 @@ def test_save_and_load_cnn(tmp_path):
         assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
 
 
-def test_save_and_load_unt(tmp_path):
+def test_save_and_load_unet(tmp_path):
     save_path = tmp_path / "unet_test"
     unet = UNet(
         in_channels=2,
@@ -164,4 +165,26 @@ def test_save_and_load_pca_net(tmp_path):
     if _backend_found:
         output_original = pca_net(test_in_data)
         output_loaded = loaded_pca_net(test_in_data)
+        assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
+
+
+def test_save_and_load_convolutional_encoder(tmp_path):
+    if not _backend_found:
+        return
+    save_path = tmp_path / "convolutional_encoder_test"
+    encoder_test = ConvolutionalEncoder(
+        in_channels=2,
+        channels=(16, 16),
+        out_channels=1,
+        conv_kernel_size=(3, 3),
+        input_shape=(2, 32, 32),
+    )
+    encoder_test.setup()
+    save(encoder_test, save_path, replace=True)
+    loaded_encoder = load(save_path)
+    assert isinstance(loaded_encoder, ConvolutionalEncoder)
+    if _backend_found:
+        input_data = DEFAULT_DL_BACKEND.random.uniform((3, 2, 32, 32))
+        output_original = encoder_test(input_data)
+        output_loaded = loaded_encoder(input_data)
         assert DEFAULT_DL_BACKEND.math.allclose(output_original, output_loaded)
