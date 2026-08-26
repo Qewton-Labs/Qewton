@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import os
-import inspect
 import logging
 import shutil
 from pathlib import Path
@@ -11,30 +9,34 @@ from typing import Any
 
 from qewton.graphs.nodes import Node, NodeConfig
 from qewton.graphs.graphs import Graph
-from qewton.backends.base import ComputingBackend
-from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
-from qewton.backends import BACKEND_DICT, Backend
+from qewton.backends import Backend
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
-from qewton.config.variables import Variable
 from qewton.graphs.saving.hyperparameter_saving import (
-    encode_value,
     serialize_hyperparameter,
     _add_hp_to_collection,
 )
-from qewton.geometries.base import Geometry
+from qewton.graphs.saving.serialize_objects import (
+    SaveContext,
+    _serialize_other_args,
+    serialize_port,
+)
+from qewton.graphs.saving.serialize_dataconfigurations import (
+    serialize_data_configurations,
+    DataConfigSerializationResult,
+)
+
 from qewton.graphs.saving.schema import (
     DIR_PARAMETERS,
     FILE_NODES,
     FILE_GRAPHS,
     FILE_CONFIG,
     FILE_HYPERPARAMETERS,
-    KEY_BACKEND_KEY,
     KEY_EDGES,
     KEY_FROM_NODE_ID,
     KEY_FROM_OUTSIDE,
     KEY_FROM_PORT,
-    KEY_HP_KEY,
     KEY_HYPERPARAMETERS,
+    KEY_DATA_CONFIGURATIONS,
     KEY_MODE,
     KEY_NODE_ID,
     KEY_NODE_IDENTIFIER,
@@ -42,7 +44,6 @@ from qewton.graphs.saving.schema import (
     KEY_OBJECT_TYPE,
     KEY_OTHER_ARGS,
     KEY_NESTED_GRAPHS,
-    KEY_PATH,
     KEY_SCHEMA_VERSION,
     KEY_SORTED,
     KEY_STATE,
@@ -54,146 +55,12 @@ from qewton.graphs.saving.schema import (
     OBJECT_TYPE_GRAPH,
     OBJECT_TYPE_NODE,
     SCHEMA_VERSION,
-    TYPE_BACKEND_REF,
-    TYPE_CONSTANT_REF,
-    TYPE_HP_REF,
-    TYPE_TRAINABLE_PARAMETER_REF,
     TYPE_TUPLE,
-    TYPE_NODE,
-    TYPE_VARIABLE,
-    TYPE_GEOMETRY,
-    TYPE_ELLIPSIS,
+    KEY_INPUT_PORTS,
+    KEY_OUTPUT_PORTS,
 )
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class SaveContext:
-    parameters_dir: Path
-    file_counter: int
-    constants_file_counter: int
-    node_save_dict: dict[int, Any]
-    graph_save_dict: dict
-    hp_collection: dict[str, HyperParameter]
-
-
-def _save_trainable_parameters(
-    value: _TrainableParameterBase,
-    save_context: SaveContext,
-    backend: ComputingBackend,
-) -> dict[str, Any] | list[dict[str, Any]]:
-    # Save each parameter group separately to keep files small and composable.
-    rel_paths: list[dict[str, Any]] = []
-    for group in value:
-        file_name = f"param_{save_context.file_counter}"
-        save_context.file_counter += 1
-        param_path = save_context.parameters_dir / file_name
-        backend.save(group.parameters, param_path)
-        rel_paths.append(
-            {
-                KEY_TYPE: TYPE_TRAINABLE_PARAMETER_REF,
-                KEY_PATH: DIR_PARAMETERS + "/" + file_name,
-            }
-        )
-
-    if len(rel_paths) == 1:
-        return rel_paths[0]
-    return rel_paths
-
-
-def _serialize_other_args(
-    value: Any,
-    save_context: SaveContext,
-    node_dependencies: list[Node],
-    backend,
-) -> Any:
-    if isinstance(value, _TrainableParameterBase):
-        return _save_trainable_parameters(value, save_context, backend)
-    if value is ...:
-        return {KEY_TYPE: TYPE_ELLIPSIS}
-    if isinstance(value, Geometry):
-        raw = value.save()
-        serialized_fields = {}
-        for k, v in raw.items():
-            serialized_fields[k] = _serialize_other_args(
-                v,
-                save_context=save_context,
-                backend=backend,
-                node_dependencies=node_dependencies,
-            )
-        return {KEY_TYPE: TYPE_GEOMETRY, KEY_VALUES: serialized_fields}
-    if isinstance(value, Variable):
-        return {KEY_TYPE: TYPE_VARIABLE, KEY_VALUES: dict(value)}
-    if isinstance(value, backend.default_dtype):
-        file_name = f"value_{save_context.constants_file_counter}"
-        save_context.constants_file_counter += 1
-        param_path = save_context.parameters_dir / file_name
-        backend.save(value, param_path)
-        return {
-            KEY_TYPE: TYPE_CONSTANT_REF,
-            KEY_PATH: DIR_PARAMETERS + "/" + file_name,
-        }
-    if isinstance(value, dict):
-        return {
-            str(k): _serialize_other_args(
-                v,
-                save_context=save_context,
-                node_dependencies=node_dependencies,
-                backend=backend,
-            )
-            for k, v in value.items()
-        }
-    if isinstance(value, list):
-        return [
-            _serialize_other_args(
-                v,
-                save_context=save_context,
-                node_dependencies=node_dependencies,
-                backend=backend,
-            )
-            for v in value
-        ]
-    if isinstance(value, (tuple, set)):
-        return {
-            KEY_TYPE: type(value).__name__,
-            KEY_VALUES: [
-                _serialize_other_args(
-                    v,
-                    save_context=save_context,
-                    node_dependencies=node_dependencies,
-                    backend=backend,
-                )
-                for v in value
-            ],
-        }
-    if inspect.isclass(value) and issubclass(value, Backend):
-        key = next((k for k, v in BACKEND_DICT.items() if v == value), None)
-        if key is None:
-            raise ValueError(f"Backend class {value!r} not found in BACKEND_DICT.")
-        return {KEY_TYPE: TYPE_BACKEND_REF, KEY_BACKEND_KEY: key}
-    if isinstance(value, Node):
-        node_dependencies.append(value)
-        return {KEY_TYPE: TYPE_NODE, KEY_NODE_ID: value.node_id}
-    return encode_value(value)
-
-
-def _serialize_hyperparameter_entry(value: Any, hp_id_to_key: dict | None = None) -> Any:
-    if isinstance(value, HyperParameter):
-        if hp_id_to_key is not None and id(value) in hp_id_to_key:
-            return {KEY_TYPE: TYPE_HP_REF, KEY_HP_KEY: hp_id_to_key[id(value)]}
-        return serialize_hyperparameter(value)
-    if isinstance(value, list):
-        return [_serialize_hyperparameter_entry(v, hp_id_to_key) for v in value]
-    if isinstance(value, tuple):
-        return {
-            KEY_TYPE: TYPE_TUPLE,
-            KEY_VALUES: [_serialize_hyperparameter_entry(v, hp_id_to_key) for v in value],
-        }
-    raise TypeError(f"Unsupported hyperparameter payload type: {type(value)}")
-
-
-#############################################################################
 
 
 def save(obj: Node | Graph, path: str | Path, replace: bool = False) -> None:
@@ -222,6 +89,9 @@ def save(obj: Node | Graph, path: str | Path, replace: bool = False) -> None:
         node_save_dict={},
         graph_save_dict={},
         hp_collection={},
+        input_port_map={},
+        output_port_map={},
+        data_cdf_seri=DataConfigSerializationResult({}, [], [], []),
     )
 
     config_dict: dict = {KEY_SCHEMA_VERSION: SCHEMA_VERSION}
@@ -231,7 +101,7 @@ def save(obj: Node | Graph, path: str | Path, replace: bool = False) -> None:
     if isinstance(obj, Node):
         config_dict[KEY_OBJECT_TYPE] = OBJECT_TYPE_NODE
         config_dict[KEY_NODE_ID] = obj.node_id
-        save_node(obj.config_dict(), save_context, obj.backend)
+        save_node(obj.__getstate__(), save_context, obj.backend)
     elif isinstance(obj, Graph):
         config_dict[KEY_OBJECT_TYPE] = OBJECT_TYPE_GRAPH
         save_graph(graph=obj, save_key=OBJECT_TYPE_GRAPH, save_context=save_context)
@@ -283,11 +153,52 @@ def save_node(
         KEY_MODE: node_config.mode.name,
         KEY_STATE: node_config.state.name,
     }
+    # Collect all data configurations from the node's ports and add them to
+    # the config payload
+    cfg_serialization = serialize_data_configurations(node_config)
+    config_payload[KEY_DATA_CONFIGURATIONS] = cfg_serialization.serialized_payload
+    save_context.data_cdf_seri = cfg_serialization
+    # Add ports to the config payload
+    save_context.input_port_map = {}
+    save_context.output_port_map = {}
+    if node_config.input_ports:
+        config_payload[KEY_INPUT_PORTS] = [
+            serialize_port(p, i, save_context)
+            for i, p in enumerate(node_config.input_ports)
+        ]
+    if node_config.output_ports:
+        config_payload[KEY_OUTPUT_PORTS] = [
+            serialize_port(p, i, save_context)
+            for i, p in enumerate(node_config.output_ports)
+        ]
+    # Split arguments into hyperparameters, nested graphs, and other arguments
+    other_args = {}
+    hyperparameters = {}
+    nested_graphs = {}
+    for k, v in node_config.self_args.items():
+        if isinstance(v, HyperParameter):
+            hyperparameters[k] = v
+        elif (
+            isinstance(v, (list, tuple))
+            and len(v) > 0
+            and all(isinstance(i, HyperParameter) for i in v)
+        ):
+            hyperparameters[k] = v
+        elif (
+            isinstance(v, dict)
+            and len(v) > 0
+            and all(isinstance(i, HyperParameter) for i in v.values())
+        ):
+            hyperparameters[k] = v
+        elif isinstance(v, Graph):
+            nested_graphs[k] = v
+        else:
+            other_args[k] = v
     # Serialize arguments, including trainable parameters,
     # and save them to the main config
-    node_dependencies = []
+    node_dependencies: list[Node] = []
     serialized_other_args = _serialize_other_args(
-        node_config.other_args,
+        other_args,
         save_context=save_context,
         node_dependencies=node_dependencies,
         backend=backend,
@@ -295,9 +206,9 @@ def save_node(
     config_payload[KEY_OTHER_ARGS] = serialized_other_args
 
     # check for nested graphs inside the node:
-    if len(node_config.nested_graphs) > 0:
+    if len(nested_graphs) > 0:
         config_payload[KEY_NESTED_GRAPHS] = {}
-        for graph_name, graph in node_config.nested_graphs.items():
+        for graph_name, graph in nested_graphs.items():
             save_name = f"{graph_name}_id_{node_config.node_id}"
             save_graph(graph=graph, save_key=save_name, save_context=save_context)
             config_payload[KEY_NESTED_GRAPHS][graph_name] = save_name
@@ -305,7 +216,7 @@ def save_node(
     # save all other nodes that are dependencies of this node
     for dep_node in node_dependencies:
         save_node(
-            node_config=dep_node.config_dict(),
+            node_config=dep_node.__getstate__(),
             save_context=save_context,
             backend=dep_node.backend,
         )
@@ -314,28 +225,9 @@ def save_node(
     save_context.node_save_dict[node_config.node_id] = config_payload
 
     # Hyperparameters are saved on the global level, so we dont have duplicates
-    if len(node_config.hyperparameters) > 0:
-        # Add all hyperparameters to the collection
-        for hp in node_config.hyperparameters.values():
-            if isinstance(hp, (list, tuple)):
-                for sub_hp in hp:
-                    _add_hp_to_collection(
-                        sub_hp, save_context.hp_collection, node_config.node_id
-                    )
-            else:
-                _add_hp_to_collection(hp, save_context.hp_collection, node_config.node_id)
-        # Build the reference:
-        config_payload[KEY_HYPERPARAMETERS] = {}
-        for name, hp in node_config.hyperparameters.items():
-            if isinstance(hp, list):
-                config_payload[KEY_HYPERPARAMETERS][name] = [sub_hp.name for sub_hp in hp]
-            elif isinstance(hp, tuple):
-                config_payload[KEY_HYPERPARAMETERS][name] = {
-                    KEY_TYPE: TYPE_TUPLE,
-                    KEY_VALUES: [sub_hp.name for sub_hp in hp],
-                }
-            else:
-                config_payload[KEY_HYPERPARAMETERS][name] = hp.name
+    # just add them to the collection
+    if len(hyperparameters) > 0:
+        _hp_mapping(node_config, save_context, config_payload, hyperparameters)
 
 
 def save_graph(
@@ -350,7 +242,7 @@ def save_graph(
         path (str): The path to the file where the Graph will be saved.
     """
     # Serialize the graph configuration and save it to a JSON file
-    graph_config = graph.graph_config()
+    graph_config = graph.__getstate__()
 
     # Improve edge readability by converting node objects to their IDs
     edges_config = []
@@ -362,7 +254,7 @@ def save_graph(
     node_ids = []
     for node in graph.nodes:
         node_ids.append(node.node_id)
-        node_configs[node] = node.config_dict()
+        node_configs[node] = node.__getstate__()
 
     if len(node_configs) > 0:
         for node in graph.nodes:
@@ -391,3 +283,26 @@ def _edge_format_save(edge: tuple[int, int, int, int]) -> dict[str, Any]:
         KEY_TO_NODE_ID: edge[2],
         KEY_TO_PORT: edge[3],
     }
+
+
+def _hp_mapping(node_config, save_context, config_payload, hyperparameters):
+    for hp in hyperparameters.values():
+        if isinstance(hp, (list, tuple)):
+            for sub_hp in hp:
+                _add_hp_to_collection(
+                    sub_hp, save_context.hp_collection, node_config.node_id
+                )
+        else:
+            _add_hp_to_collection(hp, save_context.hp_collection, node_config.node_id)
+        # Build the reference:
+    config_payload[KEY_HYPERPARAMETERS] = {}
+    for name, hp in hyperparameters.items():
+        if isinstance(hp, list):
+            config_payload[KEY_HYPERPARAMETERS][name] = [sub_hp.name for sub_hp in hp]
+        elif isinstance(hp, tuple):
+            config_payload[KEY_HYPERPARAMETERS][name] = {
+                KEY_TYPE: TYPE_TUPLE,
+                KEY_VALUES: [sub_hp.name for sub_hp in hp],
+            }
+        else:
+            config_payload[KEY_HYPERPARAMETERS][name] = hp.name

@@ -24,7 +24,12 @@ KEY_MODE = "mode"
 KEY_OTHER_ARGS = "other_args"
 KEY_HYPERPARAMETERS_FILE = "hyperparameters_file"
 KEY_NESTED_GRAPHS = "nested_graphs"
-
+KEY_INPUT_PORTS = "input_ports"
+KEY_OUTPUT_PORTS = "output_ports"
+KEY_PORT_DEFAULT = "default"
+KEY_AXES_DIMENSIONS = "axes_dimensions"
+KEY_AXES = "axes"
+KEY_DATA_CONFIGURATIONS = "data_configurations"
 # Graph config keys
 KEY_NODES_INCLUDED = "nodes_included"
 KEY_EDGES = "edges"
@@ -69,6 +74,9 @@ TYPE_BACKEND_REF = "backend_ref"
 TYPE_TRAINABLE_PARAMETER_REF = "trainable_parameter_ref"
 TYPE_CONSTANT_REF = "constant_ref"
 TYPE_NODE = "node_ref"
+TYPE_INPUT_PORT = "input_port_ref"
+TYPE_OUTPUT_PORT = "output_port_ref"
+TYPE_DATACONFIG = "dataconfig_ref"
 
 # Typed-ref specific keys
 KEY_REF_KIND = "ref_kind"

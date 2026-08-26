@@ -611,7 +611,7 @@ class AxesDim:
     def __init__(self, size: int | None = None, broadcastable=True):
         self._size = size
         self.broadcastable = broadcastable
-        self.graph = None
+        # self.graph = None
 
     def update_size(self, new_size):
         """

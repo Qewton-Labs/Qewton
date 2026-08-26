@@ -611,7 +611,7 @@ class Graph:
             if TrackingObject.current_graph_tracked is None:
                 Node.set_tracking(False)
 
-    def graph_config(self) -> GraphConfig:
+    def __getstate__(self) -> GraphConfig:
         """
         Generates a configuration object representing the current state of the graph.
 
@@ -673,16 +673,13 @@ class Graph:
             raise ValueError(f"Unexpected port type for to_port: {type(edge.to_port)}")
         return (from_node_id, from_port_idx, to_node_id, to_port_idx)
 
-    @classmethod
-    def load_from_graph_config(cls, graph_config: GraphConfig) -> Graph:
-        graph = Graph()
+    def __setstate__(self, graph_config: GraphConfig):
         node_dict: dict[int, Node] = graph_config.nodes
         for edge in graph_config.edges:
             from_node_id, from_port_idx, to_node_id, to_port_idx = edge
             from_port = node_dict[from_node_id].output_ports[from_port_idx]
             to_port = node_dict[to_node_id].input_ports[to_port_idx]
-            graph.connect(from_port, to_port)
-        return graph
+            self.connect(from_port, to_port)
 
 
 class SequentialGraph(Graph):
