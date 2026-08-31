@@ -42,7 +42,10 @@ class Slice(Node[TensorType]):
     def __init__(
         self,
         slice_config: (
-            int | slice | Variable | tuple[slice | list[int] | EllipsisType | int, ...]
+            int
+            | slice
+            | Variable
+            | tuple[slice | list[int] | EllipsisType | int | Any, ...]
         ),
         name=None,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
@@ -428,6 +431,26 @@ class Unflatten(Node[TensorType]):
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         return self.backend.math.unflatten(inp, self.axis, self.sizes)
+
+
+class Repeat(Node[TensorType]):
+
+    def __init__(
+        self,
+        repeats: int,
+        dim: int,
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        self.repeats = repeats
+        self.dim = dim
+        super().__init__(name if name is not None else "RepeatNode", backend=backend)
+        self.backend: type[DeepLearningBackend[TensorType]] = backend
+
+    def forward(
+        self, inp: Annotated[TensorType, DataConfiguration.empty()]
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        return self.backend.math.repeat(inp, self.repeats, self.dim)
 
 
 # endregion

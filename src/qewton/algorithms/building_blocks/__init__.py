@@ -57,6 +57,10 @@ from .array_operations import (
     ConcatNode,
     SetItem,
     Reshape,
+    Flatten,
+    Unflatten,
+    Repeat,
+    ReshapeAtDim,
 )
 from .derivatives import (
     GradientTracking,

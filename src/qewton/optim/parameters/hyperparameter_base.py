@@ -106,7 +106,7 @@ class HyperParameter:
             return self.default_grid
         return self.sample_parameter_grid(self.default_grid)
 
-    def is_active(self, config=None):
+    def is_active(self, config: dict = {}) -> bool:
         """Checks whether this HyperParameter is active under the
         given configuration. This is the case if there is some connection to
         HyperParameters. The concrete values of the Parameters are provided in
@@ -181,6 +181,94 @@ class HyperParameter:
     def __ne__(self, other):  # type: ignore[override]
         return self._binary_condition(other, operator.ne)
 
+    def __add__(self, other):
+        def add(x, y):
+            return x + y
+
+        return HyperParameterOperation(add, dependencies=[self, other])
+
+    def __sub__(self, other):
+        def sub(x, y):
+            return x - y
+
+        return HyperParameterOperation(sub, dependencies=[self, other])
+
+    def __mul__(self, other):
+        def mul(x, y):
+            return x * y
+
+        return HyperParameterOperation(mul, dependencies=[self, other])
+
+    def __truediv__(self, other):
+        def div(x, y):
+            return x / y
+
+        return HyperParameterOperation(div, dependencies=[self, other])
+
     @property
     def dependencies(self) -> set[HyperParameter]:
         return set() if self.condition is None else self.condition.deps
+
+
+class HyperParameterOperation(HyperParameter):
+    """A HyperParameter that is defined as an operation on other HyperParameters.
+
+    Args:
+        operation (callable): A function that takes the values of the dependencies
+            and returns the value of this HyperParameter.
+        dependencies (list[HyperParameter]): The HyperParameters that this
+            HyperParameter depends on. The HyperParameters need to be provided
+            in the order that the operation expects them!
+    """
+
+    def __init__(self, operation, dependencies: list[HyperParameter], name: str = ""):
+        self.operation = operation
+        self.hp_dependencies = dependencies
+        super().__init__(
+            parameter_range=(None, None),
+            initial_value=None,
+            state=HyperParameterState.FIXED,
+            name=name,
+        )
+
+    @property
+    def dependencies(self) -> set[HyperParameter]:
+        return set(self.hp_dependencies)
+
+    def set_value(self, new_value):
+        raise RuntimeError(
+            "Cannot set value of HyperParameterOperation. The value is determined by the operation on the dependencies."
+        )
+
+    @property
+    def value(self):
+        return self.operation(*[hp.value for hp in self.hp_dependencies])
+
+    def sample_parameter_random(self):
+        values = [hp.sample_parameter_random() for hp in self.hp_dependencies]
+        return self.operation(*values)
+
+    def sample_from_config(self, config):
+        values = [config[hp.name] for hp in self.hp_dependencies]
+        return self.operation(*values)
+
+    def sample_from_unit(self, x: float):
+        values = [hp.sample_from_unit(x) for hp in self.hp_dependencies]
+        return self.operation(*values)
+
+    def sample_parameter_grid(self, n: int) -> list:
+        value_grid = [hp.sample_parameter_grid(n) for hp in self.hp_dependencies]
+        return self._eval_grid(value_grid, n)
+
+    @property
+    def tuning_grid(self) -> list:
+        raise RuntimeError(
+            "Cannot get tuning grid of HyperParameterOperation. The grid is determined by the operation on the dependencies."
+        )
+
+    def _eval_grid(self, value_grid, n):
+        grid = []
+        for i in range(n):
+            values = [value_grid[j][i] for j in range(len(self.hp_dependencies))]
+            grid.append(self.operation(*values))
+        return grid

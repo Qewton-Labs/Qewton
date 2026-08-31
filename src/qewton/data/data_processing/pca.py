@@ -91,7 +91,7 @@ class PCANode(DataProcessingNode[TensorType]):
         # axis:
         total_data = self.backend.math.flatten(total_data, 1)
         self.pca_u, self.pca_s, self.pca_v = self.backend.linalg.pca(
-            total_data, q=self.n.current_value
+            total_data, q=self.n.value
         )
         self._set_port_values(self.pca_u, self.pca_s, self.pca_v)
 

@@ -80,6 +80,11 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
         # Now compute the mean and std, save them also into the ports:
         self.mean = self.backend.math.mean(total_data, axis=0, keepdims=True)
         self.std = self.backend.math.std(total_data, axis=0, keepdims=True)
+        self.std = self.backend.math.mean(
+            self.std,
+            axis=tuple(i for i in range(1, len(self.std.shape) - 1)),
+            keepdims=True,
+        )
         self.std += self.eps
         self._set_port_values(self.mean, self.std)
         self._state = NodeState.INITIALIZED

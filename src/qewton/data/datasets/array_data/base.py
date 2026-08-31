@@ -5,7 +5,7 @@ Handles data that supports slicing and has a .shape property.
 
 from typing import Any
 
-from qewton.backends.base import Backend, DeepLearningBackend
+from qewton.backends.base import Backend
 from qewton.config.axes import EllipsisAxes, EllipsisDim
 from qewton.config import DataConfiguration
 
