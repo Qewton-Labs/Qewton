@@ -20,13 +20,26 @@ class OptimBackend(Backend[TensorType]):
 
     # optim creators
     @staticmethod
-    def adam():
+    def adam(*args, **kwargs):
         raise NotImplementedError
 
     @staticmethod
-    def sgd():
+    def sgd(*args, **kwargs):
         raise NotImplementedError
 
     @staticmethod
-    def lbfgs():
+    def lbfgs(*args, **kwargs):
+        raise NotImplementedError
+
+    # lr scheduler creators
+    @staticmethod
+    def step_lr(*args, **kwargs):
+        raise NotImplementedError
+
+    @staticmethod
+    def exponential_lr(*args, **kwargs):
+        raise NotImplementedError
+
+    @staticmethod
+    def cosine_annealing_lr(*args, **kwargs):
         raise NotImplementedError

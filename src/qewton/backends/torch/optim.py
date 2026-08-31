@@ -19,6 +19,19 @@ class TorchOptimBackend(OptimBackend[torch.Tensor]):
     def lbfgs(*args, **kwargs):
         return torch.optim.LBFGS(*args, **kwargs)
 
+    # lr scheduler creators
+    @staticmethod
+    def step_lr(*args, **kwargs):
+        return torch.optim.lr_scheduler.StepLR(*args, **kwargs)
+
+    @staticmethod
+    def exponential_lr(*args, **kwargs):
+        return torch.optim.lr_scheduler.ExponentialLR(*args, **kwargs)
+
+    @staticmethod
+    def cosine_annealing_lr(*args, **kwargs):
+        return torch.optim.lr_scheduler.CosineAnnealingLR(*args, **kwargs)
+
     # File contains how each backend should setup the optimizers and do the
     # optimization step.
     # This is then used in the training controller to do the optimization step for each

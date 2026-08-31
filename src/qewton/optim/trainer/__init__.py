@@ -16,3 +16,4 @@ from .callbacks.log_callback import CSVLogger, LogCallback, TensorboardLogger
 
 
 from .optimizers.optimizers import Optimizer, Adam, SGD, LBFGS
+from .optimizers.schedulers import LR_Scheduler, StepLR, ExponentialLR, CosineAnnealingLR
