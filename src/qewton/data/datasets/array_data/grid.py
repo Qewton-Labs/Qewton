@@ -8,7 +8,30 @@ from qewton.backends import resolve_backend
 
 
 class GridDataSet(ArrayLikeDataSet):
-    """Assume thie same geometry for all data items. Assume shape [batch, geometry, feature]."""
+    """A dataset of one or more array-like data items sharing the same
+    grid geometry, each with shape [batch, *grid, feature].
+
+    Args:
+        data (Any | list[Any]): One or more array-like data items, each of
+            shape (batch_size, *grid_shape, feature_dim). All items must
+            share the same grid_shape. An item's batch_size may be smaller
+            than the others', as long as it equals 1.
+        feature_variables (Variable | list[Variable]): One feature
+            Variable per data item, in the same order as data.
+        geometry_variable (Variable, optional): The variable connected to
+            the grid geometry. Defaults to an auto-named
+            Variable("grid", ...) matching the grid's dimensionality.
+        point_grid (TensorType, optional): Explicit grid point coordinates,
+            of shape grid_shape + (len(grid_shape),). If given, a
+            GridGeometry is built from these points instead of an
+            IndexGridGeometry. Defaults to None.
+
+    Raises:
+        AssertionError: If the data items do not share the same grid
+            shape or a compatible batch size, if the number of data items
+            does not match the number of feature variables, or if
+            point_grid's shape does not match the data's grid shape.
+    """
 
     def __init__(
         self,

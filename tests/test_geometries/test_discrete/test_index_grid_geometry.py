@@ -85,10 +85,17 @@ class TestDeviceMove:
 
 class TestBoundingBoxAndVolume:
     def test_bounding_box_spans_zero_to_extent_minus_one(self):
+        """Flat, interleaved [min, max, min, max, ...] - matches
+        Geometry.bounding_box()'s contract, same as every other geometry
+        (GridGeometry included)."""
         geo = IndexGridGeometry(Variable("g", 2), (3, 4))
-        lo, hi = geo.bounding_box()
-        assert list(lo) == [0.0, 0.0]
-        assert list(hi) == [2.0, 3.0]
+        bounds = geo.bounding_box()
+        assert list(bounds) == [0.0, 2.0, 0.0, 3.0]
+
+    def test_bounding_box_does_not_materialize_points(self):
+        geo = IndexGridGeometry(Variable("g", 2), (3, 4))
+        geo.bounding_box()
+        assert geo.is_materialized is False
 
     def test_volume_is_the_unit_cell_count_when_fully_included(self):
         geo = IndexGridGeometry(Variable("g", 2), (3, 4))

@@ -10,27 +10,22 @@ from qewton.geometries.discrete.grid_geometry import GridGeometry
 
 
 class IndexGridGeometry(GridGeometry[TensorType]):
-    """A grid whose coordinates are its own indices, materialized on demand.
-
-    For data stored on a grid with no known physical positions - images,
-    solution arrays read from disk. Index coordinates are genuine coordinates
-    in index space, so the full GridGeometry contract holds: contains(),
-    sampling and cell volumes stay meaningful. Volume is then a cell count,
-    not a physical quantity.
-
-    Nothing is weakened relative to GridGeometry - the coordinates exist, they
-    are simply not stored until something asks. That is the whole point: a
-    512^3 grid would otherwise carry a 1.6 GB coordinate array describing
-    positions that are implicit anyway.
+    """A grid geometry whose coordinates are the grid's own indices,
+    materialized lazily on first access and cached afterwards.
 
     Args:
-        variable (Variable): The variable connected to this geometry. Its dim
-            must equal len(shape). Build it composite
-            (Variable("i", 1) * Variable("j", 1)) if a SliderSpec or FacetSpec
-            should later target a single grid axis.
+        variable (Variable): The variable connected to this geometry. Its
+            dim must equal len(shape). Build it composite
+            (Variable("i", 1) * Variable("j", 1)) if a SliderSpec or
+            FacetSpec should later target a single grid axis.
         shape (tuple[int, ...]): Grid extent per axis.
-        point_filter (TensorType | None): Same meaning as in GridGeometry -
-            shape[:-1] + (1,), True for included points.
+        point_filter (TensorType | None, optional): A grid of boolean
+            values of shape shape + (1,). True marks an included point,
+            False an excluded one. Defaults to None (every point
+            included).
+        backend (type[ComputingBackend[TensorType]], optional): What
+            backend the geometry should use for computations. Defaults to
+            DEFAULT_DL_BACKEND.
     """
 
     def __init__(
@@ -80,24 +75,41 @@ class IndexGridGeometry(GridGeometry[TensorType]):
 
     @property
     def discretization_points(self) -> TensorType:
-        """Index coordinates, built on first access and cached afterwards."""
+        """Index coordinates, built on first access and cached afterwards.
+
+        Returns:
+            TensorType: Coordinate grid of shape shape + (len(shape),),
+                where each entry holds its own multi-index.
+        """
         if self._points is None:
             self._points = self._build_index_grid()
         return self._points
 
     @discretization_points.setter
     def discretization_points(self, value) -> None:
-        # DiscreteGeometry.__init__ and _move_data assign here; route those
-        # into the lazy slot instead of shadowing the property.
+        """Sets the cached coordinate array directly.
+
+        Args:
+            value (TensorType | None): The coordinate array to cache, or
+                None to clear the cache.
+        """
         self._points = value
 
     @property
     def is_materialized(self) -> bool:
-        """Whether the coordinate array currently exists in memory. Useful in
-        tests to assert that a code path stayed lazy."""
+        """Whether the coordinate array currently exists in memory.
+
+        Returns:
+            bool: True if the coordinates have been built, False otherwise.
+        """
         return self._points is not None
 
     def _build_index_grid(self) -> TensorType:
+        """Builds the coordinate grid from the configured shape.
+
+        Returns:
+            TensorType: Coordinate grid of shape shape + (len(shape),).
+        """
         math = self.backend.math
         axes = [
             self.backend.cast_dtype(math.arange(n), dtype=self.backend.dtypes[Int32])
@@ -109,8 +121,11 @@ class IndexGridGeometry(GridGeometry[TensorType]):
     # -- overrides that avoid materializing ---------------------------------
 
     def _move_data(self, device: Device | str) -> None:
-        # Never materialize just to move - an unbuilt grid is rebuilt on the
-        # new device at first access.
+        """Moves this geometry's data to the given device.
+
+        Args:
+            device (Device | str): The target device.
+        """
         if self._points is not None:
             self._points = self.backend.to(self._points, device=device)
         else:
@@ -119,13 +134,24 @@ class IndexGridGeometry(GridGeometry[TensorType]):
             self.cell_volumes = self.backend.to(self.cell_volumes, device=device)
 
     def bounding_box(self):
-        lo = self.backend.math.zeros(shape=(self.dim,))
-        hi = self.backend.build_tensor([float(n - 1) for n in self._grid_shape])
-        return lo, hi
+        """Computes the bounds of the grid in index space.
+
+        Returns:
+            TensorType: Flat bounds
+                [axis_1_min, axis_1_max, axis_2_min, axis_2_max, ...],
+                matching Geometry.bounding_box()'s contract. Computed
+                directly from the grid shape, without materializing
+                discretization_points.
+        """
+        bounds = []
+        for n in self._grid_shape:
+            bounds.append(0.0)
+            bounds.append(float(n - 1))
+        return self.backend.build_tensor(bounds)
 
     def _compute_cell_volumes(self) -> None:
-        """Every cell of an index grid is a unit hypercube, so volumes follow
-        from the filter alone - no coordinate array and no diff needed."""
+        """Computes and caches the volume of every grid cell, masked by
+        point_filter."""
         math = self.backend.math
         cell_shape = tuple(n - 1 for n in self._grid_shape)
         volumes = math.ones(shape=cell_shape, dtype=self.backend.dtypes[Float32])
