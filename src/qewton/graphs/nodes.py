@@ -25,6 +25,8 @@ from qewton.optim.parameters.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )
+from qewton.config.saving.saving import Serializable, Serializer, Deserializer
+from qewton.config.saving.schema_keys import SavingKeys
 
 # region: Ports
 
@@ -186,36 +188,11 @@ class NodeState(Enum):
     TRAINED = 4
 
 
-@dataclass
-class NodeConfig:
-    """Immutable constructor configuration for reconstructing a node.
-
-    Args:
-        node_identifier (str | None): The type identifier of the node. Used to
-            reconstruct the node from the NODE_REGISTRY.
-        node_id (int): The unique identifier of the node.
-        mode (EvaluationPhase): The evaluation phase of the node.
-        self_args (dict[str, Any]): Any other arguments that were used to
-            construct the node.
-        state (NodeState): The state of the node.
-        input_ports (list[InputPort]): The input ports of the node.
-        output_ports (list[OutputPort]): The output ports of the node.
-    """
-
-    node_identifier: str | None
-    node_id: int
-    mode: EvaluationPhase
-    self_args: dict[str, Any]
-    state: NodeState
-    input_ports: list[InputPort] = field(default_factory=list)
-    output_ports: list[OutputPort] = field(default_factory=list)
-
-
 # endregion
 # region: Main Node Class
 
 
-class Node(ABC, Generic[TensorType]):
+class Node(ABC, Generic[TensorType], Serializable):
     """Base class for all nodes to create a graph.
 
     Args:
@@ -591,44 +568,31 @@ class Node(ABC, Generic[TensorType]):
 
         return CopiedNode(self)
 
-    def __getstate__(self) -> NodeConfig:
-        """Returns a configuration object that can be used to reconstruct
-        this node. By default we just return the hyperparameters and other
-        arguments, but this can be overridden in subclasses to include
-        additional information.
+    def save(self, serializer: Serializer) -> None:
+        self_args = []
+        self_keys = []
+        for k, v in self.__dict__.items():
+            if k in ["_state", "node_id", "mode"]:
+                continue  # Skip saving these attributes
+            self_args.append(v)
+            self_keys.append(k)
+        idx_mapping = serializer.add_objects(self, self_args)
+        node_config = {
+            SavingKeys.NODE_IDENTIFIER: (
+                self._type_identifier
+                if self._type_identifier is not None
+                else self.__class__.__name__
+            ),
+            SavingKeys.NODE_ID: self.node_id,
+            SavingKeys.NODE_MODE: self.mode,
+            SavingKeys.NODE_STATE: self.state,
+            SavingKeys.NODE_SELF_ARGS: dict(zip(self_keys, idx_mapping)),
+        }
+        serializer.set_serialization_data(id(self), node_config)
 
-        Returns:
-            NodeConfig: The configuration object.
-        """
-        self_params = self.__dict__.copy()
-        node_id = self_params.pop("node_id")
-        node_mode = self_params.pop("mode")
-        node_state = self_params.pop("_state")
-        input_ports = self_params.pop("_input_ports")
-        output_ports = self_params.pop("_output_ports")
-        return NodeConfig(
-            node_identifier=self._type_identifier or self.__class__.__name__,
-            node_id=node_id,
-            mode=node_mode,
-            self_args=self_params,
-            state=node_state,
-            input_ports=input_ports,
-            output_ports=output_ports,
-        )
-
-    def __setstate__(self, config: NodeConfig) -> None:
-        """Reconstructs this node from a configuration object. By default we just
-        set the hyperparameters and other arguments, but this can be overridden
-        in subclasses to include additional information.
-
-        Args:
-            config (NodeConfig): The configuration object.
-        """
-        for key, value in config.self_args.items():
-            setattr(self, key, value)
-        self.node_id = config.node_id
-        self.mode = config.mode
-        self._state = config.state
+    @classmethod
+    def load(cls, serializer: Deserializer) -> None:
+        pass
 
 
 # endregion

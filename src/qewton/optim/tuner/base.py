@@ -50,8 +50,12 @@ def worker(
                 local_trainer.train_state.losses
             )
             result_queue.put((params, local_trainer.train_state))
-
-            local_trainer.cleanup()
+        except Exception as e:
+            if local_trainer is not None:
+                local_trainer.train_state.termination_reason = f"Exception: {e}"
+                result_queue.put((params, local_trainer))
+            else:
+                result_queue.put((params, None))
         finally:
             if local_trainer is not None:
                 local_trainer.cleanup()
