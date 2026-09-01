@@ -19,12 +19,16 @@ def axis_names_from_variable(variable, n: int) -> list[str]:
     ``axis_4``, ...) if `variable` is None or doesn't decompose into
     exactly `n` leaves. Never raises - a wrong or missing axis label is
     cosmetic, not worth failing a render over.
+
+    Every returned label is wrapped for TeX math-mode rendering (e.g.
+    ``"x"`` -> ``"$x$"``), matching PlotSpec.math_name - these are always
+    axis titles, so MathJax renders them the same way.
     """
     if variable is not None:
         leaves = variable.leaves
         if len(leaves) == n:
-            return [leaf.name for leaf in leaves]
-    return (["x", "y", "z"] + [f"axis_{i}" for i in range(3, n)])[:n]
+            return [f"${leaf.name}$" for leaf in leaves]
+    return [f"${name}$" for name in (["x", "y", "z"] + [f"axis_{i}" for i in range(3, n)])[:n]]
 
 
 class Plot:
@@ -43,10 +47,12 @@ class Plot:
     def __init__(
         self,
         title=None,
+        label=None,
         theme=None,
         controls: list[ControlSpec] | None = None,
     ) -> None:
         self._title = title
+        self._label = label
         self._theme = theme
         self.controls = controls or []
         #: This plot's position among every plot added to its Figure, in
@@ -69,6 +75,20 @@ class Plot:
     @property
     def title(self):
         return self._title
+
+    @property
+    def label(self):
+        """This plot's legend entry text, or None to fall back to whichever
+        variable it plots (each family's own default, e.g. LinePlot/BarPlot
+        fall back to `y.name`).
+
+        Distinct from `title` (a panel/subplot heading, shown as a subplot
+        annotation or the whole-figure title - see Figure.cell_titles()):
+        conflating the two meant one plot's title could leak into another's
+        legend entry, or vice versa, in any Figure overlaying more than one
+        plot.
+        """
+        return self._label
 
     @property
     def embedding_dim(self) -> int | None:

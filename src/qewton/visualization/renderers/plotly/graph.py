@@ -47,8 +47,6 @@ class NodeLinkArtist(PlotlyArtist):
 
         backend_figure.update_xaxes(visible=False, row=row, col=col)
         backend_figure.update_yaxes(visible=False, row=row, col=col, scaleanchor="x")
-        if plot.title is not None:
-            backend_figure.update_layout(title=plot.title)
 
         return cls(
             node_idx, port_idx, edge_idx, (shape_start, len(shapes)), (annotation_start, len(annotations))

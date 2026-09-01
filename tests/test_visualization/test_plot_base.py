@@ -8,28 +8,43 @@ from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.visualization.plots.base import Plot, axis_names_from_variable
 from qewton.visualization.plots.data.base import DataPlot
 from qewton.visualization.plots.data.samples import ScatterPlot
-from qewton.visualization.plots.spec import AxisSpec, ColorSpec, FixedSpec, Scale, SliderSpec
+from qewton.visualization.plots.spec import (
+    AxisSpec,
+    ColorSpec,
+    FixedSpec,
+    Scale,
+    SliderSpec,
+)
 
 
 class TestAxisNamesFromVariable:
+    """Every returned label is wrapped for TeX math-mode rendering (see
+    PlotSpec.math_name) - these are always axis titles."""
+
     def test_decomposes_a_composed_variable_by_leaf_name(self):
         x, y, z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
         composed = x * y * z
-        assert axis_names_from_variable(composed, 3) == ["x", "y", "z"]
+        assert axis_names_from_variable(composed, 3) == ["$x$", "$y$", "$z$"]
 
     def test_auto_named_children_of_a_plain_multi_dim_variable(self):
         var = Variable("x", dim=3)
-        assert axis_names_from_variable(var, 3) == ["x_0", "x_1", "x_2"]
+        assert axis_names_from_variable(var, 3) == ["$x_0$", "$x_1$", "$x_2$"]
 
     def test_falls_back_to_generic_names_on_leaf_count_mismatch(self):
         var = Variable("x", dim=2)
-        assert axis_names_from_variable(var, 3) == ["x", "y", "z"]
+        assert axis_names_from_variable(var, 3) == ["$x$", "$y$", "$z$"]
 
     def test_falls_back_to_generic_names_when_variable_is_none(self):
-        assert axis_names_from_variable(None, 2) == ["x", "y"]
+        assert axis_names_from_variable(None, 2) == ["$x$", "$y$"]
 
     def test_falls_back_beyond_three_axes(self):
-        assert axis_names_from_variable(None, 5) == ["x", "y", "z", "axis_3", "axis_4"]
+        assert axis_names_from_variable(None, 5) == [
+            "$x$",
+            "$y$",
+            "$z$",
+            "$axis_3$",
+            "$axis_4$",
+        ]
 
 
 class TestPlotTheme:
@@ -42,6 +57,22 @@ class TestPlotTheme:
 
     def test_embedding_dim_defaults_to_2(self):
         assert Plot().embedding_dim == 2
+
+
+class TestPlotLabel:
+    """label is the legend-entry text, distinct from title (a panel/
+    subplot heading)."""
+
+    def test_defaults_to_none(self):
+        assert Plot().label is None
+
+    def test_returns_the_given_label(self):
+        assert Plot(label="Predicted").label == "Predicted"
+
+    def test_is_independent_of_title(self):
+        plot = Plot(title="Panel Title", label="Legend Entry")
+        assert plot.title == "Panel Title"
+        assert plot.label == "Legend Entry"
 
 
 class TestColorValues:
@@ -76,7 +107,9 @@ class TestColorValues:
         plot, slider = self._scatter_plot(
             3,
             10,
-            control_factory=lambda axis: SliderSpec(axis, init_state=None, minimum=None, maximum=None),
+            control_factory=lambda axis: SliderSpec(
+                axis, init_state=None, minimum=None, maximum=None
+            ),
             scale=scale,
         )
         original_state = slider.state
@@ -91,7 +124,9 @@ class TestColorValues:
         plot, fixed = self._scatter_plot(
             3,
             10,
-            control_factory=lambda axis: FixedSpec(init_state=1, n_dimensions=1, variable_or_axes=axis),
+            control_factory=lambda axis: FixedSpec(
+                init_state=1, n_dimensions=1, variable_or_axes=axis
+            ),
             scale=scale,
         )
         values = plot.color_values()
@@ -127,7 +162,9 @@ class TestDataPlotControlResolution:
 
     def test_apply_controls_with_no_controls_is_a_no_op(self):
         data = np.arange(24).reshape(2, 3, 4)
-        config = DataConfiguration(BatchAxes(2), BatchAxes(3), FeatureAxes(Variable("f", 4)))
+        config = DataConfiguration(
+            BatchAxes(2), BatchAxes(3), FeatureAxes(Variable("f", 4))
+        )
         plot = DataPlot(data, config)
         sliced, index_map, slice_map = plot.apply_controls()
         assert sliced.shape == (2, 3, 4)

@@ -163,14 +163,16 @@ class TestOpacityWiring:
         assert backend_figure.data[0].opacity == 0.42
 
     def test_mesh_field_surface_and_wireframe_opacity(self, circle_mesh_geometry):
+        """A 2D mesh field draws as plot.n_bins flat-fill traces (surface
+        opacity each), followed by one wireframe overlay trace."""
         U = Variable("u", 1)
         vertices = np.asarray(circle_mesh_geometry.mesh.vertices)
         field = np.zeros((len(vertices), 1))
         config = DataConfiguration(GeometryAxes(circle_mesh_geometry), FeatureAxes(U))
         plot = MeshFieldPlot(field, config, color=ColorSpec(U), show_edges=True)
         backend_figure = Figure(plot, theme=self._theme()).draw()
-        assert backend_figure.data[0].opacity == 0.55  # the surface (Mesh3d)
-        assert backend_figure.data[1].opacity == 0.13  # its wireframe overlay
+        assert backend_figure.data[0].opacity == 0.55  # a fill bin (the surface)
+        assert backend_figure.data[plot.n_bins].opacity == 0.13  # the wireframe overlay
 
     def test_geometry_plot_3d_surface_and_wireframe_opacity(self, cylinder_mesh_geometry):
         from qewton.visualization.plots.geometry import GeometryPlot

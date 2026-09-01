@@ -19,17 +19,15 @@ class ImageArtist(PlotlyArtist):
         trace = go.Image(z=image)
 
         backend_figure.add_trace(trace, row=row, col=col)
-        if plot.title is not None:
-            backend_figure.update_layout(title=plot.title)
 
         backend_figure.update_xaxes(
-            title=plot.x.name,
+            title=plot.x.math_name,
             type="log" if plot.x.log_scale else "linear",
             row=row,
             col=col,
         )
         backend_figure.update_yaxes(
-            title=plot.y.name,
+            title=plot.y.math_name,
             type="log" if plot.y.log_scale else "linear",
             row=row,
             col=col,
@@ -63,17 +61,15 @@ class HeatmapArtist(PlotlyArtist):
         trace = go.Heatmap(z=data[..., 0], colorscale=cmap, **scale_kwargs)
 
         backend_figure.add_trace(trace, row=row, col=col)
-        if plot.title is not None:
-            backend_figure.update_layout(title=plot.title)
 
         backend_figure.update_xaxes(
-            title=plot.x.name,
+            title=plot.x.math_name,
             type="log" if plot.x.log_scale else "linear",
             row=row,
             col=col,
         )
         backend_figure.update_yaxes(
-            title=plot.y.name,
+            title=plot.y.math_name,
             type="log" if plot.y.log_scale else "linear",
             row=row,
             col=col,
@@ -109,8 +105,6 @@ class SurfaceArtist(PlotlyArtist):
             z=data[..., 0], surfacecolor=color, colorscale=cmap, **scale_kwargs
         )
         backend_figure.add_trace(trace, row=row, col=col)
-        if plot.title is not None:
-            backend_figure.update_layout(title=plot.title)
 
         # SurfaceArtist draws into a `scene` subplot (go.Surface), which has
         # no top-level xaxis/yaxis of its own - update_xaxes/update_yaxes
@@ -119,12 +113,12 @@ class SurfaceArtist(PlotlyArtist):
         # together, not split across two different calls the way a 2D
         # HeatmapArtist can get away with.
         scene_axes = dict(
-            xaxis=dict(title=plot.x.name, type="log" if plot.x.log_scale else "linear"),
-            yaxis=dict(title=plot.y.name, type="log" if plot.y.log_scale else "linear"),
+            xaxis=dict(title=plot.x.math_name, type="log" if plot.x.log_scale else "linear"),
+            yaxis=dict(title=plot.y.math_name, type="log" if plot.y.log_scale else "linear"),
         )
         if plot.z is not None:
             scene_axes["zaxis"] = dict(
-                title=plot.z.name, type="log" if plot.z.log_scale else "linear"
+                title=plot.z.math_name, type="log" if plot.z.log_scale else "linear"
             )
         backend_figure.update_scenes(row=row, col=col, **scene_axes)
 
@@ -170,8 +164,6 @@ class ParametricSurfaceArtist(PlotlyArtist):
             col=col,
         )
 
-        if plot.title is not None:
-            backend_figure.update_layout(title=plot.title)
         backend_figure.update_scenes(
             aspectmode="data", row=row, col=col, **cls._scene_axis_kwargs(plot)
         )

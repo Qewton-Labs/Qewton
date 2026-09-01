@@ -115,11 +115,14 @@ class DataLoader(DataNode[TensorType]):
     data to connected algorithms.
 
     Args:
-        data_set (DataSet): The source dataset.
+        data_set (DataSet): The source dataset, split into Train/Validation/
+            Test according to `splitting_ratio`.
         batch_size (int | DiscreteHyperparameter | CategoricalHyperparameter):
             Number of samples per batch.
         splitting_ratio (tuple[float, float, float], optional): Proportions
-            for (Train, Validation, Test) splits. Defaults to (1.0, 0.0, 0.0).
+            for (Train, Validation, Test) splits of `data_set`. Ignored for
+            the Test split when `test_data_set` is given. Defaults to
+            (1.0, 0.0, 0.0).
         shuffle_data (bool | CategoricalHyperparameter, optional): Whether
             to shuffle the indices at the start of an epoch.. Defaults to True.
         shuffle_seed (int | None, optional): Random seed for reproducibility.
@@ -127,6 +130,10 @@ class DataLoader(DataNode[TensorType]):
         backend (type[Backend] | None, optional): The backend used for data
             types and device transfers.. Defaults to DEFAULT_DL_BACKEND.
         name (str, optional): Name of this data loader. Defaults to "DataLoader".
+        test_data_set (DataSet | None, optional): A separate dataset used
+            for the Test split instead of the portion of `data_set` that
+            `splitting_ratio` would otherwise reserve for it. Must provide
+            the same variables as `data_set`. Defaults to None.
     """
 
     # TODO: parallelize this, similar to pytorch dataloader
@@ -141,17 +148,29 @@ class DataLoader(DataNode[TensorType]):
         shuffle_seed: int | None = None,
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
         name: str = "DataLoader",
+        test_data_set: DataSet | None = None,
     ):
         self.data_set = data_set
+        self.test_data_set = test_data_set
         self.splitting_ratio = splitting_ratio
         self.shuffle_data = HyperParameter.from_value(shuffle_data, "shuffle_data")
         self.shuffle_seed = shuffle_seed
         self._rng = np.random.default_rng(self.shuffle_seed)
         self.permutation = []
+        self.test_permutation = []
         self._permutation_splits = {}
+        self._phase_data_sets = {}
         self._setup_iteration()
 
         super().__init__(batch_size=batch_size, name=name, backend=backend)
+
+        if self.test_data_set is not None:
+            assert (
+                len(self.test_data_set) >= self.batch_size
+            ), "Batch can not be larger than the test dataset size."
+            assert [c.variable_name for c in self.test_data_set.data_configs] == [
+                c.variable_name for c in self.data_set.data_configs
+            ], "test_data_set must provide the same variables as data_set."
 
         # Build output ports based on dataset configurations
         self._output_ports = []
@@ -181,8 +200,12 @@ class DataLoader(DataNode[TensorType]):
         """Resets the data permutation based on shuffling settings."""
         if self.shuffle_data.value:
             self.permutation = self._rng.permutation(len(self.data_set))
+            if self.test_data_set is not None:
+                self.test_permutation = self._rng.permutation(len(self.test_data_set))
         else:
             self.permutation = np.arange(len(self.data_set))
+            if self.test_data_set is not None:
+                self.test_permutation = np.arange(len(self.test_data_set))
 
     def _setup_iteration(self):
         """Calculates index splits for different evaluation phases
@@ -196,11 +219,24 @@ class DataLoader(DataNode[TensorType]):
         train_end = int(r_train * n_samples)
         val_end = train_end + int(r_val * n_samples)
 
+        if self.test_data_set is not None:
+            test_indices = self.test_permutation
+            test_data_set = self.test_data_set
+        else:
+            test_indices = self.permutation[val_end:n_samples]
+            test_data_set = self.data_set
+
         self._permutation_splits = {
             EvaluationPhase.TRAIN: self.permutation[0:train_end],
             EvaluationPhase.VALIDATION: self.permutation[train_end:val_end],
-            EvaluationPhase.TEST: self.permutation[val_end:n_samples],
+            EvaluationPhase.TEST: test_indices,
             EvaluationPhase.ALWAYS: self.permutation[0:n_samples],
+        }
+        self._phase_data_sets = {
+            EvaluationPhase.TRAIN: self.data_set,
+            EvaluationPhase.VALIDATION: self.data_set,
+            EvaluationPhase.TEST: test_data_set,
+            EvaluationPhase.ALWAYS: self.data_set,
         }
 
     def __len__(self):
@@ -248,7 +284,7 @@ class DataLoader(DataNode[TensorType]):
                 self._rng.shuffle(split_indices)
 
         indices = split_indices[self._batch_progress : self._batch_progress + bs]
-        batch_data = self.data_set.get_batch(indices)
+        batch_data = self._phase_data_sets[self.mode].get_batch(indices)
 
         # Move batch to device if backend is specified
         if self._device is not None and issubclass(self.backend, DeepLearningBackend):
@@ -275,11 +311,11 @@ class DataLoader(DataNode[TensorType]):
         if phase == EvaluationPhase.VALIDATION:
             return self.splitting_ratio[1] > 0.0
         if phase == EvaluationPhase.TEST:
-            return self.splitting_ratio[2] > 0.0
+            return self.test_data_set is not None or self.splitting_ratio[2] > 0.0
         if phase == EvaluationPhase.ALWAYS:
             return (
                 self.splitting_ratio[0] > 0.0
                 and self.splitting_ratio[1] > 0.0
-                and self.splitting_ratio[2] > 0.0
+                and (self.test_data_set is not None or self.splitting_ratio[2] > 0.0)
             )
         return False

@@ -13,22 +13,32 @@ class Theme:
 
     # Figure chrome
     background_color: str = "white"
-    text_color: str = "#333333"
-    line_color: str = "#333333"  # borders, edges, wireframes - non-data lines
-    grid_color: str = "#e5e5e5"  # axis gridlines
+    text_color: str = "black"
+    line_color: str = "black"  # borders, edges, wireframes - non-data lines
+    grid_color: str = "#cccccc"  # axis gridlines, when show_grid is on
 
-    # Typography
-    font_family: str = "Courier New"
+    # Typography - a Computer Modern / Latin Modern stack, falling back to a
+    # generic serif where those aren't installed. This is a font
+    # substitution, not real TeX typesetting - for genuine TeX-rendered
+    # math, wrap a title/label in $...$: Plotly renders that through
+    # MathJax (in real Computer Modern) independently of this theme.
+    font_family: str = "Latin Modern Roman, CMU Serif, Georgia, serif"
     font_size_title: int = 20
     font_size_axes: int = 14
     font_size_labels: int = 12
 
-    show_grid: bool = True
+    show_grid: bool = False  # pgfplots/TikZ draw no major gridlines by default
     show_legend: bool = True
 
+    # Axis frame - TikZ/pgfplots draws a full box around the plot area with
+    # outward tick marks by default, rather than Plotly's bare left/bottom
+    # lines with no ticks.
+    show_axis_line: bool = True
+    axis_box: bool = True  # mirror the line to all four sides, not just left/bottom
+
     # Plot-specific
-    marker_size: int = 8
-    line_width: float = 2.0
+    marker_size: int = 6
+    line_width: float = 1.25
     opacity_default: float = 0.8
 
     # Geometry-specific
@@ -65,7 +75,7 @@ class Theme:
 
     @classmethod
     def default(cls):
-        """Qewton default theme (tech-focused, light) - alias for LIGHT_THEME."""
+        """Qewton default theme (TikZ/paper-style, light) - alias for LIGHT_THEME."""
         return cls()
 
     @classmethod

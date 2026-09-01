@@ -41,6 +41,26 @@ class TestLinePlot:
         assert backend_figure.data[0].type == "scatter"
         assert backend_figure.data[0].mode == "lines"
 
+    def test_legend_name_prefers_label_over_the_y_variable(self):
+        Y = Variable("y", 1)
+        sample_axis = BatchAxes(10)
+        data = np.random.rand(10, 1)
+        config = DataConfiguration(sample_axis, FeatureAxes(Y))
+        plot = LinePlot(data, config, x=sample_axis, y=Y, label="Predicted")
+        backend_figure = Figure(plot).draw()
+        assert backend_figure.data[0].name == "Predicted"
+
+    def test_legend_name_falls_back_to_the_y_variable_not_the_title(self):
+        """title is a panel/subplot heading, not a legend label - setting
+        one must not leak into the trace's legend entry."""
+        Y = Variable("y", 1)
+        sample_axis = BatchAxes(10)
+        data = np.random.rand(10, 1)
+        config = DataConfiguration(sample_axis, FeatureAxes(Y))
+        plot = LinePlot(data, config, x=sample_axis, y=Y, title="Panel Heading")
+        backend_figure = Figure(plot).draw()
+        assert backend_figure.data[0].name == "y"
+
 
 class TestBarPlot:
     def test_shares_lineplot_evaluate_and_only_overrides_the_artist(self):
@@ -96,5 +116,5 @@ class TestPathPlot:
         config = DataConfiguration(sample_axis, FeatureAxes(X * Y))
         plot = PathPlot(positions, config, position=VectorSpec(X * Y))
         backend_figure = Figure(plot).draw()
-        assert backend_figure.layout.xaxis.title.text == "x"
-        assert backend_figure.layout.yaxis.title.text == "y"
+        assert backend_figure.layout.xaxis.title.text == "$x$"
+        assert backend_figure.layout.yaxis.title.text == "$y$"

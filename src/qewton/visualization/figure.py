@@ -163,7 +163,7 @@ class Figure:
     def _facet_extent(self) -> tuple[int, int]:
         """(facet_rows, facet_cols): the largest facet grid any single plot
         in this Figure declares. Every panel's block is sized to this,
-        uniformly - see figure_plan.md §5 (panels and facets multiply)."""
+        uniformly (panels and facets multiply)."""
         facet_rows, facet_cols = 1, 1
         for plot in self.plots:
             facets = self.facet_specs(plot)
@@ -179,7 +179,7 @@ class Figure:
         draws into just the first row/col of its own block, not every one
         (matches Plot.create_artist's row=None/col=None meaning "cell 1"),
         and a panel with no FacetSpec at all still gets a full-size block -
-        it just uses that block's first cell (see figure_plan.md §5)."""
+        it just uses that block's first cell."""
         facet_rows, facet_cols = self._facet_extent()
         panel_rows = len(self.panels) if self.panels else 1
         panel_cols = max((len(row) for row in self.panels), default=1)
@@ -191,8 +191,8 @@ class Figure:
         distinct, non-None Plot.title in that cell's Overlay), with its
         facet's label appended when both are present. Only set on the
         cells the panel's plots actually draw into (its first cell alone,
-        for a panel with no FacetSpec sharing a block with a faceted one -
-        see figure_plan.md §5) - "" everywhere else."""
+        for a panel with no FacetSpec sharing a block with a faceted one) - "" everywhere else.
+        """
         titles = [["" for _ in range(n_cols)] for _ in range(n_rows)]
         facet_rows, facet_cols = self._facet_extent()
         for panel_row, row in enumerate(self.panels):
@@ -262,24 +262,22 @@ class Figure:
                     )
                     for row_idx in row_indices:
                         for col_idx in col_indices:
-                            dims[row_off + row_idx][col_off + col_idx] = (
-                                plot.embedding_dim
-                            )
+                            dims[row_off + row_idx][
+                                col_off + col_idx
+                            ] = plot.embedding_dim
         return dims
 
-    def cell_spans(
-        self, n_rows: int, n_cols: int
-    ) -> list[list[tuple[int, int] | None]]:
+    def cell_spans(self, n_rows: int, n_cols: int) -> list[list[tuple[int, int] | None]]:
         """(rowspan, colspan) per grid cell for a backend's subplot-grid
         vocabulary (Plotly's make_subplots(specs=...) rowspan/colspan) -
         (1, 1) everywhere, except a panel that has no FacetSpec on an
         orientation while sharing a block sized by a sibling panel's
-        FacetSpec on that same orientation (figure_plan.md §5): its cell
+        FacetSpec on that same orientation: its cell
         spans the block's full extent on that orientation, rather than
         sitting narrow in the block's first cell, and every other cell it
         absorbs is None (a backend's "no subplot here, spanned by a
         neighbor" marker). Scoped to that one case - the unrelated
-        padded-but-unspanned cells from Row/Column nesting (§9) are left
+        padded-but-unspanned cells from Row/Column nesting are left
         alone, each still its own (1, 1) cell."""
         spans: list[list[tuple[int, int] | None]] = [
             [(1, 1) for _ in range(n_cols)] for _ in range(n_rows)
@@ -292,12 +290,8 @@ class Figure:
                     continue
                 row_off = panel_row * facet_rows
                 col_off = panel_col * facet_cols
-                has_row_facet = any(
-                    "row" in self.facet_specs(p) for p in overlay.plots
-                )
-                has_col_facet = any(
-                    "col" in self.facet_specs(p) for p in overlay.plots
-                )
+                has_row_facet = any("row" in self.facet_specs(p) for p in overlay.plots)
+                has_col_facet = any("col" in self.facet_specs(p) for p in overlay.plots)
                 rowspan = 1 if has_row_facet else facet_rows
                 colspan = 1 if has_col_facet else facet_cols
                 if rowspan == 1 and colspan == 1:
@@ -404,8 +398,10 @@ class Figure:
                     if col_spec is not None:
                         col_spec.state = col_value
 
-                    key = (row_idx if row_spec is not None else None,
-                           col_idx if col_spec is not None else None)
+                    key = (
+                        row_idx if row_spec is not None else None,
+                        col_idx if col_spec is not None else None,
+                    )
                     if is_grid:
                         row = row_off + (row_idx if row_spec is not None else 0) + 1
                         col = col_off + (col_idx if col_spec is not None else 0) + 1

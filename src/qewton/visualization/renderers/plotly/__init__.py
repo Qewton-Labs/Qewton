@@ -89,7 +89,12 @@ class PlotlyRenderer(Renderer):
                 rows=n_rows, cols=n_cols, specs=specs,
                 subplot_titles=titles if any(titles) else None,
             )
-        fig.update_layout(uirevision=True)
+        # The whole-figure title is Figure.title alone, set once here - never
+        # any individual Plot.title (each panel's own title already shows as
+        # a subplot annotation via cell_titles()/make_subplots above). With
+        # no Figure.title, no title is shown at all rather than falling back
+        # to some arbitrary plot's title.
+        fig.update_layout(uirevision=True, title=figure.title)
         PlotlyRenderer._apply_theme(fig, figure.theme)
         return fig
 
@@ -109,12 +114,21 @@ class PlotlyRenderer(Renderer):
             font=dict(family=theme.font_family, size=theme.font_size_labels, color=theme.text_color),
             title_font=dict(size=theme.font_size_title, color=theme.text_color),
             showlegend=theme.show_legend,
+            legend=dict(
+                bordercolor=theme.line_color,
+                borderwidth=1 if theme.show_axis_line else 0,
+                bgcolor=theme.background_color,
+            ),
         )
         axis_kwargs = dict(
             showgrid=theme.show_grid,
             gridcolor=theme.grid_color,
             zerolinecolor=theme.grid_color,
+            showline=theme.show_axis_line,
             linecolor=theme.line_color,
+            mirror=theme.axis_box,
+            ticks="outside" if theme.show_axis_line else "",
+            tickcolor=theme.line_color,
             tickfont=dict(size=theme.font_size_axes, color=theme.text_color),
             title_font=dict(size=theme.font_size_axes, color=theme.text_color),
         )
@@ -286,11 +300,16 @@ class PlotlyRenderer(Renderer):
 
     @staticmethod
     def show(backend_figure):
-        backend_figure.show()
+        # Plotly no longer auto-loads MathJax (removed in plotly.js v2) - the
+        # $...$-wrapped titles PlotSpec.math_name/axis_names_from_variable
+        # produce render as literal dollar-sign text without this. Harmless
+        # (silently ignored) for mimebundle-based renderers like "vscode",
+        # whose own webview extension is responsible for LaTeX rendering.
+        backend_figure.show(include_mathjax="cdn")
 
     @staticmethod
     def save_html(backend_figure, path):
-        backend_figure.write_html(path)
+        backend_figure.write_html(path, include_mathjax="cdn")
 
     @staticmethod
     def save_gif(backend_figure, path, fps=10):

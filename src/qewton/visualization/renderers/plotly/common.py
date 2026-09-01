@@ -40,6 +40,55 @@ def _edge_trace(
     )
 
 
+def _triangle_fill_trace(
+    vertices: np.ndarray, cells: np.ndarray, color: str, opacity: float = 1.0
+) -> go.Scatter:
+    """Fills a 2D triangulation as one trace. Each triangle is a
+    None-separated segment, which Plotly fills independently - so holes and
+    disconnected components need no special handling, and an empty `cells`
+    yields a valid, empty trace rather than an error."""
+    xs, ys = [], []
+    for tri in cells:
+        pts = vertices[tri]
+        xs.extend([pts[0, 0], pts[1, 0], pts[2, 0], pts[0, 0], None])
+        ys.extend([pts[0, 1], pts[1, 1], pts[2, 1], pts[0, 1], None])
+    return go.Scatter(
+        x=xs,
+        y=ys,
+        mode="lines",
+        fill="toself",
+        fillcolor=color,
+        opacity=opacity,
+        line=dict(width=0),  # no interior edges - boundary drawn separately
+        hoverinfo="skip",
+        showlegend=False,
+    )
+
+
+def _edge_trace_2d(
+    vertices: np.ndarray,
+    edges: np.ndarray,
+    color: str = "black",
+    width: float = 1.5,
+    opacity: float = 1.0,
+) -> go.Scatter:
+    """Draws unordered 2D edges. Works for boundary_faces directly - line
+    segments need no traversal order, unlike filled polygons."""
+    xs, ys = [], []
+    for a, b in edges:
+        xs.extend([vertices[a, 0], vertices[b, 0], None])
+        ys.extend([vertices[a, 1], vertices[b, 1], None])
+    return go.Scatter(
+        x=xs,
+        y=ys,
+        mode="lines",
+        line=dict(color=color, width=width),
+        opacity=opacity,
+        hoverinfo="skip",
+        showlegend=False,
+    )
+
+
 class PlotlyArtist(Artist):
     """Base class for a Plotly Artist, tracking which trace in
     `backend_figure.data` it owns."""

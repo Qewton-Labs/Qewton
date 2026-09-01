@@ -30,11 +30,12 @@ class DataPlot(Plot):
         data,
         data_config: DataConfiguration,
         title=None,
+        label=None,
         theme=None,
         controls: list[ControlSpec] | None = None,
         coord_transform: CoordTransform | None = None,
     ) -> None:
-        super().__init__(title=title, theme=theme, controls=controls)
+        super().__init__(title=title, label=label, theme=theme, controls=controls)
         self.data = data
         self.data_config = data_config
         self.coord_transform = coord_transform or IdentityCoord()

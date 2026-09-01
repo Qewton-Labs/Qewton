@@ -64,4 +64,4 @@ class TestPointCloudPlot:
             backend_figure.layout.scene.yaxis.title.text,
             backend_figure.layout.scene.zaxis.title.text,
         }
-        assert titles == {"x_0", "x_1", "x_2"}
+        assert titles == {"$x_0$", "$x_1$", "$x_2$"}

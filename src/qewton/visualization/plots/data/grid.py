@@ -224,10 +224,10 @@ class EmbeddedGridPlot(DataPlot):
 
 
 class QuiverPlot(DataPlot):
-    """A vector field on a structured 3D grid, drawn as arrows - the grid
+    """A vector field on a structured grid, drawn as arrows - the grid
     counterpart to MeshVectorPlot (mesh vertices) and EmbeddedGridPlot
     (scalar color on a grid). Draws any structured grid whose coordinates
-    are explicit 3D points, e.g. a mesh field resampled onto a
+    are explicit 2D or 3D points, e.g. a mesh field resampled onto a
     VolumeGridGeometry via a MeshInterpolationNode.
 
     Positions come from `geometry.discretization_points`, reduced by the
@@ -252,33 +252,35 @@ class QuiverPlot(DataPlot):
 
         geometry = data_config.geometry_axes.geometry
         points = geometry.discretization_points
-        if points is None or points.shape[-1] != 3:
+        if points is None or points.shape[-1] not in (2, 3):
             raise ValueError(
-                f"{type(self).__name__} requires discretization_points with 3 "
-                "coordinate components."
+                f"{type(self).__name__} requires discretization_points with 2 "
+                "or 3 coordinate components."
             )
+        self._coord_dim = points.shape[-1]
 
         self.vector = vector if isinstance(vector, VectorSpec) else VectorSpec(vector)
         n_components = self.component_count(self.vector, data_config)
-        if n_components != 3:
+        if n_components != self._coord_dim:
             raise ValueError(
                 f"vector has {n_components} components, {type(self).__name__} "
-                "needs exactly 3 (one grid is embedded in 3D space)."
+                f"needs exactly {self._coord_dim} (the grid is embedded in "
+                f"{self._coord_dim}D space)."
             )
 
     @property
     def embedding_dim(self) -> int:
-        return 3
+        return self._coord_dim
 
     def evaluate(self):
         data, index_map, slice_map = self.apply_controls()
         slc = self.data_config.get_variable_slice(self.vector.variable_or_axes)
-        vectors = np.asarray(data[slice_map(slc)]).reshape(-1, 3)
+        vectors = np.asarray(data[slice_map(slc)]).reshape(-1, self._coord_dim)
 
         geometry = self.data_config.geometry_axes.geometry
         points = self.reduce_coordinates(
             geometry.discretization_points, self._geometry_dims()
-        ).reshape(-1, 3)
+        ).reshape(-1, self._coord_dim)
         if len(points) != len(vectors):
             raise ValueError(
                 f"{self.vector.name} yields {len(vectors)} vectors but the grid "
@@ -304,4 +306,8 @@ class QuiverPlot(DataPlot):
         return VectorResult(positions=points, vectors=vectors, magnitude=magnitude)
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
-        return renderer.ArrowField3DArtist.create(backend_figure, self, row=row, col=col)
+        return (
+            renderer.ArrowField2DArtist.create(backend_figure, self, row=row, col=col)
+            if self._coord_dim == 2
+            else renderer.ArrowField3DArtist.create(backend_figure, self, row=row, col=col)
+        )

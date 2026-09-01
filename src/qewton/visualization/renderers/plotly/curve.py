@@ -14,22 +14,20 @@ class LineArtist(PlotlyArtist):
             x=result.x,
             y=result.y,
             mode="lines",
-            name=plot.title or plot.y.name,
+            name=plot.label or plot.y.name,
             line=dict(width=plot.theme.line_width, color=_cycled_color(plot)),
             opacity=plot.theme.opacity_default,
         )
         backend_figure.add_trace(trace, row=row, col=col)
-        if plot.title is not None:
-            backend_figure.update_layout(title=plot.title)
 
         backend_figure.update_xaxes(
-            title=plot.x.name,
+            title=plot.x.math_name,
             type="log" if plot.x.log_scale else "linear",
             row=row,
             col=col,
         )
         backend_figure.update_yaxes(
-            title=plot.y.name,
+            title=plot.y.math_name,
             type="log" if plot.y.log_scale else "linear",
             row=row,
             col=col,
@@ -73,8 +71,6 @@ class PathArtist(PlotlyArtist):
             )
 
         backend_figure.add_trace(trace, row=row, col=col)
-        if plot.title is not None:
-            backend_figure.update_layout(title=plot.title)
 
         if dim == 2:
             backend_figure.update_xaxes(title=names[0], row=row, col=col)

@@ -4,6 +4,8 @@ from contextlib import contextmanager
 import inspect
 from typing import Callable
 
+import numpy as np
+
 from qewton.config.devices import Device
 from qewton.data.dataloaders.base import DataNode
 from qewton.geometries.base import Geometry, BoundaryGeometry
@@ -39,6 +41,23 @@ def discretization_mode(samplers, max_vertex_distance, device: Device | str | No
     finally:
         for s in samplers:
             s.unset_mesh_mode()
+
+
+@contextmanager
+def active_discretization_mode(samplers, geometry):
+    """Evaluate `samplers` at `geometry`'s own points for one run (used by
+    `graph.visualize(port, reference=...)`), instead of whatever they would
+    otherwise sample or mesh. Every sampler gets the same
+    geometry, mirroring discretization_mode()'s uniform mesh-mode
+    injection - there is no per-sampler override for a multi-sampler graph.
+    """
+    for s in samplers:
+        s.active_discretization = geometry
+    try:
+        yield
+    finally:
+        for s in samplers:
+            s.active_discretization = None
 
 
 class PointSampler(DataNode[TensorType]):
@@ -118,6 +137,68 @@ class PointSampler(DataNode[TensorType]):
         self.mesh_mode = False  # used as a mode for plotting
         self.current_mesh_max_vertex_distance = None
         self.current_mesh_device: Device | str | None = None
+        self._active_discretization: Geometry | None = None
+
+    @property
+    def active_discretization(self) -> Geometry | None:
+        """The geometry to evaluate this sampler's model at for one run,
+        overriding both normal sampling and mesh mode - injected by
+        `graph.visualize(port, reference=...)` so the model is evaluated
+        exactly where a loaded reference already has data, rather than
+        matching the reference onto the model's own points (which would
+        leak interpolation error into the comparison).
+        """
+        return self._active_discretization
+
+    @active_discretization.setter
+    def active_discretization(self, geometry: Geometry | None) -> None:
+        if geometry is not None:
+            self._validate_active_discretization(geometry)
+        self._active_discretization = geometry
+
+    def _validate_active_discretization(self, geometry: Geometry) -> None:
+        """Dimension is a hard requirement - object identity between
+        `geometry.variable` and this sampler's own `self.geometry.variable`
+        is preferred (reusing one Variable instance end to end avoids any
+        matching problem at all), but not itself checked here. The
+        bounding-box and containment checks catch a badly-matched reference
+        before it ever reaches the model, rather than producing an error
+        plot that looks like a bad model rather than a units/domain bug.
+        """
+        own_variable = self.geometry.variable
+        if geometry.variable.dim != own_variable.dim:
+            raise ValueError(
+                f"active_discretization's variable has dim="
+                f"{geometry.variable.dim}, but this sampler's domain is "
+                f"{own_variable.dim}D - they must match. Reuse the same "
+                "Variable instance building both geometries."
+            )
+
+        domain_box = np.asarray(self.backend.to_numpy(self.geometry.bounding_box()))
+        geometry_box = np.asarray(self.backend.to_numpy(geometry.bounding_box()))
+        domain_min, domain_max = domain_box[0::2], domain_box[1::2]
+        geometry_min, geometry_max = geometry_box[0::2], geometry_box[1::2]
+        if np.any(geometry_max < domain_min) or np.any(geometry_min > domain_max):
+            raise ValueError(
+                f"active_discretization's bounding box ({geometry_box}) does "
+                f"not overlap this sampler's domain ({domain_box}) on at "
+                "least one axis - this usually means a units/normalization "
+                "mismatch (e.g. a model trained on normalized coordinates "
+                "against a reference in physical units), not a genuinely "
+                "out-of-domain reference."
+            )
+
+        points = geometry.discretization_points
+        if points is not None:
+            inside = self.backend.to_numpy(self.geometry.contains(points))
+            if not np.all(inside):
+                raise ValueError(
+                    "active_discretization has points outside this "
+                    "sampler's domain - evaluating the model there would "
+                    "extrapolate, making the resulting error plot look "
+                    "dramatic for the wrong reason. Restrict the reference "
+                    'to the sampler\'s domain, or use on="mesh" instead.'
+                )
 
     def set_mesh_mode(
         self,
@@ -209,6 +290,21 @@ class PointSampler(DataNode[TensorType]):
         This method handles split indexing, batch slicing, and moving data to
         the appropriate device.
         """
+        if self._active_discretization is not None:
+            if self.compute_normals:
+                raise NotImplementedError(
+                    "active_discretization currently cannot produce normals"
+                )
+            geometry = self._active_discretization
+            points = geometry.discretization_points
+            mesh = getattr(geometry, "mesh", None)
+
+            # for plotting: store the current points and cells
+            self.sampled_geometry.set_current_discretization(
+                points, mesh.cells if mesh is not None else None
+            )
+            return points
+
         if self.mesh_mode:
             mesh = self.sampled_geometry.visualization_mesh(
                 self.current_mesh_max_vertex_distance, self.current_mesh_device

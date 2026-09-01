@@ -2,12 +2,15 @@ from __future__ import annotations
 from collections import deque
 from contextlib import contextmanager
 import inspect
-from typing import Callable, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 from warnings import warn
+
+import numpy as np
 
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.devices import Device
 from qewton.config.errors import DataConfigMismatchError
+from qewton.config.variables import Variable
 
 from qewton.graphs.nodes import (
     GraphAwareNode,
@@ -28,6 +31,8 @@ if TYPE_CHECKING:
     # which imports Graph itself - a module-level import here would make
     # `import qewton` circular.
     from qewton.visualization.plots.base import Plot
+    from qewton.visualization.plots.graph import GraphPlot
+    from qewton.visualization.layout import Layout
 
 
 class Graph:
@@ -606,50 +611,143 @@ class Graph:
                     in_port.clear_value()
             node.run()
 
+    def diagram(self, depth: int = 1) -> GraphPlot:
+        from qewton.visualization.plots.graph import GraphPlot
+
+        return GraphPlot(self, depth=depth)
+
     def visualize(
         self,
-        *ports: Port,
+        port: Port | list[Port],
+        reference: "Port | Callable | Any" = None,
+        error: str | None = "signed",
         plot_type: type["Plot"] | None = None,
         max_vertex_distance: float = 0.05,
         device: Device | str | None = None,
+        share_scale: bool = True,
+        controls=None,
+        variables: list[Variable] | None = None,
+        prediction_config: DataConfiguration | None = None,
+        reference_config: DataConfiguration | None = None,
+        mode: EvaluationPhase = EvaluationPhase.VALIDATION,
         **plot_kwargs,
-    ):
-        """Runs just enough of the graph to produce a value for each of
-        `ports`, and builds one Plot per port via auto_plot().
+    ) -> "Layout":
+        """Runs just enough of the graph to produce a value for `port` (or
+        each of several), and builds a Layout of Plots via auto_plot().
 
-        Every PointSampler needed to reach a requested port is switched into
-        mesh mode for this run (discretization_mode) - a deterministic
-        mesh/grid discretization of its geometry, instead of whatever random
-        batch it would otherwise produce - since a Plot needs points that
-        form a coherent, complete domain, not one training batch.
+        Without `reference`, every PointSampler needed to reach `port` is
+        switched into mesh mode for this run (discretization_mode) - a
+        deterministic mesh/grid discretization of its geometry, instead of
+        whatever batch it would otherwise produce.
+
+        With `reference` set, the model is instead evaluated at the
+        reference's own points, so no interpolation is needed to compare
+        them.
 
         Args:
-            *ports: One or more Ports (or lists of Ports) to visualize.
-            plot_type: Passed through to auto_plot() for every port - an
+            port: One Port, or a list of Ports, to visualize.
+            reference: Already-loaded reference data (requires
+                `reference_config`), another Port from this same graph (e.g.
+                a DataLoader's "true output" port, for an operator-learning
+                comparison), or a callable, evaluated at `port`'s own
+                points. Reference data (plain or from a Port) must be built
+                from the exact same Variable instance as `port`'s own
+                value, unless overridden by `reference_config`/
+                `prediction_config` - only supported for a single `port`,
+                not a list. None (default) draws `port` alone.
+            error: With `reference` set, which difference panel to add:
+                "signed" (pred - ref, diverging colormap, scale symmetric
+                around 0 - the default), "absolute" (abs(pred - ref),
+                sequential colormap, scale from 0), "relative"
+                ((pred - ref) / ref, NaN where abs(ref) is ~0, diverging,
+                symmetric), or None for no error panel. Ignored without
+                `reference`.
+            plot_type: Passed through to auto_plot() for every plot - an
                 explicit Plot type if auto-selection doesn't apply, or None
-                (default) to auto-select per port.
+                (default) to auto-select.
             max_vertex_distance: Passed to discretization_mode() - caps the
-                mesh resolution used while sampling in mesh mode.
-            device: If given, every node needed to reach `ports` is moved
+                mesh resolution used while sampling in mesh mode. Unused
+                with `reference` set (the reference's own points are used
+                instead).
+            device: If given, every node needed to reach `port` is moved
                 there before running - the same explicit control
                 GraphBasedTrainer's own `device=` gives at training time.
-                Left alone (default None) otherwise, which normally just
-                works, but not always: e.g. after a training run is
-                interrupted (KeyboardInterrupt) partway through moving nodes
-                to a device, they can be left in an inconsistent mix - this
-                is the escape hatch for that, not something needed on every
-                call. Also controls where mesh-mode's own freshly-generated
-                points are built (Geometry.create_mesh()'s own `device`
-                otherwise defaults to cpu regardless of where the sampler/
-                model already live, which would itself raise a device
-                mismatch against a GPU-resident model).
-            **plot_kwargs: Passed through to auto_plot() for every port.
+                Also controls where mesh-mode's own freshly-generated points
+                are built. Left alone (default None) otherwise.
+            share_scale: With `reference` set, whether the reference and
+                prediction panels share one color Scale, so they read on
+                the same range at a glance. The error panel always gets its
+                own Scale regardless of this flag.
+            controls: A ControlSpec class, instance, or `{axis: class-or-
+                instance}` dict, used to resolve a control for any axis left
+                over after `port`'s (and, with `reference` set, every
+                panel's) own roles - None (default) behaves as SliderSpec.
+                With `reference` set, one resolved instance per axis is
+                shared across every panel, so a slider dragged in one moves
+                them all.
+            variables: With `reference` set, a list of same-dim Variables to
+                switch between via one shared dropdown across every panel -
+                each must already be part of the relevant
+                DataConfiguration(s). None (default) leaves auto_plot()'s
+                own per-panel quantity selection as-is (already a
+                VariableSpec, independently per panel, if a
+                DataConfiguration's FeatureAxes bundles several same-dim
+                quantities).
+            prediction_config: A DataConfiguration used in place of
+                `port.get_data_configuration(self)` to build/label the
+                prediction panel and to check `reference` against. None
+                (default) uses `port`'s own config as-is.
+            reference_config: Same as `prediction_config`, but for
+                `reference` when it's a Port - used in place of
+                `reference.get_data_configuration(self)`. Required (and
+                used as reference's own config) when `reference` is plain
+                data rather than a Port or a callable.
+            mode: The EvaluationPhase every DataLoader-like node needed for
+                the run is set to - determines which of its splits supplies
+                the batch. Defaults to EvaluationPhase.VALIDATION.
+            **plot_kwargs: Passed through to auto_plot() for every plot.
 
         Returns:
-            Plot | list[Plot]: A single Plot for one requested port; a list,
-                one Plot per port in the same order, for more than one -
-                e.g. `Figure(graph.visualize(port_a, port_b)).show()`.
+            Layout: `Overlay(plot)` for a single port with no reference;
+                `Row(*plots)` for a list of ports; with `reference` set, the
+                reference/prediction[/error] comparison (`Overlay` for a
+                curve family - LinePlot/PathPlot - `Row` otherwise). The
+                caller composes: `Figure(graph.visualize(...)).show()`.
         """
+        from qewton.visualization.layout import Overlay, Row
+
+        ports = port if isinstance(port, list) else [port]
+
+        if reference is not None:
+            if len(ports) != 1:
+                raise ValueError(
+                    "reference is only supported for a single port, not a list."
+                )
+            if (
+                not isinstance(reference, Port)
+                and not callable(reference)
+                and reference_config is None
+            ):
+                raise ValueError(
+                    "reference_config is required when reference is plain "
+                    "data, not a Port or a callable."
+                )
+            return self._visualize_with_reference(
+                ports[0],
+                reference,
+                error,
+                plot_type,
+                max_vertex_distance,
+                device,
+                share_scale,
+                controls,
+                variables,
+                prediction_config,
+                reference_config,
+                mode,
+                **plot_kwargs,
+            )
+
         from qewton.data.dataloaders.sampler.point_sampler import discretization_mode
         from qewton.visualization.auto import auto_plot
 
@@ -660,25 +758,273 @@ class Graph:
 
         samplers = self._samplers_on_path_to(ports)
         with discretization_mode(samplers, max_vertex_distance, device):
-            self._run_nodes_needed_for(ports, mode=EvaluationPhase.ALWAYS)
+            self._run_nodes_needed_for(ports, mode=mode)
 
         # Move right before plotting, not before running - the sampler(s)
-        # and model can stay on whatever device they were trained on for
-        # the run itself; only the values a Plot actually reads need to be
-        # plain, already-detached numpy by the time auto_plot() sees them.
+        # and model can stay on the set device
         for sampler in samplers:
             sampler.sampled_geometry.to_numpy()
 
-        out = [
+        controls_kwarg = {} if controls is None else {"controls": controls}
+        plots = [
             auto_plot(
                 port.node.backend.to_numpy(port.value),
                 port.get_data_configuration(self),  # type: ignore
                 plot_type,
+                **controls_kwarg,
                 **plot_kwargs,
             )
             for port in ports
         ]
-        return out if len(out) > 1 else out[0]
+        return Overlay(plots[0]) if len(plots) == 1 else Row(*plots)
+
+    def _visualize_with_reference(
+        self,
+        port: Port,
+        reference: "Port | Callable | Any",
+        error: str | None,
+        plot_type,
+        max_vertex_distance: float,
+        device,
+        share_scale: bool,
+        controls,
+        variables: list[Variable] | None,
+        prediction_config: DataConfiguration | None,
+        reference_config: DataConfiguration | None,
+        mode: EvaluationPhase,
+        **plot_kwargs,
+    ) -> "Layout":
+        """The `reference=` case of visualize(): builds a Reference/
+        Prediction[/Error] comparison instead of a single plot.
+
+        A callable reference is evaluated at the model's own points (mesh
+        mode, like the no-reference path). A Port reference is evaluated
+        together with `port` in one run. Plain reference data is evaluated
+        against by substituting its own geometry for the model's, so no
+        interpolation is needed.
+        """
+        from qewton.data.dataloaders.sampler.point_sampler import (
+            active_discretization_mode,
+            discretization_mode,
+        )
+        from qewton.visualization.auto import auto_plot
+        from qewton.visualization.layout import Overlay, Row
+        from qewton.visualization.plots.data.curve import LinePlot, PathPlot
+        from qewton.visualization.plots.spec import ColorSpec, Scale, VariableSpec
+
+        pred_config = prediction_config or port.get_data_configuration(self)
+        pred_variable = (
+            pred_config.feature_axes.variables if pred_config.feature_axes else None
+        )
+
+        if callable(reference) and not isinstance(reference, Port):
+            nodes_to_run = self._nodes_needed_for({port.node})
+            if device is not None:
+                for node in nodes_to_run:
+                    node.to(device)
+
+            samplers = self._samplers_on_path_to((port,))
+            with discretization_mode(samplers, max_vertex_distance, device):
+                self._run_nodes_needed_for((port,), mode=mode)
+
+            for sampler in samplers:
+                sampler.sampled_geometry.to_numpy()
+
+            pred_data = port.node.backend.to_numpy(port.value)
+            pred_config = prediction_config or port.get_data_configuration(self)
+            geometry_axes = pred_config.geometry_axes
+            if geometry_axes is None:
+                raise ValueError(
+                    f"{port}'s own value has no GeometryAxes - a callable "
+                    "reference needs the model's own evaluation points to "
+                    "call itself at."
+                )
+            points = geometry_axes.geometry.discretization_points
+            points = (
+                points
+                if isinstance(points, np.ndarray)
+                else np.asarray(geometry_axes.geometry.backend.to_numpy(points))
+            )
+            ref_data = np.asarray(reference(points))
+            ref_config = pred_config
+        elif isinstance(reference, Port):
+            ref_port = reference
+            ref_config = reference_config or ref_port.get_data_configuration(self)
+            ref_variable = (
+                ref_config.feature_axes.variables if ref_config.feature_axes else None
+            )
+            self._check_reference_variable(
+                port, pred_variable, ref_variable, by_identity=False
+            )
+
+            nodes_to_run = self._nodes_needed_for({port.node, ref_port.node})
+            if device is not None:
+                for node in nodes_to_run:
+                    node.to(device)
+
+            self._run_nodes_needed_for((port, ref_port), mode=mode)
+
+            pred_data = port.node.backend.to_numpy(port.value)
+            pred_config = prediction_config or port.get_data_configuration(self)
+            ref_data = ref_port.node.backend.to_numpy(ref_port.value)
+            ref_config = reference_config or ref_port.get_data_configuration(self)
+        else:
+            ref_config = reference_config
+            ref_geometry_axes = ref_config.geometry_axes
+            if ref_geometry_axes is None:
+                raise ValueError("reference_config has no GeometryAxes.")
+            ref_geometry = ref_geometry_axes.geometry
+
+            ref_variable = (
+                ref_config.feature_axes.variables if ref_config.feature_axes else None
+            )
+            self._check_reference_variable(port, pred_variable, ref_variable)
+
+            nodes_to_run = self._nodes_needed_for({port.node})
+            if device is not None:
+                for node in nodes_to_run:
+                    node.to(device)
+
+            samplers = self._samplers_on_path_to((port,))
+            with active_discretization_mode(samplers, ref_geometry):
+                self._run_nodes_needed_for((port,), mode=mode)
+
+            for sampler in samplers:
+                sampler.sampled_geometry.to_numpy()
+
+            pred_data = port.node.backend.to_numpy(port.value)
+            # auto_plot() dispatches on a DataConfiguration's structural
+            # type (e.g. GridGeometry vs. a plain DiscreteGeometry) -
+            # port.get_data_configuration(self) still reflects the
+            # sampler's own geometry type even after active_discretization_
+            # mode gave it ref_geometry's points, so prediction reuses
+            # ref_config directly instead.
+            pred_config = ref_config
+            ref_data = np.asarray(reference)
+
+        if pred_data.shape != ref_data.shape:
+            raise ValueError(
+                f"prediction shape {pred_data.shape} does not match "
+                f"reference shape {ref_data.shape} - both must be evaluated "
+                "at the same points."
+            )
+
+        # A curve family (LinePlot/PathPlot) uses "label" (an Overlay legend
+        # entry) to distinguish panels; every other family uses "title" (a
+        # Row panel heading) - probe once with auto_plot() to find out which.
+        probe = auto_plot(ref_data, ref_config, plot_type, **plot_kwargs)
+        is_curve = isinstance(probe, (LinePlot, PathPlot))
+        name_kwarg = "label" if is_curve else "title"
+
+        def _named(name: str, shared_controls=None) -> dict:
+            kwargs = dict(plot_kwargs, **{name_kwarg: name})
+            if shared_controls is not None:
+                kwargs["controls"] = shared_controls
+            elif controls is not None:
+                kwargs["controls"] = controls
+            return kwargs
+
+        reference_plot = auto_plot(ref_data, ref_config, plot_type, **_named("Reference"))
+        # One resolved ControlSpec instance per surplus axis, shared across
+        # every panel from here on.
+        shared_controls = reference_plot.controls
+        prediction_plot = auto_plot(
+            pred_data, pred_config, plot_type, **_named("Prediction", shared_controls)
+        )
+        plots = [reference_plot, prediction_plot]
+
+        shared_variable_spec = VariableSpec(variables) if variables else None
+        if shared_variable_spec is not None:
+            for plot in plots:
+                self._redirect_to_shared_variable(plot, variables, shared_variable_spec)
+
+        ref_color = getattr(reference_plot, "color", None)
+        pred_color = getattr(prediction_plot, "color", None)
+        if (
+            share_scale
+            and isinstance(ref_color, ColorSpec)
+            and isinstance(pred_color, ColorSpec)
+        ):
+            shared_scale = Scale()
+            ref_color.scale = shared_scale
+            pred_color.scale = shared_scale
+
+        if error is not None:
+            if error == "signed":
+                error_data = pred_data - ref_data
+                error_scale = Scale(symmetric=True)
+                diverging = True
+            elif error == "absolute":
+                error_data = np.abs(pred_data - ref_data)
+                error_scale = Scale(vmin=0.0)
+                diverging = False
+            elif error == "relative":
+                diff = pred_data - ref_data
+                threshold = 1e-8 * np.max(np.abs(ref_data))
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    error_data = diff / ref_data
+                error_data = np.where(np.abs(ref_data) < threshold, np.nan, error_data)
+                error_scale = Scale(symmetric=True)
+                diverging = True
+            else:
+                raise ValueError(
+                    'error must be "signed", "absolute", "relative", or '
+                    f"None, got {error!r}."
+                )
+
+            error_plot = auto_plot(
+                error_data, ref_config, plot_type, **_named("Error", shared_controls)
+            )
+            if shared_variable_spec is not None:
+                self._redirect_to_shared_variable(
+                    error_plot, variables, shared_variable_spec
+                )
+            error_color = getattr(error_plot, "color", None)
+            if isinstance(error_color, ColorSpec):
+                error_color.scale = error_scale
+                if error_color.cmap is None and diverging:
+                    error_color.cmap = "RdBu"
+            plots.append(error_plot)
+
+        return Overlay(*plots) if is_curve else Row(*plots)
+
+    @staticmethod
+    def _check_reference_variable(
+        port: Port, pred_variable, ref_variable, by_identity: bool = True
+    ) -> None:
+        """Checks that `reference`'s Variable matches `port`'s own.
+
+        `by_identity=True` (the default, for plain reference data) requires
+        the exact same Variable instance. `by_identity=False` (the Port-
+        reference case) falls back to structural equality
+        (Variable.__eq__: name, dim, and children)."""
+        if by_identity:
+            matches = ref_variable is pred_variable
+            reason = "the exact same Variable instance as"
+        else:
+            matches = ref_variable is not None and ref_variable == pred_variable
+            reason = "the same Variable (by name/dim/structure) as"
+        if not matches:
+            raise ValueError(
+                f"reference's DataConfiguration must be built from {reason} "
+                f"{port}'s own value ({pred_variable!r}) - found "
+                f"{ref_variable!r} instead. Reuse the same Variable "
+                "instance building both configs; never match by name."
+            )
+
+    @staticmethod
+    def _redirect_to_shared_variable(
+        plot: "Plot", variables: list[Variable], shared_spec
+    ) -> None:
+        """Points every PlotSpec attribute on `plot` that currently names
+        one of `variables` (e.g. its `color`/`vector`/`y`) at `shared_spec`
+        instead, so switching the shared VariableSpec's state moves every
+        panel together."""
+        from qewton.visualization.plots.spec import PlotSpec
+
+        for value in vars(plot).values():
+            if isinstance(value, PlotSpec) and value.variable_or_axes in variables:
+                value.variable_or_axes = shared_spec
 
     def collect_trainable_parameters(self):
         """

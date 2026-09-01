@@ -92,6 +92,7 @@ class MeshFieldPlot(MeshPlot):
         color: ColorSpec | Variable,
         controls: list[ControlSpec] | None = None,
         show_edges: bool = True,
+        n_bins: int = 64,
         **kwargs,
     ):
         super().__init__(
@@ -99,10 +100,17 @@ class MeshFieldPlot(MeshPlot):
         )
         self.color = color if isinstance(color, ColorSpec) else ColorSpec(color)
         self.require_scalar(self.color, "color")
+        #: Value bins FilledMeshArtist splits the 2D triangulation into, one
+        #: flat-filled trace each - unused in 3D (SurfaceMeshArtist draws a
+        #: real per-vertex-interpolated surface, no binning needed there).
+        self.n_bins = n_bins
 
     @property
     def embedding_dim(self) -> int:
-        return 3  # both FilledMeshArtist and SurfaceMeshArtist draw a 3D-space mesh
+        # 2D draws as a genuinely cartesian triangulation (FilledMeshArtist)
+        # - it can sit beside a HeatmapPlot in one row. 3D draws into a
+        # `scene` (SurfaceMeshArtist), same as any other 3D-space mesh.
+        return 2 if self.dim == 2 else 3
 
     def evaluate(self):
         data, index_map, slice_map = self.apply_controls()

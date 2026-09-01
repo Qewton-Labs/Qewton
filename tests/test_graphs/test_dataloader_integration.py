@@ -1,10 +1,13 @@
+import numpy as np
 import torch
 from qewton.config.axes import BatchAxes, FeatureAxes, AxesDim
 from qewton.config.data_configurations import DataConfiguration
+from qewton.config.variables import Variable
 from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 from qewton.algorithms.building_blocks.math import Square
 from qewton.data.dataloaders.base import DataLoader
 from qewton.graphs.graphs import Graph
+from qewton.optim.base import EvaluationPhase
 
 
 def test_dataloader_to_algorithm_flow():
@@ -96,6 +99,31 @@ def test_dataloader_tracking_flow():
     assert torch.allclose(output_value, input_batch**2)  # type: ignore
 
 
+def test_visualize_with_mode_test_draws_the_test_data_set():
+    X = Variable("x", 1)
+    train_config = DataConfiguration(BatchAxes(AxesDim(8)), FeatureAxes(X))
+    test_config = DataConfiguration(BatchAxes(AxesDim(4)), FeatureAxes(X))
+    train_data = ArrayLikeDataSet(torch.full((8, 1), 1.0), train_config)
+    test_data = ArrayLikeDataSet(torch.full((4, 1), 9.0), test_config)
+
+    loader = DataLoader(
+        data_set=train_data,
+        batch_size=4,
+        splitting_ratio=(1.0, 0.0, 0.0),
+        test_data_set=test_data,
+        shuffle_data=False,
+    )
+    graph = Graph()
+    graph.add_node(loader)
+    graph.sort()
+    graph.setup()
+
+    layout = graph.visualize(loader.output_ports[0], mode=EvaluationPhase.TEST)
+    values = np.asarray(layout.plots[0].evaluate().y)
+    assert np.all(values == 9.0)
+
+
 if __name__ == "__main__":
     test_dataloader_to_algorithm_flow()
     test_dataloader_tracking_flow()
+    test_visualize_with_mode_test_draws_the_test_data_set()

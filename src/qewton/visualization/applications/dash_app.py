@@ -36,6 +36,10 @@ class DashApplication(RenderApplication):
             dcc.Graph(
                 id="figure",
                 figure=figure.draw(),
+                # Dash's dcc.Graph doesn't render $...$ LaTeX (PlotSpec.
+                # math_name/axis_names_from_variable) unless explicitly
+                # opted into - it's off by default.
+                mathjax=True,
             )
         )
 

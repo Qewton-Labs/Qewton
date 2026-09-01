@@ -57,8 +57,8 @@ class TestNonFacetedRow:
 
 
 class TestFacetedSinglePlotUnchanged:
-    """The exact regression check from figure_plan.md §9: a single faceted
-    plot's grid must be byte-identical before and after the panel system."""
+    """a single faceted plot's grid must be byte-identical before and after the panel
+    system."""
 
     def test_grid_shape_matches_the_facet_length_alone(self):
         plot, facet = _scatter_with_facet(3, 5)
@@ -103,7 +103,7 @@ class TestNestedLayoutBlocks:
 
 class TestPanelsAndFacetsMultiply:
     def test_facet_extent_is_shared_across_every_panel(self):
-        """figure_plan.md §5: facet extent is the max across all panels -
+        """facet extent is the max across all panels -
         an unfaceted panel still gets a full-size block, using its first
         cell."""
         faceted, facet = _scatter_with_facet(3, 5)
@@ -171,7 +171,7 @@ class TestEmptyFigure:
 
 
 class TestPanelSubplotTitles:
-    """figure_plan.md §7: panel title from plot.title, facet title
+    """panel title from plot.title, facet title
     appended when both are present."""
 
     def test_each_panel_gets_its_own_plot_title(self):
@@ -199,7 +199,7 @@ class TestPanelSubplotTitles:
 
     def test_unfaceted_panel_title_appears_once_not_once_per_shared_block_cell(self):
         """A panel with no FacetSpec sharing a Row with a faceted one still
-        gets a full-size block (figure_plan.md §5), but only draws into
+        gets a full-size block, but only draws into
         its first cell - its title must not be broadcast across the rest
         of that block."""
         faceted, facet = _scatter_with_facet(3, 5)
@@ -207,6 +207,30 @@ class TestPanelSubplotTitles:
         backend_figure = Figure(Row(faceted, plain)).draw()
         titles = [ann.text for ann in backend_figure.layout.annotations]
         assert titles.count("Reference") == 1
+
+
+class TestFigureTopTitle:
+    """The whole-figure title (layout.title, distinct from a panel's own
+    subplot annotation - see TestPanelSubplotTitles) comes only from an
+    explicit Figure(title=...) - never from any individual Plot.title,
+    which used to leak through from whichever plot's artist drew last."""
+
+    def test_no_title_set_shows_no_title(self):
+        backend_figure = Figure(_line_plot()).draw()
+        assert backend_figure.layout.title.text is None
+
+    def test_explicit_figure_title_is_shown(self):
+        backend_figure = Figure(_line_plot(), title="My Figure").draw()
+        assert backend_figure.layout.title.text == "My Figure"
+
+    def test_a_plots_own_title_does_not_become_the_figure_title(self):
+        backend_figure = Figure(_scatter(title="Predicted")).draw()
+        assert backend_figure.layout.title.text is None
+
+    def test_last_drawn_plots_title_does_not_win_without_a_figure_title(self):
+        a, b = _scatter(title="First"), _scatter(title="Second")
+        backend_figure = Figure(Row(a, b)).draw()
+        assert backend_figure.layout.title.text is None
 
 
 class TestRemovePlot:
@@ -296,9 +320,11 @@ class TestReplacePlot:
         from qewton.visualization.plots.spec import ColorSpec
 
         a, sibling = _line_plot(), _line_plot()  # both embedding_dim 2
-        vertices = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        vertices = np.array(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 1.0]]
+        )
         cells = np.array([[0, 1, 2], [1, 3, 2]])
-        geometry = MeshGeometry(Variable("p", 2), Mesh(vertices=vertices, cells=cells))
+        geometry = MeshGeometry(Variable("p", 3), Mesh(vertices=vertices, cells=cells))
         U = Variable("u", 1)
         data = np.random.rand(4, 1)
         config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(U))
