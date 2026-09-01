@@ -24,8 +24,9 @@ class LinePlot(DataPlot):
         x: AxisSpec | Variable | Axes,
         y: AxisSpec | Variable,
         controls: list[ControlSpec] | None = None,
+        **kwargs,
     ):
-        super().__init__(data, data_config, controls=controls)
+        super().__init__(data, data_config, controls=controls, **kwargs)
         self.x = x if isinstance(x, AxisSpec) else AxisSpec(x)
         self.y = y if isinstance(y, AxisSpec) else AxisSpec(y)
 

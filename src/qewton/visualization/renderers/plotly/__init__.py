@@ -62,9 +62,27 @@ class PlotlyRenderer(Renderer):
             fig = go.Figure()
         else:
             dims = figure.cell_dimensions(n_rows, n_cols)
+            spans = figure.cell_spans(n_rows, n_cols)
             specs = [
-                [{"type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dim]} for dim in row]
-                for row in dims
+                [
+                    None
+                    if spans[r][c] is None
+                    else {
+                        "type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dims[r][c]],
+                        **(
+                            {"rowspan": spans[r][c][0]}
+                            if spans[r][c][0] > 1
+                            else {}
+                        ),
+                        **(
+                            {"colspan": spans[r][c][1]}
+                            if spans[r][c][1] > 1
+                            else {}
+                        ),
+                    }
+                    for c in range(n_cols)
+                ]
+                for r in range(n_rows)
             ]
             titles = figure.cell_titles(n_rows, n_cols)
             fig = make_subplots(

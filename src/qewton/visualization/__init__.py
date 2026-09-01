@@ -53,6 +53,7 @@ from .plots.data import (
     BarPlot,
 )
 from .plots.table import TablePlot, ParallelCoordinatesPlot
+from .layout import Layout, Overlay, Row, Column
 from .auto import auto_plot
 from .renderers.base import Artist, Renderer
 from .applications import RenderApplication, DashApplication
