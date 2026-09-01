@@ -7,11 +7,10 @@ from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import TrainableParameters
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes, FeatureAxes
-from qewton.graphs.nodes import Node, NodeState, NodeConfig
+from qewton.graphs.nodes import Node, NodeState
 
 
 class ParameterNode(Node[TensorType]):
-    _type_identifier = "ParameterNode"
 
     def __init__(
         self,
@@ -100,52 +99,3 @@ class ParameterNode(Node[TensorType]):
                 self._trainable_parameter, device=device
             )
             self.output.set_value(self._trainable_parameter)
-
-    def config_dict(self) -> NodeConfig:
-        other_args = {
-            "state": self.state,
-            "name": self.name,
-            "initial_value": self.initial_value,
-            "backend": self.backend,
-            "trainable_parameters": self._parameters_to_save(),
-        }
-        hyperparameters = {}
-        for i, s in enumerate(self.shape):
-            hyperparameters[str(i)] = s
-
-        return NodeConfig(
-            node_identifier=ParameterNode._type_identifier,
-            node_id=self.node_id,
-            mode=self.mode,
-            hyperparameters=hyperparameters,
-            other_args=other_args,
-            state=self.state,
-        )
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig) -> Node:
-        """Reconstructs a node from a configuration object. By default we just
-        use the hyperparameters and other arguments, but this can be overridden
-        in subclasses to include additional information.
-
-        Args:
-            config (NodeConfig): The configuration object.
-
-        Returns:
-            Node: The reconstructed node.
-        """
-        node: ParameterNode = ParameterNode(
-            shape=tuple(s for s in config.hyperparameters.values()),  # type: ignore
-            name=config.other_args.get("name", "ParameterNode"),
-            initial_value=config.other_args.get("initial_value", None),
-            backend=config.other_args.get("backend", DEFAULT_DL_BACKEND),
-        )
-        node.set_trainable_parameter(
-            config.other_args.get(
-                "trainable_parameters", TrainableParameters.create_empty(node.node_id)
-            )
-        )
-        node.set_mode(config.mode)
-        node.set_state(config.state)
-        node.node_id = config.node_id
-        return node

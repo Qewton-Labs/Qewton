@@ -34,8 +34,6 @@ class PCANode(DataProcessingNode[TensorType]):
             Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "PCA Node"
-
     def __init__(
         self,
         n: int | HyperParameter,
@@ -179,8 +177,6 @@ class InversePCANode(DataProcessingNode[TensorType]):
         name (str | None, optional): Defaults to "Inverse PCA Node"
     """
 
-    _type_identifier = "Inverse PCA Node"
-
     def __init__(
         self,
         pca_node: PCANode[TensorType],
@@ -225,17 +221,3 @@ class InversePCANode(DataProcessingNode[TensorType]):
         )
         original_shape = (len(flatt_x),) + self.data_source_node.original_shape[1:]
         return self.backend.math.reshape(flatt_x, shape=original_shape)
-
-    def config_dict(self) -> NodeConfig:
-        return NodeConfig(
-            node_identifier=self._type_identifier,
-            node_id=self.node_id,
-            mode=self.mode,
-            hyperparameters={},
-            other_args={
-                "pca_node": self.data_source_node,
-                "name": self.name,
-                "backend": self.backend,
-            },
-            state=self.state,
-        )

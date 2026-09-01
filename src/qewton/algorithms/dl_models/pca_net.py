@@ -53,8 +53,6 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
             Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "PCANet"
-
     def __init__(
         self,
         input_variable: Variable,

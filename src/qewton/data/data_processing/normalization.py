@@ -30,7 +30,6 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
 
     data_axes = EllipsisAxes()
     batch_axes = BatchAxes(None)
-    _type_identifier = "Std. Normalization Node"
 
     def __init__(
         self,
@@ -138,7 +137,6 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
 
     data_axes = EllipsisAxes()
     batch_axes = BatchAxes(None)
-    _type_identifier = "Inverse Std. Normalization Node"
 
     def __init__(
         self,
@@ -187,29 +185,3 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
         self.input_ports[0].set_value(x)
         self.run()
         return self.output_ports[0].value  # type: ignore
-
-    def config_dict(self) -> NodeConfig:
-        return NodeConfig(
-            node_identifier=self._type_identifier,
-            node_id=self.node_id,
-            mode=self.mode,
-            hyperparameters={},
-            other_args={
-                "std_node": self.data_source_node,
-                "name": self.name,
-                "backend": self.backend,
-            },
-            state=self.state,
-        )
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig) -> Node:
-        norm_node: InverseStdNormalizationNode = super().load_from_config(
-            config
-        )  # type: ignore
-        # Restore the mean and std if they are present in the config:
-        if hasattr(norm_node.data_source_node, "mean"):
-            norm_node._set_port_values(
-                norm_node.data_source_node.mean, norm_node.data_source_node.std
-            )
-        return norm_node

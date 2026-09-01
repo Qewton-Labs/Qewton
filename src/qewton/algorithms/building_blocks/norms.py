@@ -6,7 +6,6 @@ from qewton.algorithms.building_blocks.math import Mean, Square, Sum
 
 
 class MSN(GraphNode):
-    _type_identifier = "MSNNode"
 
     def __init__(self, backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND):
         self.mean_node = Mean(backend=backend)

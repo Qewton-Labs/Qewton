@@ -205,10 +205,6 @@ class Node(ABC, Generic[TensorType], Serializable):
 
     _node_id_counter = 0
     _tracking_phase: bool = False
-    # Identifier for this node type. Used to reconstruct the node from
-    # its configuration. If it is None, the class name will be used as the
-    # identifier (but this is unsafe if it will be changed at some point).
-    _type_identifier: str | None = None
 
     def __init__(
         self,
@@ -229,15 +225,6 @@ class Node(ABC, Generic[TensorType], Serializable):
 
         self.node_id = Node._node_id_counter
         Node._node_id_counter += 1
-
-    def __init_subclass__(cls) -> None:
-        if cls._type_identifier is None:
-            type_id = cls.__name__
-        else:
-            type_id = cls._type_identifier
-        if type_id not in NODE_REGISTRY:
-            NODE_REGISTRY[type_id] = cls
-        return super().__init_subclass__()
 
     @property
     def name(self):
@@ -572,26 +559,18 @@ class Node(ABC, Generic[TensorType], Serializable):
         self_args = []
         self_keys = []
         for k, v in self.__dict__.items():
-            if k in ["_state", "node_id", "mode"]:
-                continue  # Skip saving these attributes
             self_args.append(v)
             self_keys.append(k)
         idx_mapping = serializer.add_objects(self, self_args)
         node_config = {
-            SavingKeys.NODE_IDENTIFIER: (
-                self._type_identifier
-                if self._type_identifier is not None
-                else self.__class__.__name__
-            ),
-            SavingKeys.NODE_ID: self.node_id,
-            SavingKeys.NODE_MODE: self.mode,
-            SavingKeys.NODE_STATE: self.state,
-            SavingKeys.NODE_SELF_ARGS: dict(zip(self_keys, idx_mapping)),
+            SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
+            SavingKeys.KEY_CLASS: self.__class__.__name__,
+            SavingKeys.KEY_MODULE: self.__class__.__module__,
+            SavingKeys.KEY_SELF_ARGS: dict(zip(self_keys, idx_mapping)),
         }
         serializer.set_serialization_data(id(self), node_config)
 
-    @classmethod
-    def load(cls, serializer: Deserializer) -> None:
+    def load(self, serializer: Deserializer) -> None:
         pass
 
 

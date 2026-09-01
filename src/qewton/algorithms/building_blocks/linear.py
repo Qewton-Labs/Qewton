@@ -7,12 +7,10 @@ from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.graphs.graphs import Graph
-from qewton.graphs.nodes import NodeConfig
 from qewton.graphs.control_nodes.graph_node import GraphNode
 
 
 class FunctionalLinear(GraphNode, Generic[TensorType]):
-    _type_identifier = "FunctionalLinearNode"
     ell_ax = EllipsisAxes()
     dim_1 = AxesDim(None)
     dim_2 = AxesDim(None)
@@ -60,28 +58,11 @@ class FunctionalLinear(GraphNode, Generic[TensorType]):
         self.run()
         return self.output.value  # type: ignore
 
-    def config_dict(self) -> NodeConfig:
-        other_args = {
-            "name": self.name,
-            "backend": self.backend,
-            "bias": hasattr(self, "bias"),
-        }
-        return NodeConfig(
-            node_identifier=self._type_identifier,
-            node_id=self.node_id,
-            mode=self.mode,
-            hyperparameters={},
-            other_args=other_args,
-            state=self.state,
-        )
-
 
 class Linear(GraphNode, Generic[TensorType]):
     """A node representing an activation function, which is a special type of
     algorithm that is applied element-wise to the input data.
     """
-
-    _type_identifier = "LinearNode"
 
     def __init__(
         self,
@@ -137,34 +118,3 @@ class Linear(GraphNode, Generic[TensorType]):
         self.input.set_value(x)
         self.run()
         return self.output.value  # type: ignore
-
-    def config_dict(self) -> NodeConfig:
-        other_args = {
-            "name": self.name,
-            "backend": self.backend,
-            "bias": hasattr(self, "bias"),
-        }
-        hyperparameters = {
-            "in_neurons": self.weight.shape[0],
-            "out_neurons": self.weight.shape[1],
-        }
-        return NodeConfig(
-            node_identifier=self._type_identifier,
-            node_id=self.node_id,
-            mode=self.mode,
-            hyperparameters=hyperparameters,  # type: ignore
-            other_args=other_args,
-            state=self.state,
-            nested_graphs={"graph": self._graph},
-        )
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig):
-        linear_node: Linear = super().load_from_config(config)  # type: ignore
-        for node in linear_node._graph.sorted_nodes:
-            if isinstance(node, ParameterNode):
-                if node.name == "weight":
-                    linear_node.weight = node
-                elif node.name == "bias":
-                    linear_node.bias = node
-        return linear_node

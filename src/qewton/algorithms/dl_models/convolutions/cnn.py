@@ -55,8 +55,6 @@ class CNN(GraphNode, Generic[TensorType]):
             backend. Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "CNNNode"
-
     def __init__(
         self,
         in_channels: int | HyperParameter | Variable,

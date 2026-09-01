@@ -1,6 +1,5 @@
 from __future__ import annotations
 from collections import deque
-from dataclasses import dataclass, field
 from contextlib import contextmanager
 import inspect
 from typing import Callable
@@ -8,23 +7,15 @@ from warnings import warn
 
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.errors import DataConfigMismatchError
-
+from qewton.config.saving.saving import Serializer, Deserializer, Serializable
+from qewton.config.saving.schema_keys import SavingKeys
 from qewton.graphs.nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
 from qewton.graphs.control_nodes.data_processing_node import DataProcessingNode
 from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
 from qewton.graphs.edges import Edge
 
 
-@dataclass
-class GraphConfig:
-    nodes: dict[int, Node]
-    edges: list[tuple[int, int, int, int]]
-    graph_was_sorted: bool
-    edges_from_outside: list[tuple[int, int, int, int]] = field(default_factory=list)
-    edges_to_outside: list[tuple[int, int, int, int]] = field(default_factory=list)
-
-
-class Graph:
+class Graph(Serializable):
     """
     Represents a directed acyclic graph (DAG) of interconnected nodes.
     """
@@ -611,38 +602,27 @@ class Graph:
             if TrackingObject.current_graph_tracked is None:
                 Node.set_tracking(False)
 
-    def __getstate__(self) -> GraphConfig:
-        """
-        Generates a configuration object representing the current state of the graph.
-
-        Returns:
-            GraphConfig: A configuration object containing node configurations,
-                edges, and sorting status.
-        """
-        node_configs = {node.node_id: node for node in self.nodes}
-
-        edges_config = []
-        for node in self.nodes:
-            for edge in self.incoming_edges[node]:
-                if edge.from_port.node not in self.nodes:
-                    continue
-                edges_config.append(self._build_edge_mapping(edge))
-
-        from_outside_edges_config = []
-        for edge in self.edges_from_outside:
-            from_outside_edges_config.append(self._build_edge_mapping(edge))
-
-        to_outside_edges_config = []
-        for edge in self.edges_to_outside:
-            to_outside_edges_config.append(self._build_edge_mapping(edge))
-
-        return GraphConfig(
-            nodes=node_configs,
-            edges=edges_config,
-            graph_was_sorted=self.graph_was_sorted,
-            edges_from_outside=from_outside_edges_config,
-            edges_to_outside=to_outside_edges_config,
-        )
+    def save(self, serializer: Serializer) -> None:
+        graph_config = {
+            SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
+            SavingKeys.KEY_CLASS: self.__class__.__name__,
+            SavingKeys.KEY_MODULE: self.__class__.__module__,
+            SavingKeys.KEY_SELF_ARGS: {
+                "nodes": serializer.add_objects(self, list(self.nodes)),
+                "inner_edges": [
+                    self._build_edge_mapping(edge)
+                    for node in self.nodes
+                    for edge in self.outgoing_edges[node]
+                ],
+                "incoming_edges_from_outside": [
+                    self._build_edge_mapping(edge) for edge in self.edges_from_outside
+                ],
+                "outgoing_edges_to_outside": [
+                    self._build_edge_mapping(edge) for edge in self.edges_to_outside
+                ],
+            },
+        }
+        serializer.set_serialization_data(id(self), graph_config)
 
     def _build_edge_mapping(self, edge: Edge) -> tuple[int, int, int, int]:
         """
@@ -672,14 +652,6 @@ class Graph:
         else:
             raise ValueError(f"Unexpected port type for to_port: {type(edge.to_port)}")
         return (from_node_id, from_port_idx, to_node_id, to_port_idx)
-
-    def __setstate__(self, graph_config: GraphConfig):
-        node_dict: dict[int, Node] = graph_config.nodes
-        for edge in graph_config.edges:
-            from_node_id, from_port_idx, to_node_id, to_port_idx = edge
-            from_port = node_dict[from_node_id].output_ports[from_port_idx]
-            to_port = node_dict[to_node_id].input_ports[to_port_idx]
-            self.connect(from_port, to_port)
 
 
 class SequentialGraph(Graph):

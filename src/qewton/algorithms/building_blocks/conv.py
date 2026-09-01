@@ -27,8 +27,6 @@ class FunctionalConv(Node[TensorType]):
 
     """
 
-    _type_identifier = "FunctionalConvNode"
-
     def __init__(
         self,
         dim: Literal[1, 2, 3],
@@ -149,8 +147,6 @@ class Conv(GraphNode, Generic[TensorType]):
             Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "ConvNode"
-
     def __init__(
         self,
         in_channels: int | HyperParameter,
@@ -212,48 +208,8 @@ class Conv(GraphNode, Generic[TensorType]):
         self.run()
         return self.output.value
 
-    def config_dict(self) -> NodeConfig:
-        other_args = {
-            "name": self.name,
-            "backend": self.backend,
-            "bias": hasattr(self, "bias"),
-            "stride": self.conv_node.stride,
-            "padding": self.conv_node.padding,
-            "dilation": self.conv_node.dilation,
-            "groups": self.conv_node.groups,
-        }
-        hyperparameters = {
-            "in_channels": self.kernel.shape[1],
-            "out_channels": self.kernel.shape[0],
-        }
-        for kernel_hp in self.kernel.shape[2:]:
-            hyperparameters[kernel_hp.name] = kernel_hp
-
-        return NodeConfig(
-            node_identifier=self._type_identifier,
-            node_id=self.node_id,
-            mode=self.mode,
-            hyperparameters=hyperparameters,  # type: ignore
-            other_args=other_args,
-            state=self.state,
-            nested_graphs={"graph": self._graph},
-        )
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig) -> Node:
-        hp_dict = {}
-        hp_dict["in_channels"] = config.hyperparameters.pop("in_channels")
-        hp_dict["out_channels"] = config.hyperparameters.pop("out_channels")
-        hp_dict["kernel_size"] = []
-        for v in config.hyperparameters.values():
-            hp_dict["kernel_size"].append(v)
-        hp_dict["kernel_size"] = tuple(hp_dict["kernel_size"])
-        config.hyperparameters = hp_dict
-        return super().load_from_config(config)
-
 
 class Conv1D(Conv[TensorType]):
-    _type_identifier = "Conv1DNode"
 
     def __init__(
         self,
@@ -283,7 +239,6 @@ class Conv1D(Conv[TensorType]):
 
 
 class Conv2D(Conv[TensorType]):
-    _type_identifier = "Conv2DNode"
 
     def __init__(
         self,
@@ -317,7 +272,6 @@ class Conv2D(Conv[TensorType]):
 
 
 class Conv3D(Conv[TensorType]):
-    _type_identifier = "Conv3DNode"
 
     def __init__(
         self,
@@ -379,8 +333,6 @@ class DoubleConv(GraphNode, Generic[TensorType]):
         backend (type[DeepLearningBackend[TensorType]], optional):
             Defaults to DEFAULT_DL_BACKEND.
     """
-
-    _type_identifier = "DoubleConvNode"
 
     def __init__(
         self,
@@ -517,8 +469,6 @@ class DoubleConv(GraphNode, Generic[TensorType]):
 class PoolingNode(Node[TensorType]):
     """Helper node to combine some syntax that appears in every pooling node."""
 
-    _type_identifier = "PoolingNode"
-
     def __init__(
         self,
         kernel_size: tuple[int, ...],
@@ -575,8 +525,6 @@ class MaxPool1D(PoolingNode[TensorType]):
             Defaults to 1.
     """
 
-    _type_identifier = "MaxPool1DNode"
-
     def __init__(
         self,
         kernel_size: int | tuple[int, ...],
@@ -622,7 +570,6 @@ class MaxPool1D(PoolingNode[TensorType]):
 
 
 class MaxPool2D(MaxPool1D[TensorType]):
-    _type_identifier = "MaxPool2DNode"
 
     def _pack_tuple(self, data: tuple[int, ...] | int) -> tuple[int, int]:
         return (data[0], data[1]) if isinstance(data, tuple) else (data, data)
@@ -646,7 +593,6 @@ class MaxPool2D(MaxPool1D[TensorType]):
 
 
 class MaxPool3D(MaxPool1D[TensorType]):
-    _type_identifier = "MaxPool3DNode"
 
     def _pack_tuple(self, data: tuple[int, ...] | int) -> tuple[int, int, int]:
         return (
@@ -686,8 +632,6 @@ class AvgPool1D(PoolingNode[TensorType]):
         count_include_pad (bool, optional): Whether to include the padding in the
             average calculation. Defaults to True.
     """
-
-    _type_identifier = "AvgPool1DNode"
 
     def __init__(
         self,
@@ -733,7 +677,6 @@ class AvgPool1D(PoolingNode[TensorType]):
 
 
 class AvgPool2D(AvgPool1D[TensorType]):
-    _type_identifier = "AvgPool2DNode"
 
     def _pack_tuple(self, data: tuple[int, ...] | int) -> tuple[int, int]:
         return (data[0], data[1]) if isinstance(data, tuple) else (data, data)
@@ -757,7 +700,6 @@ class AvgPool2D(AvgPool1D[TensorType]):
 
 
 class AvgPool3D(AvgPool1D[TensorType]):
-    _type_identifier = "AvgPool3DNode"
 
     def _pack_tuple(self, data: tuple[int, ...] | int) -> tuple[int, int, int]:
         return (
@@ -810,8 +752,6 @@ class Interpolate(Node[TensorType]):
         backend (type[DeepLearningBackend[TensorType]], optional):
             Defaults to DEFAULT_DL_BACKEND.
     """
-
-    _type_identifier = "InterpolateNode"
 
     def __init__(
         self,
@@ -914,8 +854,6 @@ class FunctionalBatchNorm(Node[TensorType]):
             Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "FunctionalBatchNormNode"
-
     def __init__(
         self,
         dim: Literal[1, 2, 3],
@@ -999,8 +937,6 @@ class BatchNorm(GraphNode, Generic[TensorType]):
         backend (type[DeepLearningBackend[TensorType]], optional):
             Defaults to DEFAULT_DL_BACKEND.
     """
-
-    _type_identifier = "BatchNormNode"
 
     def __init__(
         self,
@@ -1118,8 +1054,6 @@ class BatchNorm1D(BatchNorm[TensorType]):
             Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "BatchNorm1DNode"
-
     def __init__(
         self,
         num_features: int,
@@ -1158,8 +1092,6 @@ class BatchNorm2D(BatchNorm[TensorType]):
             Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "BatchNorm2DNode"
-
     def __init__(
         self,
         num_features: int,
@@ -1197,8 +1129,6 @@ class BatchNorm3D(BatchNorm[TensorType]):
         backend (type[DeepLearningBackend[TensorType]], optional):
             Defaults to DEFAULT_DL_BACKEND.
     """
-
-    _type_identifier = "BatchNorm3DNode"
 
     def __init__(
         self,

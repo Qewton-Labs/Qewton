@@ -162,8 +162,6 @@ class HarmonicFCN(GraphNode[TensorType]):
             The backend to use for computations. Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "HarmonicFCN"
-
     def __init__(
         self,
         input_dim: int | Variable | HyperParameter,
@@ -234,38 +232,3 @@ class HarmonicFCN(GraphNode[TensorType]):
             self.fcn.setup()
             self.fcn.in_neurons.current_value = old_in_neurons
             self.set_state(NodeState.INITIALIZED)
-
-    def config_dict(self) -> NodeConfig:
-        other_args = {
-            "name": self.name,
-            "backend": self.backend,
-        }
-        hyperparameters = {
-            "input_dim": self.fcn.in_neurons,
-            "hidden_neurons": self.fcn.hidden_neurons,
-            "output_dim": self.fcn.out_neurons,
-            "n_hidden_layers": self.fcn.n_hidden_layers,
-            "max_harmonic": self.embedding.max_harmonic,
-            "bias": self.fcn.bias,
-            "activation": self.fcn.activation,
-            "include_input": self.embedding.include_input,
-        }
-        return NodeConfig(
-            node_identifier=self._type_identifier,
-            node_id=self.node_id,
-            mode=self.mode,
-            hyperparameters=hyperparameters,  # type: ignore
-            other_args=other_args,
-            state=self.state,
-            nested_graphs={"graph": self._graph},
-        )
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig) -> Node:
-        new_node: HarmonicFCN = super().load_from_config(config)  # type: ignore
-        for node in new_node._graph.nodes:
-            if isinstance(node, HarmonicEmbedding):
-                new_node.embedding = node
-            elif isinstance(node, FCN):
-                new_node.fcn = node
-        return new_node

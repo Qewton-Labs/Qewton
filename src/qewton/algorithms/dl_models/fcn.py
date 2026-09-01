@@ -33,8 +33,6 @@ class FCN(GraphNode, Generic[TensorType]):
             model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "FCNNode"
-
     def __init__(
         self,
         in_neurons: int | HyperParameter | Variable,
@@ -203,8 +201,6 @@ class DeepRitzNet(FCN[TensorType]):
     blow-up for deeper networks.
     """
 
-    _type_identifier = "DeepRitzNetNode"
-
     def __init__(
         self,
         in_neurons: int | HyperParameter | Variable,
@@ -272,22 +268,3 @@ class DeepRitzNet(FCN[TensorType]):
         graph.connect(last_node, linear_out)
         graph.sort()
         return graph
-
-    def config_dict(self) -> NodeConfig:
-        other_args = {"name": self.name, "backend": self.backend}
-        hyperparameters = {
-            "in_neurons": self.in_neurons,
-            "out_neurons": self.out_neurons,
-            "width": self.hidden_neurons,
-            "depth": self.n_hidden_layers,
-            "bias": self.bias,
-        }
-        return NodeConfig(
-            node_identifier=self._type_identifier,
-            node_id=self.node_id,
-            mode=self.mode,
-            hyperparameters=hyperparameters,  # type: ignore
-            other_args=other_args,
-            state=self.state,
-            nested_graphs={"graph": self._graph},
-        )

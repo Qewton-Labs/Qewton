@@ -12,7 +12,6 @@ class Identity(Node[TensorType]):
     track some operations and and inputs.
     """
 
-    _type_identifier = "IdentityNode"
     ell_axis = EllipsisAxes()
 
     def forward(
@@ -22,7 +21,6 @@ class Identity(Node[TensorType]):
 
 
 class Zeros(Node[TensorType]):
-    _type_identifier = "ZerosNode"
 
     def __init__(
         self,
@@ -41,7 +39,6 @@ class Zeros(Node[TensorType]):
 
 
 class ZerosLike(Node[TensorType]):
-    _type_identifier = "ZerosLikeNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(
@@ -51,7 +48,6 @@ class ZerosLike(Node[TensorType]):
 
 
 class Ones(Node[TensorType]):
-    _type_identifier = "OnesNode"
 
     def __init__(
         self,
@@ -70,7 +66,6 @@ class Ones(Node[TensorType]):
 
 
 class OnesLike(Node[TensorType]):
-    _type_identifier = "OnesLikeNode"
     ellipsis_dims = EllipsisAxes()
 
     def forward(

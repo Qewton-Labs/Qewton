@@ -20,8 +20,6 @@ class DataProcessingNode(Node[TensorType]):
             Defaults to DEFAULT_DL_BACKEND.
     """
 
-    _type_identifier = "DataProcessingNode"
-
     def __init__(
         self,
         data_source_node: Node,

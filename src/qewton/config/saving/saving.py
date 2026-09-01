@@ -1,12 +1,24 @@
 from typing import Protocol, runtime_checkable
 from pathlib import Path
+import json
+import os
+import logging
+import shutil
 
 from qewton.config.saving.schema_keys import SavingKeys
+from qewton.config.saving.loading import Deserializer
 
 
 class Serializer:
-    def __init__(self, path: Path) -> None:
-        self.path = path
+    def __init__(self, path: str | Path, replace: bool = False) -> None:
+        self.original_path = Path(path)
+        if self.original_path.exists() and not replace:
+            raise FileExistsError(f"The path {path} already exists. \
+                    Use replace=True to allow to overwrite it.")
+
+        self.path = Path(str(self.original_path) + "_temp")
+        self.parameter_path = self.path / SavingKeys.FILE_PARAMETERS.value
+
         self.file_counter = 0
         self.id_dictionary = {}
         self._id_idx_mapping = {}
@@ -64,22 +76,39 @@ class Serializer:
 
         return index_mapping
 
-    def set_serialization_data(self, id: int, data: dict) -> None:
-        if not id in self.id_dictionary:
-            raise ValueError(f"Object with id {id} not found in the serializer.")
-        self.id_dictionary[id] = data
+    def set_serialization_data(self, obj_id: int, data: dict) -> None:
+        if not obj_id in self.id_dictionary:
+            raise ValueError(f"Object with id {obj_id} not found in the serializer.")
+        self.id_dictionary[obj_id] = data
 
+    def save(self) -> None:
+        logger = logging.getLogger(__name__)
+        logger.info("Saving to %s", self.path)
 
-class Deserializer:
-    def __init__(self) -> None:
-        super().__init__()
-        self._data = {}
+        # Save all the serialized data to a JSON file in the temporary directory
+        saving_dict = {}
+        for k, v in self.id_dictionary.items():
+            saving_dict[self._id_idx_mapping[k]] = v
 
-    def set_data(self, data: dict) -> None:
-        self._data = data
+        with open(self.path / SavingKeys.FILE_DATA.value, "w", encoding="utf-8") as f:
+            f.write(json.dumps(saving_dict, indent=4))
 
-    def get_data(self) -> dict:
-        return self._data
+        # Save some general configuration data to a separate JSON file in the
+        # temporary directory
+        config_data = {
+            SavingKeys.VERSION.value: SavingKeys.KEY_VERSION.value,
+        }
+        with open(self.path / SavingKeys.FILE_CONFIG.value, "w", encoding="utf-8") as f:
+            f.write(json.dumps(config_data, indent=4))
+
+        # Move the temporary directory to the original path,
+        # replacing it if it exists
+        if Path(self.original_path).exists():
+            shutil.rmtree(self.original_path)
+        # rename the temporary save directory to the original path
+        os.rename(self.path, self.original_path)
+
+        logger.info("Saving completed")
 
 
 @runtime_checkable
@@ -87,5 +116,7 @@ class Serializable(Protocol):
 
     def save(self, serializer: Serializer) -> None: ...
 
-    @classmethod
-    def load(cls, serializer: Deserializer) -> None: ...
+    def ready_to_load(self, serializer: Deserializer, data_config: dict) -> bool:
+        return False
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None: ...
