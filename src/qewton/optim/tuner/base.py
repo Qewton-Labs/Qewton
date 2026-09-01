@@ -46,14 +46,17 @@ def worker(
 
             local_trainer.set_hyperparameter(params)
             local_trainer.run(show_progress=False)
-            local_trainer.train_state.losses = local_trainer.train_state.detach_data(
-                local_trainer.train_state.losses
-            )
-            result_queue.put((params, local_trainer.train_state))
-
-            local_trainer.cleanup()
+        except Exception as e:
+            if local_trainer is not None:
+                local_trainer.train_state.termination_reason = f"Exception: {e}"
+            else:
+                result_queue.put((params, None))
         finally:
             if local_trainer is not None:
+                local_trainer.train_state.losses = local_trainer.train_state.detach_data(
+                    local_trainer.train_state.losses
+                )
+                result_queue.put((params, local_trainer.train_state))
                 local_trainer.cleanup()
 
 
