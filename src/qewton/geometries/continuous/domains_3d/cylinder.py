@@ -147,13 +147,6 @@ class Cylinder(ContinuousGeometry[TensorType]):
     def create_boundary(self):
         return CylinderBoundary(self)
 
-    def save(self) -> dict[str, Any]:
-        general_save = super().save()
-        general_save["center"] = self.center
-        general_save["radius"] = self.radius
-        general_save["height"] = self.height
-        return general_save
-
 
 class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
 

@@ -5,13 +5,12 @@ from typing import Any, Generic
 from qewton.config.errors import DataConfigMismatchError
 from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
+from qewton.config.saving.saving import Serializable
 from qewton.backends.base import ComputingBackend, TensorType
 from qewton.backends import DEFAULT_DL_BACKEND
 
-GEOMETRY_REGISTRY: dict[str, type[Geometry]] = {}
 
-
-class Geometry(Generic[TensorType]):
+class Geometry(Serializable, Generic[TensorType]):
     """Represents a geometric shape for sampling points, computing normal
     vectors, plotting, etc.
 
@@ -43,12 +42,6 @@ class Geometry(Generic[TensorType]):
         self._user_volume = None
         self.boundary_object: BoundaryGeometry | None = None
         self.backend = backend
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        if cls is Geometry:
-            return
-        GEOMETRY_REGISTRY[cls.__name__] = cls
 
     @property
     def boundary(self) -> BoundaryGeometry:
@@ -381,20 +374,6 @@ class Geometry(Generic[TensorType]):
             return self._get_volume()
         return self._user_volume
 
-    def save(self) -> dict[str, Any]:
-        return {
-            "class": self.__class__.__name__,
-            "variable": self.variable,
-            "shape": self.shape,
-            "dim": self.dim,
-            "backend": self.backend,
-        }
-
-    @classmethod
-    def load(cls, data: dict[str, Any]) -> Geometry:
-        cls_obj = GEOMETRY_REGISTRY[data.pop("class")]
-        return cls_obj(**data)
-
 
 class DiscreteGeometry(Geometry[TensorType]):
     """A discrete geometry represents a geometry that includes a number of
@@ -467,23 +446,6 @@ class DiscreteGeometry(Geometry[TensorType]):
             Any: An array of shape (n_points, dim) containing the sampled points.
         """
         raise NotImplementedError()
-
-    def save(self) -> dict[str, Any]:
-        main_save = Geometry.save(self)
-        main_save["discretization_points"] = self.discretization_points
-        if self.discretization_of is not None:
-            main_save["discretization_of"] = self.discretization_of.save()
-        return main_save
-
-    @classmethod
-    def load(cls, data: dict[str, Any]) -> Geometry:
-        cls_obj = GEOMETRY_REGISTRY[data.pop("class")]
-        original_geo = None
-        if "discretization_of" in data:
-            original_geo = Geometry.load(data.pop("discretization_of"))
-        discrete_geo: DiscreteGeometry = cls_obj(**data)  # type: ignore
-        discrete_geo.discretization_of = original_geo
-        return discrete_geo
 
 
 class BoundaryGeometry(Geometry[TensorType]):
@@ -562,19 +524,6 @@ class BoundaryGeometry(Geometry[TensorType]):
                 vectors at the points if include_normals is True, otherwise None.
         """
         return super().sample_random_uniform(n_points)
-
-    def save(self) -> dict[str, Any]:
-        main_geo_save = self.geometry.save()
-        main_geo_save["main_class"] = main_geo_save.pop("class")
-        main_geo_save["class"] = self.__class__.__name__
-        return main_geo_save
-
-    @classmethod
-    def load(cls, data: dict[str, Any]) -> BoundaryGeometry:
-        if "class" in data:
-            data.pop("class")  # remove itself
-        cls_obj = GEOMETRY_REGISTRY[data.pop("main_class")]
-        return cls_obj(**data).boundary
 
 
 ####################################

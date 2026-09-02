@@ -103,12 +103,6 @@ class Sphere(ContinuousGeometry[TensorType]):
     def create_boundary(self):
         return SphereBoundary(self)
 
-    def save(self) -> dict[str, Any]:
-        general_save = super().save()
-        general_save["center"] = self.center
-        general_save["radius"] = self.radius
-        return general_save
-
 
 class SphereBoundary(ContinuousBoundaryGeometry[TensorType]):
 

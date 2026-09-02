@@ -1,6 +1,7 @@
 import inspect
 import pytest
 
+from qewton.config.saving.callables import save, load
 from qewton.backends.base import ComputingBackend
 from qewton.geometries.continuous.domains_2d.circle import Circle
 from qewton.geometries.discrete.mesh import Mesh
@@ -23,13 +24,13 @@ BACKENDS = all_subclasses(ComputingBackend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_save_and_load_point_cloud(backend):
+def test_save_and_load_point_cloud(tmp_path, backend):
     T = Variable("x", 2)
     points = backend.build_tensor([[0.0, 1.0], [2.0, 3.0]])
     point_cloud = PointCloud(T, points, backend=backend)
 
-    save_config = point_cloud.save()
-    loaded_point_cloud = PointCloud.load(save_config)
+    save(point_cloud, tmp_path / "point_cloud_save", replace=True)
+    loaded_point_cloud = load(tmp_path / "point_cloud_save")
 
     assert isinstance(loaded_point_cloud, PointCloud)
     assert loaded_point_cloud.variable == point_cloud.variable
@@ -39,21 +40,21 @@ def test_save_and_load_point_cloud(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_save_and_load_point_cloud_with_discretization_of(backend):
+def test_save_and_load_point_cloud_with_discretization_of(tmp_path, backend):
     T = Variable("x", 2)
     circle = Circle(T, [0.0, 0.0], 1.0, backend=backend)
     points = backend.build_tensor([[0.0, 1.0], [2.0, 3.0]])
     point_cloud = PointCloud(T, points, discretization_of=circle, backend=backend)
 
-    save_config = point_cloud.save()
-    loaded_point_cloud = PointCloud.load(save_config)
+    save(point_cloud, tmp_path / "point_cloud_save", replace=True)
+    loaded_point_cloud = load(tmp_path / "point_cloud_save")
 
     assert isinstance(loaded_point_cloud, PointCloud)
     assert isinstance(loaded_point_cloud.discretization_of, Circle)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_save_and_load_grid_geometry(backend):
+def test_save_and_load_grid_geometry(tmp_path, backend):
     T = Variable("x", 2)
     point_grid = backend.build_tensor(
         [
@@ -64,8 +65,8 @@ def test_save_and_load_grid_geometry(backend):
     point_filter = backend.build_tensor([[[True], [False]], [[True], [True]]])
     grid = GridGeometry(T, point_grid, point_filter=point_filter, backend=backend)
 
-    save_config = grid.save()
-    loaded_grid = GridGeometry.load(save_config)
+    save(grid, tmp_path / "grid_geometry_save", replace=True)
+    loaded_grid = load(tmp_path / "grid_geometry_save")
 
     assert isinstance(loaded_grid, GridGeometry)
     assert loaded_grid.variable == grid.variable
@@ -76,7 +77,7 @@ def test_save_and_load_grid_geometry(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_save_and_load_grid_geometry_with_discretization_of(backend):
+def test_save_and_load_grid_geometry_with_discretization_of(tmp_path, backend):
     T = Variable("x", 2)
     circle = Circle(T, [0.0, 0.0], 1.0, backend=backend)
     point_grid = backend.build_tensor(
@@ -87,15 +88,15 @@ def test_save_and_load_grid_geometry_with_discretization_of(backend):
     )
     grid = GridGeometry(T, point_grid, discretization_of=circle, backend=backend)
 
-    save_config = grid.save()
-    loaded_grid = GridGeometry.load(save_config)
+    save(grid, tmp_path / "grid_geometry_save", replace=True)
+    loaded_grid = load(tmp_path / "grid_geometry_save")
 
     assert isinstance(loaded_grid, GridGeometry)
     assert isinstance(loaded_grid.discretization_of, Circle)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_save_and_load_mesh_geometry(backend):
+def test_save_and_load_mesh_geometry(tmp_path, backend):
     T = Variable("x", 2)
     mesh = Mesh(
         vertices=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
@@ -104,8 +105,8 @@ def test_save_and_load_mesh_geometry(backend):
     )
     mesh_geometry = MeshGeometry(T, mesh, backend=backend)
 
-    save_config = mesh_geometry.save()
-    loaded_mesh_geometry = MeshGeometry.load(save_config)
+    save(mesh_geometry, tmp_path / "mesh_geometry_save", replace=True)
+    loaded_mesh_geometry = load(tmp_path / "mesh_geometry_save")
 
     assert isinstance(loaded_mesh_geometry, MeshGeometry)
     assert loaded_mesh_geometry.variable == mesh_geometry.variable
@@ -116,7 +117,7 @@ def test_save_and_load_mesh_geometry(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_save_and_load_mesh_geometry_with_discretization_of(backend):
+def test_save_and_load_mesh_geometry_with_discretization_of(tmp_path, backend):
     T = Variable("x", 2)
     circle = Circle(T, [0.0, 0.0], 1.0, backend=backend)
     mesh = Mesh(
@@ -126,15 +127,15 @@ def test_save_and_load_mesh_geometry_with_discretization_of(backend):
     )
     mesh_geometry = MeshGeometry(T, mesh, discretization_of=circle, backend=backend)
 
-    save_config = mesh_geometry.save()
-    loaded_mesh_geometry = MeshGeometry.load(save_config)
+    save(mesh_geometry, tmp_path / "mesh_geometry_save", replace=True)
+    loaded_mesh_geometry = load(tmp_path / "mesh_geometry_save")
 
     assert isinstance(loaded_mesh_geometry, MeshGeometry)
     assert isinstance(loaded_mesh_geometry.discretization_of, Circle)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_save_and_load_mesh_internal(backend):
+def test_save_and_load_mesh_internal(tmp_path, backend):
     mesh = Mesh(
         vertices=[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
         cells=[[0, 1, 2]],
@@ -145,8 +146,8 @@ def test_save_and_load_mesh_internal(backend):
         backend=backend,
     )
 
-    saved_mesh = mesh.save_internal()
-    loaded_mesh = Mesh.load_internal(saved_mesh)
+    save(mesh, tmp_path / "mesh_save", replace=True)
+    loaded_mesh = load(tmp_path / "mesh_save")
 
     assert backend.math.allclose(loaded_mesh.vertices, mesh.vertices)
     assert backend.math.all(loaded_mesh.cells == mesh.cells)

@@ -1,8 +1,3 @@
-# import warnings
-
-from typing import Any
-
-from qewton.geometries.base import GEOMETRY_REGISTRY
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,
@@ -73,24 +68,6 @@ class IntersectionGeometry(ContinuousGeometry[TensorType]):
     def create_boundary(self):
         return IntersectionBoundaryGeometry(self)
 
-    def save(self) -> dict[str, Any]:
-        combi_dict = {
-            "class": self.__class__.__name__,
-            "geometry_a": self.geometry_a.save(),
-            "geometry_b": self.geometry_b.save(),
-        }
-        return combi_dict
-
-    @classmethod
-    def load(cls, data: dict[str, Any]):
-        geometry_a = GEOMETRY_REGISTRY[data["geometry_a"]["class"]].load(
-            data["geometry_a"]
-        )
-        geometry_b = GEOMETRY_REGISTRY[data["geometry_b"]["class"]].load(
-            data["geometry_b"]
-        )
-        return IntersectionGeometry(geometry_a, geometry_b)  # type: ignore
-
 
 class IntersectionBoundaryGeometry(ContinuousBoundaryGeometry):
 
@@ -156,7 +133,3 @@ class IntersectionBoundaryGeometry(ContinuousBoundaryGeometry):
         )
         normals = self.backend.math.where(on_a, a_normals, b_normals)
         return normals
-
-    @classmethod
-    def load(cls, data: dict[str, Any]):
-        return IntersectionGeometry.load(data).boundary

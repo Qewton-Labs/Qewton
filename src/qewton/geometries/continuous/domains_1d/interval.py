@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import Any
 
 # import numpy as np
 
@@ -104,12 +103,6 @@ class Interval(ContinuousGeometry[TensorType]):
         of end conditions.
         """
         return IntervalSingleBoundaryPoint(self, side=self.upper_bound, normal_vec=1)
-
-    def save(self) -> dict[str, Any]:
-        general_save = super().save()
-        general_save["lower_bound"] = self.lower_bound
-        general_save["upper_bound"] = self.upper_bound
-        return general_save
 
 
 class IntervalBoundary(ContinuousBoundaryGeometry[TensorType]):

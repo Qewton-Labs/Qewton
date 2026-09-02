@@ -1,14 +1,15 @@
 from __future__ import annotations
-from typing import Any, Generic
+from typing import Generic
 import math
 
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Int32, Float32
+from qewton.config.saving.saving import Serializable
 
 
-class Mesh(Generic[TensorType]):
+class Mesh(Serializable, Generic[TensorType]):
     """A generic simplex mesh represented by vertices and cells.
 
     Args:
@@ -402,26 +403,3 @@ class Mesh(Generic[TensorType]):
 
         # Convex combination
         return self.backend.math.einsum("ni,nid->nd", w, verts), chosen_cells
-
-    def save_internal(self) -> dict[str, Any]:
-        return {
-            "vertices": self.vertices,
-            "cells": self.cells,
-            "cell_markers": self.cell_markers,
-            "faces": self.faces,
-            "face_markers": self.face_markers,
-            "marker_labels": self.marker_labels,
-            "backend": self.backend,
-        }
-
-    @classmethod
-    def load_internal(cls, config: dict[str, Any]) -> Mesh:
-        return cls(
-            vertices=config["vertices"],
-            cells=config["cells"],
-            cell_markers=config["cell_markers"],
-            faces=config["faces"],
-            face_markers=config["face_markers"],
-            marker_labels=config["marker_labels"],
-            backend=config["backend"],
-        )

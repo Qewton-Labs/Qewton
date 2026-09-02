@@ -1,6 +1,3 @@
-from typing import Any
-
-from qewton.geometries.base import GEOMETRY_REGISTRY
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,
@@ -92,24 +89,6 @@ class UnionGeometry(ContinuousGeometry[TensorType]):
     def create_boundary(self):
         return UnionBoundaryDomain(self)
 
-    def save(self) -> dict[str, Any]:
-        combi_dict = {
-            "class": self.__class__.__name__,
-            "geometry_a": self.geometry_a.save(),
-            "geometry_b": self.geometry_b.save(),
-        }
-        return combi_dict
-
-    @classmethod
-    def load(cls, data: dict[str, Any]):
-        geometry_a = GEOMETRY_REGISTRY[data["geometry_a"]["class"]].load(
-            data["geometry_a"]
-        )
-        geometry_b = GEOMETRY_REGISTRY[data["geometry_b"]["class"]].load(
-            data["geometry_b"]
-        )
-        return UnionGeometry(geometry_a, geometry_b)  # type: ignore
-
 
 class UnionBoundaryDomain(ContinuousBoundaryGeometry[TensorType]):
 
@@ -196,7 +175,3 @@ class UnionBoundaryDomain(ContinuousBoundaryGeometry[TensorType]):
         on_a = self.geometry.geometry_a.boundary.contains(points)
         normals = self.backend.math.where(on_a, a_normals, b_normals)
         return normals
-
-    @classmethod
-    def load(cls, data: dict[str, Any]):
-        return UnionGeometry.load(data).boundary

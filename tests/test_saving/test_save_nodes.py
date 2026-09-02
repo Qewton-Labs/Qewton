@@ -1,5 +1,5 @@
 from qewton.algorithms.building_blocks import ParameterNode
-from qewton import save, load
+from qewton.config.saving.callables import save, load
 from qewton.graphs.graphs import Graph
 from qewton.algorithms.building_blocks import Add
 from qewton.algorithms.building_blocks import Reshape

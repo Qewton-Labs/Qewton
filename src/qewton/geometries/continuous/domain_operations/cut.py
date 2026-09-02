@@ -1,10 +1,7 @@
-from typing import Any
-
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,
 )
-from qewton.geometries.base import GEOMETRY_REGISTRY
 from qewton.geometries.continuous.domain_operations.sampler_helper import (
     _boundary_grid_with_n,
     _inside_grid_with_n,
@@ -78,24 +75,6 @@ class CutGeometry(ContinuousGeometry[TensorType]):
     def create_boundary(self):
         return CutBoundaryGeometry(self)
 
-    def save(self) -> dict[str, Any]:
-        combi_dict = {
-            "class": self.__class__.__name__,
-            "geometry_a": self.geometry_a.save(),
-            "geometry_b": self.geometry_b.save(),
-        }
-        return combi_dict
-
-    @classmethod
-    def load(cls, data: dict[str, Any]):
-        geometry_a = GEOMETRY_REGISTRY[data["geometry_a"]["class"]].load(
-            data["geometry_a"]
-        )
-        geometry_b = GEOMETRY_REGISTRY[data["geometry_b"]["class"]].load(
-            data["geometry_b"]
-        )
-        return CutGeometry(geometry_a, geometry_b)  # type: ignore
-
 
 class CutBoundaryGeometry(ContinuousBoundaryGeometry):
 
@@ -165,7 +144,3 @@ class CutBoundaryGeometry(ContinuousBoundaryGeometry):
         on_a = self.geometry.geometry_a.boundary.contains(points)
         normals = self.backend.math.where(on_a, a_normals, -b_normals)
         return normals
-
-    @classmethod
-    def load(cls, data: dict[str, Any]):
-        return CutGeometry.load(data).boundary
