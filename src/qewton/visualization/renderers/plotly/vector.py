@@ -22,8 +22,6 @@ class ArrowField2DArtist(PlotlyArtist):
     def create(cls, backend_figure, plot, row=None, col=None):
         trace = cls._trace(plot, plot.evaluate())
         backend_figure.add_trace(trace, row=row, col=col)
-        if plot.title is not None:
-            backend_figure.update_layout(title=plot.title)
         geometry = plot.data_config.geometry_axes.geometry
         x_name, y_name = axis_names_from_variable(_spatial_variable(geometry), 2)
         backend_figure.update_xaxes(title=x_name, row=row, col=col)
@@ -78,8 +76,6 @@ class ArrowField3DArtist(PlotlyArtist):
     def create(cls, backend_figure, plot, row=None, col=None):
         trace = cls._trace(plot, plot.evaluate())
         backend_figure.add_trace(trace, row=row, col=col)
-        if plot.title is not None:
-            backend_figure.update_layout(title=plot.title)
         geometry = plot.data_config.geometry_axes.geometry
         x_name, y_name, z_name = axis_names_from_variable(_spatial_variable(geometry), 3)
         backend_figure.update_scenes(

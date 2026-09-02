@@ -1,4 +1,5 @@
 from qewton.visualization.figure import Figure
+from qewton.visualization.layout import Overlay
 from qewton.visualization.plots.graph import GraphPlot
 from qewton.visualization.themes import DARK_THEME, LIGHT_THEME
 
@@ -31,7 +32,7 @@ class TestGraphPlot:
         assert len(backend_figure.layout.annotations) == n_annotations
 
     def test_two_graphplots_in_one_figure_do_not_clobber_each_others_shapes(self, simple_graph):
-        fig = Figure([GraphPlot(simple_graph, depth=0), GraphPlot(simple_graph, depth=1)])
+        fig = Figure(Overlay(GraphPlot(simple_graph, depth=0), GraphPlot(simple_graph, depth=1)))
         backend_figure = fig.draw()
         assert len(backend_figure.data) == 6  # 3 traces each
         fig.draw()

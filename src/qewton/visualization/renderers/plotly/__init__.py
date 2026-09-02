@@ -62,16 +62,39 @@ class PlotlyRenderer(Renderer):
             fig = go.Figure()
         else:
             dims = figure.cell_dimensions(n_rows, n_cols)
+            spans = figure.cell_spans(n_rows, n_cols)
             specs = [
-                [{"type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dim]} for dim in row]
-                for row in dims
+                [
+                    None
+                    if spans[r][c] is None
+                    else {
+                        "type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dims[r][c]],
+                        **(
+                            {"rowspan": spans[r][c][0]}
+                            if spans[r][c][0] > 1
+                            else {}
+                        ),
+                        **(
+                            {"colspan": spans[r][c][1]}
+                            if spans[r][c][1] > 1
+                            else {}
+                        ),
+                    }
+                    for c in range(n_cols)
+                ]
+                for r in range(n_rows)
             ]
             titles = figure.cell_titles(n_rows, n_cols)
             fig = make_subplots(
                 rows=n_rows, cols=n_cols, specs=specs,
                 subplot_titles=titles if any(titles) else None,
             )
-        fig.update_layout(uirevision=True)
+        # The whole-figure title is Figure.title alone, set once here - never
+        # any individual Plot.title (each panel's own title already shows as
+        # a subplot annotation via cell_titles()/make_subplots above). With
+        # no Figure.title, no title is shown at all rather than falling back
+        # to some arbitrary plot's title.
+        fig.update_layout(uirevision=True, title=figure.title)
         PlotlyRenderer._apply_theme(fig, figure.theme)
         return fig
 
@@ -91,12 +114,21 @@ class PlotlyRenderer(Renderer):
             font=dict(family=theme.font_family, size=theme.font_size_labels, color=theme.text_color),
             title_font=dict(size=theme.font_size_title, color=theme.text_color),
             showlegend=theme.show_legend,
+            legend=dict(
+                bordercolor=theme.line_color,
+                borderwidth=1 if theme.show_axis_line else 0,
+                bgcolor=theme.background_color,
+            ),
         )
         axis_kwargs = dict(
             showgrid=theme.show_grid,
             gridcolor=theme.grid_color,
             zerolinecolor=theme.grid_color,
+            showline=theme.show_axis_line,
             linecolor=theme.line_color,
+            mirror=theme.axis_box,
+            ticks="outside" if theme.show_axis_line else "",
+            tickcolor=theme.line_color,
             tickfont=dict(size=theme.font_size_axes, color=theme.text_color),
             title_font=dict(size=theme.font_size_axes, color=theme.text_color),
         )
@@ -112,6 +144,19 @@ class PlotlyRenderer(Renderer):
             yaxis=scene_axis_kwargs,
             zaxis=scene_axis_kwargs,
         )
+
+    @staticmethod
+    def reconcile_y_axis_titles(figure, backend_figure, n_rows, n_cols):
+        titles = figure.cell_y_titles(n_rows, n_cols)
+        is_grid = (n_rows, n_cols) != (1, 1)
+        for idx, title in enumerate(titles):
+            if title is None:
+                continue
+            if is_grid:
+                row, col = divmod(idx, n_cols)
+                backend_figure.update_yaxes(title=title, row=row + 1, col=col + 1)
+            else:
+                backend_figure.update_yaxes(title=title)
 
     @staticmethod
     def animate(figure, backend_figure, spec):
@@ -268,11 +313,16 @@ class PlotlyRenderer(Renderer):
 
     @staticmethod
     def show(backend_figure):
-        backend_figure.show()
+        # Plotly no longer auto-loads MathJax (removed in plotly.js v2) - the
+        # $...$-wrapped titles PlotSpec.math_name/axis_names_from_variable
+        # produce render as literal dollar-sign text without this. Harmless
+        # (silently ignored) for mimebundle-based renderers like "vscode",
+        # whose own webview extension is responsible for LaTeX rendering.
+        backend_figure.show(include_mathjax="cdn")
 
     @staticmethod
     def save_html(backend_figure, path):
-        backend_figure.write_html(path)
+        backend_figure.write_html(path, include_mathjax="cdn")
 
     @staticmethod
     def save_gif(backend_figure, path, fps=10):

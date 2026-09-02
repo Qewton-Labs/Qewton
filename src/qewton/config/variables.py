@@ -4,6 +4,21 @@ from __future__ import annotations
 class Variable:
     """Order of children is now important."""
 
+    def __deepcopy__(self, memo):
+        # Variables are objects with reference identity, not names (the
+        # same principle that makes Scale an object rather than a string
+        # key) - two ports/configs are "the same quantity" exactly when
+        # they share one Variable instance. Every node's dynamic
+        # DataConfiguration is a deepcopy of its static one
+        # (Node.copy_data_config_of_port), so without this, a caller who
+        # deliberately passes the same Variable to two different nodes
+        # would still see two different (deep-copied) objects looking back
+        # from each node's own dynamic config - silently defeating any
+        # identity-based comparison. Exempted from copying instead, the
+        # same way SampledGeometry.__deepcopy__ already exempts itself for
+        # an analogous reason.
+        return self
+
     def __init__(
         self,
         name: str | None = None,
@@ -20,7 +35,7 @@ class Variable:
                     self.children = []
                 else:
                     self.children = [
-                        Variable(f"{name}_{i}", dim=1, parent=self) for i in range(dim)
+                        Variable(f"{name}_{i+1}", dim=1, parent=self) for i in range(dim)
                     ]
                 self.dim = dim
             if isinstance(dim, tuple):

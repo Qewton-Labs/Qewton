@@ -33,12 +33,17 @@ class TestApplyVariableSelector:
         assert all(b.method == "restyle" for b in menus[0].buttons)
 
     def test_leaves_the_live_trace_at_its_original_selection(self, small_mesh_geometry):
+        """_apply_variable_selectors() only adds the dropdown menu - it must
+        not change selector.state or the data actually drawn. FilledMeshArtist
+        has no single trace carrying a continuous per-vertex value to
+        inspect directly (it's binned across several flat-fill traces), so
+        this checks the plot's own evaluated data instead."""
         plot, selector = _mesh_field_plot_with_selector(small_mesh_geometry)
         fig = Figure(plot)
         fig.draw()
         fig._apply_variable_selectors()
         assert selector.state.name == "temperature"
-        assert np.all(np.asarray(fig.backend_figure.data[0].intensity) == 1.0)
+        assert np.all(np.asarray(plot.evaluate().color) == 1.0)
 
     def test_repeated_calls_do_not_duplicate_the_menu(self, small_mesh_geometry):
         plot, selector = _mesh_field_plot_with_selector(small_mesh_geometry)

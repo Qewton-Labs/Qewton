@@ -5,6 +5,7 @@ from qewton.config.axes import BatchAxes, FeatureAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.visualization.plots.spec import (
+    AxisSpec,
     ColorSpec,
     FacetSpec,
     FixedSpec,
@@ -47,6 +48,46 @@ def test_get_slice_resolves_feature_channel():
     # Y is the feature axis (index 1); entry_slc selects Y's channel within it
     assert axis_slc == 1
     assert entry_slc == slice(1, 2)
+
+
+class TestPlotSpecMathName:
+    def test_variable_backed_spec_is_wrapped_for_math_mode(self):
+        spec = AxisSpec(Variable("u", 1))
+        assert spec.name == "u"
+        assert spec.math_name == "$u$"
+
+    def test_axes_backed_spec_is_not_wrapped(self):
+        axis = BatchAxes(5)
+        spec = AxisSpec(axis)
+        assert spec.math_name == spec.name == str(axis)
+
+    def test_table_column_key_is_not_wrapped(self):
+        spec = AxisSpec("some_column")
+        assert spec.math_name == spec.name == "some_column"
+
+    def test_1d_geometry_axes_backed_spec_uses_the_geometrys_own_variable(self):
+        """A GeometryAxes itself, not a Variable, is what auto_plot()'s
+        1D-mesh/1D-point-cloud LinePlot dispatch passes as x= (resolving
+        the axis needs the whole GeometryAxes) - the geometry's own single
+        coordinate Variable is still the name a reader recognizes, not
+        str(geometry_axes)."""
+        from qewton.geometries.discrete.point_cloud import PointCloud
+
+        T = Variable("t", 1)
+        points = np.array([[0.0], [1.0], [2.0]], dtype=np.float32)
+        geometry = PointCloud(T, points)
+        spec = AxisSpec(GeometryAxes(geometry))
+        assert spec.name == "t"
+        assert spec.math_name == "$t$"
+
+    def test_multi_component_geometry_axes_falls_back_to_str(self):
+        from qewton.geometries.discrete.point_cloud import PointCloud
+
+        X = Variable("x", 2)
+        points = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float32)
+        geometry = PointCloud(X, points)
+        spec = AxisSpec(GeometryAxes(geometry))
+        assert spec.math_name == spec.name == str(spec.variable_or_axes)
 
 
 class TestSliderSpecResolve:

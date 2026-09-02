@@ -38,6 +38,19 @@ class TestPointCloudPlot:
         plot = PointCloudPlot(field, config, color=ColorSpec(U))
         assert plot.embedding_dim == 3
 
+    def test_1d_points_draw_on_a_plain_2d_chart(self):
+        """coordinate_dim (the geometry's own component count) and
+        embedding_dim (the chart's dimensionality, used by
+        Overlay/faceting) diverge for a 1D point cloud - it's still an xy
+        chart, baselined at y=0, not a facet of its own."""
+        field, config, geometry, U = _point_cloud_setup(1)
+        plot = PointCloudPlot(field, config, color=ColorSpec(U))
+        assert plot.coordinate_dim == 1
+        assert plot.embedding_dim == 2
+        backend_figure = Figure(plot).draw()
+        assert backend_figure.data[0].type == "scatter"
+        assert np.all(np.asarray(backend_figure.data[0].y) == 0.0)
+
     def test_rejects_a_vector_color_spec(self):
         V = Variable("v", 2)
         points = np.random.rand(4, 2)
@@ -64,4 +77,37 @@ class TestPointCloudPlot:
             backend_figure.layout.scene.yaxis.title.text,
             backend_figure.layout.scene.zaxis.title.text,
         }
-        assert titles == {"x_0", "x_1", "x_2"}
+        assert titles == {"$x_1$", "$x_2$", "$x_3$"}
+
+    def test_color_is_optional(self):
+        """color=None draws plain, uncolored markers - e.g. a geometry's
+        own points with no separate quantity to color them by."""
+        field, config, geometry, U = _point_cloud_setup(2)
+        plot = PointCloudPlot(field, config, color=None)
+        assert plot.color is None
+        result = plot.evaluate()
+        assert result.positions.shape == (6, 2)
+        assert result.color is None
+
+    def test_color_none_still_draws(self):
+        field, config, geometry, U = _point_cloud_setup(3)
+        backend_figure = Figure(PointCloudPlot(field, config, color=None)).draw()
+        assert backend_figure.data[0].type == "scatter3d"
+        assert backend_figure.data[0].marker.color is not None
+
+    def test_uncolored_legend_name_is_the_geometry_variable(self):
+        field, config, geometry, U = _point_cloud_setup(2)
+        backend_figure = Figure(PointCloudPlot(field, config, color=None)).draw()
+        assert backend_figure.data[0].name == "$x$"
+
+    def test_colored_legend_name_is_the_color_quantity(self):
+        field, config, geometry, U = _point_cloud_setup(2)
+        backend_figure = Figure(PointCloudPlot(field, config, color=ColorSpec(U))).draw()
+        assert backend_figure.data[0].name == "$u$"
+
+    def test_label_overrides_the_derived_legend_name(self):
+        field, config, geometry, U = _point_cloud_setup(2)
+        backend_figure = Figure(
+            PointCloudPlot(field, config, color=None, label="Samples")
+        ).draw()
+        assert backend_figure.data[0].name == "Samples"

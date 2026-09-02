@@ -10,7 +10,7 @@ class PlotSpec:
     a Variable/Axes (for a DataPlot) or a column name (for a TablePlot)."""
 
     def __init__(
-        self, n_dimensions: int, variable_or_axes: Variable | Axes | str
+        self, n_dimensions: int, variable_or_axes: Variable | Axes | str | None
     ) -> None:
         # `variable_or_axes` is a plain str column key for TablePlot, a
         # Variable/Axes for every DataPlot family - or a VariableSpec
@@ -19,6 +19,9 @@ class PlotSpec:
         # consumer (get_variable_slice, this class's own `name`, artists,
         # ...) already just reads `.variable_or_axes` as if it were a plain
         # Variable, so none of them need to know VariableSpec exists.
+        # None (a ControlSpec built as `controls=FixedSpec(init_state=3)`,
+        # its axis not known yet) is filled in later via the setter below -
+        # see auto_plot()'s _resolve_control().
         self.n_dimensions = n_dimensions
         self._variable_or_axes = variable_or_axes
 
@@ -27,6 +30,10 @@ class PlotSpec:
         if isinstance(self._variable_or_axes, VariableSpec):
             return self._variable_or_axes.state
         return self._variable_or_axes
+
+    @variable_or_axes.setter
+    def variable_or_axes(self, value) -> None:
+        self._variable_or_axes = value
 
     @property
     def embedded_variable_spec(self) -> "VariableSpec | None":
@@ -41,11 +48,39 @@ class PlotSpec:
         )
 
     @property
-    def name(self):
+    def _named_variable(self) -> "Variable | None":
+        """The Variable this spec's `variable_or_axes` ultimately names,
+        even when it's a GeometryAxes rather than a Variable directly - the
+        geometry's own coordinate Variable, if it has exactly one. None for
+        a GeometryAxes with more than one coordinate component.
+        """
         variable_or_axes = self.variable_or_axes
         if isinstance(variable_or_axes, Variable):
-            return variable_or_axes.name
-        return str(variable_or_axes)
+            return variable_or_axes
+        if isinstance(variable_or_axes, GeometryAxes):
+            geometry_variable = variable_or_axes.geometry.variable
+            if geometry_variable is not None and geometry_variable.dim == 1:
+                return geometry_variable
+        return None
+
+    @property
+    def name(self):
+        variable = self._named_variable
+        if variable is not None:
+            return variable.name
+        return str(self.variable_or_axes)
+
+    @property
+    def math_name(self) -> str:
+        """`.name`, wrapped for TeX math-mode rendering (Plotly's MathJax
+        support) when it names an actual Variable - axis/colorbar titles
+        use this so plotted quantities render as math symbols rather than
+        plain text. A non-Variable spec (a plain Axes or TablePlot column
+        key) isn't a math symbol, so it falls back to the plain `.name`.
+        """
+        if self._named_variable is not None:
+            return f"${self.name}$"
+        return self.name
 
     @staticmethod
     def get_slice(variable_or_axes, data_config: DataConfiguration):
@@ -108,10 +143,19 @@ class PlotSpec:
                 if isinstance(i_axis, GeometryAxes):
                     if i_axis.geometry.variable.dim == len(i_axis.shape):
                         axis_slc = i_axis.geometry.variable.get_slice(variable_or_axis)
-                        return (
-                            slice(counter + axis_slc.start, counter + axis_slc.stop),
-                            None,
+                        # Variable.get_slice(self) returns slice(None) (the
+                        # "whole thing" convention for array indexing, e.g.
+                        # data[..., :]) when `variable_or_axis` is the
+                        # geometry's own root variable, not a decomposed
+                        # child - substitute the numeric bounds it implies
+                        # here, since counter + None below would TypeError.
+                        start = axis_slc.start if axis_slc.start is not None else 0
+                        stop = (
+                            axis_slc.stop
+                            if axis_slc.stop is not None
+                            else i_axis.geometry.variable.dim
                         )
+                        return (slice(counter + start, counter + stop), None)
                     elif len(i_axis.shape) == 1:
                         return counter, None
                     else:
@@ -196,6 +240,14 @@ class Scale:
         self._observed_min: float | None = None
         self._observed_max: float | None = None
         self._colorbar_claimed = False
+        #: (row, col) of the rightmost grid cell among every plot
+        #: referencing this Scale, 1-indexed - None outside a grid, or
+        #: before Figure.draw() has computed it this cycle. Set once per
+        #: draw() (see Figure._assign_colorbar_cells()), read by whichever
+        #: renderer draws the one trace that ends up showing this Scale's
+        #: colorbar, so it's placed after every panel sharing the scale,
+        #: not just the first (claiming) one.
+        self.colorbar_cell: tuple[int, int] | None = None
 
     def observe(self, values) -> None:
         """Widens the observed range to cover `values`. Called in pass 1 of
@@ -233,11 +285,13 @@ class Scale:
         return True
 
     def reset(self) -> None:
-        """Clears the observed range and colorbar claim. Must run before
-        every draw(), or the colorbar disappears on the second render."""
+        """Clears the observed range, colorbar claim, and colorbar cell.
+        Must run before every draw(), or the colorbar disappears on the
+        second render."""
         self._observed_min = None
         self._observed_max = None
         self._colorbar_claimed = False
+        self.colorbar_cell = None
 
 
 class ColorSpec(PlotSpec):
@@ -260,7 +314,11 @@ class ControlSpec(PlotSpec):
     """Base class for a spec that reduces or partitions a plot's data by a
     dimension's current state (SliderSpec, FixedSpec, FacetSpec, TimeSpec)."""
 
-    def __init__(self, init_state, n_dimensions, variable_or_axes) -> None:
+    def __init__(self, init_state=None, n_dimensions: int = 1, variable_or_axes=None) -> None:
+        # variable_or_axes defaults to None so a ControlSpec can be built
+        # before its axis is known (`controls=FixedSpec(init_state=3)`) and
+        # resolved later against whichever axis actually needs one - see
+        # auto_plot()'s _resolve_control().
         super().__init__(n_dimensions=n_dimensions, variable_or_axes=variable_or_axes)
         self._state = init_state
 
@@ -287,10 +345,10 @@ class SliderSpec(ControlSpec):
 
     def __init__(
         self,
-        variable_or_axes,
-        init_state,
-        minimum,
-        maximum,
+        variable_or_axes=None,
+        init_state=None,
+        minimum=None,
+        maximum=None,
         step=1,
         marks=None,
     ):
@@ -328,7 +386,7 @@ class FacetSpec(ControlSpec):
 
     def __init__(
         self,
-        variable_or_axes,
+        variable_or_axes=None,
         values=None,
         orientation: str = "col",
         labels: list[str] | None = None,

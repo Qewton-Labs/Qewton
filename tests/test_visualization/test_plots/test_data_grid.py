@@ -72,7 +72,7 @@ class TestSurfacePlot:
         backend_figure = Figure(plot).draw()
         assert backend_figure.layout.scene.xaxis.title.text == str(x_axis)
         assert backend_figure.layout.scene.yaxis.title.text == str(y_axis)
-        assert backend_figure.layout.scene.zaxis.title.text == "c"
+        assert backend_figure.layout.scene.zaxis.title.text == "$c$"
 
 
 class TestImagePlot:
@@ -133,7 +133,7 @@ class TestEmbeddedGridPlot:
             backend_figure.layout.scene.yaxis.title.text,
             backend_figure.layout.scene.zaxis.title.text,
         }
-        assert titles == {"x_0", "x_1", "x_2"}  # Cylinder's Variable("x", 3)
+        assert titles == {"$x_1$", "$x_2$", "$x_3$"}  # Cylinder's Variable("x", 3)
 
 
 class TestQuiverPlot:
@@ -162,3 +162,43 @@ class TestQuiverPlot:
         n_valid = int(np.asarray(grid.point_filter).astype(bool).sum())
         assert len(result.positions) == n_valid
         assert not np.isnan(result.vectors).any()
+
+
+class TestQuiverPlot2D:
+    """A grid whose discretization_points are 2-component (e.g. an
+    index-coordinate grid) needs a 2-component vector, not the 3-component
+    one a spatially-embedded grid requires."""
+
+    @staticmethod
+    def _index_grid_2d():
+        from qewton.geometries.discrete.index_grid_geometry import IndexGridGeometry
+
+        i, j = Variable("i", 1), Variable("j", 1)
+        return IndexGridGeometry(i * j, shape=(4, 5))
+
+    def test_accepts_a_two_component_vector(self):
+        grid = self._index_grid_2d()
+        V2 = Variable("v", 2)
+        config = DataConfiguration(GeometryAxes(grid), FeatureAxes(V2))
+        data = np.random.rand(4, 5, 2)
+        plot = QuiverPlot(data, config, vector=VectorSpec(V2))
+        assert plot.embedding_dim == 2
+        result = plot.evaluate()
+        assert result.positions.shape[1] == 2
+        assert result.vectors.shape[1] == 2
+
+    def test_rejects_a_three_component_vector_on_a_2d_grid(self):
+        grid = self._index_grid_2d()
+        V3 = Variable("v", 3)
+        config = DataConfiguration(GeometryAxes(grid), FeatureAxes(V3))
+        data = np.random.rand(4, 5, 3)
+        with pytest.raises(ValueError, match="needs exactly 2"):
+            QuiverPlot(data, config, vector=VectorSpec(V3))
+
+    def test_draws_with_arrow_field_2d_artist(self):
+        grid = self._index_grid_2d()
+        V2 = Variable("v", 2)
+        config = DataConfiguration(GeometryAxes(grid), FeatureAxes(V2))
+        data = np.random.rand(4, 5, 2)
+        backend_figure = Figure(QuiverPlot(data, config, vector=VectorSpec(V2))).draw()
+        assert backend_figure.data[0].type == "scatter"

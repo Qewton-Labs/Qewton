@@ -160,6 +160,21 @@ class TestSaveGif:
             Figure(plot).save_gif(str(tmp_path / "out.gif"))
 
 
+class TestSaveHtml:
+    def test_embeds_mathjax_so_variable_titles_render_as_math(self, tmp_path):
+        """Plotly stopped auto-loading MathJax in plotly.js v2 - without
+        include_mathjax, a $x$-wrapped axis title (PlotSpec.math_name)
+        would show as literal dollar-sign text in the exported HTML."""
+        X, Y = Variable("x", 1), Variable("y", 1)
+        sample_axis = BatchAxes(10)
+        data = np.random.randn(10, 2)
+        config = DataConfiguration(sample_axis, FeatureAxes(X * Y))
+        path = tmp_path / "out.html"
+        Figure(ScatterPlot(data, config, x=X, y=Y)).save_html(str(path))
+        html = path.read_text()
+        assert "mathjax" in html.lower()
+
+
 class TestSaveImage:
     def _scatter_plot(self):
         X, Y = Variable("x", 1), Variable("y", 1)

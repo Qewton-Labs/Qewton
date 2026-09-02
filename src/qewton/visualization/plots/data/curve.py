@@ -1,8 +1,9 @@
 import numpy as np
 
-from qewton.config.axes import Axes
+from qewton.config.axes import Axes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
+from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.visualization.plots.data.base import DataPlot
 from qewton.visualization.plots.result import CurveResult, PathResult
 from qewton.visualization.plots.spec import AxisSpec, ControlSpec, VectorSpec
@@ -24,8 +25,9 @@ class LinePlot(DataPlot):
         x: AxisSpec | Variable | Axes,
         y: AxisSpec | Variable,
         controls: list[ControlSpec] | None = None,
+        **kwargs,
     ):
-        super().__init__(data, data_config, controls=controls)
+        super().__init__(data, data_config, controls=controls, **kwargs)
         self.x = x if isinstance(x, AxisSpec) else AxisSpec(x)
         self.y = y if isinstance(y, AxisSpec) else AxisSpec(y)
 
@@ -46,9 +48,49 @@ class LinePlot(DataPlot):
             )
         y_values = y_values.reshape(-1)
 
-        # x is the plain sample index; explicit tick coordinates aren't supported yet.
-        x_values = np.arange(y_values.shape[0])
+        x_values = self._geometry_x_values(y_values.shape[0])
+        if x_values is None:
+            # No 1D geometry behind x - the plain sample index.
+            x_values = np.arange(y_values.shape[0])
         return CurveResult(x=x_values, y=y_values)
+
+    def _geometry_x_values(self, n: int):
+        """Real coordinate values for the x axis, from a 1D geometry's own
+        `discretization_points` - when `x` names a GeometryAxes directly, or
+        is the sole structural leaf of a 1D GridGeometry. None if there's no
+        such geometry, or its points don't match `n` 1D values exactly - the
+        plain sample index is always a safe fallback.
+        """
+        axes = self.x.variable_or_axes
+        geometry = None
+        if isinstance(axes, GeometryAxes):
+            geometry = axes.geometry
+        elif isinstance(axes, Variable):
+            for candidate in self.data_config.axes:
+                if isinstance(candidate, GeometryAxes) and isinstance(
+                    candidate.geometry, GridGeometry
+                ):
+                    if axes in candidate.geometry.variable.leaves:
+                        geometry = candidate.geometry
+                        break
+        if geometry is None:
+            return None
+        # A bare MeshGeometry has no discretization_points - its vertices
+        # serve the same purpose.
+        mesh = getattr(geometry, "mesh", None)
+        raw_points = geometry.discretization_points
+        if raw_points is None and mesh is not None:
+            raw_points = mesh.vertices
+        if raw_points is None:
+            return None
+        # Points may still be a backend tensor (needs backend.to_numpy()) or
+        # already plain numpy (which backend.to_numpy() rejects).
+        points = raw_points if isinstance(raw_points, np.ndarray) else np.asarray(
+            geometry.backend.to_numpy(raw_points)
+        )
+        if points.ndim != 2 or points.shape[-1] != 1 or points.shape[0] != n:
+            return None
+        return points[:, 0]
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
         return renderer.LineArtist.create(backend_figure, self, row=row, col=col)
