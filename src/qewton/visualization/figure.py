@@ -1,6 +1,6 @@
 from qewton.visualization.layout import Layout, Overlay, Row, normalize
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.spec import ControlSpec, FacetSpec, Scale, TimeSpec
+from qewton.visualization.plots.spec import AxisSpec, ControlSpec, FacetSpec, Scale, TimeSpec
 from qewton.visualization.renderers.base import Artist, Renderer
 from qewton.visualization.themes.base import Theme
 from qewton.visualization.renderers import DEFAULT_RENDERER
@@ -239,6 +239,35 @@ class Figure:
                             )
         return [title for row in titles for title in row]
 
+    def cell_y_titles(self, n_rows: int, n_cols: int) -> list[str | None]:
+        """Row-major y-axis title override per grid cell: the shared
+        math_name of every plot in that cell's panel that names its y-axis
+        via an AxisSpec (LinePlot/BarPlot, ScatterPlot, StructuredGridPlot/
+        HeatmapPlot/ImagePlot/SurfacePlot - anything with a `.y: AxisSpec`,
+        each renderer titles its y-axis from `plot.y.math_name` the same
+        way), when they all agree on it; "" when they don't, rather than
+        one of several different quantities misleadingly labeling a shared
+        axis; None when the panel has none of these (leave the axis title
+        as whatever its own artist(s) set)."""
+        titles: list[str | None] = [None] * (n_rows * n_cols)
+        facet_rows, facet_cols = self._facet_extent()
+        for panel_row, row in enumerate(self.panels):
+            for panel_col, overlay in enumerate(row):
+                names = {
+                    p.y.math_name
+                    for p in overlay.plots
+                    if isinstance(getattr(p, "y", None), AxisSpec)
+                }
+                if not names:
+                    continue
+                title = names.pop() if len(names) == 1 else ""
+                row_off = panel_row * facet_rows
+                col_off = panel_col * facet_cols
+                for dr in range(facet_rows):
+                    for dc in range(facet_cols):
+                        titles[(row_off + dr) * n_cols + (col_off + dc)] = title
+        return titles
+
     def cell_dimensions(self, n_rows: int, n_cols: int) -> list[list[int]]:
         """Embedding dimension (2 or 3) per grid cell, inferred from
         whichever plot(s) draw into each cell - renderer-agnostic; translating
@@ -334,6 +363,44 @@ class Figure:
                 seen.append(scale)
         return seen
 
+    def _plot_cells(self, plot: Plot) -> list[tuple[int, int]]:
+        """Every (row, col) grid cell (1-indexed) `plot` draws into - its
+        panel's own block, widened by its own FacetSpec(s) if it has any."""
+        facet_rows, facet_cols = self._facet_extent()
+        for panel_row, row in enumerate(self.panels):
+            for panel_col, overlay in enumerate(row):
+                if plot not in overlay.plots:
+                    continue
+                row_off, col_off = panel_row * facet_rows, panel_col * facet_cols
+                facets = self.facet_specs(plot)
+                row_indices = range(len(facets["row"].values)) if "row" in facets else [0]
+                col_indices = range(len(facets["col"].values)) if "col" in facets else [0]
+                return [
+                    (row_off + r + 1, col_off + c + 1)
+                    for r in row_indices
+                    for c in col_indices
+                ]
+        return []
+
+    def _assign_colorbar_cells(self) -> None:
+        """Sets each in-use Scale's `colorbar_cell` to the rightmost grid
+        cell among every plot referencing it, so a Scale shared across
+        several panels (e.g. Reference/Prediction sharing one range - see
+        graph.visualize()'s share_scale) gets one colorbar placed after all
+        of them, not wedged beside whichever panel happened to claim it
+        first. A no-op outside a grid (nothing to place "after")."""
+        if self.grid_shape() == (1, 1):
+            return
+        for scale in self._scales_in_use():
+            cells = [
+                cell
+                for plot in self.plots
+                if getattr(plot, "color", None) is not None and plot.color.scale is scale
+                for cell in self._plot_cells(plot)
+            ]
+            if cells:
+                scale.colorbar_cell = max(cells, key=lambda cell: cell[1])
+
     def draw(self):
         # Pass 1: reset and train shared scales before anything is drawn -
         # otherwise the colorbar claim from a previous draw() lingers and the
@@ -344,6 +411,7 @@ class Figure:
             values = plot.color_values()
             if values is not None:
                 plot.color.scale.observe(values)
+        self._assign_colorbar_cells()
 
         # Pass 2: draw with the now-trained scales. Plotly (and presumably
         # any renderer with a comparable subplot mechanism) requires row/col
@@ -358,6 +426,14 @@ class Figure:
                 block_offset = (panel_row * facet_rows, panel_col * facet_cols)
                 for plot in overlay.plots:
                     self._draw_plot(plot, is_grid, block_offset)
+
+        # Reconcile y-axis titles across each panel, now that every plot's
+        # own artist has had a chance to set one - a single artist can't
+        # tell whether a sibling in the same Overlay names a different
+        # quantity, so this runs once, after all of them (see
+        # cell_y_titles()).
+        n_rows, n_cols = self.grid_shape()
+        self.renderer.reconcile_y_axis_titles(self, self.backend_figure, n_rows, n_cols)
 
         # Pass 3 (only with a TimeSpec present): materialize one frame per
         # animated state on top of the now-drawn figure. Frames/play-pause UI

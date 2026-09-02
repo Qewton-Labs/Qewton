@@ -28,7 +28,7 @@ class TestAxisNamesFromVariable:
 
     def test_auto_named_children_of_a_plain_multi_dim_variable(self):
         var = Variable("x", dim=3)
-        assert axis_names_from_variable(var, 3) == ["$x_0$", "$x_1$", "$x_2$"]
+        assert axis_names_from_variable(var, 3) == ["$x_1$", "$x_2$", "$x_3$"]
 
     def test_falls_back_to_generic_names_on_leaf_count_mismatch(self):
         var = Variable("x", dim=2)

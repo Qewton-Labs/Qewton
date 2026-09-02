@@ -13,7 +13,7 @@ def axis_names_from_variable(variable, n: int) -> list[str]:
     AxisSpec, so there's no separate "x="/"y=" name for the user to supply.
     A composed Variable such as ``Variable("x", 1) * Variable("y", 1) *
     Variable("z", 1)`` yields ``["x", "y", "z"]``; a plain ``Variable("x",
-    dim=3)`` is auto-named ``["x_0", "x_1", "x_2"]``.
+    dim=3)`` is auto-named ``["x_1", "x_2", "x_3"]``.
 
     Falls back to generic labels (``x``, ``y``, ``z``, then ``axis_3``,
     ``axis_4``, ...) if `variable` is None or doesn't decompose into

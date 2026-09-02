@@ -133,7 +133,7 @@ class TestEmbeddedGridPlot:
             backend_figure.layout.scene.yaxis.title.text,
             backend_figure.layout.scene.zaxis.title.text,
         }
-        assert titles == {"$x_0$", "$x_1$", "$x_2$"}  # Cylinder's Variable("x", 3)
+        assert titles == {"$x_1$", "$x_2$", "$x_3$"}  # Cylinder's Variable("x", 3)
 
 
 class TestQuiverPlot:

@@ -11,6 +11,14 @@ class Renderer:
         raise NotImplementedError()
 
     @staticmethod
+    def reconcile_y_axis_titles(figure, backend_figure, n_rows, n_cols):
+        """Called once after every plot has drawn its own trace(s) - lets
+        the backend override a per-artist y-axis title using Figure-level
+        context a single artist can't see on its own (see
+        Figure.cell_y_titles()). Purely cosmetic - backends without axis
+        titles can leave this unimplemented; the default is a no-op."""
+
+    @staticmethod
     def animate(figure, backend_figure, spec):
         """Materializes one frame per `spec.values` on top of an already-drawn
         backend_figure, plus whatever play/pause/scrub UI this backend uses.

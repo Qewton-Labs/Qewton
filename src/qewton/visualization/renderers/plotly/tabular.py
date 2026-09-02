@@ -15,7 +15,9 @@ class ScatterArtist(PlotlyArtist):
         if result.color is not None:
             cmap = plot.color.cmap or plot.theme.default_cmap
             marker.update(color=result.color, colorscale=cmap)
-            marker.update(_apply_scale(plot.color.scale))
+            marker.update(
+                _apply_scale(plot.color.scale, backend_figure=backend_figure, row=row, col=col)
+            )
         else:
             # No data-driven ColorSpec - fall back to the theme's cycled
             # palette so multiple ScatterPlots overlaid in one Figure read

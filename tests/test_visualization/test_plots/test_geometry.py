@@ -32,8 +32,8 @@ class TestGeometryPlot:
     def test_2d_axis_titles_from_the_geometry_variable(self, small_mesh_geometry):
         plot = GeometryPlot(small_mesh_geometry)
         backend_figure = Figure(plot).draw()
-        assert backend_figure.layout.xaxis.title.text == "$p_0$"
-        assert backend_figure.layout.yaxis.title.text == "$p_1$"
+        assert backend_figure.layout.xaxis.title.text == "$p_1$"
+        assert backend_figure.layout.yaxis.title.text == "$p_2$"
 
     def test_3d_axis_titles_from_the_geometry_variable(self, cylinder_mesh_geometry):
         plot = GeometryPlot(cylinder_mesh_geometry)
@@ -43,7 +43,7 @@ class TestGeometryPlot:
             backend_figure.layout.scene.yaxis.title.text,
             backend_figure.layout.scene.zaxis.title.text,
         }
-        assert titles == {"$x_0$", "$x_1$", "$x_2$"}
+        assert titles == {"$x_1$", "$x_2$", "$x_3$"}
 
     def test_volumetric_mesh_splits_boundary_from_interior(self, cylinder_mesh_geometry):
         plot = GeometryPlot(cylinder_mesh_geometry)

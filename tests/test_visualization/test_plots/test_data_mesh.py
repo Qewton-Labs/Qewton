@@ -58,8 +58,8 @@ class TestMeshFieldPlot:
         config = DataConfiguration(GeometryAxes(circle_mesh_geometry), FeatureAxes(U))
         plot = MeshFieldPlot(field, config, color=ColorSpec(U))
         backend_figure = Figure(plot).draw()
-        assert backend_figure.layout.xaxis.title.text == "$x_0$"
-        assert backend_figure.layout.yaxis.title.text == "$x_1$"
+        assert backend_figure.layout.xaxis.title.text == "$x_1$"
+        assert backend_figure.layout.yaxis.title.text == "$x_2$"
 
 
 class TestFilledMeshArtist:
@@ -172,7 +172,7 @@ class TestMeshSurfacePlot:
         )
         plot = MeshSurfacePlot(z_values, config, z=Height)
         backend_figure = Figure(plot).draw()
-        assert backend_figure.layout.scene.xaxis.title.text == "$x_0$"
+        assert backend_figure.layout.scene.xaxis.title.text == "$x_1$"
         assert backend_figure.layout.scene.zaxis.title.text == "$elevation$"
 
 

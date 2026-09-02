@@ -240,6 +240,14 @@ class Scale:
         self._observed_min: float | None = None
         self._observed_max: float | None = None
         self._colorbar_claimed = False
+        #: (row, col) of the rightmost grid cell among every plot
+        #: referencing this Scale, 1-indexed - None outside a grid, or
+        #: before Figure.draw() has computed it this cycle. Set once per
+        #: draw() (see Figure._assign_colorbar_cells()), read by whichever
+        #: renderer draws the one trace that ends up showing this Scale's
+        #: colorbar, so it's placed after every panel sharing the scale,
+        #: not just the first (claiming) one.
+        self.colorbar_cell: tuple[int, int] | None = None
 
     def observe(self, values) -> None:
         """Widens the observed range to cover `values`. Called in pass 1 of
@@ -277,11 +285,13 @@ class Scale:
         return True
 
     def reset(self) -> None:
-        """Clears the observed range and colorbar claim. Must run before
-        every draw(), or the colorbar disappears on the second render."""
+        """Clears the observed range, colorbar claim, and colorbar cell.
+        Must run before every draw(), or the colorbar disappears on the
+        second render."""
         self._observed_min = None
         self._observed_max = None
         self._colorbar_claimed = False
+        self.colorbar_cell = None
 
 
 class ColorSpec(PlotSpec):

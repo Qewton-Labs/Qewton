@@ -4,7 +4,7 @@ from qewton.config.variables import Variable
 from qewton.geometries.base import DiscreteGeometry
 from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.data.curve import LinePlot
+from qewton.visualization.plots.data.curve import LinePlot, PathPlot
 from qewton.visualization.plots.data.grid import EmbeddedGridPlot, HeatmapPlot, QuiverPlot
 from qewton.visualization.plots.data.mesh import MeshFieldPlot, MeshVectorPlot
 from qewton.visualization.plots.data.points import PointCloudPlot
@@ -78,6 +78,22 @@ def auto_plot(
     return _auto_flat_plot(data, data_config, **kwargs)
 
 
+def is_curve_like(plot: Plot) -> bool:
+    """Whether `plot` draws on one shared 2D x/y axes the way a LinePlot/
+    PathPlot does, so several of them compose safely in one Overlay.
+
+    A PointCloudPlot qualifies only for a 1D domain (drawn on a plain 2D
+    x/y=0 axes) - a 2D/3D point cloud's axes are spatial coordinates, not
+    domain-vs-value, and don't share meaning with a curve's axes; mesh/grid
+    field plots are excluded for the same reason.
+    """
+    if isinstance(plot, (LinePlot, PathPlot)):
+        return True
+    if isinstance(plot, PointCloudPlot):
+        return plot.coordinate_dim == 1
+    return False
+
+
 def _require_named_variable(
     data_config: DataConfiguration, feature_axes: FeatureAxes | None
 ) -> Variable:
@@ -98,14 +114,14 @@ def _require_named_variable(
 
 def _is_auto_expanded(variable: Variable) -> bool:
     """True for a Variable's own multi-component expansion (e.g. dim=3 ->
-    children named x_0/x_1/x_2) - one physical quantity, safe to bundle as
+    children named x_1/x_2/x_3) - one physical quantity, safe to bundle as
     a single color/vector role. False once a child's name breaks that
     pattern, meaning the children are genuinely distinct variables composed
     together (e.g. TEMPERATURE * PRESSURE), not components of one."""
     if variable.is_leaf:
         return True
     return all(
-        child.name == f"{variable.name}_{i}" for i, child in enumerate(variable.children)
+        child.name == f"{variable.name}_{i + 1}" for i, child in enumerate(variable.children)
     )
 
 
@@ -246,6 +262,21 @@ def _auto_geometry_plot(
     kwargs = _with_extra_controls(
         kwargs, _other_axes(data_config, geometry_axes, feature_axes), default_control
     )
+
+    # The plotted quantity IS this geometry's own coordinate Variable (e.g.
+    # a PointSampler's own output, or an operator-learning model's
+    # coordinate input) - there's no separate quantity to color/height by,
+    # so show the points themselves instead of dispatching on `quantity` as
+    # if it were one.
+    if geometry.variable is not None and quantity == geometry.variable:
+        if quantity.dim in (1, 2, 3):
+            return PointCloudPlot(data, data_config, color=None, **kwargs)
+        raise ValueError(
+            f"{quantity.name} matches this geometry's own coordinate "
+            f"Variable but has dim={quantity.dim} - only dim 1-3 can be "
+            "shown as a point cloud. Construct a Plot explicitly if this "
+            "is intentional."
+        )
 
     # Checked structurally (`.mesh` populated), not by isinstance(MeshGeometry)
     # - a SampledGeometry only has a mesh once mesh-mode sampling gave it real

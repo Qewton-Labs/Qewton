@@ -16,7 +16,9 @@ class ParallelCoordinatesArtist(PlotlyArtist):
         if result.color is not None:
             cmap = plot.color.cmap or plot.theme.default_cmap
             line.update(color=result.color, colorscale=cmap)
-            line.update(_apply_scale(plot.color.scale))
+            line.update(
+                _apply_scale(plot.color.scale, backend_figure=backend_figure, row=row, col=col)
+            )
 
         trace = go.Parcoords(dimensions=cls._dimensions(plot, result), line=line)
         backend_figure.add_trace(trace, row=row, col=col)

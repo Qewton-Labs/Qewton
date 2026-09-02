@@ -7,6 +7,7 @@ from warnings import warn
 
 import numpy as np
 
+from qewton.config.axes import FeatureAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.devices import Device
 from qewton.config.errors import DataConfigMismatchError
@@ -685,14 +686,22 @@ class Graph:
                 With `reference` set, one resolved instance per axis is
                 shared across every panel, so a slider dragged in one moves
                 them all.
-            variables: With `reference` set, a list of same-dim Variables to
-                switch between via one shared dropdown across every panel -
-                each must already be part of the relevant
-                DataConfiguration(s). None (default) leaves auto_plot()'s
-                own per-panel quantity selection as-is (already a
-                VariableSpec, independently per panel, if a
-                DataConfiguration's FeatureAxes bundles several same-dim
-                quantities).
+            variables: Narrows `port` (and `reference`, unless it already
+                names exactly this combination) down to just these
+                Variables' own slice of a composed FeatureAxes before
+                anything else runs - e.g. `variables=[U]` to pick out a
+                velocity-only quantity from a port declared as a combined
+                velocity+pressure Variable, or `variables=[U, P]` to keep
+                both but drop some other bundled quantity. A single
+                element selects it outright; several same-dim ones also get
+                switched between live via one shared dropdown across every
+                panel, same as before - the narrowing is new, letting this
+                also cover quantities that weren't already jointly
+                dispatchable (e.g. dropping a differently-dimensioned P to
+                leave just a switchable U); the dropdown itself still
+                requires the remaining Variables to share one dim. None
+                (default) uses `port`'s (and `reference`'s) own Variable as
+                declared.
             prediction_config: A DataConfiguration used in place of
                 `port.get_data_configuration(self)` to build/label the
                 prediction panel and to check `reference` against. None
@@ -750,6 +759,7 @@ class Graph:
 
         from qewton.data.dataloaders.sampler.point_sampler import discretization_mode
         from qewton.visualization.auto import auto_plot
+        from qewton.visualization.plots.spec import VariableSpec
 
         nodes_to_run = self._nodes_needed_for({p.node for p in ports})
         if device is not None:
@@ -765,17 +775,21 @@ class Graph:
         for sampler in samplers:
             sampler.sampled_geometry.to_numpy()
 
+        combined_variable = Variable.compose(variables) if variables else None
         controls_kwarg = {} if controls is None else {"controls": controls}
-        plots = [
-            auto_plot(
-                port.node.backend.to_numpy(port.value),
-                port.get_data_configuration(self),  # type: ignore
-                plot_type,
-                **controls_kwarg,
-                **plot_kwargs,
-            )
-            for port in ports
-        ]
+        plots = []
+        for p in ports:
+            data = p.node.backend.to_numpy(p.value)
+            config = p.get_data_configuration(self)  # type: ignore
+            if combined_variable is not None:
+                data, config = self._narrow_to_variable(data, config, combined_variable)
+            plots.append(auto_plot(data, config, plot_type, **controls_kwarg, **plot_kwargs))
+
+        if variables and len(variables) > 1:
+            shared_variable_spec = VariableSpec(variables)
+            for plot in plots:
+                self._redirect_to_shared_variable(plot, variables, shared_variable_spec)
+
         return Overlay(plots[0]) if len(plots) == 1 else Row(*plots)
 
     def _visualize_with_reference(
@@ -807,14 +821,16 @@ class Graph:
             active_discretization_mode,
             discretization_mode,
         )
-        from qewton.visualization.auto import auto_plot
+        from qewton.visualization.auto import auto_plot, is_curve_like
         from qewton.visualization.layout import Overlay, Row
-        from qewton.visualization.plots.data.curve import LinePlot, PathPlot
         from qewton.visualization.plots.spec import ColorSpec, Scale, VariableSpec
 
+        combined_variable = Variable.compose(variables) if variables else None
         pred_config = prediction_config or port.get_data_configuration(self)
         pred_variable = (
-            pred_config.feature_axes.variables if pred_config.feature_axes else None
+            combined_variable
+            if combined_variable is not None
+            else (pred_config.feature_axes.variables if pred_config.feature_axes else None)
         )
 
         if callable(reference) and not isinstance(reference, Port):
@@ -893,6 +909,17 @@ class Graph:
                 sampler.sampled_geometry.to_numpy()
 
             pred_data = port.node.backend.to_numpy(port.value)
+            if combined_variable is not None:
+                # Narrow using the port's own real config - pred_config is
+                # about to be replaced with ref_config below, which would
+                # otherwise already look narrowed (matching ref_variable)
+                # while pred_data itself is still shaped for the full,
+                # un-narrowed Variable.
+                pred_data, _ = self._narrow_to_variable(
+                    pred_data,
+                    prediction_config or port.get_data_configuration(self),
+                    combined_variable,
+                )
             # auto_plot() dispatches on a DataConfiguration's structural
             # type (e.g. GridGeometry vs. a plain DiscreteGeometry) -
             # port.get_data_configuration(self) still reflects the
@@ -902,6 +929,14 @@ class Graph:
             pred_config = ref_config
             ref_data = np.asarray(reference)
 
+        if combined_variable is not None:
+            pred_data, pred_config = self._narrow_to_variable(
+                pred_data, pred_config, combined_variable
+            )
+            ref_data, ref_config = self._narrow_to_variable(
+                ref_data, ref_config, combined_variable
+            )
+
         if pred_data.shape != ref_data.shape:
             raise ValueError(
                 f"prediction shape {pred_data.shape} does not match "
@@ -909,11 +944,11 @@ class Graph:
                 "at the same points."
             )
 
-        # A curve family (LinePlot/PathPlot) uses "label" (an Overlay legend
-        # entry) to distinguish panels; every other family uses "title" (a
-        # Row panel heading) - probe once with auto_plot() to find out which.
+        # A curve-like family uses "label" (an Overlay legend entry) to
+        # distinguish panels; every other family uses "title" (a Row panel
+        # heading) - probe once with auto_plot() to find out which.
         probe = auto_plot(ref_data, ref_config, plot_type, **plot_kwargs)
-        is_curve = isinstance(probe, (LinePlot, PathPlot))
+        is_curve = is_curve_like(probe)
         name_kwarg = "label" if is_curve else "title"
 
         def _named(name: str, shared_controls=None) -> dict:
@@ -933,7 +968,7 @@ class Graph:
         )
         plots = [reference_plot, prediction_plot]
 
-        shared_variable_spec = VariableSpec(variables) if variables else None
+        shared_variable_spec = VariableSpec(variables) if variables and len(variables) > 1 else None
         if shared_variable_spec is not None:
             for plot in plots:
                 self._redirect_to_shared_variable(plot, variables, shared_variable_spec)
@@ -987,6 +1022,23 @@ class Graph:
             plots.append(error_plot)
 
         return Overlay(*plots) if is_curve else Row(*plots)
+
+    @staticmethod
+    def _narrow_to_variable(data, config: DataConfiguration, variable: Variable):
+        """(data, config) narrowed to just `variable`'s own slice of a
+        composed FeatureAxes - e.g. picking a model's velocity output out
+        of a port declared as a combined velocity+pressure Variable. A
+        no-op if `config` already names exactly `variable`."""
+        current = config.feature_axes.variables if config.feature_axes else None
+        if current == variable:
+            return data, config
+        slc = config.get_variable_slice(variable)
+        narrowed_data = np.asarray(data)[slc]
+        new_axes = tuple(
+            FeatureAxes(variable) if isinstance(axes, FeatureAxes) else axes
+            for axes in config.axes
+        )
+        return narrowed_data, DataConfiguration(*new_axes, dtype=config.dtype)
 
     @staticmethod
     def _check_reference_variable(

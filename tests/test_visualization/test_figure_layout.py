@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from qewton.config.axes import BatchAxes, FeatureAxes
+from qewton.config.axes import BatchAxes, FeatureAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.visualization.figure import Figure
@@ -11,12 +11,12 @@ from qewton.visualization.plots.data.samples import ScatterPlot
 from qewton.visualization.plots.spec import FacetSpec
 
 
-def _line_plot(n_samples=10):
-    Y = Variable("y", 1)
+def _line_plot(n_samples=10, variable_name="y", **kwargs):
+    Y = Variable(variable_name, 1)
     sample_axis = BatchAxes(n_samples)
     data = np.random.rand(n_samples, 1)
     config = DataConfiguration(sample_axis, FeatureAxes(Y))
-    return LinePlot(data, config, x=sample_axis, y=Y)
+    return LinePlot(data, config, x=sample_axis, y=Y, **kwargs)
 
 
 def _scatter_with_facet(n_facets, n_samples, orientation="col", **kwargs):
@@ -207,6 +207,66 @@ class TestPanelSubplotTitles:
         backend_figure = Figure(Row(faceted, plain)).draw()
         titles = [ann.text for ann in backend_figure.layout.annotations]
         assert titles.count("Reference") == 1
+
+
+class TestPanelYAxisTitles:
+    """Several plots sharing one Overlay via a `.y: AxisSpec` (LinePlot,
+    ScatterPlot, StructuredGridPlot/HeatmapPlot/...) only get a y-axis
+    title when they all name the same quantity - a mix must not
+    misleadingly show just one of them."""
+
+    def test_single_curve_keeps_its_own_y_title(self):
+        a = _line_plot(variable_name="u")
+        backend_figure = Figure(a).draw()
+        assert backend_figure.layout.yaxis.title.text == "$u$"
+
+    def test_overlay_of_the_same_quantity_keeps_the_shared_title(self):
+        a = _line_plot(variable_name="u")
+        b = _line_plot(variable_name="u", label="Run 2")
+        backend_figure = Figure(Overlay(a, b)).draw()
+        assert backend_figure.layout.yaxis.title.text == "$u$"
+
+    def test_overlay_of_different_quantities_clears_the_title(self):
+        a = _line_plot(variable_name="f")
+        b = _line_plot(variable_name="u")
+        backend_figure = Figure(Overlay(a, b)).draw()
+        assert backend_figure.layout.yaxis.title.text == ""
+
+    def test_a_non_line_plot_in_the_overlay_is_ignored(self):
+        """Only LinePlots' own y quantity participates - a PointCloudPlot
+        sharing the Overlay (no quantity of its own, baselined at y=0)
+        must not force the title blank on its own."""
+        from qewton.geometries.discrete.point_cloud import PointCloud
+        from qewton.visualization.plots.data.points import PointCloudPlot
+
+        a = _line_plot(variable_name="u")
+        T = Variable("t", 1)
+        points = np.linspace(0.0, 1.0, 10).reshape(-1, 1).astype(np.float32)
+        geometry = PointCloud(T, points)
+        point_cloud_config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(T))
+        b = PointCloudPlot(points, point_cloud_config, color=None)
+        backend_figure = Figure(Overlay(a, b)).draw()
+        assert backend_figure.layout.yaxis.title.text == "$u$"
+
+    def test_each_panel_in_a_row_gets_its_own_reconciled_title(self):
+        panel_a = Overlay(_line_plot(variable_name="f"), _line_plot(variable_name="u"))
+        panel_b = Overlay(_line_plot(variable_name="u"), _line_plot(variable_name="u"))
+        backend_figure = Figure(Row(panel_a, panel_b)).draw()
+        assert backend_figure.layout.yaxis.title.text == ""
+        assert backend_figure.layout.yaxis2.title.text == "$u$"
+
+    def test_applies_to_any_plot_family_with_a_y_axisspec_not_just_lineplot(self):
+        """ScatterPlot has the same `.y: AxisSpec`/math_name-titled y-axis
+        as LinePlot, via a completely separate renderer - the same
+        conflict must be caught there too, not just for LinePlot."""
+        X, F, U = Variable("x", 1), Variable("f", 1), Variable("u", 1)
+        sample_axis = BatchAxes(10)
+        config_f = DataConfiguration(sample_axis, FeatureAxes(X * F))
+        config_u = DataConfiguration(sample_axis, FeatureAxes(X * U))
+        a = ScatterPlot(np.random.rand(10, 2), config_f, x=X, y=F)
+        b = ScatterPlot(np.random.rand(10, 2), config_u, x=X, y=U)
+        backend_figure = Figure(Overlay(a, b)).draw()
+        assert backend_figure.layout.yaxis.title.text == ""
 
 
 class TestFigureTopTitle:

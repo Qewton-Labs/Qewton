@@ -664,3 +664,100 @@ class TestVisualizeEvaluationPhase:
             mode=EvaluationPhase.TEST,
         )
         assert seen_modes == [EvaluationPhase.TEST]
+
+
+@pytest.fixture
+def mixed_variable_graph():
+    """A model whose single output port is a MIXED-dim composed Variable
+    (a 2D vector V and a scalar S) - auto_plot can't dispatch this as one
+    quantity at all (no Plot family takes a dim=3 field on a 2D domain),
+    the scenario variables= narrowing exists for."""
+    X = Variable("x", 2)
+    V = Variable("v", 2)
+    S = Variable("s", 1)
+    square = Rectangle(X, [0.0, 0.0], 1.0, 1.0)
+    sampler = GridSampler(square, 20)
+    model = FCN(in_neurons=X, hidden_neurons=4, out_neurons=V + S, n_hidden_layers=1)
+    graph = Graph()
+    graph.connect(sampler, model)
+    graph.setup()
+    return graph, sampler, model, V, S
+
+
+class TestVisualizeWithVariablesNarrowing:
+    """variables= narrows port's (and reference's) composed Variable down
+    to just the listed ones before auto_plot ever runs - a single element
+    selects it outright; several also get a shared dropdown, same as the
+    (pre-existing) same-dim-bundle case, now reachable even when the full
+    port Variable itself isn't jointly dispatchable."""
+
+    def test_no_reference_single_variable_selects_the_vector_component(
+        self, mixed_variable_graph
+    ):
+        from qewton.visualization.plots.data.mesh import MeshVectorPlot
+
+        graph, sampler, model, V, S = mixed_variable_graph
+        layout = graph.visualize(model.output_ports[0], variables=[V])
+        assert isinstance(layout, Overlay)
+        assert isinstance(layout.plots[0], MeshVectorPlot)
+
+    def test_no_reference_single_variable_selects_the_scalar_component(
+        self, mixed_variable_graph
+    ):
+        graph, sampler, model, V, S = mixed_variable_graph
+        layout = graph.visualize(model.output_ports[0], variables=[S])
+        assert isinstance(layout.plots[0], MeshFieldPlot)
+
+    def test_no_reference_without_variables_raises_on_the_full_mixed_output(
+        self, mixed_variable_graph
+    ):
+        graph, sampler, model, V, S = mixed_variable_graph
+        with pytest.raises(ValueError):
+            graph.visualize(model.output_ports[0])
+
+    def test_reference_single_variable_lets_an_otherwise_mismatched_reference_pass(
+        self, mixed_variable_graph
+    ):
+        graph, sampler, model, V, S = mixed_variable_graph
+        points = np.array([[0.2, 0.2], [0.5, 0.5]], dtype=np.float32)
+        ref_values = np.array([[1.0], [2.0]], dtype=np.float32)
+        ref_geometry = PointCloud(Variable("y", 2), points)
+        ref_config = DataConfiguration(GeometryAxes(ref_geometry), FeatureAxes(S))
+
+        with pytest.raises(ValueError, match="same Variable"):
+            graph.visualize(
+                model.output_ports[0], reference=ref_values, reference_config=ref_config
+            )
+
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=ref_values,
+            reference_config=ref_config,
+            variables=[S],
+            error="absolute",
+        )
+        assert isinstance(layout, Row)
+        assert len(layout.plots) == 3
+
+    def test_multiple_variables_drop_one_and_switch_between_the_rest(self):
+        """Three same-dim scalars bundled together - variables=[T, P] must
+        drop Q entirely (not just hide it) while still offering a live
+        dropdown between T and P, exactly like the pre-existing same-dim
+        dropdown case."""
+        X = Variable("x", 2)
+        T = Variable("temperature", 1)
+        P = Variable("pressure", 1)
+        Q = Variable("humidity", 1)
+        square = Rectangle(X, [0.0, 0.0], 1.0, 1.0)
+        sampler = GridSampler(square, 20)
+        model = FCN(in_neurons=X, hidden_neurons=4, out_neurons=T + P + Q, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(sampler, model)
+        graph.setup()
+
+        layout = graph.visualize(model.output_ports[0], variables=[T, P])
+        plot = layout.plots[0]
+        assert isinstance(plot, MeshFieldPlot)
+        assert plot.color.embedded_variable_spec is not None
+        candidate_names = {v.name for v in plot.color.embedded_variable_spec.candidates}
+        assert candidate_names == {"temperature", "pressure"}

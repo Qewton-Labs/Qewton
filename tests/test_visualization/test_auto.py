@@ -10,13 +10,13 @@ from qewton.geometries.continuous.domains_2d.circle import Circle
 from qewton.geometries.discrete.index_grid_geometry import IndexGridGeometry
 from qewton.geometries.discrete.point_cloud import PointCloud
 from qewton.geometries.discrete.volume_grid import VolumeGridGeometry
-from qewton.visualization.auto import auto_plot
-from qewton.visualization.plots.data.curve import LinePlot
+from qewton.visualization.auto import auto_plot, is_curve_like
+from qewton.visualization.plots.data.curve import LinePlot, PathPlot
 from qewton.visualization.plots.data.grid import EmbeddedGridPlot, HeatmapPlot, QuiverPlot
 from qewton.visualization.plots.data.mesh import MeshFieldPlot, MeshVectorPlot
 from qewton.visualization.plots.data.points import PointCloudPlot
 from qewton.visualization.plots.data.samples import BarPlot, ScatterPlot
-from qewton.visualization.plots.spec import FixedSpec, SliderSpec, VariableSpec
+from qewton.visualization.plots.spec import FixedSpec, SliderSpec, VariableSpec, VectorSpec
 
 
 class TestLeftoverAxesBecomeSliders:
@@ -354,7 +354,7 @@ class TestFlatDispatch:
             auto_plot(data, config)
 
     def test_one_auto_expanded_two_dim_variable_becomes_scatter_plot(self):
-        """Variable("p", 2) auto-expands into p_0/p_1 - one quantity, not
+        """Variable("p", 2) auto-expands into p_1/p_2 - one quantity, not
         two distinct ones, but still exactly the shape a ScatterPlot needs."""
         P = Variable("p", 2)
         sample_axis = BatchAxes(10)
@@ -425,6 +425,112 @@ class TestPointCloudDispatch:
         config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(V2))
         with pytest.raises(ValueError, match="PointCloudPlot"):
             auto_plot(data, config)
+
+
+class TestGeometryIdentityDispatch:
+    """The plotted quantity IS the geometry's own coordinate Variable (e.g.
+    a PointSampler's own output, or an operator-learning model's coordinate
+    input) - auto_plot shows the points themselves instead of trying to
+    dispatch on `quantity` as if it were a separate field."""
+
+    def test_1d_identity_becomes_an_uncolored_point_cloud_baselined_at_zero(self):
+        T = Variable("t", 1)
+        points = np.linspace(0.0, 1.0, 10).reshape(-1, 1).astype(np.float32)
+        geometry = PointCloud(T, points)
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(T))
+        plot = auto_plot(points, config)
+        assert isinstance(plot, PointCloudPlot)
+        assert plot.coordinate_dim == 1
+        assert plot.embedding_dim == 2  # still a plain 2D chart, not a facet of its own
+        assert plot.color is None
+        assert is_curve_like(plot)
+        result = plot.evaluate()
+        assert np.allclose(np.sort(result.positions[:, 0]), points[:, 0])
+
+    def test_1d_identity_with_a_mesh_geometry_falls_back_to_mesh_vertices(self):
+        """PointCloud geometries aren't the only 1D source - a mesh-backed
+        geometry (e.g. Interval.create_mesh()) has no discretization_points
+        of its own, only mesh.vertices."""
+        T = Variable("t", 1)
+        interval = Interval(T, 0.0, 2.0)
+        geometry = interval.create_mesh(max_vertex_distance=0.5)
+        vertices = np.asarray(geometry.mesh.vertices)
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(T))
+        plot = auto_plot(vertices.reshape(-1, 1), config)
+        assert isinstance(plot, PointCloudPlot)
+        result = plot.evaluate()
+        assert np.allclose(np.sort(result.positions[:, 0]), np.sort(vertices[:, 0]))
+
+    def test_2d_identity_becomes_an_uncolored_point_cloud(self):
+        X = Variable("x", 2)
+        points = np.random.rand(5, 2).astype(np.float32)
+        geometry = PointCloud(X, points)
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(X))
+        plot = auto_plot(points, config)
+        assert isinstance(plot, PointCloudPlot)
+        assert plot.color is None
+        assert not is_curve_like(plot)
+        result = plot.evaluate()
+        assert result.color is None
+        assert result.positions.shape == (5, 2)
+
+    def test_3d_identity_becomes_an_uncolored_point_cloud(self):
+        X = Variable("x", 3)
+        points = np.random.rand(5, 3).astype(np.float32)
+        geometry = PointCloud(X, points)
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(X))
+        plot = auto_plot(points, config)
+        assert isinstance(plot, PointCloudPlot)
+        assert plot.color is None
+
+    def test_different_variable_of_the_same_dim_is_not_treated_as_identity(self):
+        """Only the geometry's own Variable triggers this - a same-dim but
+        different quantity (e.g. a velocity field over a 2D domain) must
+        still dispatch normally (here: MeshVectorPlot)."""
+        X = Variable("x", 2)
+        V = Variable("v", 2)
+        circle = Circle(X, [0.0, 0.0], 1.0)
+        geometry = circle.create_mesh(max_vertex_distance=0.5)
+        n = len(np.asarray(geometry.mesh.vertices))
+        data = np.random.rand(n, 2).astype(np.float32)
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(V))
+        plot = auto_plot(data, config)
+        assert isinstance(plot, MeshVectorPlot)
+
+
+class TestIsCurveLike:
+    def test_line_plot_and_path_plot_are_curve_like(self):
+        Y = Variable("y", 1)
+        sample_axis = BatchAxes(10)
+        data = np.random.rand(10, 1)
+        line = LinePlot(data, DataConfiguration(sample_axis, FeatureAxes(Y)), x=sample_axis, y=Y)
+        assert is_curve_like(line)
+
+        X, Y2 = Variable("x", 1), Variable("y", 1)
+        positions = np.random.rand(10, 2)
+        path = PathPlot(
+            positions, DataConfiguration(sample_axis, FeatureAxes(X * Y2)), position=VectorSpec(X * Y2)
+        )
+        assert is_curve_like(path)
+
+    def test_2d_and_3d_point_clouds_are_not_curve_like(self):
+        for dim in (2, 3):
+            points = np.random.rand(5, dim).astype(np.float32)
+            geometry = PointCloud(Variable("x", dim), points)
+            config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(Variable("u", 1)))
+            plot = PointCloudPlot(np.random.rand(5, 1), config, color=Variable("u", 1))
+            assert not is_curve_like(plot)
+
+    def test_mesh_and_grid_plots_are_not_curve_like(self):
+        X = Variable("x", 2)
+        circle = Circle(X, [0.0, 0.0], 1.0)
+        geometry = circle.create_mesh(max_vertex_distance=0.5)
+        U = Variable("u", 1)
+        n = len(np.asarray(geometry.mesh.vertices))
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(U))
+        plot = auto_plot(np.random.rand(n, 1).astype(np.float32), config)
+        assert isinstance(plot, MeshFieldPlot)
+        assert not is_curve_like(plot)
 
 
 class TestOneDGeometryDispatch:

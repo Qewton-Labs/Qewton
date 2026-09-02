@@ -53,7 +53,10 @@ class SurfaceMeshArtist(PlotlyArtist):
                 intensity=color,
                 intensitymode="vertex" if len(color) == len(vertices) else "cell",
                 colorscale=cmap,
-                **_apply_scale(spec.scale if spec is not None else None),
+                **_apply_scale(
+                    spec.scale if spec is not None else None,
+                    backend_figure=backend_figure, row=row, col=col,
+                ),
             )
         else:
             kwargs["color"] = plot.theme.geometry_color
@@ -192,7 +195,7 @@ class FilledMeshArtist(PlotlyArtist):
 
         colorbar_idx = len(backend_figure.data)
         backend_figure.add_trace(
-            cls._colorbar_carrier_trace(cmap, vmin, vmax, plot.color.scale),
+            cls._colorbar_carrier_trace(cmap, vmin, vmax, plot.color.scale, backend_figure, row, col),
             row=row,
             col=col,
         )
@@ -208,7 +211,7 @@ class FilledMeshArtist(PlotlyArtist):
         return cls(fill_indices, colorbar_idx, edges_idx)
 
     @staticmethod
-    def _colorbar_carrier_trace(cmap, vmin, vmax, scale):
+    def _colorbar_carrier_trace(cmap, vmin, vmax, scale, backend_figure=None, row=None, col=None):
         """An invisible single-point trace whose only purpose is showing a
         continuous colorbar for this artist's discretely-binned fills -
         _apply_scale's cmin/cmax (when a shared Scale set them) are
@@ -216,7 +219,7 @@ class FilledMeshArtist(PlotlyArtist):
         gives Plotly nothing to infer a range from on its own."""
         marker = {
             "colorscale": cmap, "color": [vmin],
-            **_apply_scale(scale),
+            **_apply_scale(scale, backend_figure=backend_figure, row=row, col=col),
             "cmin": vmin, "cmax": vmax,
         }
         return go.Scatter(

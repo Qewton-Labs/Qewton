@@ -348,10 +348,15 @@ class PointSampler(DataNode[TensorType]):
 
     def to(self, device: str | Device):
         super().to(device)
-        if self.created_cache:
+        # Not gated on created_cache: a subclass (e.g. GridSampler) can
+        # populate point_cache/normal_cache on its own, outside the
+        # cache()/created_cache opt-in mechanism - whatever's actually
+        # cached needs to move with the sampler regardless of how it got
+        # there, or it silently keeps serving stale-device tensors forever.
+        if self.point_cache is not None:
             self.point_cache = self.backend.to(self.point_cache, self._device)
-            if self.compute_normals:
-                self.normal_cache = self.backend.to(self.normal_cache, self._device)
+        if self.normal_cache is not None:
+            self.normal_cache = self.backend.to(self.normal_cache, self._device)
 
     def __mul__(self, other):
         from .product_sampler import ProductSampler

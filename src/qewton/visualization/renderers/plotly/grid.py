@@ -57,7 +57,10 @@ class HeatmapArtist(PlotlyArtist):
         if color is not None:
             data = color
 
-        scale_kwargs = _apply_scale(c.scale if c is not None else None, "zmin", "zmax")
+        scale_kwargs = _apply_scale(
+            c.scale if c is not None else None, "zmin", "zmax",
+            backend_figure=backend_figure, row=row, col=col,
+        )
         trace = go.Heatmap(z=data[..., 0], colorscale=cmap, **scale_kwargs)
 
         backend_figure.add_trace(trace, row=row, col=col)
@@ -100,7 +103,10 @@ class SurfaceArtist(PlotlyArtist):
 
         result = plot.evaluate()
         data, color = result.values, result.color
-        scale_kwargs = _apply_scale(plot.color.scale if plot.color is not None else None)
+        scale_kwargs = _apply_scale(
+            plot.color.scale if plot.color is not None else None,
+            backend_figure=backend_figure, row=row, col=col,
+        )
         trace = go.Surface(
             z=data[..., 0], surfacecolor=color, colorscale=cmap, **scale_kwargs
         )
@@ -147,7 +153,9 @@ class ParametricSurfaceArtist(PlotlyArtist):
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         cmap = plot.color.cmap or plot.theme.default_cmap
-        scale_kwargs = _apply_scale(plot.color.scale)
+        scale_kwargs = _apply_scale(
+            plot.color.scale, backend_figure=backend_figure, row=row, col=col
+        )
         x, y, z = _mask_nan_color_as_gaps(result.x, result.y, result.z, result.color)
 
         idx = len(backend_figure.data)

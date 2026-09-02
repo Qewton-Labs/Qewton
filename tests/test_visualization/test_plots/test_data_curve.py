@@ -59,7 +59,19 @@ class TestLinePlot:
         config = DataConfiguration(sample_axis, FeatureAxes(Y))
         plot = LinePlot(data, config, x=sample_axis, y=Y, title="Panel Heading")
         backend_figure = Figure(plot).draw()
-        assert backend_figure.data[0].name == "y"
+        assert backend_figure.data[0].name == "$y$"
+
+    def test_legend_name_matches_axis_title_math_mode(self):
+        """The legend entry and the axis title both name the same Variable
+        - they must use the same math-mode wrapping, not one wrapped and
+        the other plain."""
+        Y = Variable("y", 1)
+        sample_axis = BatchAxes(10)
+        data = np.random.rand(10, 1)
+        config = DataConfiguration(sample_axis, FeatureAxes(Y))
+        plot = LinePlot(data, config, x=sample_axis, y=Y)
+        backend_figure = Figure(plot).draw()
+        assert backend_figure.data[0].name == backend_figure.layout.yaxis.title.text == "$y$"
 
 
 class TestBarPlot:

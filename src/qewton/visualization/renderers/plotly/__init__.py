@@ -146,6 +146,19 @@ class PlotlyRenderer(Renderer):
         )
 
     @staticmethod
+    def reconcile_y_axis_titles(figure, backend_figure, n_rows, n_cols):
+        titles = figure.cell_y_titles(n_rows, n_cols)
+        is_grid = (n_rows, n_cols) != (1, 1)
+        for idx, title in enumerate(titles):
+            if title is None:
+                continue
+            if is_grid:
+                row, col = divmod(idx, n_cols)
+                backend_figure.update_yaxes(title=title, row=row + 1, col=col + 1)
+            else:
+                backend_figure.update_yaxes(title=title)
+
+    @staticmethod
     def animate(figure, backend_figure, spec):
         """Materializes one go.Frame per spec.values on top of the
         already-drawn backend_figure, by replaying Artist.update() at each

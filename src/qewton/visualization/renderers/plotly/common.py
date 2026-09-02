@@ -175,7 +175,57 @@ def _to_numpy(tensor) -> np.ndarray:
     return _backend_to_numpy(tensor).astype(float, copy=True)
 
 
-def _apply_scale(scale, min_key: str = "cmin", max_key: str = "cmax") -> dict:
+def _subplot_x_domain(backend_figure, row, col) -> tuple[float, float] | None:
+    """(x0, x1) of one grid cell, in paper-fraction coordinates - Plotly's
+    own resolved domain, read back rather than recomputed (make_subplots()
+    already accounted for spacing, subplot titles, ...). None if that cell
+    doesn't exist."""
+    try:
+        subplot = backend_figure.get_subplot(row, col)
+    except (ValueError, KeyError):
+        return None
+    if subplot is None:
+        return None
+    domain = getattr(subplot, "domain", None)  # a 3D "scene" subplot
+    return domain.x if domain is not None else subplot.xaxis.domain  # a 2D "xy" subplot
+
+
+def _colorbar_position(backend_figure, row, col) -> dict | None:
+    """A colorbar position/size confined to the gap right of this trace's
+    own subplot cell, sized to reliably fit there - None outside a
+    faceted/multi-panel grid, where the caller's own default position is
+    already fine as-is.
+
+    `x` is the midpoint of the actual gap between this cell and the next
+    one in the same row, not a fixed offset guessing where that gap is -
+    a fixed offset plus Plotly's default colorbar width (30px) can exceed
+    a tight gap and spill onto the next cell entirely, which is what "the
+    colorbar sits on top of the next plot" was: `thickness` is also
+    pinned to a narrow, known pixel width for the same reason - relying on
+    Plotly's default leaves the actual rendered width (and thus whether it
+    fits) up to the figure's overall pixel size, not this cell's own
+    fraction of it. The last column has no next cell to center within, so
+    it falls back to a small fixed margin past its own right edge - the
+    same case a single, ungridded panel is in.
+    """
+    if row is None or col is None:
+        return None
+    domain = _subplot_x_domain(backend_figure, row, col)
+    if domain is None:
+        return None
+    x0, x1 = domain
+    subplot = backend_figure.get_subplot(row, col)
+    y_domain = getattr(subplot, "domain", None)
+    y0, y1 = y_domain.y if y_domain is not None else subplot.yaxis.domain
+
+    next_domain = _subplot_x_domain(backend_figure, row, col + 1)
+    x = (x1 + next_domain[0]) / 2 if next_domain is not None else x1 + 0.02
+    return dict(x=x, y=(y0 + y1) / 2, len=y1 - y0, thickness=14, thicknessmode="pixels")
+
+
+def _apply_scale(
+    scale, min_key: str = "cmin", max_key: str = "cmax", backend_figure=None, row=None, col=None
+) -> dict:
     """cmin/cmax/showscale kwargs for a trace, given a plot's ColorSpec.scale.
 
     Without a shared Scale (scale is None), the backend infers its own range
@@ -184,16 +234,38 @@ def _apply_scale(scale, min_key: str = "cmin", max_key: str = "cmax") -> dict:
     trace to claim it shows a colorbar - see Scale.claim_colorbar().
     min_key/max_key differ per Plotly trace type (go.Heatmap uses zmin/zmax,
     go.Surface and go.Mesh3d use cmin/cmax).
+
+    backend_figure/row/col (all optional - a caller drawing into a facet/
+    panel grid has them on hand already) place the colorbar within that
+    cell instead of Plotly's own figure-wide default position, which
+    several visible colorbars would otherwise collide at.
     """
     if scale is None:
-        return {"showscale": True}
-    show = scale.claim_colorbar()
-    kwargs = {"showscale": show}
-    rng = scale.range
-    if rng is not None:
-        kwargs[min_key], kwargs[max_key] = rng
+        kwargs = {"showscale": True}
+        show = True
+    else:
+        show = scale.claim_colorbar()
+        kwargs = {"showscale": show}
+        rng = scale.range
+        if rng is not None:
+            kwargs[min_key], kwargs[max_key] = rng
     if show:
-        kwargs["colorbar"] = dict(x=1.02)
+        # A shared Scale's colorbar goes after every panel referencing it
+        # (Figure._assign_colorbar_cells() already resolved that to one
+        # cell), not just this trace's own - it's one colorbar for the
+        # whole group, so it belongs at the group's own right edge.
+        target_row, target_col = row, col
+        if scale is not None and scale.colorbar_cell is not None:
+            target_row, target_col = scale.colorbar_cell
+        position = (
+            _colorbar_position(backend_figure, target_row, target_col)
+            if backend_figure is not None
+            else None
+        )
+        if position is not None:
+            kwargs["colorbar"] = position
+        elif scale is not None:
+            kwargs["colorbar"] = dict(x=1.02)
     return kwargs
 
 

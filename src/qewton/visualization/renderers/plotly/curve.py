@@ -14,7 +14,7 @@ class LineArtist(PlotlyArtist):
             x=result.x,
             y=result.y,
             mode="lines",
-            name=plot.label or plot.y.name,
+            name=plot.label or plot.y.math_name,
             line=dict(width=plot.theme.line_width, color=_cycled_color(plot)),
             opacity=plot.theme.opacity_default,
         )

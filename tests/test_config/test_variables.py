@@ -12,7 +12,7 @@ class TestLeafNames:
 
     def test_an_auto_expanded_variable_returns_its_component_names(self):
         pos = Variable("pos", 3)
-        assert pos.leaf_names == {"pos_0", "pos_1", "pos_2"}
+        assert pos.leaf_names == {"pos_1", "pos_2", "pos_3"}
 
 
 class TestPrune:
@@ -20,7 +20,7 @@ class TestPrune:
         """The whole point: a variable nothing needs to cut stays whole -
         confirmed by identity, not just structural equality."""
         pos = Variable("pos", 3)
-        assert pos.prune({"pos_0", "pos_1", "pos_2"}) is pos
+        assert pos.prune({"pos_1", "pos_2", "pos_3"}) is pos
 
     def test_drops_a_leaf_not_in_keep_names(self):
         x, y = Variable("x", 1), Variable("y", 1)

@@ -35,7 +35,7 @@ class Variable:
                     self.children = []
                 else:
                     self.children = [
-                        Variable(f"{name}_{i}", dim=1, parent=self) for i in range(dim)
+                        Variable(f"{name}_{i+1}", dim=1, parent=self) for i in range(dim)
                     ]
                 self.dim = dim
             if isinstance(dim, tuple):
