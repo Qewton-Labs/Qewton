@@ -1,5 +1,5 @@
 from qewton.algorithms.building_blocks import ParameterNode
-from qewton import save, load
+from qewton.config.saving.callables import save, load
 from qewton.algorithms.building_blocks import Add, Multiply, ReLU
 from qewton.algorithms.building_blocks import Reshape
 from qewton.algorithms.dl_models.fcn import FCN, DeepRitzNet

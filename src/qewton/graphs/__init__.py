@@ -7,8 +7,6 @@ from .nodes import (
     OutputPort,
     Port,
     NodeState,
-    NodeConfig,
-    NODE_REGISTRY,
     NO_DEFAULT,
 )
 from .control_nodes.graph_node import GraphNode, TrackedNode, CopiedNode, FromFunctionNode

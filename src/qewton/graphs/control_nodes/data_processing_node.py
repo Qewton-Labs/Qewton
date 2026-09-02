@@ -1,4 +1,4 @@
-from qewton.graphs.nodes import Node, NodeState, NodeConfig
+from qewton.graphs.nodes import Node, NodeState
 from qewton.backends.base import Backend, TensorType
 from qewton.backends import DEFAULT_DL_BACKEND
 

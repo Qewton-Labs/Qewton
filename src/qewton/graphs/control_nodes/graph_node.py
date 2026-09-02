@@ -2,8 +2,8 @@ from __future__ import annotations
 from typing import Callable
 import inspect
 
-from qewton.graphs.nodes import InputPort, Node, NodeConfig, OutputPort, Port
-from qewton.graphs.graphs import Graph, GraphConfig
+from qewton.graphs.nodes import InputPort, Node, OutputPort, Port
+from qewton.graphs.graphs import Graph
 from qewton.backends import Backend, TensorType
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -415,44 +415,6 @@ class GraphNode(Node[TensorType]):
         input_ports_dict = dict(zip(outer_input_ports, input_port_list))
         output_ports_dict = dict(zip(outer_output_ports, output_ports))
         return graph, input_ports_dict, output_ports_dict
-
-    def config_dict(self) -> NodeConfig:
-        default_dict = super().config_dict()
-        default_dict.nested_graphs = {"graph": self._graph}
-        return default_dict
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig) -> Node:
-        g_node: GraphNode = Node.load_from_config(config)  # type: ignore
-        # If the graph was not saved, we cannot load it,
-        # so we return the node as is (for example some nodes just have
-        # a simple computation graph which we can always reconstruct
-        # from the given input parameters instead of saving it)
-        if "graph" not in config.nested_graphs:
-            return g_node
-
-        graph_config: GraphConfig = config.nested_graphs["graph"]
-        saved_graph = Graph.load_from_graph_config(graph_config)
-
-        old_input_connections = []
-        old_output_connections = []
-        for node in saved_graph.nodes:
-            for e in graph_config.edges_from_outside:
-                if e[2] == node.node_id:
-                    old_input_connections.append(node.input_ports[e[3]])
-            for e in graph_config.edges_to_outside:
-                if e[0] == node.node_id:
-                    old_output_connections.append(node.output_ports[e[1]])
-        g_node.setup_graph(
-            saved_graph,
-            input_ports=old_input_connections,
-            output_ports=old_output_connections,
-        )
-        # print(f"Loaded GraphNode {g_node.name} with id {g_node.node_id}")
-        # for node in g_node._graph.sorted_nodes:
-        #     print(f"Node {node.name} with id {node.node_id}")
-
-        return g_node
 
 
 class FromFunctionNode(GraphNode):

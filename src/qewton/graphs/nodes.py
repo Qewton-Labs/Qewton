@@ -1,7 +1,6 @@
 from __future__ import annotations
 from abc import ABC
 from copy import deepcopy
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
     Any,
@@ -25,17 +24,31 @@ from qewton.optim.parameters.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )
-from qewton.config.saving.saving import Serializable, Serializer, Deserializer
+from qewton.config.saving.saving import Serializable, Serializer
+from qewton.config.saving.loading import Deserializer
 from qewton.config.saving.schema_keys import SavingKeys
 
 # region: Ports
 
 
-class NO_DEFAULT:
+class NO_DEFAULT(Serializable):
     """Sentinel value to denote that no default value is provided for a parameter."""
 
+    @classmethod
+    def save(cls, serializer: Serializer) -> None:
+        node_config = {
+            SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
+            SavingKeys.KEY_CLASS: cls.__name__,
+            SavingKeys.KEY_MODULE: cls.__module__,
+        }
+        serializer.set_serialization_data(id(cls), node_config)
 
-class Port:
+    @classmethod
+    def construct_new_object(cls, serializer: Deserializer, data_config: dict) -> Any:
+        return cls  # Return the class itself, as backends are stateless and don't require instantiation
+
+
+class Port(Serializable):
     """Represents an input or output connection of a node. Ports can be connected
     in a graph to create a computation graph structure.
     Each port has a data configuration that denotes the expected shape of the data
@@ -162,10 +175,6 @@ class OutputPort(Port):
 
 # endregion
 # region: Node Properties
-# A registry of all node types that have been defined. This is used to
-# reconstruct nodes from their type identifier when loading a graph
-# from a file.
-NODE_REGISTRY: dict[str, type[Node]] = {}
 
 
 class NodeState(Enum):
@@ -192,7 +201,7 @@ class NodeState(Enum):
 # region: Main Node Class
 
 
-class Node(ABC, Generic[TensorType], Serializable):
+class Node(ABC, Serializable, Generic[TensorType]):
     """Base class for all nodes to create a graph.
 
     Args:
@@ -554,24 +563,6 @@ class Node(ABC, Generic[TensorType], Serializable):
         from .control_nodes.graph_node import CopiedNode
 
         return CopiedNode(self)
-
-    def save(self, serializer: Serializer) -> None:
-        self_args = []
-        self_keys = []
-        for k, v in self.__dict__.items():
-            self_args.append(v)
-            self_keys.append(k)
-        idx_mapping = serializer.add_objects(self, self_args)
-        node_config = {
-            SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
-            SavingKeys.KEY_CLASS: self.__class__.__name__,
-            SavingKeys.KEY_MODULE: self.__class__.__module__,
-            SavingKeys.KEY_SELF_ARGS: dict(zip(self_keys, idx_mapping)),
-        }
-        serializer.set_serialization_data(id(self), node_config)
-
-    def load(self, serializer: Deserializer) -> None:
-        pass
 
 
 # endregion

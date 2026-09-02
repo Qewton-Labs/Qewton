@@ -7,8 +7,7 @@ from warnings import warn
 
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.errors import DataConfigMismatchError
-from qewton.config.saving.saving import Serializer, Deserializer, Serializable
-from qewton.config.saving.schema_keys import SavingKeys
+from qewton.config.saving.saving import Serializable
 from qewton.graphs.nodes import InputPort, Node, EvaluationPhase, OutputPort, Port
 from qewton.graphs.control_nodes.data_processing_node import DataProcessingNode
 from qewton.optim.parameters.trainable_parameters import TrainableParametersCollection
@@ -601,57 +600,6 @@ class Graph(Serializable):
             TrackingObject.current_graph_tracked = prev_tracked_graph
             if TrackingObject.current_graph_tracked is None:
                 Node.set_tracking(False)
-
-    def save(self, serializer: Serializer) -> None:
-        graph_config = {
-            SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
-            SavingKeys.KEY_CLASS: self.__class__.__name__,
-            SavingKeys.KEY_MODULE: self.__class__.__module__,
-            SavingKeys.KEY_SELF_ARGS: {
-                "nodes": serializer.add_objects(self, list(self.nodes)),
-                "inner_edges": [
-                    self._build_edge_mapping(edge)
-                    for node in self.nodes
-                    for edge in self.outgoing_edges[node]
-                ],
-                "incoming_edges_from_outside": [
-                    self._build_edge_mapping(edge) for edge in self.edges_from_outside
-                ],
-                "outgoing_edges_to_outside": [
-                    self._build_edge_mapping(edge) for edge in self.edges_to_outside
-                ],
-            },
-        }
-        serializer.set_serialization_data(id(self), graph_config)
-
-    def _build_edge_mapping(self, edge: Edge) -> tuple[int, int, int, int]:
-        """
-        Constructs a tuple representing the mapping of an edge in the graph.
-
-        Args:
-            edge (Edge): The edge for which the mapping is to be built.
-
-        Returns:
-            tuple[int, int, int, int]: A tuple containing the IDs and port indices
-                of the source and destination nodes connected by the edge.
-        """
-        from_node_id = edge.from_port.node.node_id
-        to_node_id = edge.to_port.node.node_id
-        if isinstance(edge.from_port, OutputPort):
-            from_port_idx = edge.from_port.node.output_ports.index(edge.from_port)
-        elif isinstance(edge.from_port, InputPort):
-            from_port_idx = edge.from_port.node.input_ports.index(edge.from_port)
-        else:
-            raise ValueError(
-                f"Unexpected port type for from_port: {type(edge.from_port)}"
-            )
-        if isinstance(edge.to_port, InputPort):
-            to_port_idx = edge.to_port.node.input_ports.index(edge.to_port)
-        elif isinstance(edge.to_port, OutputPort):
-            to_port_idx = edge.to_port.node.output_ports.index(edge.to_port)
-        else:
-            raise ValueError(f"Unexpected port type for to_port: {type(edge.to_port)}")
-        return (from_node_id, from_port_idx, to_node_id, to_port_idx)
 
 
 class SequentialGraph(Graph):
