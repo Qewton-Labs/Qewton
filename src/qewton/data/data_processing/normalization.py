@@ -7,7 +7,7 @@ from qewton.data.dataloaders.base import DataNode
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.optim.base import EvaluationPhase
-from qewton.graphs.nodes import NodeState, NodeConfig, Node
+from qewton.graphs.nodes import NodeState, Node
 from qewton.graphs.graphs import Graph
 from qewton.config.axes import EllipsisAxes, BatchAxes
 from qewton.config.data_configurations import DataConfiguration
@@ -101,29 +101,6 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
         self.input_ports[0].set_value(x)
         self.run()
         return self.output_ports[0].value  # type: ignore
-
-    def config_dict(self) -> NodeConfig:
-        basic_config = super().config_dict()
-        if hasattr(self, "mean"):
-            basic_config.other_args["mean"] = self.mean
-            basic_config.other_args["std"] = self.std
-        return basic_config
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig) -> Node:
-        norm_node: StdNormalizationNode = super().load_from_config(config)  # type: ignore
-        # Set the correct sub and divide nodes:
-        for node in norm_node._graph.nodes:
-            if isinstance(node, Subtract):
-                norm_node.sub_node = node
-            elif isinstance(node, Divide):
-                norm_node.divide_node = node
-        # Restore the mean and std if they are present in the config:
-        if "mean" in config.other_args:
-            norm_node.mean = config.other_args["mean"]
-            norm_node.std = config.other_args["std"]
-            norm_node._set_port_values(norm_node.mean, norm_node.std)  # type: ignore
-        return norm_node
 
 
 class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]):

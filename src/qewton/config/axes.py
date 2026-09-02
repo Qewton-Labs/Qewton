@@ -3,6 +3,7 @@ from types import EllipsisType
 
 from qewton.config.variables import Variable
 from qewton.config.errors import DataConfigMismatchError
+from qewton.config.saving.saving import Serializable
 
 
 def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
@@ -91,7 +92,7 @@ def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
     return matching_middle_start, matching_middle_end
 
 
-class Axes:
+class Axes(Serializable):
     """
     Represents a collection of axes (dimensions) for data, including their
     sizes and types.
@@ -587,7 +588,7 @@ class EllipsisAxes(Axes):
         return "..."
 
 
-class AxesDim:
+class AxesDim(Serializable):
     """
     Represents a single dimension within a set of axes, with an optional size and
     broadcastability.

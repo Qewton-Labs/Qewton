@@ -10,7 +10,7 @@ from qewton.backends import DEFAULT_DL_BACKEND, ComputingBackend, TensorType
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import FeatureAxes, EllipsisAxes, AxesDim
 from qewton.graphs.graphs import Graph
-from qewton.graphs.nodes import NodeConfig, NodeState, Node
+from qewton.graphs.nodes import NodeState, Node
 from qewton.config.variables import Variable
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.optim.parameters.hyperparameter_base import HyperParameter

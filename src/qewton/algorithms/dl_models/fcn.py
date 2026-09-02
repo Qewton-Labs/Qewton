@@ -8,7 +8,7 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.config.axes import FeatureAxes, EllipsisAxes
 from qewton.graphs.graphs import SequentialGraph, Graph
-from qewton.graphs.nodes import Node, NodeState, NodeConfig
+from qewton.graphs.nodes import Node, NodeState
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 

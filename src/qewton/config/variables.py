@@ -3,8 +3,10 @@ from collections import OrderedDict
 from math import prod
 from typing import Optional
 
+from qewton.config.saving.saving import Serializable
 
-class Variable(OrderedDict):
+
+class Variable(OrderedDict, Serializable):
     """Creates a variable of the given problem. Helps for a natural
     implementation of the problem and internal tracking.
 

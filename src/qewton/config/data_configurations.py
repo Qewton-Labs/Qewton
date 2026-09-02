@@ -11,14 +11,17 @@ from qewton.config.axes import (
     AxesDim,
 )
 from qewton.config.errors import DataConfigMismatchError
+from qewton.config.saving.loading import Deserializer
+from qewton.config.saving.schema_keys import SavingKeys
 from qewton.config.variables import Variable
+from qewton.config.saving.saving import Serializable, Serializer
 
 ## TODO: could we simplify the config passing to use common AxesDim
 # objects nearly around the whole graph? this would allow for less
 # passing operations and less objects.
 
 
-class DataConfiguration:
+class DataConfiguration(Serializable):
     """A *DataConfiguration* describes the expected structure of the data,
     including the axes and their dimensions, as well as the data type.
     It is used to ensure that the data being passed through the graph
@@ -421,3 +424,23 @@ class DataConfiguration:
             else:
                 slc.extend([slice(None)] * len(axes.shape))  # type: ignore
         return tuple(slc)
+
+    def save(self, serializer: Serializer) -> None:
+        axes_idx = serializer.add_objects(self, [self.axes])
+        data_config = {
+            SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
+            SavingKeys.KEY_CLASS: self.__class__.__name__,
+            SavingKeys.KEY_MODULE: self.__class__.__module__,
+            "axes": axes_idx[0],
+            "dtype": str(self.dtype),
+        }
+        serializer.set_serialization_data(id(self), data_config)
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        from qewton.backends.base import TensorType
+
+        # TODO: How to handle the dtypes?
+        dtype = data_config.get("dtype", None)
+        if isinstance(dtype, str) and dtype == "~TensorType":
+            self.dtype = TensorType

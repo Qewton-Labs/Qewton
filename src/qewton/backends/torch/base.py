@@ -94,14 +94,14 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
         return data.type(cls.dtypes.get(dtype, dtype))
 
     @classmethod
-    def save(cls, data, path: str | Path):
+    def save_data(cls, data, path: str | Path):
         path = Path(path)
         if path.suffix != ".pt":
             path = path.with_suffix(".pt")
         return torch.save(data, path)
 
     @classmethod
-    def load(cls, path: str | Path):
+    def load_data(cls, path: str | Path):
         path = Path(path)
         if path.suffix != ".pt":
             path = path.with_suffix(".pt")

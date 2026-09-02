@@ -14,7 +14,7 @@ from qewton.data.data_processing.normalization import (
     InverseStdNormalizationNode,
 )
 from qewton.optim.base import EvaluationPhase
-from qewton.graphs.nodes import Node, NodeConfig, NodeState
+from qewton.graphs.nodes import NodeState
 from qewton.graphs.graphs import Graph
 from qewton.config.axes import EllipsisAxes, FeatureAxes
 from qewton.config.data_configurations import DataConfiguration
@@ -239,27 +239,3 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
         if self.normalize_data.current_value:
             pca_transformed_output = self.inverse_normalization(pca_transformed_output)
         return pca_transformed_output
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig) -> Node:
-        pca_net: PCANet = super().load_from_config(config)  # type: ignore
-        # Reasign the inner nodes to the correct attributes of the PCANet
-        # instance
-        for node in pca_net._graph.nodes:
-            if isinstance(node, FCN):
-                pca_net.fcn = node
-            elif isinstance(node, PCANode):
-                if node.n is pca_net.pca_n_input:
-                    pca_net.input_pca = node
-                else:
-                    pca_net.output_pca = node
-            elif isinstance(node, InversePCANode):
-                pca_net.inverse_pca = node
-            elif isinstance(node, StdNormalizationNode):
-                if node.name == "Input Normalization":
-                    pca_net.normalize_input = node
-                elif node.name == "Output Normalization":
-                    pca_net.normalize_output = node
-            elif isinstance(node, InverseStdNormalizationNode):
-                pca_net.inverse_normalization = node
-        return pca_net

@@ -15,7 +15,7 @@ from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.graphs.graphs import Graph
-from qewton.graphs.nodes import Node, NodeState, NodeConfig
+from qewton.graphs.nodes import Node, NodeState
 from qewton.graphs.control_nodes.graph_node import GraphNode
 
 # region: Convolutions

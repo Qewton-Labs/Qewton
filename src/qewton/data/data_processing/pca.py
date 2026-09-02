@@ -11,7 +11,6 @@ from qewton.graphs.nodes import NodeState
 from qewton.graphs.graphs import Graph
 from qewton.config.axes import EllipsisAxes, BatchAxes, AxesDim, FeatureAxes
 from qewton.config.data_configurations import DataConfiguration
-from qewton.graphs.nodes import Node, NodeConfig
 
 
 class PCANode(DataProcessingNode[TensorType]):
@@ -145,26 +144,6 @@ class PCANode(DataProcessingNode[TensorType]):
             scaling = self.pca_s * math.sqrt(1 / (len(self.pca_u) - 1))
             pca_coefficients /= scaling
         return pca_coefficients, self.pca_u, self.pca_s, self.pca_v
-
-    def config_dict(self) -> NodeConfig:
-        cfg = super().config_dict()
-        if hasattr(self, "pca_v"):
-            cfg.other_args["pca_v"] = self.pca_v
-            cfg.other_args["pca_s"] = self.pca_s
-            cfg.other_args["pca_u"] = self.pca_u
-            cfg.other_args["original_shape"] = self.original_shape
-        return cfg
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig) -> Node:
-        pca_node: PCANode = super().load_from_config(config)  # type: ignore
-        if "pca_v" in config.other_args:
-            pca_node.pca_v = config.other_args["pca_v"]
-            pca_node.pca_s = config.other_args["pca_s"]
-            pca_node.pca_u = config.other_args["pca_u"]
-            pca_node.original_shape = config.other_args["original_shape"]
-            pca_node._set_port_values(pca_node.pca_u, pca_node.pca_s, pca_node.pca_v)
-        return pca_node
 
 
 class InversePCANode(DataProcessingNode[TensorType]):

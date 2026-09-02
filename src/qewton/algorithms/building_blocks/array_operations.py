@@ -7,7 +7,7 @@ from qewton.backends.base import DeepLearningBackend
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.config.variables import Variable
-from qewton.graphs.nodes import NO_DEFAULT, NodeConfig, Port, InputPort, OutputPort, Node
+from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort, Node
 
 
 # region: Slicing and value setting
@@ -101,19 +101,6 @@ class Slice(Node[TensorType]):
             return slice(start, stop, step)
         else:
             return int(slice_str)
-
-    @classmethod
-    def load_from_config(cls, config: NodeConfig) -> Node:
-        if isinstance(config.other_args["slice_config"], str):
-            config.other_args["slice_config"] = cls._string_to_slice(
-                config.other_args["slice_config"]
-            )
-        elif isinstance(config.other_args["slice_config"], tuple):
-            slice_tuple = tuple(
-                cls._string_to_slice(s) for s in config.other_args["slice_config"]
-            )
-            config.other_args["slice_config"] = slice_tuple
-        return super().load_from_config(config)
 
 
 class SplitVariables(Node[TensorType]):
