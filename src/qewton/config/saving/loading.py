@@ -1,12 +1,21 @@
+import logging
 from typing import Any
 from pathlib import Path
 import json
 import importlib
+import gzip
 
 from qewton.config.saving.schema_keys import SavingKeys, ALLOWED_MODULE_PREFIXES
 
 
 class Deserializer:
+    """Handles the deserialization of objects from a saved state,
+    reconstructing them based on their serialized representation.
+
+    Args:
+        path (str | Path): The path from which to load the serialized data.
+    """
+
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.parameter_path = self.path / SavingKeys.FILE_PARAMETERS
@@ -22,25 +31,42 @@ class Deserializer:
 
         # Check for version mismatch
         with config_path.open("r", encoding="utf-8") as f:
-            config_data: dict = json.load(f)
-        assert config_data.get(SavingKeys.KEY_VERSION) != SavingKeys.VERSION, (
+            self.config_data: dict = json.load(f)
+        assert self.config_data.get(SavingKeys.KEY_VERSION) != SavingKeys.VERSION, (
             f"Schema version mismatch: expected {SavingKeys.VERSION}, "
-            f"found {config_data.get(SavingKeys.KEY_VERSION)}"
+            f"found {self.config_data.get(SavingKeys.KEY_VERSION)}"
         )
 
         self.obj_finished_loading: dict[int, bool] = {}
         self.ready_to_reference: dict[int, bool] = {}
         self.id_to_obj: dict[int, Any] = {}
+        self.reference_node = None  # Placeholder for a reference node, if needed
 
         from qewton.backends import BACKEND_DICT
 
         self.backend_dict = BACKEND_DICT
 
     def load(self):
+        """Loads the serialized data from the specified path and
+        reconstructs the objects. Saves the reconstructed objects in
+        the `id_to_obj` dictionary,
+
+        Raises:
+            RuntimeError: If there are circular dependencies or missing
+                dependencies that prevent the complete loading of objects.
+        """
+        logger = logging.getLogger(__name__)
+        logger.info("Loading from %s", self.path)
+
         from qewton.config.saving.saving import Serializable
 
-        with open(self.path / SavingKeys.FILE_DATA, "r", encoding="utf-8") as f:
-            data: dict = json.load(f)
+        data_file = self.path / SavingKeys.FILE_DATA
+        if self.config_data.get(SavingKeys.KEY_COMPRESSED, False):
+            with gzip.open(data_file, "rt", encoding="utf-8") as f:
+                data: dict = json.load(f)
+        else:
+            with open(self.path / SavingKeys.FILE_DATA, "r", encoding="utf-8") as f:
+                data: dict = json.load(f)
 
         # First pass: create all objects without setting their attributes
         for obj_id, obj_data in data.items():
@@ -115,8 +141,29 @@ class Deserializer:
                 )
             queue = remaining_queue
 
+        # Update the node counter
+        if self.reference_node is not None:
+            from qewton.graphs.nodes import Node
+
+            Node._node_id_counter = (  # pylint: disable=W0212
+                self.reference_node.node_id + 1
+            )
+
+        logger.info("Loading completed!")
+
     def _check_dependence_ready(self, obj_ids: list[int]) -> bool:
         return all(self.ready_to_reference.get(v_id, False) for v_id in obj_ids)
+
+    def update_reference_node(self, node) -> None:
+        """Updates the reference node to ensure unique node IDs.
+
+        Args:
+            node: The node to be set as the reference node.
+        """
+        if self.reference_node is not None:
+            if node.node_id <= self.reference_node.node_id:
+                return
+        self.reference_node = node
 
     def _create_object(self, obj_data: dict, obj_id: int) -> Any:
         assert (

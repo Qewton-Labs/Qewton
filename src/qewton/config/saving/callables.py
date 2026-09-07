@@ -5,15 +5,18 @@ from qewton.config.saving.saving import Serializable, Serializer
 from qewton.config.saving.loading import Deserializer
 
 
-def save(obj: Serializable, path: str | Path, replace: bool = False) -> None:
+def save(
+    obj: Serializable, path: str | Path, replace: bool = False, compress=False
+) -> None:
     """Saves a Serializable object to the specified path.
 
     Args:
         obj (Serializable): The object to be saved.
         path (str | Path): The path where the object will be saved.
         replace (bool, optional): If True, replaces existing files. Defaults to False.
+        compress (bool, optional): If True, compresses the saved files. Defaults to False.
     """
-    serializer = Serializer(path, replace)
+    serializer = Serializer(path, replace=replace, compress=compress)
     obj.save(serializer)
     serializer.save()
 

@@ -9,6 +9,7 @@ class SavingKeys:
 
     KEY_TYPE = "type"
     KEY_VALUES = "values"
+    KEY_COMPRESSED = "compressed"
 
     KEY_LIST = "list"
     KEY_TUPLE = "tuple"

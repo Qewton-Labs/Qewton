@@ -5,9 +5,10 @@ from abc import ABC, abstractmethod
 
 
 from qewton.config.data_configurations import DataConfiguration
+from qewton.config.saving.saving import Serializable
 
 
-class DataSet(ABC):
+class DataSet(ABC, Serializable):
     """Abstract base class for all datasets.
 
     A DataSet provides a standard interface for accessing data samples,

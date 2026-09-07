@@ -2,6 +2,7 @@ from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 from pathlib import Path
 import json
+import gzip
 import os
 import logging
 import shutil
@@ -11,7 +12,18 @@ from qewton.config.saving.loading import Deserializer
 
 
 class Serializer:
-    def __init__(self, path: str | Path, replace: bool = False) -> None:
+    """Handles the serialization of objects into a structured format
+    for saving to disk.
+
+    Args:
+        path (str | Path): The path where the serialized data will be saved.
+        replace (bool, optional): If True, replaces existing files.
+            Defaults to False.
+        compress (bool, optional): If True, compresses the saved files.
+            Defaults to False.
+    """
+
+    def __init__(self, path: str | Path, replace: bool = False, compress=False) -> None:
         self.original_path = Path(path)
         if self.original_path.exists() and not replace:
             raise FileExistsError(f"The path {path} already exists. \
@@ -19,7 +31,7 @@ class Serializer:
 
         self.path = Path(str(self.original_path) + "_temp")
         self.parameter_path = self.path / SavingKeys.FILE_PARAMETERS
-
+        self.compress = compress
         # create the temporary directory for saving
         if not self.path.exists():
             os.makedirs(self.path)
@@ -35,6 +47,24 @@ class Serializer:
         self.backend_dict = BACKEND_DICT
 
     def add_objects(self, parent_obj, objects: list) -> list[int]:
+        """Adds a list of objects to the serialization dictionary,
+        assigning each a unique index. The index depends on the internal
+        python id and whether the object has already been added to the Serializer.
+
+        Args:
+            parent_obj (_type_): The original object that is adding the objects.
+                This is used for error reporting and circumvent circular references.
+            objects (list): All objects that should be added to the
+                serialization dictionary.
+
+        Raises:
+            TypeError: If an object is not serializable, a TypeError is raised.
+
+        Returns:
+            list[int]: The list of indices corresponding to the added objects.
+            Each index maps to the position of the object in the
+            serialization dictionary.
+        """
         index_mapping = []
 
         if id(parent_obj) not in self.id_dictionary:
@@ -133,6 +163,10 @@ class Serializer:
         self.id_dictionary[obj_id] = data
 
     def save(self) -> None:
+        """Saves all data stored in the Serializer to disk. It writes
+        the serialized data to a JSON file, or compresses it if specified.
+        It also saves general configuration data to a separate JSON file.
+        """
         logger = logging.getLogger(__name__)
         logger.info("Saving to %s", self.path)
 
@@ -141,13 +175,18 @@ class Serializer:
         for k, v in self.id_dictionary.items():
             saving_dict[self._id_idx_mapping[k]] = v
 
-        with open(self.path / SavingKeys.FILE_DATA, "w", encoding="utf-8") as f:
-            f.write(json.dumps(saving_dict, indent=4))
+        if self.compress:
+            with gzip.open(self.path / SavingKeys.FILE_DATA, "wt", encoding="utf-8") as f:
+                f.write(json.dumps(saving_dict, indent=4))
+        else:
+            with open(self.path / SavingKeys.FILE_DATA, "w", encoding="utf-8") as f:
+                f.write(json.dumps(saving_dict, indent=4))
 
         # Save some general configuration data to a separate JSON file in the
         # temporary directory
         config_data = {
             SavingKeys.VERSION: SavingKeys.KEY_VERSION,
+            SavingKeys.KEY_COMPRESSED: self.compress,
         }
         with open(self.path / SavingKeys.FILE_CONFIG, "w", encoding="utf-8") as f:
             f.write(json.dumps(config_data, indent=4))

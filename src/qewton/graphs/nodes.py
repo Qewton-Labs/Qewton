@@ -73,6 +73,9 @@ class Port(Serializable):
         self.node = node
         self.name = name
         self._value = None
+        self.value_persists = (
+            False  # By default, output values do not persist after a graph run
+        )
 
     @property
     def data_configuration(self) -> DataConfiguration:
@@ -123,6 +126,18 @@ class Port(Serializable):
         """Returns the value stored in this port."""
         return self._value
 
+    def make_persistent(self):
+        """Denotes that the value of this port should persist after a
+        graph run and also be saved."""
+        self.value_persists = True
+
+    def save(self, serializer: Serializer) -> None:
+        current_value = self.value
+        if not self.value_persists:
+            self._value = None
+        super().save(serializer)
+        self._value = current_value  # Restore the value after saving
+
 
 class InputPort(Port):
     """Denotes an input port of a node.
@@ -171,21 +186,6 @@ class OutputPort(Port):
         self, data_configuration: DataConfiguration, node: Node, name: str = "Output"
     ):
         super().__init__(data_configuration, node, name)
-        self.value_persists = (
-            False  # By default, output values do not persist after a graph run
-        )
-
-    def make_persistent(self):
-        """Denotes that the value of this output port should persist after a
-        graph run and also be saved."""
-        self.value_persists = True
-
-    def save(self, serializer: Serializer) -> None:
-        current_value = self.value
-        if not self.value_persists:
-            self._value = None
-        super().save(serializer)
-        self._value = current_value  # Restore the value after saving
 
 
 # endregion
@@ -578,6 +578,13 @@ class Node(ABC, Serializable, Generic[TensorType]):
         from .control_nodes.graph_node import CopiedNode
 
         return CopiedNode(self)
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        # To ensure unique node IDs across different graphs,
+        # we update the node ID counter
+        self.node_id += Node._node_id_counter
+        serializer.update_reference_node(self)
 
 
 # endregion
