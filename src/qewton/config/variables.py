@@ -3,7 +3,9 @@ from collections import OrderedDict
 from math import prod
 from typing import Optional
 
+from qewton.config.saving.loading import Deserializer
 from qewton.config.saving.saving import Serializable
+from qewton.config.saving.schema_keys import SavingKeys
 
 
 class Variable(OrderedDict, Serializable):
@@ -192,3 +194,19 @@ class Variable(OrderedDict, Serializable):
         if isinstance(val, (list, tuple)):
             return self.from_dict({k: int(self[k]) for k in val})
         return super().__getitem__(val)
+
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        """
+        Collects all attributes of the object that should be serialized.
+        By default, it collects all attributes in the object's __dict__.
+        """
+        self_args = []
+        self_keys = []
+        for k, v in self.items():
+            self_args.append(v)
+            self_keys.append(k)
+        return self_keys, self_args
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        for k, v in data_config[SavingKeys.KEY_SELF_ARGS].items():
+            self[k] = serializer.id_to_obj[v]

@@ -22,6 +22,7 @@ class SavingKeys:
     KEY_MODULE = "module"
     KEY_ELLIPSIS = "..."
     KEY_BACKEND_PARAMETER = "backend_param"
+    KEY_SLICE = "slice"
 
     NODE_ID = "node_id"
     NODE_MODE = "node_mode"

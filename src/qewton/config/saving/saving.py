@@ -59,6 +59,11 @@ class Serializer:
                 self.id_dictionary[obj_id] = {
                     SavingKeys.KEY_TYPE: SavingKeys.KEY_ELLIPSIS
                 }
+            if isinstance(obj, slice):
+                self.id_dictionary[obj_id] = {
+                    SavingKeys.KEY_TYPE: SavingKeys.KEY_SLICE,
+                    SavingKeys.KEY_VALUES: [obj.start, obj.stop, obj.step],
+                }
             if isinstance(obj, type):
                 self.id_dictionary[obj_id] = {
                     SavingKeys.KEY_TYPE: SavingKeys.KEY_CLASS_OBJ,

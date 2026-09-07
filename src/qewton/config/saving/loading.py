@@ -142,6 +142,10 @@ class Deserializer:
         if obj_type == SavingKeys.KEY_ELLIPSIS:
             self.obj_finished_loading[obj_id] = True
             return Ellipsis
+        if obj_type == SavingKeys.KEY_SLICE:
+            self.obj_finished_loading[obj_id] = True
+            start, stop, step = obj_data[SavingKeys.KEY_VALUES]
+            return slice(start, stop, step)
         if obj_type == SavingKeys.KEY_LIST:
             return []
         if obj_type == SavingKeys.KEY_TUPLE:
