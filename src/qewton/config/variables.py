@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from qewton.config.saving.saving import Serializable
 
-class Variable:
+
+class Variable(Serializable):
     """Order of children is now important."""
 
     def __deepcopy__(self, memo):
@@ -294,33 +296,3 @@ class Variable:
             if other in child:
                 return True
         return False
-
-    def __getitem__(self, val: str | slice | list[str] | tuple[str]):
-        if isinstance(val, slice):
-            keys = list(self.keys())
-            new_slice = slice(
-                keys.index(val.start) if val.start is not None else None,
-                keys.index(val.stop) if val.stop is not None else None,
-                val.step,
-            )
-            new_keys = keys[new_slice]
-            return self.from_dict({k: int(self[k]) for k in new_keys})
-        if isinstance(val, (list, tuple)):
-            return self.from_dict({k: int(self[k]) for k in val})
-        return super().__getitem__(val)
-
-    def _collect_serializable_attributes(self) -> tuple[list, list]:
-        """
-        Collects all attributes of the object that should be serialized.
-        By default, it collects all attributes in the object's __dict__.
-        """
-        self_args = []
-        self_keys = []
-        for k, v in self.items():
-            self_args.append(v)
-            self_keys.append(k)
-        return self_keys, self_args
-
-    def load(self, serializer: Deserializer, data_config: dict) -> None:
-        for k, v in data_config[SavingKeys.KEY_SELF_ARGS].items():
-            self[k] = serializer.id_to_obj[v]
