@@ -2,6 +2,8 @@ ALLOWED_MODULE_PREFIXES = ("qewton.",)
 
 
 class SavingKeys:
+    """Helper class that defines the keys used in the saving and loading process."""
+
     VERSION = "version"
     KEY_VERSION = 1
 
@@ -18,6 +20,7 @@ class SavingKeys:
     KEY_CLASS = "class"
     KEY_SELF_ARGS = "self_args"
     KEY_MODULE = "module"
+    KEY_ELLIPSIS = "..."
     KEY_BACKEND_PARAMETER = "backend_param"
 
     NODE_ID = "node_id"

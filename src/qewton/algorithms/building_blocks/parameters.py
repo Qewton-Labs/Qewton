@@ -27,6 +27,7 @@ class ParameterNode(Node[TensorType]):
         self.backend: DeepLearningBackend
         super().__init__(name, state=NodeState.UNINITIALIZED, backend=backend)
         self.output = self.output_ports[0]
+        self.output.make_persistent()
 
     def setup(self) -> None:
         if self.state == NodeState.UNINITIALIZED:

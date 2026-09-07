@@ -55,6 +55,10 @@ class Serializer:
 
             if isinstance(obj, (float, int, str, bool, type(None))):
                 continue  # Skip serialization for primitive types
+            if obj is Ellipsis:
+                self.id_dictionary[obj_id] = {
+                    SavingKeys.KEY_TYPE: SavingKeys.KEY_ELLIPSIS
+                }
             if isinstance(obj, type):
                 self.id_dictionary[obj_id] = {
                     SavingKeys.KEY_TYPE: SavingKeys.KEY_CLASS_OBJ,
@@ -132,18 +136,6 @@ class Serializer:
         for k, v in self.id_dictionary.items():
             saving_dict[self._id_idx_mapping[k]] = v
 
-        def find_bad_values(obj):
-            if isinstance(obj, dict):
-                for k, v in obj.items():
-                    find_bad_values(v)
-            elif isinstance(obj, list):
-                for i, v in enumerate(obj):
-                    find_bad_values(v)
-            elif not isinstance(obj, (str, int, float, bool, type(None))):
-                print(f"Non-serializable: {type(obj)} -> {obj!r}")
-
-        find_bad_values(saving_dict)
-
         with open(self.path / SavingKeys.FILE_DATA, "w", encoding="utf-8") as f:
             f.write(json.dumps(saving_dict, indent=4))
 
@@ -167,16 +159,37 @@ class Serializer:
 
 @runtime_checkable
 class Serializable(Protocol):
+    """A protocol that defines the interface for serializable objects.
+    Any class that implements this protocol should provide methods
+    for saving and loading its state.
+    By default, it collects all attributes in the object's __dict__
+    for serialization.
+    """
 
-    def save(self, serializer: Serializer) -> None:
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        """
+        Collects all attributes of the object that should be serialized.
+        By default, it collects all attributes in the object's __dict__.
+        """
         self_args = []
         self_keys = []
         for k, v in self.__dict__.items():
             self_args.append(v)
             self_keys.append(k)
+        return self_keys, self_args
+
+    def save(self, serializer: Serializer) -> None:
+        """The save method is responsible for serializing the object's state.
+        It collects the object's attributes and adds them to the serializer.
+
+        Args:
+            serializer (Serializer): The serializer instance that manages the
+                serialization process.
+        """
+        self_keys, self_args = self._collect_serializable_attributes()
         idx_mapping = serializer.add_objects(self, self_args)
         # TODO: Build one big dictionary with class names for qewton
-        # modules, so file changes dont break saving
+        # modules, so file changes dont break saving?
         node_config = {
             SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
             SavingKeys.KEY_CLASS: self.__class__.__name__,
@@ -187,9 +200,35 @@ class Serializable(Protocol):
 
     @classmethod
     def construct_new_object(cls, serializer: Deserializer, data_config: dict) -> Any:
+        """Generates a new instance of the class without calling its
+        __init__ method.
+
+        Args:
+            serializer (Deserializer): The deserializer instance that manages
+                the loading process.
+            data_config (dict): A dictionary containing the serialized data
+                for the object.
+
+        Returns:
+            Any: A new instance of the class, without calling its __init__ method.
+                The attributes will be set later.
+        """
         return cls.__new__(cls)  # Create a new instance without calling __init__
 
     def ready_to_load(self, serializer: Deserializer, data_config: dict) -> bool:
+        """Checks if all dependencies of the object are ready to be loaded.
+
+        Args:
+            serializer (Deserializer): The deserializer instance that manages
+                the loading process.
+            data_config (dict): A dictionary containing the serialized data
+                for the object.
+
+        Returns:
+            bool: If the object is ready to be loaded (i.e., all its
+                dependencies are ready).
+        """
+
         if SavingKeys.KEY_SELF_ARGS not in data_config:
             return True  # No attributes to set, so it's ready to load
         return all(
@@ -198,6 +237,15 @@ class Serializable(Protocol):
         )
 
     def load(self, serializer: Deserializer, data_config: dict) -> None:
+        """Loads the object's state from the serialized data.
+        It sets the object's attributes based on the serialized data.
+
+        Args:
+            serializer (Deserializer): The deserializer instance that manages
+                the loading process.
+            data_config (dict): A dictionary containing the serialized data
+                for the object.
+        """
         if SavingKeys.KEY_SELF_ARGS not in data_config:
             return  # No attributes to set
 

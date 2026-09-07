@@ -139,7 +139,9 @@ class Deserializer:
             )
             # Create instance without calling __init__
             return cls.construct_new_object(self, obj_data)
-
+        if obj_type == SavingKeys.KEY_ELLIPSIS:
+            self.obj_finished_loading[obj_id] = True
+            return Ellipsis
         if obj_type == SavingKeys.KEY_LIST:
             return []
         if obj_type == SavingKeys.KEY_TUPLE:

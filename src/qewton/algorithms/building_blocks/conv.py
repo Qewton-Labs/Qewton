@@ -12,6 +12,8 @@ from qewton.config.axes import (
     EllipsisAxes,
 )
 from qewton.algorithms.building_blocks.activation_functions import ReLU
+from qewton.config.saving.loading import Deserializer
+from qewton.config.saving.saving import Serializer
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.graphs.graphs import Graph
@@ -40,12 +42,7 @@ class FunctionalConv(Node[TensorType]):
     ) -> None:
         self.backend: type[DeepLearningBackend[TensorType]] = backend
         self.dim = dim
-        if dim == 1:
-            self.conv_fn = self.backend.nn.conv1d
-        elif dim == 2:
-            self.conv_fn = self.backend.nn.conv2d
-        elif dim == 3:
-            self.conv_fn = self.backend.nn.conv3d
+        self.conv_fn = self._pick_conv_fn()
         self.stride = stride if isinstance(stride, tuple) else (stride,) * dim
         self.padding = padding if isinstance(padding, tuple) else (padding,) * dim
         self.dilation = dilation if isinstance(dilation, tuple) else (dilation,) * dim
@@ -78,6 +75,14 @@ class FunctionalConv(Node[TensorType]):
         self.kernel = self.input_ports[1]
         self.bias = self.input_ports[2]
         self.output = self.output_ports[0]
+
+    def _pick_conv_fn(self):
+        if self.dim == 1:
+            return self.backend.nn.conv1d
+        elif self.dim == 2:
+            return self.backend.nn.conv2d
+        elif self.dim == 3:
+            return self.backend.nn.conv3d
 
     def x_data_config(self):
         return DC(
@@ -118,6 +123,17 @@ class FunctionalConv(Node[TensorType]):
             dilation=self.dilation,  # type: ignore
             groups=self.groups,
         )
+
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        keys, args = super()._collect_serializable_attributes()
+        conv_fn_idx = keys.index("conv_fn")
+        keys.pop(conv_fn_idx)
+        args.pop(conv_fn_idx)
+        return keys, args
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        self.conv_fn = self._pick_conv_fn()
 
 
 class Conv(GraphNode, Generic[TensorType]):
@@ -866,14 +882,7 @@ class FunctionalBatchNorm(Node[TensorType]):
         self.momentum = momentum
         self.training = True
         self.dim = dim
-        if dim == 1:
-            self.batch_norm_fn = backend.nn.batch_norm1d
-        elif dim == 2:
-            self.batch_norm_fn = backend.nn.batch_norm2d
-        elif dim == 3:
-            self.batch_norm_fn = backend.nn.batch_norm3d
-        else:
-            raise ValueError(f"BatchNorm is not implemented for dimension {dim}.")
+        self._pick_batch_fn(backend)
 
         # Data configurations for the input and output ports
         self.feature_dim = AxesDim(None)
@@ -882,6 +891,16 @@ class FunctionalBatchNorm(Node[TensorType]):
         self.geo_axes = GeometryAxes(shape=tuple(AxesDim(None) for _ in range(dim)))
 
         super().__init__(name, NodeState.INITIALIZED, backend)
+
+    def _pick_batch_fn(self, backend):
+        if self.dim == 1:
+            self.batch_norm_fn = backend.nn.batch_norm1d
+        elif self.dim == 2:
+            self.batch_norm_fn = backend.nn.batch_norm2d
+        elif self.dim == 3:
+            self.batch_norm_fn = backend.nn.batch_norm3d
+        else:
+            raise ValueError(f"BatchNorm is not implemented for dimension {self.dim}.")
 
     def set_mode(self, new_mode: EvaluationPhase):
         if new_mode == EvaluationPhase.TRAIN:
@@ -919,6 +938,17 @@ class FunctionalBatchNorm(Node[TensorType]):
             momentum=self.momentum,
             eps=self.eps,
         )
+
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        keys, args = super()._collect_serializable_attributes()
+        conv_fn_idx = keys.index("batch_norm_fn")
+        keys.pop(conv_fn_idx)
+        args.pop(conv_fn_idx)
+        return keys, args
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        self._pick_batch_fn(self.backend)
 
 
 class BatchNorm(GraphNode, Generic[TensorType]):
