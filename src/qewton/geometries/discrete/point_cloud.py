@@ -30,7 +30,12 @@ class PointCloud(DiscreteGeometry[TensorType]):
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         super().__init__(
-            shape=discretization_points.shape,
+            # Excludes the trailing coordinate-component axis, same
+            # convention as MeshGeometry (mesh.vertices.shape[0]) and
+            # GridGeometry (point_grid.shape[:-1]) - a DiscreteGeometry's
+            # own shape is "which point", never the point's own coordinate
+            # components.
+            shape=discretization_points.shape[:-1],
             variable=variable,
             dim=variable.dim,
             discretization_points=backend.build_tensor(discretization_points),

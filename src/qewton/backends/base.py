@@ -158,6 +158,18 @@ class ComputingBackend(Backend[TensorType]):
         raise NotImplementedError("The type changing is backend dependent")
 
     @classmethod
+    def to_numpy(cls, data):
+        """Converts this backend's tensor type to a plain numpy array.
+
+        Args:
+            data (TensorType): The data to convert.
+
+        Returns:
+            np.ndarray: The converted data.
+        """
+        raise NotImplementedError("The conversion to numpy is backend dependent.")
+
+    @classmethod
     def save_data(cls, data, path: str | Path):
         """Saves the given data to the given path.
 

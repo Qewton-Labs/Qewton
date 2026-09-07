@@ -50,17 +50,18 @@ class Triangle(ContinuousGeometry[TensorType]):
 
     def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
         self._update_device(device)
-        max_length = self.backend.math.max(
-            [
-                self.backend.linalg.norm(self.corner_1 - self.origin, order=2),
-                self.backend.linalg.norm(self.corner_2 - self.origin, order=2),
-                self.backend.linalg.norm(self.corner_1 - self.corner_2, order=2),
-            ]
+        # Resolved to a plain float (same pattern Parallelogram.create_mesh()
+        # uses) rather than a tensor reduction - self.backend.math.max()
+        # expects a single Tensor, not a list of them, and everything past
+        # this point (nx, the loop bounds) is plain Python math anyway.
+        max_length = max(
+            float(self.backend.linalg.norm(self.corner_1 - self.origin, order=2)),
+            float(self.backend.linalg.norm(self.corner_2 - self.origin, order=2)),
+            float(self.backend.linalg.norm(self.corner_1 - self.corner_2, order=2)),
         )
-        max_length = self.backend.cast_dtype(max_length, dtype=Float32)
         if max_vertex_distance is None:
             max_vertex_distance = max_length
-        nx = int(self.backend.math.ceil(max_length / max_vertex_distance))
+        nx = int(math.ceil(max_length / max_vertex_distance))
 
         vertices = []
         triangles = []
@@ -69,7 +70,7 @@ class Triangle(ContinuousGeometry[TensorType]):
             for j in range(nx + 1 - i):
                 v = j / nx
                 w = 1 - u - v
-                vertices.append([w * self.origin + v * self.corner_1 + u * self.corner_2])
+                vertices.append(w * self.origin + v * self.corner_1 + u * self.corner_2)
 
                 if i > 0:
                     v_count = len(vertices) - 1
@@ -80,11 +81,15 @@ class Triangle(ContinuousGeometry[TensorType]):
                         triangles.append(
                             [v_count, v_count - 1, v_count - (nx + 1 - i) - 1]
                         )
-        vertices = self.backend.build_tensor(vertices, dtype=Float32).reshape(-1, 2)  # type: ignore
-        triangles = self.backend.build_tensor(triangles, dtype=Int32).reshape(-1, 3)  # type: ignore
+        # vertices are already device-placed tensors (each built from
+        # self.origin/corner_1/corner_2, moved above) - stacked, not
+        # build_tensor()'d, since build_tensor() on a list of Tensors (via
+        # torch.as_tensor) doesn't reliably reconstruct them.
+        vertices = self.backend.math.stack(vertices)
+        triangles = self.backend.build_tensor(triangles, dtype=Int32, device=device).reshape(-1, 3)  # type: ignore
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=triangles),
+            mesh=Mesh(vertices=vertices, cells=triangles, device=device),
             discretization_of=self,
             backend=self.backend,
         )

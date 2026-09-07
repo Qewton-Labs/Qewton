@@ -58,6 +58,10 @@ from .array_operations import (
     ConcatNode,
     SetItem,
     Reshape,
+    Flatten,
+    Unflatten,
+    Repeat,
+    ReshapeAtDim,
 )
 from .derivatives import (
     GradientTracking,
@@ -70,3 +74,4 @@ from .derivatives import (
     Hessian,
 )
 from .creation import Zeros, ZerosLike, Ones, OnesLike, Identity
+from .geometry import MeshInterpolationNode

@@ -78,6 +78,10 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
         return data.astype(cls.dtypes.get(dtype, dtype))
 
     @classmethod
+    def to_numpy(cls, data: np.ndarray) -> np.ndarray:
+        return data
+
+    @classmethod
     def save_data(cls, data, path: str | Path):
         path = Path(path)
         if path.suffix != ".npy":

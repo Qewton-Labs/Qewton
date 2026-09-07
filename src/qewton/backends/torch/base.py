@@ -94,6 +94,10 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
         return data.type(cls.dtypes.get(dtype, dtype))
 
     @classmethod
+    def to_numpy(cls, data: torch.Tensor):
+        return data.detach().cpu().numpy()
+
+    @classmethod
     def save_data(cls, data, path: str | Path):
         path = Path(path)
         if path.suffix != ".pt":

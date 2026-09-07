@@ -99,8 +99,8 @@ class Interval(ContinuousGeometry[TensorType]):
 
     @property
     def boundary_right(self) -> IntervalSingleBoundaryPoint:
-        """Returns only the left boundary value, useful for the definition
-        of end conditions.
+        """Returns only the right boundary value, useful for the definition
+        of end conditions. 
         """
         return IntervalSingleBoundaryPoint(self, side=self.upper_bound, normal_vec=1)
 

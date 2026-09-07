@@ -13,7 +13,7 @@ from .axes import (
     DivideDim,
 )
 from .errors import DataConfigMismatchError
-from .data_configurations import DataConfiguration
+from .data_configurations import DataConfiguration, GridDataConfiguration
 
 from .variables import Variable
 from .devices import Device, cpu, cuda, cuda_available

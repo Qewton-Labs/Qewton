@@ -144,7 +144,7 @@ class DiscreteHyperparameter(ContinuousHyperparameter):
         scale: HyperParameterScale = HyperParameterScale.LINEAR,
         power: float = 2.0,  # only used for POWER scale
         active_when: None | HyperParameterCondition = None,
-        default_grid: int | list | None = None,
+        default_grid: int | list | None = 5,
     ):
         assert all(
             isinstance(x, int) for x in parameter_range

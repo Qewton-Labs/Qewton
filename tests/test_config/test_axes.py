@@ -201,8 +201,8 @@ def test_feature_axes_with_variable():
 def test_feature_axes_get_slice():
     v = Variable.from_dict({"a": 5, "b": 5})
     fa = FeatureAxes(variable=v)
-    slc = fa.get_variable_slice({"a": 5})
-    assert slc == [0, 1, 2, 3, 4]
+    slc = fa.get_variable_slice(Variable.from_dict({"a": 5}))
+    assert slc == slice(0, 5, None)
 
 
 def test_ellipsis_axes():

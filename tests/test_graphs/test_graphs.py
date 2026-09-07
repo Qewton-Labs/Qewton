@@ -362,6 +362,53 @@ class TestGraphLogic(unittest.TestCase):
         self.assertEqual(len(outs3), 0)
 
 
+class TestGraphAwareNodeSetup(unittest.TestCase):
+    """Graph.setup() special-cases DataProcessingNode by isinstance to pass
+    itself as an argument - GraphAwareNode generalizes that for any other
+    node needing graph context (e.g. PlotNode, to read
+    graph.dynamic_data_configs)."""
+
+    def test_setup_receives_the_graph_instead_of_being_called_bare(self):
+        from qewton.graphs.nodes import GraphAwareNode
+
+        received = []
+
+        class Sink(GraphAwareNode):
+            def forward(self, x: float):
+                pass
+
+            def setup(self, graph):
+                received.append(graph)
+
+        graph = Graph()
+        source = MockNode(name="Source")
+        sink = Sink(name="Sink")
+        graph.connect(source.output_ports[0], sink.input_ports[0])
+
+        graph.setup()
+
+        self.assertEqual(received, [graph])
+
+    def test_ordinary_nodes_still_get_the_bare_no_arg_setup(self):
+        """Regression guard: adding the GraphAwareNode branch must not
+        change dispatch for every other node."""
+        calls = []
+
+        class Plain(Node):
+            def forward(self) -> float:
+                return 1.0
+
+            def setup(self):
+                calls.append("bare")
+
+        graph = Graph()
+        graph.add_node(Plain(name="Plain"))
+
+        graph.setup()
+
+        self.assertEqual(calls, ["bare"])
+
+
 class TestTrackingObjectOps(unittest.TestCase):
     def test_arithmetic_overloads(self):
         # These tests ensure that using Python operators on TrackingObjects

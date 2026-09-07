@@ -588,3 +588,21 @@ class Node(ABC, Serializable, Generic[TensorType]):
 
 
 # endregion
+
+
+class GraphAwareNode(Node[TensorType]):
+    """Marker base for a Node whose setup() needs the owning Graph itself -
+    e.g. to read graph.dynamic_data_configs, the *unified* DataConfiguration
+    for a port, which forward()/run() never receive and which the port's
+    own static config alone does not carry (see PlotNode, which needs this
+    to plot whatever is actually connected to it).
+
+    Graph.setup() passes itself to any node of this kind, the same way it
+    already special-cases DataProcessingNode. Subclasses override
+    setup(self, graph) instead of the base Node.setup(self).
+    """
+
+    def setup(self, graph) -> None:
+        raise NotImplementedError(
+            "Subclasses of GraphAwareNode must implement setup(self, graph)."
+        )
