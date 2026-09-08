@@ -51,6 +51,8 @@ class GridSampler(PointSampler[TensorType]):
             backend=backend,
         )
         self.is_static = True
+        self.point_cache: TensorType | None = None
+        self.normal_cache: TensorType | None = None
         if self.filter_fn is not None:
             self.helper_sampler = RandomUniformSampler(
                 geometry=self.geometry,
@@ -62,17 +64,16 @@ class GridSampler(PointSampler[TensorType]):
 
     def sample_points(self):
         # Already created some points once
-        if self.created_cache:
-            return self.point_cache[0], self.normal_cache[0]
+        if self.point_cache is not None:
+            return self.point_cache, self.normal_cache
 
         if self.filter_fn is None:
-            p, n = self._direct_grid_sampling(self.batch_size)
-        else:
-            p, n = self._sample_with_filter()
-        self.point_cache = [p]
-        self.normal_cache = [n]
-        self.created_cache = True
-        return p, n
+            self.point_cache, self.normal_cache = self._direct_grid_sampling(
+                self.batch_size
+            )
+            return self.point_cache, self.normal_cache
+        self.point_cache, self.normal_cache = self._sample_with_filter()
+        return self.point_cache, self.normal_cache
 
     def _sample_with_filter(self):
         # With filters sample first, then increase number of points:
@@ -128,12 +129,12 @@ class GridSampler(PointSampler[TensorType]):
                 include_normals=self.compute_normals,  # type: ignore
             )
             if self.compute_normals:
-                p, n = sample_out[0], sample_out[1]
+                self.point_cache, self.normal_cache = sample_out[0], sample_out[1]
             else:
-                p, n = sample_out, None
+                self.point_cache, self.normal_cache = sample_out, None
         else:
-            p, n = (
+            self.point_cache, self.normal_cache = (
                 self.geometry.sample_grid(n_points, device=self._device),
                 None,
             )
-        return p, n
+        return self.point_cache, self.normal_cache

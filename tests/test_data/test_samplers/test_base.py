@@ -88,8 +88,8 @@ def test_point_sampler_cache_and_clear_cache(backend):
 
     sampler.clear_cache()
     assert sampler.created_cache is False
-    assert sampler.point_cache == []
-    assert sampler.normal_cache == []
+    assert sampler.point_cache is None
+    assert sampler.normal_cache is None
 
 
 @pytest.mark.skipif(not cuda_available(), reason="needs a real second device")
