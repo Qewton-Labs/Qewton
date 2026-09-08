@@ -7,6 +7,7 @@ from .conv import (
     Conv1D,
     Conv2D,
     Conv3D,
+    DoubleConv,
     MaxPool1D,
     MaxPool2D,
     MaxPool3D,

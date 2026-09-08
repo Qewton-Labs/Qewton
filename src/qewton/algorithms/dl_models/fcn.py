@@ -78,19 +78,19 @@ class FCN(GraphNode, Generic[TensorType]):
         self._graph.setup()
         self.set_state(NodeState.UNINITIALIZED)
 
+    def reset(self):
+        self.set_state(NodeState.UNINITIALIZED)
+        return super().reset()
+
     def _build_network(self, backend):
         nodes: list[Node] = []
         layers = self.n_hidden_layers.value + 1
         for i in range(layers):
             nodes.append(
                 Linear(
-                    in_neurons=(
-                        self.in_neurons.value if i == 0 else self.hidden_neurons.value
-                    ),
+                    in_neurons=(self.in_neurons if i == 0 else self.hidden_neurons),
                     out_neurons=(
-                        self.hidden_neurons.value
-                        if i < layers - 1
-                        else self.out_neurons.value
+                        self.hidden_neurons if i < layers - 1 else self.out_neurons
                     ),
                     bias=self.bias.value,
                     backend=backend,
@@ -100,10 +100,6 @@ class FCN(GraphNode, Generic[TensorType]):
             if i < layers - 1:
                 nodes.append(self.activation.value(backend=backend))
         return SequentialGraph(*nodes)
-
-    def reset(self):
-        self.set_state(NodeState.UNINITIALIZED)
-        return super().reset()
 
     def setup(self):
         """Initializes the neural network itself for the current
@@ -200,6 +196,9 @@ class DeepRitzNet(FCN[TensorType]):
     Notes:
         [1] Weinan E and Bing Yu, "The Deep Ritz method: A deep learning-based numerical
         algorithm for solving variational problems", 2017
+
+    TODO: Improve initialization of the network-weights, as the current one can
+    blow-up for deeper networks.
     """
 
     def __init__(

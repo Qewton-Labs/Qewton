@@ -642,7 +642,7 @@ class TestHarmonicFCNSetupMethod:
         model.setup()
 
         assert model.embedding._graph is not original_embedding_graph
-        assert model.fcn._graph is original_fcn_graph
+        assert model.fcn._graph is not original_fcn_graph
 
         x = torch.randn(2, 2)
         output = model.forward(x)

@@ -1,4 +1,5 @@
 from types import EllipsisType
+from typing import Any
 
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, BoundaryGeometry

@@ -130,7 +130,7 @@ class GridGeometry(DiscreteGeometry[TensorType]):
         slices = [slice(1, n) for n in self.discretization_points.shape[:-1]]
         cell_matrix *= self.point_filter[slices].unsqueeze(-1)
         # determinant of every cell matrix
-        self.volumes = self.backend.math.abs(self.backend.linalg.det(cell_matrix))
+        self.cell_volumes = self.backend.math.abs(self.backend.linalg.det(cell_matrix))
 
     def bounding_box(self):
         bounding_box = []

@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,

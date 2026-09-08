@@ -4,11 +4,13 @@ Handles data that supports slicing and has a .shape property.
 """
 
 from typing import Any
+import warnings
 
 from qewton.backends.base import Backend
 from qewton.config.axes import EllipsisAxes, EllipsisDim
 from qewton.config import DataConfiguration
 
+from qewton.config.saving.loading import Deserializer
 from qewton.data.datasets.base import DataSet
 
 
@@ -22,10 +24,15 @@ class ArrayLikeDataSet(DataSet):
             have a shape property (.shape) returning a tuple of integers.
         data_configs (DataConfiguration | list[DataConfiguration]): Configuration
             mapping the data dimensions to semantic axes.
+        save_data (bool, optional): If True, the data will be saved when the
+            dataset is serialized. Defaults to False.
     """
 
     def __init__(
-        self, data: Any, data_configs: DataConfiguration | list[DataConfiguration]
+        self,
+        data: Any,
+        data_configs: DataConfiguration | list[DataConfiguration],
+        save_data: bool = False,
     ):
         # Normalize data and configs to lists to support multi-input/output datasets
         self._data = data if isinstance(data_configs, (list, tuple)) else [data]
@@ -43,6 +50,7 @@ class ArrayLikeDataSet(DataSet):
                     )
                 all_variables.add(var)
 
+        self.save_data = save_data
         self.update_configs()
 
     def update_configs(self):
@@ -108,6 +116,21 @@ class ArrayLikeDataSet(DataSet):
                 return self._data[i][v_slice]
         raise ValueError(f"No such variable {variable} in the data.")
 
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        self_keys, self_args = super()._collect_serializable_attributes()
+        if not self.save_data:
+            data_idx = self_keys.index("_data")
+            self_keys.pop(data_idx)
+            self_args.pop(data_idx)
+        return self_keys, self_args
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        if not self.save_data:
+            self._data = [None] * len(self._data_configs)
+            warnings.warn("Data was not saved with this dataset. \
+                    The data will be None and needs to be set manually.")
+
 
 class BackendDataSet(ArrayLikeDataSet):
     """A dataset implementation for backend-specific tensor objects, e.g. numpy.ndarray
@@ -119,6 +142,7 @@ class BackendDataSet(ArrayLikeDataSet):
         data: Any,
         data_configs: DataConfiguration | list[DataConfiguration],
         backend: type[Backend],
+        save_data: bool = False,
     ):
         """Initialize the BackendDataSet.
 
@@ -127,6 +151,8 @@ class BackendDataSet(ArrayLikeDataSet):
             data_configs (DataConfiguration | list[DataConfiguration]): Configuration
                 defining the dimensions and semantics of the data.
             backend (type[Backend]): The backend associated with the data.
+            save_data (bool, optional): If True, the data will be saved when the
+                dataset is serialized. Defaults to False.
 
         Raises:
             TypeError: If any data item is not compatible with the backend's default type.
@@ -138,7 +164,7 @@ class BackendDataSet(ArrayLikeDataSet):
                 raise TypeError(f"{self.backend.__name__} only handles \
                         {self.backend.default_dtype.__name__}, not {type(item)}.")
 
-        super().__init__(data, data_configs)
+        super().__init__(data, data_configs, save_data=save_data)
 
     @classmethod
     def from_file(cls, path, data_configs, backend, **kwargs):
@@ -152,7 +178,7 @@ class BackendDataSet(ArrayLikeDataSet):
         Returns:
             DataSet: Initialized dataset instance.
         """
-        data = backend.load(path, **kwargs)
+        data = backend.load_data(path, **kwargs)
         return cls(data, data_configs, backend)
 
     def to(self, device):

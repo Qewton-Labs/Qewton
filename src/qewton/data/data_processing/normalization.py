@@ -7,7 +7,7 @@ from qewton.data.dataloaders.base import DataNode
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.optim.base import EvaluationPhase
-from qewton.graphs.nodes import NodeState
+from qewton.graphs.nodes import NodeState, Node
 from qewton.graphs.graphs import Graph
 from qewton.config.axes import EllipsisAxes, BatchAxes
 from qewton.config.data_configurations import DataConfiguration
@@ -87,7 +87,7 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
         )
         self.std += self.eps
         self._set_port_values(self.mean, self.std)
-        self._state = NodeState.INITIALIZED
+        self.set_state(NodeState.INITIALIZED)
 
     def _set_port_values(self, mean, std):
         self.sub_node.input_ports[1].default = mean
@@ -149,7 +149,7 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
                     been setup yet!"
             )
         self._set_port_values(self.data_source_node.mean, self.data_source_node.std)
-        self._state = NodeState.INITIALIZED
+        self.set_state(NodeState.INITIALIZED)
 
     def _set_port_values(self, mean, std):
         self.add_node.input_ports[1].default = mean

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+from typing import Any
 
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, DiscreteGeometry, BoundaryGeometry

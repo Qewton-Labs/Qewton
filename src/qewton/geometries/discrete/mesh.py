@@ -6,9 +6,10 @@ from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Int32, Float32
+from qewton.config.saving.saving import Serializable
 
 
-class Mesh(Generic[TensorType]):
+class Mesh(Serializable, Generic[TensorType]):
     """A generic simplex mesh represented by vertices and cells.
 
     Args:

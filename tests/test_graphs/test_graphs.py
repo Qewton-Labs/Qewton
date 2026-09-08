@@ -195,7 +195,7 @@ class TestGraphs(unittest.TestCase):
     def test_unwrap_annotated_no_metadata(self):
         # Test Annotated without DataConfiguration or Callable meta
         hint = Annotated[float, "some_other_metadata"]
-        config, was_annotated = Node._unwrap_annotated(hint, self.node, self.node.backend)
+        config, was_annotated = Node._unwrap_annotated(hint, self.node)
         self.assertIsInstance(config, DataConfiguration)
         self.assertTrue(was_annotated)
 

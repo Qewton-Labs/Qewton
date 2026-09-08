@@ -12,14 +12,17 @@ from qewton.config.axes import (
     AxesDim,
 )
 from qewton.config.errors import DataConfigMismatchError
+from qewton.config.saving.loading import Deserializer
+from qewton.config.saving.schema_keys import SavingKeys
 from qewton.config.variables import Variable
+from qewton.config.saving.saving import Serializable, Serializer
 
 ## TODO: could we simplify the config passing to use common AxesDim
 # objects nearly around the whole graph? this would allow for less
 # passing operations and less objects.
 
 
-class DataConfiguration:
+class DataConfiguration(Serializable):
     """A *DataConfiguration* describes the expected structure of the data,
     including the axes and their dimensions, as well as the data type.
     It is used to ensure that the data being passed through the graph
@@ -279,7 +282,7 @@ class DataConfiguration:
 
         # First we check if they match from the end
         matching_end_self, matching_end_other = self._match_axes(
-            reversed(self.axes), reversed(other.axes)
+            list(reversed(self.axes)), list(reversed(other.axes))
         )
         if len(matching_end_self) == len(self.axes) and len(matching_end_other) == len(
             other.axes
@@ -461,8 +464,7 @@ class DataConfiguration:
             if axes is searched_axes:
                 if len(axes.shape) == 1:
                     return counter
-                else:
-                    return (counter, counter + len(axes.shape))
+                return (counter, counter + len(axes.shape))
             if isinstance(axes, EllipsisAxes) or any(
                 isinstance(d, EllipsisDim) for d in axes.shape
             ):
@@ -498,16 +500,35 @@ class DataConfiguration:
 
                 if len(i_axis.shape) == 1:
                     return counter, None
-                else:
-                    return slice(counter, counter + len(i_axis.shape)), None
+                return slice(counter, counter + len(i_axis.shape)), None
             if isinstance(variable_or_axis, Variable):
                 if isinstance(i_axis, (FeatureAxes, GeometryAxes)):
                     i_var = i_axis.variables
                     if variable_or_axis in i_var:
                         if len(i_axis.shape) == 1:
-                            return counter
+                            return counter, None
                         return counter, i_var.get_slice(variable_or_axis)
 
             counter += len(i_axis.shape)
 
         raise ValueError
+
+    def save(self, serializer: Serializer) -> None:
+        axes_idx = serializer.add_objects(self, [self.axes])
+        data_config = {
+            SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
+            SavingKeys.KEY_CLASS: self.__class__.__name__,
+            SavingKeys.KEY_MODULE: self.__class__.__module__,
+            "axes": axes_idx[0],
+            "dtype": str(self.dtype),
+        }
+        serializer.set_serialization_data(id(self), data_config)
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        from qewton.backends.base import TensorType
+
+        # TODO: How to handle the dtypes?
+        dtype = data_config.get("dtype", None)
+        if isinstance(dtype, str) and dtype == "~TensorType":
+            self.dtype = TensorType

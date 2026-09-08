@@ -5,11 +5,16 @@ from .numpy.base import NumPyBackend
 # otherwise if tensorflow exists, we set it as the default backend.
 _backend_found = False
 
+BACKEND_DICT: dict[str, type[Backend]] = {
+    "numpy": NumPyBackend,
+}
+
 try:
     from .torch.base import TorchBackend
 
     DEFAULT_DL_BACKEND = TorchBackend
     _backend_found = True
+    BACKEND_DICT["torch"] = TorchBackend
 except (ImportError, AttributeError):
     # Torch is not installed or failed to initialize (e.g. circular imports)
     pass
@@ -20,6 +25,7 @@ if not _backend_found:
 
         DEFAULT_DL_BACKEND = TensorflowBackend
         _backend_found = True
+        BACKEND_DICT["tensorflow"] = TensorflowBackend
     except (ImportError, AttributeError):
         pass
 

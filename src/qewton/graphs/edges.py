@@ -1,7 +1,8 @@
 from qewton.graphs.nodes import Port
+from qewton.config.saving.saving import Serializable
 
 
-class Edge:
+class Edge(Serializable):
     """Represents a connection of two nodes in the graph.
 
     Args:

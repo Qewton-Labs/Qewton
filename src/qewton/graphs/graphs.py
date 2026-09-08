@@ -12,7 +12,7 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.devices import Device
 from qewton.config.errors import DataConfigMismatchError
 from qewton.config.variables import Variable
-
+from qewton.config.saving.saving import Serializable
 from qewton.graphs.nodes import (
     GraphAwareNode,
     InputPort,
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from qewton.visualization.layout import Layout
 
 
-class Graph:
+class Graph(Serializable):
     """
     Represents a directed acyclic graph (DAG) of interconnected nodes.
     """
@@ -783,7 +783,9 @@ class Graph:
             config = p.get_data_configuration(self)  # type: ignore
             if combined_variable is not None:
                 data, config = self._narrow_to_variable(data, config, combined_variable)
-            plots.append(auto_plot(data, config, plot_type, **controls_kwarg, **plot_kwargs))
+            plots.append(
+                auto_plot(data, config, plot_type, **controls_kwarg, **plot_kwargs)
+            )
 
         if variables and len(variables) > 1:
             shared_variable_spec = VariableSpec(variables)
@@ -830,7 +832,9 @@ class Graph:
         pred_variable = (
             combined_variable
             if combined_variable is not None
-            else (pred_config.feature_axes.variables if pred_config.feature_axes else None)
+            else (
+                pred_config.feature_axes.variables if pred_config.feature_axes else None
+            )
         )
 
         if callable(reference) and not isinstance(reference, Port):
@@ -968,7 +972,9 @@ class Graph:
         )
         plots = [reference_plot, prediction_plot]
 
-        shared_variable_spec = VariableSpec(variables) if variables and len(variables) > 1 else None
+        shared_variable_spec = (
+            VariableSpec(variables) if variables and len(variables) > 1 else None
+        )
         if shared_variable_spec is not None:
             for plot in plots:
                 self._redirect_to_shared_variable(plot, variables, shared_variable_spec)

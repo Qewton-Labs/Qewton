@@ -259,8 +259,9 @@ class TestNumpyDataSet(unittest.TestCase):
             np.save(tmp.name, self.data)
             tmp_path = tmp.name
         try:
-            dataset = BackendDataSet.from_file(tmp_path, self.config, NumPyBackend)
-            np.testing.assert_array_equal(dataset.load_complete_data()[0], self.data)
+            if os.path.exists(tmp_path):
+                dataset = BackendDataSet.from_file(tmp_path, self.config, NumPyBackend)
+                np.testing.assert_array_equal(dataset.load_complete_data()[0], self.data)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

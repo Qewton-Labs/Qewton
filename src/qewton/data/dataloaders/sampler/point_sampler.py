@@ -25,7 +25,9 @@ from qewton.optim.parameters.categorical_hyperparameter import (
 
 
 @contextmanager
-def discretization_mode(samplers, max_vertex_distance, device: Device | str | None = None):
+def discretization_mode(
+    samplers, max_vertex_distance, device: Device | str | None = None
+):
     """Switch samplers to mesh mode for one run.
 
     `device` is only where the freshly-generated mesh points themselves are

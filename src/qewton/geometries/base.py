@@ -5,11 +5,12 @@ from typing import Any, Generic
 from qewton.config.errors import DataConfigMismatchError
 from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
+from qewton.config.saving.saving import Serializable
 from qewton.backends.base import ComputingBackend, TensorType
 from qewton.backends import DEFAULT_DL_BACKEND
 
 
-class Geometry(Generic[TensorType]):
+class Geometry(Serializable, Generic[TensorType]):
     """Represents a geometric shape for sampling points, computing normal
     vectors, plotting, etc.
 
@@ -385,7 +386,7 @@ class DiscreteGeometry(Geometry[TensorType]):
         variable (Variable | None, optional): The variable connected to this
             geometry. Defaults to None.
         dim (int | None, optional): The dimension of this geometry. Defaults to None.
-        discretization_points (Any | None, optional): Discrete points that
+        discretization_points (TensorType | None, optional): Discrete points that
             make up this geometry. Defaults to None.
         backend (type[ComputingBackend[TensorType]], optional): What backend the node
             should use for computations, etc. Defaults to the deep learning
@@ -397,7 +398,7 @@ class DiscreteGeometry(Geometry[TensorType]):
         shape: tuple[int, ...],
         variable: Variable | None = None,
         dim: int | None = None,
-        discretization_points: Any | None = None,
+        discretization_points: TensorType | None = None,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         super().__init__(variable=variable, dim=dim, shape=shape, backend=backend)

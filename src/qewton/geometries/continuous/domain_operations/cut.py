@@ -1,5 +1,3 @@
-# import warnings
-
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,

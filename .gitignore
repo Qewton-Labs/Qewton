@@ -11,3 +11,4 @@ api/
 dist/
 *.egg-info/
 .eggs/
+.continue

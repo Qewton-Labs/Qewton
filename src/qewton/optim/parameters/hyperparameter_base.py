@@ -2,9 +2,10 @@ from __future__ import annotations
 import operator
 
 from qewton.optim.parameters.helpers import HyperParameterState, HyperParameterCondition
+from qewton.config.saving.saving import Serializable
 
 
-class HyperParameter:
+class HyperParameter(Serializable):
     """Abstract HyperParameter class that represents tunable parameters.
 
     Args:
@@ -112,6 +113,8 @@ class HyperParameter:
         HyperParameters. The concrete values of the Parameters are provided in
         the config.
         """
+        if config is None:
+            config = {}
         return True if self.condition is None else self.condition.evaluate(config)
 
     def set_value(self, new_value):

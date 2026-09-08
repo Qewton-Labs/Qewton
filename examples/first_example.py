@@ -1,5 +1,6 @@
 import torch
 import qewton
+from qewton.visualization.graphs.base import GraphPlotter
 
 x_data = torch.linspace(0, 1, 1000).reshape(-1, 1)
 u_data = x_data**2 + torch.sin(6.0 * x_data)
@@ -26,7 +27,6 @@ data_loader = qewton.data.DataLoader(
     shuffle_data=False,
 )
 
-
 model = qewton.algorithms.FCN(
     in_neurons=1,
     hidden_neurons=50,
@@ -36,7 +36,6 @@ model = qewton.algorithms.FCN(
 )
 
 constraint = qewton.constraints.MSEConstraint()
-
 computation_graph = qewton.Graph()
 
 computation_graph.connect(data_loader.get_output_port(X), model)
@@ -44,6 +43,11 @@ computation_graph.connect(model, constraint.input_1)
 computation_graph.connect(data_loader.get_output_port(U), constraint.input_2)
 
 computation_graph.setup()
+
+
+plotter = GraphPlotter(computation_graph)
+plotter.save_svg("computation_graph")
+
 
 adam_phase = qewton.optim.OptimizationPhase(
     optimizer=qewton.optim.Adam(),

@@ -11,6 +11,7 @@ from qewton.graphs.nodes import Node, NodeState
 
 
 class ParameterNode(Node[TensorType]):
+
     def __init__(
         self,
         shape: tuple[int | HyperParameter, ...],
@@ -26,6 +27,7 @@ class ParameterNode(Node[TensorType]):
         self.backend: DeepLearningBackend
         super().__init__(name, state=NodeState.UNINITIALIZED, backend=backend)
         self.output = self.output_ports[0]
+        self.output.make_persistent()
 
     def setup(self) -> None:
         if self.state == NodeState.UNINITIALIZED:
@@ -40,7 +42,13 @@ class ParameterNode(Node[TensorType]):
                 int_shape = tuple(hp.value for hp in self.shape)
                 self._trainable_parameter = self.backend.param.initialize(int_shape)
             self.output.set_value(self._trainable_parameter)
-            self._state = NodeState.INITIALIZED
+            self.set_state(NodeState.INITIALIZED)
+
+    def set_trainable_parameter(self, new_value: TrainableParameters) -> None:
+        if self.state == NodeState.FIXED:
+            raise ValueError("Cannot set trainable parameter when node is fixed.")
+        self._trainable_parameter = new_value.parameters
+        self.output.set_value(self._trainable_parameter)
 
     def output_config(self):
         int_shape = tuple(hp.value for hp in self.shape)
@@ -82,6 +90,9 @@ class ParameterNode(Node[TensorType]):
         else:
             params = self._trainable_parameter
         return TrainableParameters(self.node_id, params)
+
+    def _parameters_to_save(self):
+        return TrainableParameters(self.node_id, self._trainable_parameter)
 
     def to(self, device):
         if not self._state == NodeState.UNINITIALIZED:

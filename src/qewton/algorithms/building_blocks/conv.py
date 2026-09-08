@@ -12,6 +12,8 @@ from qewton.config.axes import (
     EllipsisAxes,
 )
 from qewton.algorithms.building_blocks.activation_functions import ReLU
+from qewton.config.saving.loading import Deserializer
+from qewton.config.saving.saving import Serializer
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.graphs.graphs import Graph
@@ -39,12 +41,8 @@ class FunctionalConv(Node[TensorType]):
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
         self.backend: type[DeepLearningBackend[TensorType]] = backend
-        if dim == 1:
-            self.conv_fn = self.backend.nn.conv1d
-        elif dim == 2:
-            self.conv_fn = self.backend.nn.conv2d
-        elif dim == 3:
-            self.conv_fn = self.backend.nn.conv3d
+        self.dim = dim
+        self.conv_fn = self._pick_conv_fn()
         self.stride = stride if isinstance(stride, tuple) else (stride,) * dim
         self.padding = padding if isinstance(padding, tuple) else (padding,) * dim
         self.dilation = dilation if isinstance(dilation, tuple) else (dilation,) * dim
@@ -77,6 +75,14 @@ class FunctionalConv(Node[TensorType]):
         self.kernel = self.input_ports[1]
         self.bias = self.input_ports[2]
         self.output = self.output_ports[0]
+
+    def _pick_conv_fn(self):
+        if self.dim == 1:
+            return self.backend.nn.conv1d
+        elif self.dim == 2:
+            return self.backend.nn.conv2d
+        elif self.dim == 3:
+            return self.backend.nn.conv3d
 
     def x_data_config(self):
         return DC(
@@ -118,6 +124,17 @@ class FunctionalConv(Node[TensorType]):
             groups=self.groups,
         )
 
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        keys, args = super()._collect_serializable_attributes()
+        conv_fn_idx = keys.index("conv_fn")
+        keys.pop(conv_fn_idx)
+        args.pop(conv_fn_idx)
+        return keys, args
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        self.conv_fn = self._pick_conv_fn()
+
 
 class Conv(GraphNode, Generic[TensorType]):
     """A node implementing a convolution operation. The dimension of the
@@ -156,6 +173,7 @@ class Conv(GraphNode, Generic[TensorType]):
         padding: int | tuple[int, ...] = 0,
         dilation: int | tuple[int, ...] = 1,
         groups: int = 1,
+        name: str = "Convolution",
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
         **kwargs,
     ) -> None:
@@ -181,7 +199,6 @@ class Conv(GraphNode, Generic[TensorType]):
             padding=padding,
             dilation=dilation,
             groups=groups,
-            name="functional_conv1d",
             backend=backend,
         )
 
@@ -195,6 +212,7 @@ class Conv(GraphNode, Generic[TensorType]):
             input_ports=[self.conv_node.input],
             output_ports=[self.conv_node.output],
             backend=backend,
+            name=name,
             **kwargs,
         )
         self._graph.setup()
@@ -231,7 +249,7 @@ class Conv1D(Conv[TensorType]):
             padding,
             dilation,
             groups,
-            backend,
+            backend=backend,
             **kwargs,
         )
 
@@ -264,7 +282,7 @@ class Conv2D(Conv[TensorType]):
             padding,
             dilation,
             groups,
-            backend,
+            backend=backend,
             **kwargs,
         )
 
@@ -299,7 +317,7 @@ class Conv3D(Conv[TensorType]):
             padding,
             dilation,
             groups,
-            backend,
+            backend=backend,
             **kwargs,
         )
 
@@ -343,6 +361,7 @@ class DoubleConv(GraphNode, Generic[TensorType]):
         padding: int | HyperParameter | tuple[int, ...] = 0,
         dilation: int | HyperParameter | tuple[int, ...] = 1,
         groups: int = 1,
+        name="DoubleConv",
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
         **kwargs,
     ) -> None:
@@ -362,11 +381,17 @@ class DoubleConv(GraphNode, Generic[TensorType]):
             input_ports=[self.conv1.input],
             output_ports=[self.activation2.output_ports[0]],
             backend=backend,
+            name=name,
             **kwargs,
         )
         self._graph.setup()
+        self.set_state(NodeState.UNINITIALIZED)  # first setup is only a placeholder
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
+
+    def reset(self):
+        self.set_state(NodeState.UNINITIALIZED)
+        return super().reset()
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -399,13 +424,13 @@ class DoubleConv(GraphNode, Generic[TensorType]):
             self.padding.current_value,
             self.dilation.current_value,
             self.groups,
-            backend,
+            backend=backend,
         )
         self.batch_norm1 = BatchNorm(
             num_features=self.out_channels.current_value, dim=dim
         )
         self.activation1 = self.activation.current_value(
-            name="activation1", backend=backend
+            name="Activation 1", backend=backend
         )
         self.conv2 = Conv(
             self.out_channels.current_value,
@@ -416,13 +441,13 @@ class DoubleConv(GraphNode, Generic[TensorType]):
             self.padding.current_value,
             self.dilation.current_value,
             self.groups,
-            backend,
+            backend=backend,
         )
         self.batch_norm2 = BatchNorm(
             num_features=self.out_channels.current_value, dim=dim
         )
         self.activation2 = self.activation.current_value(
-            name="activation1", backend=backend
+            name="Activation 2", backend=backend
         )
 
         graph = Graph()
@@ -435,6 +460,8 @@ class DoubleConv(GraphNode, Generic[TensorType]):
         return graph
 
     def setup(self) -> None:
+        if self.state != NodeState.UNINITIALIZED:
+            return
         new_graph = self._build_network(self.backend)
         self.setup_graph(
             new_graph,
@@ -443,6 +470,7 @@ class DoubleConv(GraphNode, Generic[TensorType]):
         )
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
+        self.set_state(NodeState.INITIALIZED)
 
     def forward(self, x):
         self.input.set_value(x)
@@ -558,6 +586,7 @@ class MaxPool1D(PoolingNode[TensorType]):
 
 
 class MaxPool2D(MaxPool1D[TensorType]):
+
     def _pack_tuple(self, data: tuple[int, ...] | int) -> tuple[int, int]:
         return (data[0], data[1]) if isinstance(data, tuple) else (data, data)
 
@@ -724,11 +753,12 @@ class Interpolate(Node[TensorType]):
     Args:
         size (int | tuple[int...] | None, optional):
             The output spatial size. Defaults to None.
+
         scale_factor (int  |  tuple[int...]  |  None, optional):
             A multiplier for the spatial size. The scale_factor has to fit the the
             number of spatial dimensions. Defaults to None.
             Either *size* or the *scale_factor* need to be provided.
-        mode (Literal[ &quot;nearest&quot;, &quot;linear&quot;,
+        interpolate_mode (Literal[ &quot;nearest&quot;, &quot;linear&quot;,
                        &quot;bilinear&quot;, &quot;bicubic&quot;,
                        &quot;trilinear&quot; ], optional):
             The type of interpolation scheme to use. Defaults to "nearest".
@@ -745,7 +775,7 @@ class Interpolate(Node[TensorType]):
         scale_factor: (
             int | tuple[int] | tuple[int, int] | tuple[int, int, int] | None
         ) = None,
-        mode: Literal[
+        interpolate_mode: Literal[
             "nearest", "linear", "bilinear", "bicubic", "trilinear"
         ] = "nearest",
         align_corners: bool | None = None,
@@ -756,7 +786,7 @@ class Interpolate(Node[TensorType]):
         self.scale_factor = (
             (scale_factor,) if isinstance(scale_factor, int) else scale_factor
         )
-        self.interpolate_mode = mode
+        self.interpolate_mode = interpolate_mode
         self.align_corners = align_corners
 
         # Build the data config:
@@ -851,12 +881,8 @@ class FunctionalBatchNorm(Node[TensorType]):
         self.eps = eps
         self.momentum = momentum
         self.training = True
-        if dim == 1:
-            self.batch_norm_fn = backend.nn.batch_norm1d
-        elif dim == 2:
-            self.batch_norm_fn = backend.nn.batch_norm2d
-        elif dim == 3:
-            self.batch_norm_fn = backend.nn.batch_norm3d
+        self.dim = dim
+        self._pick_batch_fn(backend)
 
         # Data configurations for the input and output ports
         self.feature_dim = AxesDim(None)
@@ -865,6 +891,16 @@ class FunctionalBatchNorm(Node[TensorType]):
         self.geo_axes = GeometryAxes(shape=tuple(AxesDim(None) for _ in range(dim)))
 
         super().__init__(name, NodeState.INITIALIZED, backend)
+
+    def _pick_batch_fn(self, backend):
+        if self.dim == 1:
+            self.batch_norm_fn = backend.nn.batch_norm1d
+        elif self.dim == 2:
+            self.batch_norm_fn = backend.nn.batch_norm2d
+        elif self.dim == 3:
+            self.batch_norm_fn = backend.nn.batch_norm3d
+        else:
+            raise ValueError(f"BatchNorm is not implemented for dimension {self.dim}.")
 
     def set_mode(self, new_mode: EvaluationPhase):
         if new_mode == EvaluationPhase.TRAIN:
@@ -903,6 +939,17 @@ class FunctionalBatchNorm(Node[TensorType]):
             eps=self.eps,
         )
 
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        keys, args = super()._collect_serializable_attributes()
+        conv_fn_idx = keys.index("batch_norm_fn")
+        keys.pop(conv_fn_idx)
+        args.pop(conv_fn_idx)
+        return keys, args
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        self._pick_batch_fn(self.backend)
+
 
 class BatchNorm(GraphNode, Generic[TensorType]):
     """A node implementing a batch normalization operation for 1D data.
@@ -934,8 +981,8 @@ class BatchNorm(GraphNode, Generic[TensorType]):
     ) -> None:
         self.num_features = HyperParameter.from_value(num_features, "BatchNorm Feat.")
         self.dim = dim
-        self.use_weight = weight
-        self.use_bias = bias
+        self.weight = weight
+        self.bias = bias
         self.momentum = momentum
         self.eps = eps
         graph = self._build_graph(backend)
@@ -948,10 +995,15 @@ class BatchNorm(GraphNode, Generic[TensorType]):
             name=name,
         )
         self._graph.setup()
+        self.set_state(NodeState.UNINITIALIZED)  # first setup is only a placeholder
         self.running_mean.fix_node_state()  # no automatic gradient tracking
         self.running_var.fix_node_state()
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
+
+    def reset(self):
+        self.set_state(NodeState.UNINITIALIZED)
+        return super().reset()
 
     def _build_graph(self, backend: type[DeepLearningBackend] = DEFAULT_DL_BACKEND):
         # Build all the nodes and the graph:
@@ -978,35 +1030,37 @@ class BatchNorm(GraphNode, Generic[TensorType]):
         graph.connect(self.running_mean, self.functional_batch_norm.input_ports[1])
         graph.connect(self.running_var, self.functional_batch_norm.input_ports[2])
         # Add optional arguments
-        if self.use_weight:
-            self.weight = ParameterNode(
+        if self.weight:
+            self.weight_node = ParameterNode(
                 (self.num_features.current_value,),
                 initial_value=backend.math.ones((self.num_features.current_value,)),
                 name="weight",
                 backend=backend,
             )
-            graph.connect(self.weight, self.functional_batch_norm.input_ports[3])
-        if self.use_bias:
-            self.bias = ParameterNode(
+            graph.connect(self.weight_node, self.functional_batch_norm.input_ports[3])
+        if self.bias:
+            self.bias_node = ParameterNode(
                 (self.num_features.current_value,),
                 initial_value=backend.math.zeros((self.num_features.current_value,)),
                 name="bias",
                 backend=backend,
             )
-            graph.connect(self.bias, self.functional_batch_norm.input_ports[4])
+            graph.connect(self.bias_node, self.functional_batch_norm.input_ports[4])
         return graph
 
     def setup(self) -> None:
-        new_graph = self._build_graph(self.backend)  # type: ignore
-        self.setup_graph(
-            new_graph,
-            input_ports=[self.functional_batch_norm.input_ports[0]],
-            output_ports=[self.functional_batch_norm.output_ports[0]],
-        )
-        self.running_mean.fix_node_state()  # no automatic gradient tracking
-        self.running_var.fix_node_state()
-        self.input = self.input_ports[0]
-        self.output = self.output_ports[0]
+        if self.state == NodeState.UNINITIALIZED:
+            new_graph = self._build_graph(self.backend)  # type: ignore
+            self.setup_graph(
+                new_graph,
+                input_ports=[self.functional_batch_norm.input_ports[0]],
+                output_ports=[self.functional_batch_norm.output_ports[0]],
+            )
+            self.running_mean.fix_node_state()  # no automatic gradient tracking
+            self.running_var.fix_node_state()
+            self.input = self.input_ports[0]
+            self.output = self.output_ports[0]
+            self.set_state(NodeState.INITIALIZED)
 
     def forward(self, x):
         self.input.set_value(x)

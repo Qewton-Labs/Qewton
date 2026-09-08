@@ -2,7 +2,7 @@ from typing import Annotated, Generic
 
 from qewton.algorithms.building_blocks.math import MatMul, Add
 from qewton.algorithms.building_blocks.parameters import ParameterNode
-from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.backends import DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
 from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -19,32 +19,31 @@ class FunctionalLinear(GraphNode, Generic[TensorType]):
         self,
         name="functional_linear",
         bias=True,
-        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.matmul_node = MatMul(backend=backend)
         self.add_node = Add(backend=backend)
         graph = Graph()
+        in_ports = [self.matmul_node.input_ports[0], self.matmul_node.input_ports[1]]
         if bias:
             graph.connect(self.matmul_node.output_ports[0], self.add_node.input_ports[0])
             output_port = self.add_node.output_ports[0]
+            in_ports.append(self.add_node.input_ports[1])
         else:
             graph.add_node(self.matmul_node)
             output_port = self.matmul_node.output_ports[0]
 
         super().__init__(
             graph=graph,
-            input_ports=[
-                self.matmul_node.input_ports[0],
-                self.matmul_node.input_ports[1],
-                self.add_node.input_ports[1],
-            ],
+            input_ports=in_ports,
             output_ports=[output_port],
             name=name,
             backend=backend,
         )
         self.input = self.input_ports[0]
         self.weight = self.input_ports[1]
-        self.bias = self.input_ports[2]
+        if bias:
+            self.bias = self.input_ports[2]
         self.output = self.output_ports[0]
 
     def forward(
@@ -71,7 +70,7 @@ class Linear(GraphNode, Generic[TensorType]):
         out_neurons: int | HyperParameter,
         bias=True,
         name="linear",
-        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.ellipsis_axes: (
             EllipsisAxes  # defined in x_data_config to allow usage in multiple graphs

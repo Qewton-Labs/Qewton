@@ -369,7 +369,7 @@ class BoxBoundary(ContinuousBoundaryGeometry):
                 grid[:, 2] *= scale_list[i_mod_2]
 
                 # Permute to correct order
-                grid = grid[:, permute_list[i]]
+                # grid = grid[:, permute_list[i]]
 
                 n_to_add = min(len(grid), n_points - current_n)
                 points[current_n : current_n + n_to_add] = grid[:n_to_add]

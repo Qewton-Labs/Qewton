@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from qewton.config.saving.saving import Serializable
 
-class Variable:
+
+class Variable(Serializable):
     """Order of children is now important."""
 
     def __deepcopy__(self, memo):

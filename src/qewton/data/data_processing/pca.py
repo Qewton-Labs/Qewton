@@ -41,9 +41,9 @@ class PCANode(DataProcessingNode[TensorType]):
         name: str | None = "PCA Node",
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
-        self.n = HyperParameter.from_value(n, "PCA Components of" + self.name)
+        self.n = HyperParameter.from_value(n, "PCA Components of " + self.name)
         self.scale = HyperParameter.from_value(
-            scale, "Scale by Principal Comp." + self.name
+            scale, "Scale by Principal Comp. " + self.name
         )
         # Data config. properties:
         self.batch_axes = BatchAxes(AxesDim(None))
@@ -95,7 +95,7 @@ class PCANode(DataProcessingNode[TensorType]):
         )
         self._set_port_values(self.pca_u, self.pca_s, self.pca_v)
 
-        self._state = NodeState.INITIALIZED
+        self.set_state(NodeState.INITIALIZED)
 
     def to(self, device):
         if self.state != NodeState.UNINITIALIZED:

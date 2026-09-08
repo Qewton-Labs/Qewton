@@ -2,8 +2,17 @@ from __future__ import annotations
 from abc import ABC
 from copy import deepcopy
 from enum import Enum
-from typing import Any, Callable, Generic, Optional, Union
-from typing import Annotated, get_type_hints, get_origin, get_args
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Optional,
+    Union,
+    Annotated,
+    get_type_hints,
+    get_origin,
+    get_args,
+)
 import inspect
 import warnings
 
@@ -15,13 +24,31 @@ from qewton.optim.parameters.trainable_parameters import (
     _TrainableParameterBase,
     TrainableParameters,
 )
+from qewton.config.saving.saving import Serializable, Serializer
+from qewton.config.saving.loading import Deserializer
+from qewton.config.saving.schema_keys import SavingKeys
+
+# region: Ports
 
 
-class NO_DEFAULT:
+class NO_DEFAULT(Serializable):
     """Sentinel value to denote that no default value is provided for a parameter."""
 
+    @classmethod
+    def save(cls, serializer: Serializer) -> None:
+        node_config = {
+            SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
+            SavingKeys.KEY_CLASS: cls.__name__,
+            SavingKeys.KEY_MODULE: cls.__module__,
+        }
+        serializer.set_serialization_data(id(cls), node_config)
 
-class Port:
+    @classmethod
+    def construct_new_object(cls, serializer: Deserializer, data_config: dict) -> Any:
+        return cls  # Return the class itself, as backends are stateless and don't require instantiation
+
+
+class Port(Serializable):
     """Represents an input or output connection of a node. Ports can be connected
     in a graph to create a computation graph structure.
     Each port has a data configuration that denotes the expected shape of the data
@@ -46,6 +73,9 @@ class Port:
         self.node = node
         self.name = name
         self._value = None
+        self.value_persists = (
+            False  # By default, output values do not persist after a graph run
+        )
 
     @property
     def data_configuration(self) -> DataConfiguration:
@@ -95,6 +125,18 @@ class Port:
     def value(self):
         """Returns the value stored in this port."""
         return self._value
+
+    def make_persistent(self):
+        """Denotes that the value of this port should persist after a
+        graph run and also be saved."""
+        self.value_persists = True
+
+    def save(self, serializer: Serializer) -> None:
+        current_value = self.value
+        if not self.value_persists:
+            self._value = None
+        super().save(serializer)
+        self._value = current_value  # Restore the value after saving
 
 
 class InputPort(Port):
@@ -146,6 +188,10 @@ class OutputPort(Port):
         super().__init__(data_configuration, node, name)
 
 
+# endregion
+# region: Node Properties
+
+
 class NodeState(Enum):
     """Denotes different states a node can be in.
 
@@ -166,7 +212,11 @@ class NodeState(Enum):
     TRAINED = 4
 
 
-class Node(ABC, Generic[TensorType]):
+# endregion
+# region: Main Node Class
+
+
+class Node(ABC, Serializable, Generic[TensorType]):
     """Base class for all nodes to create a graph.
 
     Args:
@@ -180,7 +230,6 @@ class Node(ABC, Generic[TensorType]):
     _node_id_counter = 0
     _tracking_phase: bool = False
 
-    # TODO: Save and load methods
     def __init__(
         self,
         name: str | None = None,
@@ -189,14 +238,14 @@ class Node(ABC, Generic[TensorType]):
         **kwargs,
     ) -> None:
         super().__init__()
+        _ = kwargs  # unused for now, but can be used in subclasses to
+        # pass additional arguments
         self._name = name
         self._state = state
         self.backend = backend
         self.mode: EvaluationPhase = EvaluationPhase.ALWAYS
 
-        self._input_ports, self._output_ports = self._build_ports(
-            self.forward, self, backend
-        )
+        self._input_ports, self._output_ports = self._build_ports(self.forward, self)
 
         self.node_id = Node._node_id_counter
         Node._node_id_counter += 1
@@ -213,7 +262,7 @@ class Node(ABC, Generic[TensorType]):
 
     @classmethod
     def _build_ports(
-        cls, func: Callable, owner: Node, backend: type[Backend[TensorType]]
+        cls, func: Callable, owner: Node
     ) -> tuple[list[InputPort], list[OutputPort]]:
         """Automatically builds input and output ports for this node based
         on the signature of the forward function and the type hints of its
@@ -227,7 +276,7 @@ class Node(ABC, Generic[TensorType]):
         # Build input ports:
         for name, param in call_sig.parameters.items():
             hint = type_hints.get(name, param.annotation)
-            config, _ = cls._unwrap_annotated(hint, owner, backend)
+            config, _ = cls._unwrap_annotated(hint, owner)
             input_ports.append(
                 InputPort(
                     config,
@@ -251,7 +300,7 @@ class Node(ABC, Generic[TensorType]):
             outputs = [return_values]
 
         for i, output in enumerate(outputs):
-            config, _ = cls._unwrap_annotated(output, owner, backend)
+            config, _ = cls._unwrap_annotated(output, owner)
             output_ports.append(OutputPort(config, node=owner, name=f"output_{i}"))
 
         return input_ports, output_ports
@@ -268,7 +317,7 @@ class Node(ABC, Generic[TensorType]):
         return backend.default_dtype
 
     @classmethod
-    def _unwrap_annotated(cls, type_hint, owner, backend):
+    def _unwrap_annotated(cls, type_hint, owner):
         """Return (base_type, config)."""
 
         if get_origin(type_hint) in [Optional, Union]:
@@ -529,6 +578,16 @@ class Node(ABC, Generic[TensorType]):
         from .control_nodes.graph_node import CopiedNode
 
         return CopiedNode(self)
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        # To ensure unique node IDs across different graphs,
+        # we update the node ID counter
+        self.node_id += Node._node_id_counter
+        serializer.update_reference_node(self)
+
+
+# endregion
 
 
 class GraphAwareNode(Node[TensorType]):
