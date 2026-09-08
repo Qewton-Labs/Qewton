@@ -17,7 +17,7 @@ class SavingKeys:
     KEY_SET = "set"
     KEY_ENUM = "enum"
     KEY_CLASS_OBJ = "class_obj"
-    KEY_SERIALIZABLE = "s-able"
+    KEY_SERIALIZABLE = "serializable"
     KEY_CLASS = "class"
     KEY_SELF_ARGS = "self_args"
     KEY_MODULE = "module"

@@ -464,8 +464,7 @@ class DataConfiguration(Serializable):
             if axes is searched_axes:
                 if len(axes.shape) == 1:
                     return counter
-                else:
-                    return (counter, counter + len(axes.shape))
+                return (counter, counter + len(axes.shape))
             if isinstance(axes, EllipsisAxes) or any(
                 isinstance(d, EllipsisDim) for d in axes.shape
             ):
@@ -501,14 +500,13 @@ class DataConfiguration(Serializable):
 
                 if len(i_axis.shape) == 1:
                     return counter, None
-                else:
-                    return slice(counter, counter + len(i_axis.shape)), None
+                return slice(counter, counter + len(i_axis.shape)), None
             if isinstance(variable_or_axis, Variable):
                 if isinstance(i_axis, (FeatureAxes, GeometryAxes)):
                     i_var = i_axis.variables
                     if variable_or_axis in i_var:
                         if len(i_axis.shape) == 1:
-                            return counter
+                            return counter, None
                         return counter, i_var.get_slice(variable_or_axis)
 
             counter += len(i_axis.shape)

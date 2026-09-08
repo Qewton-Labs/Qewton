@@ -138,8 +138,8 @@ class Serializer:
                 isinstance(obj, cls.default_dtype) for cls in self.backend_dict.values()
             ):
                 # If the object is a backend tensor, save it as a parameter file
-                param_extenstion = f"parameter_{self.file_counter}"
-                param_path = self.parameter_path / param_extenstion
+                param_extension = f"parameter_{self.file_counter}"
+                param_path = self.parameter_path / param_extension
                 self.file_counter += 1
                 # Save the tensor using the appropriate backend
                 backend_key = None
@@ -150,7 +150,7 @@ class Serializer:
                 self.id_dictionary[obj_id] = {
                     SavingKeys.KEY_TYPE: SavingKeys.KEY_BACKEND_PARAMETER,
                     SavingKeys.KEY_CLASS: backend_key,
-                    SavingKeys.KEY_VALUES: param_extenstion,
+                    SavingKeys.KEY_VALUES: param_extension,
                 }
 
             if obj_id not in self.id_dictionary:
