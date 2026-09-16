@@ -1,7 +1,7 @@
 from typing import Annotated, Generic
 
 from qewton.algorithms.building_blocks.math import Power, Add
-from qewton.algorithms.building_blocks.linear import Linear
+from qewton.algorithms.building_blocks.linear import Linear, Quadratic
 from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.config.data_configurations import DataConfiguration
@@ -13,10 +13,12 @@ from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
-class FCN(GraphNode, Generic[TensorType]):
-    """Fully Connected Network (FCN) implementation.
+class FFN(GraphNode, Generic[TensorType]):
+    """Feedforward Neural Network (FFN) implementation.
 
     Args:
+        layer_blocks (Node) : A node that represents the computation of the network
+            that happens in between the neurons (e.g. a linear layer for a FCN).
         in_neurons (int | HyperParameter | Variable): The number of input neurons
             or a variable representing it.
         hidden_neurons (int | HyperParameter): The number of neurons in
@@ -28,20 +30,21 @@ class FCN(GraphNode, Generic[TensorType]):
             Defaults to True.
         activation (type[Node] | HyperParameter, optional): The activation
             function in each layer. Defaults to ReLU.
-        name (str, optional): Name of the model. Defaults to "fcn".
+        name (str, optional): Name of the model. Defaults to "ffn".
         backend (type[Backend[TensorType]], optional): What backend this
             model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
     """
 
     def __init__(
         self,
+        layer_blocks: type[Node[TensorType]],
         in_neurons: int | HyperParameter | Variable,
         hidden_neurons: int | HyperParameter,
         out_neurons: int | HyperParameter | Variable,
         n_hidden_layers: int | HyperParameter,
         bias: bool | HyperParameter = True,
         activation: type[Node] | HyperParameter = ReLU,
-        name: str = "fcn",
+        name: str = "ffn",
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         if isinstance(in_neurons, Variable):
@@ -55,6 +58,7 @@ class FCN(GraphNode, Generic[TensorType]):
         else:
             self.output_var = None
 
+        self.layer_blocks = layer_blocks
         self.in_neurons = HyperParameter.from_value(in_neurons, "FCN Input Neurons")
         self.hidden_neurons = HyperParameter.from_value(
             hidden_neurons, "FCN Hidden Neurons"
@@ -87,7 +91,7 @@ class FCN(GraphNode, Generic[TensorType]):
         layers = self.n_hidden_layers.value + 1
         for i in range(layers):
             nodes.append(
-                Linear(
+                self.layer_blocks(
                     in_neurons=(self.in_neurons if i == 0 else self.hidden_neurons),
                     out_neurons=(
                         self.hidden_neurons if i < layers - 1 else self.out_neurons
@@ -173,6 +177,100 @@ class FCN(GraphNode, Generic[TensorType]):
         self.input_ports[0].set_value(x)
         self.run()
         return self.output_ports[0].value  # type: ignore
+
+
+class FCN(FFN[TensorType]):
+    """Fully Connected Network (FCN) implementation.
+
+    Args:
+        in_neurons (int | HyperParameter | Variable): The number of input neurons
+            or a variable representing it.
+        hidden_neurons (int | HyperParameter): The number of neurons in
+            each hidden layer.
+        out_neurons (int | HyperParameter | Variable): The number of output
+            neurons or a variable representing it.
+        n_hidden_layers (int | HyperParameter): Number of hidden layers.
+        bias (bool | HyperParameter, optional): If a bias should be included.
+            Defaults to True.
+        activation (type[Node] | HyperParameter, optional): The activation
+            function in each layer. Defaults to ReLU.
+        name (str, optional): Name of the model. Defaults to "fcn".
+        backend (type[Backend[TensorType]], optional): What backend this
+            model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
+    """
+
+    def __init__(
+        self,
+        in_neurons: int | HyperParameter | Variable,
+        hidden_neurons: int | HyperParameter,
+        out_neurons: int | HyperParameter | Variable,
+        n_hidden_layers: int | HyperParameter,
+        bias: bool | HyperParameter = True,
+        activation: type[Node[TensorType]] | HyperParameter = ReLU,
+        name: str = "fcn",
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(
+            layer_blocks=Linear,
+            in_neurons=in_neurons,
+            hidden_neurons=hidden_neurons,
+            out_neurons=out_neurons,
+            n_hidden_layers=n_hidden_layers,
+            bias=bias,
+            activation=activation,
+            name=name,
+            backend=backend,
+        )
+
+
+class QRES(FFN[TensorType]):
+    """Implementation of the architecture used in the QRES paper [1]_.
+    Consists of fully connected layers and residual connections.
+
+    Args:
+        in_neurons (int | HyperParameter | Variable): The number of input neurons
+            or a variable representing it.
+        hidden_neurons (int | HyperParameter): The number of neurons in
+            each hidden layer.
+        out_neurons (int | HyperParameter | Variable): The number of output
+            neurons or a variable representing it.
+        n_hidden_layers (int | HyperParameter): Number of hidden layers.
+        bias (bool | HyperParameter, optional): If a bias should be included.
+            Defaults to True.
+        activation (type[Node] | HyperParameter, optional): The activation
+            function in each layer. Defaults to ReLU.
+        name (str, optional): Name of the model. Defaults to "fcn".
+        backend (type[Backend[TensorType]], optional): What backend this
+            model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
+
+    Notes:
+        [1] Jie Bu and Anuj Karpatne, "Quadratic Residual Networks:
+            A New Class of Neural Networks for Solving Forward and Inverse Problems
+            in Physics Involving PDEs", 2021
+    """
+
+    def __init__(
+        self,
+        in_neurons: int | HyperParameter | Variable,
+        hidden_neurons: int | HyperParameter,
+        out_neurons: int | HyperParameter | Variable,
+        n_hidden_layers: int | HyperParameter,
+        bias: bool | HyperParameter = True,
+        activation: type[Node[TensorType]] | HyperParameter = ReLU,
+        name: str = "fcn",
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(
+            layer_blocks=Quadratic,
+            in_neurons=in_neurons,
+            hidden_neurons=hidden_neurons,
+            out_neurons=out_neurons,
+            n_hidden_layers=n_hidden_layers,
+            bias=bias,
+            activation=activation,
+            name=name,
+            backend=backend,
+        )
 
 
 class DeepRitzNet(FCN[TensorType]):

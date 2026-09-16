@@ -1280,6 +1280,12 @@ class TrackingObject:
         unsqueeze_node = Unsqueeze(dim)
         return unsqueeze_node(self)
 
+    def track_gradient(self):
+        from qewton.algorithms.building_blocks.derivatives import GradientTracking
+
+        track_node = GradientTracking()
+        return track_node(self)
+
     def gradient(self, with_respect_to):
         from qewton.algorithms.building_blocks.derivatives import Gradient
 

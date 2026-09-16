@@ -1,5 +1,5 @@
 from .parameters import ParameterNode
-from .activation_functions import ReLU, Tanh, Sigmoid
+from .activation_functions import ReLU, Tanh, Sigmoid, AdaptiveActivation
 from .linear import Linear, FunctionalLinear
 from .conv import (
     FunctionalConv,
@@ -75,3 +75,4 @@ from .derivatives import (
 )
 from .creation import Zeros, ZerosLike, Ones, OnesLike, Identity
 from .geometry import MeshInterpolationNode
+from .functions import FunctionNode
