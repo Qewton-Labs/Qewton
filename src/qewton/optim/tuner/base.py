@@ -3,6 +3,8 @@ import csv
 import os
 import multiprocessing as mp
 import sys
+import gc
+
 from typing import Any, Tuple
 
 from qewton.optim.tuner.tuning_callbacks.state import TuningState
@@ -57,7 +59,10 @@ def worker(
                     local_trainer.train_state.losses
                 )
                 result_queue.put((params, local_trainer.train_state))
-                local_trainer.cleanup()
+                gpu_cleanup_fn = local_trainer.cleanup()
+                del local_trainer
+                gc.collect()
+                gpu_cleanup_fn()
 
 
 # TODO: Enable to restart tuning from a given point

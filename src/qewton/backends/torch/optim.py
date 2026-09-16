@@ -1,5 +1,6 @@
 from typing import Callable
 import torch
+import gc
 
 from qewton.backends.optim import OptimBackend
 
@@ -95,6 +96,7 @@ class TorchOptimBackend(OptimBackend[torch.Tensor]):
 
     @staticmethod
     def _cleanup():
+        gc.collect()
         torch.cuda.empty_cache()
         if torch.cuda.is_available():
             torch.cuda.ipc_collect()

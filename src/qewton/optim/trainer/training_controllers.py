@@ -250,4 +250,4 @@ class OptimizationPhase:
 
     def cleanup(self):
         """Perform backend-specific cleanup after the optimization phase ends."""
-        self.cleanup_fn()
+        return self.cleanup_fn
