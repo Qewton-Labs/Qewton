@@ -323,11 +323,54 @@ class PlotlyRenderer(Renderer):
         # only ever drops/replaces entries it added itself, tagged by name -
         # both can coexist on one figure.
         menu_name = f"variable_selector_{id(spec)}"
-        kept = [m for m in backend_figure.layout.updatemenus if m.name != menu_name]
-        backend_figure.update_layout(
-            updatemenus=kept
-            + [dict(name=menu_name, buttons=buttons, direction="down", showactive=True)]
+
+        # Keep any non-variable-selector menus (e.g. animation controls) and
+        # rebuild variable selector menus with explicit positions so they do
+        # not overlap.
+        existing_selectors = []
+        kept = []
+        for menu in backend_figure.layout.updatemenus:
+            menu_name_value = getattr(menu, "name", None)
+            if menu_name_value is None and isinstance(menu, dict):
+                menu_name_value = menu.get("name")
+
+            to_plotly_json = getattr(menu, "to_plotly_json", None)
+            if callable(to_plotly_json):
+                menu_dict = to_plotly_json()
+            elif isinstance(menu, dict):
+                menu_dict = dict(menu)
+            else:
+                menu_dict = {}
+            if isinstance(menu_name_value, str) and menu_name_value.startswith(
+                "variable_selector_"
+            ):
+                existing_selectors.append(menu_dict)
+            else:
+                kept.append(menu_dict)
+
+        # Replace/create this selector's menu content before laying all
+        # variable selectors out in a clean vertical stack.
+        existing_selectors = [m for m in existing_selectors if m.get("name") != menu_name]
+        existing_selectors.append(
+            dict(name=menu_name, buttons=buttons, direction="down", showactive=True)
         )
+
+        x = 1.01
+        y_start = 1.0
+        y_step = 0.12
+        laid_out_selectors = []
+        for idx, menu in enumerate(existing_selectors):
+            laid_out_selectors.append(
+                {
+                    **menu,
+                    "x": x,
+                    "xanchor": "left",
+                    "y": y_start - idx * y_step,
+                    "yanchor": "top",
+                }
+            )
+
+        backend_figure.update_layout(updatemenus=kept + laid_out_selectors)
         return backend_figure
 
     @staticmethod
