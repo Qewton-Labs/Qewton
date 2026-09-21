@@ -472,7 +472,7 @@ class Unflatten(Node[TensorType]):
     def __init__(
         self,
         axis: int,
-        sizes: tuple[int, ...],
+        sizes: tuple[int, ...] | None = None,
         name=None,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
@@ -482,9 +482,18 @@ class Unflatten(Node[TensorType]):
         self.backend: type[DeepLearningBackend[TensorType]] = backend
 
     def forward(
-        self, inp: Annotated[TensorType, DataConfiguration.empty()]
+        self,
+        inp: Annotated[TensorType, DataConfiguration.empty()],
+        size: Annotated[
+            int | tuple[int, ...] | None,
+            FeatureAxes(shape=(AxesDim(None),)),
+        ] = None,
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.backend.math.unflatten(inp, self.axis, self.sizes)
+        if isinstance(size, int):
+            size = (size,)
+        elif size is None and self.sizes is not None:
+            size = self.sizes
+        return self.backend.math.unflatten(inp, self.axis, size)  # type: ignore
 
 
 class Repeat(Node[TensorType]):
