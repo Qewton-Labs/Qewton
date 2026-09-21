@@ -52,7 +52,7 @@ from .plots.data import (
     ScatterPlot,
     BarPlot,
 )
-from .plots.table import TablePlot, ParallelCoordinatesPlot
+from .plots.table import *
 from .layout import Layout, Overlay, Row, Column
 from .auto import auto_plot
 from .renderers.base import Artist, Renderer

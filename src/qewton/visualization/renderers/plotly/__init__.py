@@ -4,7 +4,10 @@ from plotly.subplots import make_subplots
 from qewton.visualization.plots.spec import FacetSpec
 from qewton.visualization.renderers.base import Renderer
 from qewton.visualization.renderers.plotly.curve import LineArtist, PathArtist
-from qewton.visualization.renderers.plotly.geometry import GeometryArtist, GeometryArtist2D
+from qewton.visualization.renderers.plotly.geometry import (
+    GeometryArtist,
+    GeometryArtist2D,
+)
 from qewton.visualization.renderers.plotly.graph import NodeLinkArtist
 from qewton.visualization.renderers.plotly.grid import (
     HeatmapArtist,
@@ -13,10 +16,16 @@ from qewton.visualization.renderers.plotly.grid import (
     SurfaceArtist,
 )
 from qewton.visualization.renderers.plotly.mesh import FilledMeshArtist, SurfaceMeshArtist
-from qewton.visualization.renderers.plotly.points import PointCloud2DArtist, PointCloud3DArtist
+from qewton.visualization.renderers.plotly.points import (
+    PointCloud2DArtist,
+    PointCloud3DArtist,
+)
 from qewton.visualization.renderers.plotly.table import ParallelCoordinatesArtist
 from qewton.visualization.renderers.plotly.tabular import BarArtist, ScatterArtist
-from qewton.visualization.renderers.plotly.vector import ArrowField2DArtist, ArrowField3DArtist
+from qewton.visualization.renderers.plotly.vector import (
+    ArrowField2DArtist,
+    ArrowField3DArtist,
+)
 
 
 class PlotlyRenderer(Renderer):
@@ -65,28 +74,24 @@ class PlotlyRenderer(Renderer):
             spans = figure.cell_spans(n_rows, n_cols)
             specs = [
                 [
-                    None
-                    if spans[r][c] is None
-                    else {
-                        "type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dims[r][c]],
-                        **(
-                            {"rowspan": spans[r][c][0]}
-                            if spans[r][c][0] > 1
-                            else {}
-                        ),
-                        **(
-                            {"colspan": spans[r][c][1]}
-                            if spans[r][c][1] > 1
-                            else {}
-                        ),
-                    }
+                    (
+                        None
+                        if spans[r][c] is None
+                        else {
+                            "type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dims[r][c]],
+                            **({"rowspan": spans[r][c][0]} if spans[r][c][0] > 1 else {}),
+                            **({"colspan": spans[r][c][1]} if spans[r][c][1] > 1 else {}),
+                        }
+                    )
                     for c in range(n_cols)
                 ]
                 for r in range(n_rows)
             ]
             titles = figure.cell_titles(n_rows, n_cols)
             fig = make_subplots(
-                rows=n_rows, cols=n_cols, specs=specs,
+                rows=n_rows,
+                cols=n_cols,
+                specs=specs,
                 subplot_titles=titles if any(titles) else None,
             )
         # The whole-figure title is Figure.title alone, set once here - never
@@ -111,7 +116,11 @@ class PlotlyRenderer(Renderer):
         fig.update_layout(
             paper_bgcolor=theme.background_color,
             plot_bgcolor=theme.background_color,
-            font=dict(family=theme.font_family, size=theme.font_size_labels, color=theme.text_color),
+            font=dict(
+                family=theme.font_family,
+                size=theme.font_size_labels,
+                color=theme.text_color,
+            ),
             title_font=dict(size=theme.font_size_title, color=theme.text_color),
             showlegend=theme.show_legend,
             legend=dict(
@@ -137,7 +146,9 @@ class PlotlyRenderer(Renderer):
         # Scene (3D) axes are a different schema - they additionally have
         # their own background plane (backgroundcolor/showbackground), which
         # 2D axes don't, so this can't just reuse axis_kwargs as-is.
-        scene_axis_kwargs = dict(axis_kwargs, showbackground=True, backgroundcolor=theme.background_color)
+        scene_axis_kwargs = dict(
+            axis_kwargs, showbackground=True, backgroundcolor=theme.background_color
+        )
         fig.update_scenes(
             bgcolor=theme.background_color,
             xaxis=scene_axis_kwargs,
@@ -199,7 +210,9 @@ class PlotlyRenderer(Renderer):
             frames.append(go.Frame(data=frame_data, traces=frame_traces, name=str(value)))
         spec.state = original_state
         for plot, artist in animated:
-            artist.update(backend_figure, plot)  # leave the live traces at the initial state
+            artist.update(
+                backend_figure, plot
+            )  # leave the live traces at the initial state
 
         backend_figure.frames = frames
         backend_figure.update_layout(
@@ -294,11 +307,17 @@ class PlotlyRenderer(Renderer):
                         continue
                     per_key_values.setdefault(key, []).append(value)
             buttons.append(
-                dict(label=candidate.name, method="restyle", args=[per_key_values, trace_indices])
+                dict(
+                    label=candidate.name,
+                    method="restyle",
+                    args=[per_key_values, trace_indices],
+                )
             )
         spec.state = original_state
         for plot, artist in affected:
-            artist.update(backend_figure, plot)  # leave the live traces at the initial state
+            artist.update(
+                backend_figure, plot
+            )  # leave the live traces at the initial state
 
         # animate() (TimeSpec) sets its own updatemenus wholesale, so this
         # only ever drops/replaces entries it added itself, tagged by name -
@@ -363,7 +382,13 @@ class PlotlyRenderer(Renderer):
         static_layout.sliders = ()
 
         images = [
-            Image.open(io.BytesIO(go.Figure(data=frame.data, layout=static_layout).to_image(format="png")))
+            Image.open(
+                io.BytesIO(
+                    go.Figure(data=frame.data, layout=static_layout).to_image(
+                        format="png"
+                    )
+                )
+            )
             for frame in backend_figure.frames
         ]
 

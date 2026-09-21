@@ -1,17 +1,17 @@
 from copy import deepcopy
-import csv
 import os
 import multiprocessing as mp
 import sys
-from typing import Any, Tuple
+import gc
+
+from typing import Any
 
 from qewton.optim.tuner.tuning_callbacks.state import TuningState
 from qewton.optim.tuner.tuning_callbacks.tuning_callback import TuningCallback
-from qewton.optim.base import EvaluationPhase
 from qewton.optim.trainer.base_trainer import Trainer
-from qewton.optim.trainer.training_controllers import TrainerState
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.dag import HyperParameterDAG
+from qewton.optim.tuner.results.tune_results import TrainResult, TuneResultCollector
 
 
 def worker(
@@ -46,15 +46,23 @@ def worker(
 
             local_trainer.set_hyperparameter(params)
             local_trainer.run(show_progress=False)
-            local_trainer.train_state.losses = local_trainer.train_state.detach_data(
-                local_trainer.train_state.losses
-            )
-            result_queue.put((params, local_trainer.train_state))
-
-            local_trainer.cleanup()
+        except Exception as e:
+            if local_trainer is not None:
+                local_trainer.train_state.termination_reason = f"Exception: {e}"
+            else:
+                result_queue.put(TrainResult(params=params, train_state=None))
         finally:
             if local_trainer is not None:
-                local_trainer.cleanup()
+                local_trainer.train_state.losses = local_trainer.train_state.detach_data(
+                    local_trainer.train_state.losses
+                )
+                result_queue.put(
+                    TrainResult(params=params, train_state=local_trainer.train_state)
+                )
+                gpu_cleanup_fn = local_trainer.cleanup()
+                del local_trainer
+                gc.collect()
+                gpu_cleanup_fn()
 
 
 # TODO: Enable to restart tuning from a given point
@@ -88,7 +96,7 @@ class Tuner:
         track_tune_state: bool | TuningState = True,
         tuning_callbacks: list[TuningCallback] | None = None,
         save_path: str = "tuner",
-        save_interval: int = 10,
+        result_collector: TuneResultCollector = TuneResultCollector(),
         use_multiprocessing: bool = True,
     ) -> None:
         """
@@ -147,19 +155,18 @@ class Tuner:
         self.hp_dag = self._get_tuneable_parameters(self.trainer)
 
         # Build saving path
-        self.save_path = save_path
-        self.file_path = self.build_save_path(self.trainer)
-        self.csv_path = os.path.join(self.file_path, "study.csv")
-        self._setup_csv_file()
+        save_path = self.build_save_path(save_path, self.trainer)
+        self.result_collector = result_collector
+        self.result_collector.save_path = save_path
+        self.result_collector.set_hp_and_conditions(self.hp_dag, self.tuning_objectives)
 
-        # Queues for parallel processing:
-        self.save_interval = save_interval
+        # Queues for parallel processing
         self.task_queue: mp.Queue
         self.result_queue: mp.Queue
         self.stop_event: mp.Event  # type: ignore
         self.workers: list[Any]
 
-    def build_save_path(self, trainer: Trainer) -> str:
+    def build_save_path(self, save_path: str, trainer: Trainer) -> str:
         """
         Constructs a unique save path for the tuning results.
         Args:
@@ -169,16 +176,15 @@ class Tuner:
         """
         # base_path = os.path.join(self.save_path, trainer.train_state.save_path)
 
-        file_path = self.save_path
+        file_path = save_path
         counter = 0
 
         while os.path.exists(file_path):
             counter += 1
-            file_path = f"{self.save_path}_{counter}"
+            file_path = f"{save_path}_{counter}"
 
-        os.makedirs(file_path, exist_ok=True)
         trainer.train_state.save_path = os.path.join(
-            file_path, trainer.train_state.save_path
+            file_path + "/train_results", trainer.train_state.save_path
         )
         return file_path
 
@@ -209,11 +215,11 @@ class Tuner:
             context_str = "spawn"
 
         trial_params = self._get_trial_parameters()
+        self.result_collector.setup_file_tree()
+        done_counter = 0
 
         if not self.use_multiprocessing:
             print("--- Start Tuning (Sequential) ---")
-            current_results = []
-            done_counter = 0
             self.print_update_text(done_counter, len(trial_params))
             for params in trial_params:
                 local_trainer = deepcopy(self.trainer)
@@ -230,27 +236,31 @@ class Tuner:
                 local_trainer.train_state.losses = local_trainer.train_state.detach_data(
                     local_trainer.train_state.losses
                 )
-                result = (params, local_trainer.train_state)
-                current_results.append(result)
+                result = TrainResult(params, local_trainer.train_state)
+                self.result_collector.add_result(result)
 
                 if self.tuning_state:
                     self.tuning_state.finished_trials += 1
-                    self.tuning_state.add_trial_history(result[1].history)
+                    self.tuning_state.add_trial_history(local_trainer.train_state.history)
                     if self.tuning_state.stop_tuning:
                         break
 
-                if len(current_results) % self.save_interval == 0:
-                    self._write_to_csv(current_results)
-                    current_results = []
-                    done_counter += self.save_interval
-                    self.print_update_text(done_counter, len(trial_params))
-                local_trainer.cleanup()
+                cleanup_fn = local_trainer.cleanup()
+                del local_trainer
+                gc.collect()
+                cleanup_fn()
 
-            if len(current_results) > 0:
-                self._write_to_csv(current_results)
+                done_counter += 1
+                if done_counter % self.result_collector.save_interval == 0:
+                    self.print_update_text(done_counter, len(trial_params))
+
+            self.result_collector.finish_tuning()
             print("--- Finished Tuning ---")
             return
 
+        self._multiprocess_tune(context_str, done_counter)
+
+    def _multiprocess_tune(self, context_str, done_counter):
         try:
             ctx = mp.get_context(context_str)
 
@@ -281,33 +291,27 @@ class Tuner:
             for params in trial_params:
                 self.task_queue.put(params)
 
-            current_results = []
-            done_counter = 0
             self.print_update_text(done_counter, len(trial_params))
             for _ in range(len(trial_params)):
                 result = self.result_queue.get()
-                current_results.append(result)
+                self.result_collector.add_result(result)
+
+                done_counter += 1
+                if done_counter % self.result_collector.save_interval == 0:
+                    self.print_update_text(done_counter, len(trial_params))
 
                 # Log the current results:
                 if self.tuning_state:
                     self.tuning_state.finished_trials += 1
-                    self.tuning_state.add_trial_history(result[1].history)
+                    self.tuning_state.add_trial_history(result.train_state.history)
 
                     if self.tuning_state.stop_tuning:
                         print("Stopping tuning...")
                         self.stop_event.set()
                         break
 
-                if len(current_results) % self.save_interval == 0:
-                    self._write_to_csv(current_results)
-                    current_results = []
-                    done_counter += self.save_interval
-                    self.print_update_text(done_counter, len(trial_params))
-
-            if len(current_results) > 0:
-                self._write_to_csv(current_results)
-
             print("--- Cleaning up ---")
+            self.result_collector.finish_tuning()
             for _ in self.workers:
                 self.task_queue.put(None)
 
@@ -321,84 +325,10 @@ class Tuner:
             print("--- Finished Tuning ---")
 
     def print_update_text(self, done_counter, len_trial_params):
-        upper_limit = min(done_counter + self.save_interval, len_trial_params)
+        upper_limit = min(
+            done_counter + self.result_collector.save_interval, len_trial_params
+        )
         print(f"Working on trials {done_counter} - {upper_limit}")
-
-    def _setup_csv_file(self):
-        """
-        Sets up the CSV file for logging tuning results, including writing the header.
-        Args:
-            trainer_state_dummy (TrainerState): A dummy trainer state to extract loss and metric names.
-        """
-        if not os.path.exists(self.csv_path):
-            with open(self.csv_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                param_names = [hp.name for hp in self.hp_dag.sorted_nodes]
-                objective_names = [con.name for con in self.tuning_objectives]
-                # TODO: maybe add callback info here?
-                self.csv_columns = param_names + objective_names + self.save_keys
-                writer = csv.DictWriter(f, fieldnames=self.csv_columns)
-                writer.writeheader()
-
-    def _write_to_csv(
-        self, results: list[Tuple[dict[str, Any], TrainerState]], trial: Any | None = None
-    ):  # pylint: disable=unused-argument
-        """
-        Writes the results of a batch of trials to the CSV file.
-        Args:
-            results (list[Tuple[dict[str, Any], TrainerState]]): A list of (parameters,
-                trainer_state) tuples.
-            trial (Any | None, optional): Placeholder for potential future trial object.
-                Defaults to None.
-        """
-        flat_results = [self._flatten_result_data(r) for r in results]
-        with open(self.csv_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=flat_results[0].keys())
-            writer.writerows(flat_results)
-
-    def _flatten_result_data(self, result: Tuple[dict[str, Any], TrainerState]):
-        """Flattens the result data (hyperparameters, losses, metrics) into a single
-        dictionary for CSV writing.
-
-        Args:
-            result (Tuple[dict[str, Any], TrainerState]): A tuple containing
-                the parameters and trainer state for a trial.
-        Returns:
-            dict: A flattened dictionary suitable for CSV row.
-        """
-        result_dict: dict[str, Any] = {}
-        for obj in self.tuning_objectives:
-            phase = obj.evaluated_in_mode
-            if phase == EvaluationPhase.ALWAYS:
-                if obj in result[1].losses[EvaluationPhase.VALIDATION]:
-                    result_dict[obj.name] = result[1].losses[EvaluationPhase.VALIDATION][
-                        obj.name
-                    ]
-                else:
-                    result_dict[obj.name] = result[1].losses[EvaluationPhase.TRAIN][
-                        obj.name
-                    ]
-            else:
-                result_dict[obj.name] = result[1].losses[phase][obj.name]
-
-        flat_dict = {}
-        for name in self.csv_columns:
-            if name == self.save_keys[0]:
-                flat_dict[name] = result[1].termination_reason
-            elif name == self.save_keys[1]:
-                flat_dict[name] = result[1].total_train_time
-            elif name == self.save_keys[2]:
-                flat_dict[name] = result[1].save_path
-            elif name in result[0]:
-                if isinstance(result[0][name], type):
-                    flat_dict[name] = result[0][name].__name__
-                else:
-                    flat_dict[name] = result[0][name]
-            elif name in result_dict:
-                flat_dict[name] = result_dict[name]
-            else:
-                flat_dict[name] = ""
-        return flat_dict
 
     def _get_trial_parameters(self) -> list[dict[str, dict[str, Any]]]:
         """

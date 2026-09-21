@@ -1,6 +1,10 @@
 from plotly import graph_objects as go
 
-from qewton.visualization.renderers.plotly.common import PlotlyArtist, _apply_scale, _cycled_color
+from qewton.visualization.renderers.plotly.common import (
+    PlotlyArtist,
+    _apply_scale,
+    _cycled_color,
+)
 
 
 class ScatterArtist(PlotlyArtist):
@@ -16,7 +20,9 @@ class ScatterArtist(PlotlyArtist):
             cmap = plot.color.cmap or plot.theme.default_cmap
             marker.update(color=result.color, colorscale=cmap)
             marker.update(
-                _apply_scale(plot.color.scale, backend_figure=backend_figure, row=row, col=col)
+                _apply_scale(
+                    plot.color.scale, backend_figure=backend_figure, row=row, col=col
+                )
             )
         else:
             # No data-driven ColorSpec - fall back to the theme's cycled
@@ -25,7 +31,10 @@ class ScatterArtist(PlotlyArtist):
             marker.update(color=_cycled_color(plot))
 
         trace = go.Scatter(
-            x=result.x, y=result.y, mode="markers", marker=marker,
+            x=result.x,
+            y=result.y,
+            mode="markers",
+            marker=marker,
             opacity=plot.theme.opacity_default,
         )
         backend_figure.add_trace(trace, row=row, col=col)
@@ -66,7 +75,9 @@ class BarArtist(PlotlyArtist):
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         trace = go.Bar(
-            x=result.x, y=result.y, name=plot.label or plot.y.name,
+            x=result.x,
+            y=result.y,
+            name=plot.label or plot.y.name,
             marker=dict(color=_cycled_color(plot)),
             opacity=plot.theme.opacity_default,
         )

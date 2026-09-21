@@ -1,6 +1,7 @@
 from typing import Any
 
 from qewton.optim.tuner.base import Tuner
+from qewton.optim.tuner.results.tune_results import TuneResultCollector
 from qewton.optim.tuner.tuning_callbacks.state import TuningState
 from qewton.optim.tuner.tuning_callbacks.tuning_callback import TuningCallback
 from qewton.optim.trainer.base_trainer import Trainer
@@ -10,25 +11,27 @@ class GridSearchTuner(Tuner):
 
     def __init__(
         self,
-        trainer_factory: Trainer,
+        trainer: Trainer,
         tuning_objectives: list,
-        trial_number: int = 1,
+        trial_number: int = 10,
         devices: str | list[str] = "cpu",
         trials_per_device: int = 1,
         track_tune_state: bool | TuningState = True,
         tuning_callbacks: list[TuningCallback] | None = None,
-        save_path: str = "tuner_results",
+        save_path: str = "tuner",
+        result_collector: TuneResultCollector = TuneResultCollector(),
         use_multiprocessing: bool = True,
     ) -> None:
         super().__init__(
-            trainer_factory,
-            tuning_objectives,
-            trial_number,
+            trainer=trainer,
+            tuning_objectives=tuning_objectives,
+            trial_number=trial_number,
             devices=devices,
             trials_per_device=trials_per_device,
             tuning_callbacks=tuning_callbacks,
             track_tune_state=track_tune_state,
             save_path=save_path,
+            result_collector=result_collector,
             use_multiprocessing=use_multiprocessing,
         )
         self.grid_params = self.hp_dag.create_grid_samples(self.trial_number)

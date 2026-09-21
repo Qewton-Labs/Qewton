@@ -2,7 +2,12 @@ import itertools
 
 import numpy as np
 
-from qewton.visualization.plots.spec import ControlSpec, PlotSpec, SliderSpec, VariableSpec
+from qewton.visualization.plots.spec import (
+    ControlSpec,
+    PlotSpec,
+    SliderSpec,
+    VariableSpec,
+)
 
 
 def axis_names_from_variable(variable, n: int) -> list[str]:
@@ -28,7 +33,9 @@ def axis_names_from_variable(variable, n: int) -> list[str]:
         leaves = variable.leaves
         if len(leaves) == n:
             return [f"${leaf.name}$" for leaf in leaves]
-    return [f"${name}$" for name in (["x", "y", "z"] + [f"axis_{i}" for i in range(3, n)])[:n]]
+    return [
+        f"${name}$" for name in (["x", "y", "z"] + [f"axis_{i}" for i in range(3, n)])[:n]
+    ]
 
 
 class Plot:
