@@ -191,6 +191,15 @@ class GraphNode(Node[TensorType]):
         Returns:
             Any: The output of the encapsulated graph, either a single value or a
                 tuple of values.
+
+        Note:
+            Opposite to the forward method of a normal Node, this method
+            is not the one that is called when the node is run inside a graph.
+            The forward method should always call the inner graph for
+            computations, and should only be overridden if the user wants to
+            speed up the argument passing to the inner graph. For custom
+            behavior, create a subclass of Node instead of overriding this
+            method.
         """
         for i, arg in enumerate(args):
             self.input_ports[i].set_value(arg)  # type: ignore
