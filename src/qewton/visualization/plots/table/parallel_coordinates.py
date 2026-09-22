@@ -26,6 +26,7 @@ class ParallelCoordinatesPlot(TablePlot):
         color: ColorSpec | str | None = None,
         labels: dict[str, str] | None = None,
         controls: list[ControlSpec] | None = None,
+        log_axes: list[str] = [],
         **kwargs,
     ):
         super().__init__(columns, controls=controls, **kwargs)
@@ -36,6 +37,7 @@ class ParallelCoordinatesPlot(TablePlot):
                 f"{missing} not found in columns (have {list(self.columns)})."
             )
         self.labels = labels or {}
+        self.log_axes = log_axes
 
         self.color = (
             (color if isinstance(color, ColorSpec) else ColorSpec(color))
@@ -59,9 +61,10 @@ class ParallelCoordinatesPlot(TablePlot):
             if self.color is not None
             else None
         )
-        return TableResult(
-            columns={key: rows[key] for key in self.axes}, color=color
-        )
+        for axes in self.log_axes:
+            rows[axes].log_scale = True
+
+        return TableResult(columns={key: rows[key] for key in self.axes}, color=color)
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
         return renderer.ParallelCoordinatesArtist.create(

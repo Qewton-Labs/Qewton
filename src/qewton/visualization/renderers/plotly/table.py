@@ -1,5 +1,7 @@
 from plotly import graph_objects as go
+import numpy as np
 
+from qewton.visualization.plots.result import TableResult
 from qewton.visualization.renderers.plotly.common import PlotlyArtist, _apply_scale
 
 
@@ -11,21 +13,22 @@ class ParallelCoordinatesArtist(PlotlyArtist):
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
-        result = plot.evaluate()
+        result: TableResult = plot.evaluate()
         line = dict()
         if result.color is not None:
             cmap = plot.color.cmap or plot.theme.default_cmap
             line.update(color=result.color, colorscale=cmap)
             line.update(
-                _apply_scale(plot.color.scale, backend_figure=backend_figure, row=row, col=col)
+                _apply_scale(
+                    plot.color.scale, backend_figure=backend_figure, row=row, col=col
+                )
             )
-
         trace = go.Parcoords(dimensions=cls._dimensions(plot, result), line=line)
         backend_figure.add_trace(trace, row=row, col=col)
         return cls(len(backend_figure.data) - 1)
 
     @staticmethod
-    def _dimensions(plot, result):
+    def _dimensions(plot, result: TableResult):
         dimensions = []
         for key, column in result.columns.items():
             dim = dict(label=plot.labels.get(key, key), values=column.values)
@@ -33,6 +36,14 @@ class ParallelCoordinatesArtist(PlotlyArtist):
                 dim.update(
                     tickvals=list(range(len(column.labels))), ticktext=column.labels
                 )
+            if column.log_scale:
+                log_values = np.log10(column.values)
+                lo, hi = log_values.min(), log_values.max()
+                dist = int(np.ceil(hi) - np.floor(lo))
+                dist = dist + 7 if dist < 2 else dist + 5
+                tick_vals = np.linspace(np.floor(lo), np.ceil(hi), num=dist)
+                tick_text = [f"{10**v:.0e}" for v in tick_vals]
+                dim.update(values=log_values, tickvals=tick_vals, ticktext=tick_text)
             dimensions.append(dim)
         return dimensions
 

@@ -104,6 +104,7 @@ class Column:
 
     values: np.ndarray
     labels: list[str] | None = None
+    log_scale: bool = False  # for numeric columns, not categorical ones
 
     def __getitem__(self, mask) -> "Column":
         return Column(values=self.values[mask], labels=self.labels)

@@ -224,7 +224,12 @@ def _colorbar_position(backend_figure, row, col) -> dict | None:
 
 
 def _apply_scale(
-    scale, min_key: str = "cmin", max_key: str = "cmax", backend_figure=None, row=None, col=None
+    scale,
+    min_key: str = "cmin",
+    max_key: str = "cmax",
+    backend_figure=None,
+    row=None,
+    col=None,
 ) -> dict:
     """cmin/cmax/showscale kwargs for a trace, given a plot's ColorSpec.scale.
 
