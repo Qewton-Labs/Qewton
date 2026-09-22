@@ -16,7 +16,7 @@ from qewton.visualization.plots.data.grid import EmbeddedGridPlot, HeatmapPlot, 
 from qewton.visualization.plots.data.mesh import MeshFieldPlot, MeshVectorPlot
 from qewton.visualization.plots.data.points import PointCloudPlot
 from qewton.visualization.plots.data.samples import BarPlot, ScatterPlot
-from qewton.visualization.plots.spec import FixedSpec, SliderSpec, VariableSpec, VectorSpec
+from qewton.visualization.plots.spec import FixedSpec, SliderSpec, SelectorSpec, VectorSpec
 
 
 class TestLeftoverAxesBecomeSliders:
@@ -121,7 +121,7 @@ class TestMeshDispatch:
     def test_distinct_variables_with_different_dims_raise_a_clear_error(
         self, small_mesh_geometry
     ):
-        """A scalar and a mesh-matching vector can't share one VariableSpec -
+        """A scalar and a mesh-matching vector can't share one SelectorSpec -
         selecting one would leave the Plot needing the other's role."""
         scalar, vector = Variable("s", 1), Variable("v", 2)
         n = small_mesh_geometry.mesh.vertices.shape[0]
@@ -227,7 +227,7 @@ class TestControlsClassOrInstance:
     ):
         """One instance passed to several auto_plot() calls ends up shared
         (one widget, moving every panel together) - the same identity-based
-        mechanism a shared Scale/VariableSpec already relies on."""
+        mechanism a shared Scale/SelectorSpec already relies on."""
         resampled, config, grid, U, i = resampled_grid
         control = FixedSpec(init_state=2)
         plot_a = auto_plot(resampled, config, controls=control)

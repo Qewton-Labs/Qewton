@@ -35,7 +35,7 @@ class LineArtist(PlotlyArtist):
 
         return cls(len(backend_figure.data) - 1)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         trace = backend_figure.data[self.figure_idx]
         trace.x = result.x
@@ -83,7 +83,7 @@ class PathArtist(PlotlyArtist):
 
         return cls(len(backend_figure.data) - 1)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         positions = plot.evaluate().positions
         trace = backend_figure.data[self.figure_idx]
         trace.x = positions[:, 0]

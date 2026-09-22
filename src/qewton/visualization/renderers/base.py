@@ -27,12 +27,12 @@ class Renderer:
         raise NotImplementedError()
 
     @staticmethod
-    def apply_variable_selector(figure, backend_figure, spec):
+    def apply_selector(figure, backend_figure, spec):
         """Adds interactive UI to an already-drawn static backend_figure
-        letting it switch which candidate a VariableSpec currently selects,
+        letting it switch which candidate a SelectorSpec currently selects,
         without needing a running Dash app. Only called for the static
         export/display path (Figure.show()/save_html()/save_png()/
-        save_svg()) - Dash's own callback loop already handles VariableSpec
+        save_svg()) - Dash's own callback loop already handles SelectorSpec
         server-side and has no use for this. Backends without a way to
         embed this in a static figure can leave it unimplemented."""
         raise NotImplementedError()
@@ -76,7 +76,9 @@ class Artist:
         grid cell, or are None for a non-faceted figure."""
         raise NotImplementedError
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         """Re-evaluates `plot` in its current control state and refreshes
-        this artist's existing trace(s) in place."""
+        this artist's existing trace(s) in place. `row`/`col` are the same
+        facet grid cell passed to create(), for artists that also refresh
+        per-cell layout such as axis titles."""
         raise NotImplementedError

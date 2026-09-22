@@ -294,7 +294,7 @@ class TestVisualizeWithReference:
                 error="bogus",
             )
 
-    def test_variable_identity_mismatch_raises(self, connected_graph):
+    def test_selector_identity_mismatch_raises(self, connected_graph):
         graph, sampler, model = connected_graph
         other_variable = Variable("not_u", 1)  # not the model's own output Variable
         points = np.array([[0.2, 0.2]], dtype=np.float32)
@@ -383,7 +383,7 @@ class TestVisualizeWithReference:
         instance; attributes naming something else are left alone."""
         from qewton.config.axes import BatchAxes
         from qewton.visualization.plots.data.curve import LinePlot
-        from qewton.visualization.plots.spec import VariableSpec
+        from qewton.visualization.plots.spec import SelectorSpec
 
         temperature = Variable("temperature", 1)
         pressure = Variable("pressure", 1)
@@ -392,14 +392,14 @@ class TestVisualizeWithReference:
         config = DataConfiguration(sample_axis, FeatureAxes(temperature))
         plot = LinePlot(data, config, x=sample_axis, y=temperature)
 
-        shared_spec = VariableSpec([temperature, pressure])
+        shared_spec = SelectorSpec([temperature, pressure])
         Graph._redirect_to_shared_variable(plot, [temperature, pressure], shared_spec)
-        assert plot.y.embedded_variable_spec is shared_spec
+        assert plot.y.embedded_selector_spec is shared_spec
 
         unrelated = Variable("other", 1)
         plot2 = LinePlot(data, config, x=sample_axis, y=temperature)
         Graph._redirect_to_shared_variable(plot2, [unrelated], shared_spec)
-        assert plot2.y.embedded_variable_spec is None
+        assert plot2.y.embedded_selector_spec is None
 
 
 @pytest.fixture
@@ -758,6 +758,6 @@ class TestVisualizeWithVariablesNarrowing:
         layout = graph.visualize(model.output_ports[0], variables=[T, P])
         plot = layout.plots[0]
         assert isinstance(plot, MeshFieldPlot)
-        assert plot.color.embedded_variable_spec is not None
-        candidate_names = {v.name for v in plot.color.embedded_variable_spec.candidates}
+        assert plot.color.embedded_selector_spec is not None
+        candidate_names = {v.name for v in plot.color.embedded_selector_spec.candidates}
         assert candidate_names == {"temperature", "pressure"}

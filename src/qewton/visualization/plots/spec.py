@@ -13,12 +13,12 @@ class PlotSpec:
         self, n_dimensions: int, variable_or_axes: Variable | Axes | str | None
     ) -> None:
         # `variable_or_axes` is a plain str column key for TablePlot, a
-        # Variable/Axes for every DataPlot family - or a VariableSpec
+        # Variable/Axes for every DataPlot family - or a SelectorSpec
         # (defined at the bottom of this module), transparently unwrapped to
         # its currently selected candidate by the property below. Every
         # consumer (get_variable_slice, this class's own `name`, artists,
         # ...) already just reads `.variable_or_axes` as if it were a plain
-        # Variable, so none of them need to know VariableSpec exists.
+        # Variable, so none of them need to know SelectorSpec exists.
         # None (a ControlSpec built as `controls=FixedSpec(init_state=3)`,
         # its axis not known yet) is filled in later via the setter below -
         # see auto_plot()'s _resolve_control().
@@ -27,7 +27,7 @@ class PlotSpec:
 
     @property
     def variable_or_axes(self):
-        if isinstance(self._variable_or_axes, VariableSpec):
+        if isinstance(self._variable_or_axes, SelectorSpec):
             return self._variable_or_axes.state
         return self._variable_or_axes
 
@@ -36,14 +36,14 @@ class PlotSpec:
         self._variable_or_axes = value
 
     @property
-    def embedded_variable_spec(self) -> "VariableSpec | None":
-        """The VariableSpec this spec's `variable_or_axes` was given, or
-        None for a plain Variable/Axes/str - used by Plot.variable_specs to
-        discover VariableSpecs for widget-building, since they're never
+    def embedded_selector_spec(self) -> "SelectorSpec | None":
+        """The SelectorSpec this spec's `variable_or_axes` was given, or
+        None for a plain Variable/Axes/str - used by Plot.selector_specs to
+        discover SelectorSpecs for widget-building, since they're never
         listed in a Plot's own `controls=`."""
         return (
             self._variable_or_axes
-            if isinstance(self._variable_or_axes, VariableSpec)
+            if isinstance(self._variable_or_axes, SelectorSpec)
             else None
         )
 
@@ -72,15 +72,18 @@ class PlotSpec:
 
     @property
     def math_name(self) -> str:
-        """`.name`, wrapped for TeX math-mode rendering (Plotly's MathJax
-        support) when it names an actual Variable - axis/colorbar titles
+        """`.name`, wrapped for TeX math-mode rendering via Variable.
+        math_name when it names an actual Variable - axis/colorbar titles
         use this so plotted quantities render as math symbols rather than
-        plain text. A non-Variable spec (a plain Axes or TablePlot column
-        key) isn't a math symbol, so it falls back to the plain `.name`.
+        plain text. Falls back to the plain `.name` for a non-Variable spec
+        (a plain Axes or TablePlot column key) - including a SelectorSpec
+        currently on a plain-string candidate, which `_named_variable`
+        already isn't a Variable for; SelectorSpec doesn't synthesize
+        Variables around its string candidates, so this needs no special
+        case for them.
         """
-        if self._named_variable is not None:
-            return f"${self.name}$"
-        return self.name
+        variable = self._named_variable
+        return variable.math_name if variable is not None else self.name
 
     @staticmethod
     def get_slice(variable_or_axes, data_config: DataConfiguration):
@@ -170,11 +173,11 @@ class PlotSpec:
 
 class AxisSpec(PlotSpec):
     """Declares a single structural domain axis (e.g. a LinePlot's `x`/`y`).
-    `variable_or_axes` may also be a VariableSpec, to switch which Variable
+    `variable_or_axes` may also be a SelectorSpec, to switch which Variable
     fills this role."""
 
     def __init__(
-        self, variable_or_axes: "Variable | Axes | VariableSpec", log_scale: bool = False
+        self, variable_or_axes: "Variable | Axes | SelectorSpec", log_scale: bool = False
     ) -> None:
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
         self.log_scale = log_scale
@@ -186,7 +189,7 @@ class VectorSpec(PlotSpec):
 
     Args:
         variable_or_axes: The 2D or 3D Variable/Axes the vector components
-            come from - or a VariableSpec, to switch between several
+            come from - or a SelectorSpec, to switch between several
             same-dim candidates.
         scale: Multiplier applied to every vector's length.
         normalize: If True, normalizes each vector to unit length before
@@ -297,11 +300,11 @@ class Scale:
 class ColorSpec(PlotSpec):
     """Declares which Variable/Axes (DataPlot) or column (TablePlot) colors
     a plot, with an optional colormap and shared Scale. `variable_or_axes`
-    may also be a VariableSpec, to switch which Variable colors the plot."""
+    may also be a SelectorSpec, to switch which Variable colors the plot."""
 
     def __init__(
         self,
-        variable_or_axes: "Variable | str | VariableSpec",
+        variable_or_axes: "Variable | str | SelectorSpec",
         cmap=None,
         scale: Scale | None = None,
     ) -> None:
@@ -411,42 +414,64 @@ class FacetSpec(ControlSpec):
             self._state = self.values[0]
 
 
-class VariableSpec(ControlSpec):
-    """Selects which of several distinct Variables currently feeds another
-    spec's role - pass one anywhere a Variable is expected, e.g.
-    `ColorSpec(VariableSpec([temperature, pressure]))`. `PlotSpec.
-    variable_or_axes` transparently unwraps it to whichever candidate is
-    currently selected, so every existing consumer (get_variable_slice,
-    axis/colorbar titles, artists, ...) keeps working unchanged - selecting
-    a variable is exactly the same "pick a slice of the FeatureAxes"
-    operation a fixed Variable already describes, just made to react to
-    `state` instead of staying fixed.
+class SelectorSpec(ControlSpec):
+    """A categorical, single-select control letting the user swap which of
+    several candidates currently feeds another spec's role - pass one
+    anywhere a Variable is expected, e.g. `ColorSpec(SelectorSpec(
+    [temperature, pressure]))`. Rendered as one dropdown (DashApplication)
+    or one button menu (PlotlyRenderer.apply_selector) per instance, always
+    picking exactly one candidate at a time - not a whole-axis control that
+    reduces/partitions data the way SliderSpec/FacetSpec/TimeSpec do.
+    `PlotSpec.variable_or_axes` transparently unwraps it to whichever
+    candidate is currently selected, so every existing consumer
+    (get_variable_slice, axis/colorbar titles, artists, ...) keeps working
+    unchanged - selecting a candidate is exactly the same "pick a slice of
+    the FeatureAxes" operation a fixed Variable already describes, just
+    made to react to `state` instead of staying fixed.
 
     Unlike SliderSpec/FacetSpec/TimeSpec, this is never passed via a Plot's
     own `controls=` - it isn't a whole-axis control for apply_controls() to
     reduce, so it never appears in Plot.controls the way those do.
 
     All `candidates` must share the same dim, so the role they feed stays
-    valid (same required shape) regardless of which is selected.
+    valid (same required shape) regardless of which is selected. Candidates
+    are kept exactly as given - a plain string stays a plain string, never
+    synthesized into a Variable - so a TablePlot column key like "loss"
+    never looks like a math quantity to PlotSpec.math_name; see
+    candidate_name()/candidate_dim() below for how dim/name are read from
+    whichever kind of candidate this instance actually has.
     """
 
     def __init__(self, candidates: list[Variable] | list[str], init_index: int = 0):
         assert (
             len(candidates) >= 2
-        ), "VariableSpec needs at least 2 candidates to choose between."
-        if all(isinstance(c, str) for c in candidates):
-            candidates = [Variable(name=name, dim=1) for name in candidates]  # type: ignore
-
-        dims = {c.dim for c in candidates}
+        ), "SelectorSpec needs at least 2 candidates to choose between."
+        dims = {self.candidate_dim(c) for c in candidates}
         assert len(dims) == 1, f"All candidates must share the same dim, got {dims}."
         self.candidates = candidates
         super().__init__(
             init_state=candidates[init_index], n_dimensions=1, variable_or_axes=None
         )
 
+    @staticmethod
+    def candidate_dim(candidate: "Variable | str") -> int:
+        """A candidate's dim - `.dim` for a real Variable, 1 for a plain
+        string (it names one scalar column, the same as `Variable(name,
+        dim=1)` would)."""
+        return candidate.dim if isinstance(candidate, Variable) else 1
+
+    @staticmethod
+    def candidate_name(candidate: "Variable | str") -> str:
+        """A candidate's display name - `.name` for a real Variable, or the
+        string itself, which already is its own name. The one place this
+        distinction is handled, so callers building a widget/button label
+        per candidate (DashApplication.create_dropdown, PlotlyRenderer.
+        apply_selector) don't each need their own isinstance check."""
+        return candidate.name if isinstance(candidate, Variable) else candidate
+
     @property
     def dim(self):
-        return self.candidates[0].dim
+        return self.candidate_dim(self.candidates[0])
 
     @property
     def name(self):
@@ -454,14 +479,14 @@ class VariableSpec(ControlSpec):
         # here (this spec doesn't itself wrap a Variable - its candidates
         # do) - override with something a widget can actually label itself
         # with.
-        return " / ".join(c.name for c in self.candidates)
+        return " / ".join(self.candidate_name(c) for c in self.candidates)
 
     @property
-    def state(self) -> Variable:
+    def state(self) -> "Variable | str":
         return self._state
 
     @state.setter
-    def state(self, value: int | Variable):
+    def state(self, value: "int | Variable | str"):
         if isinstance(value, int):
             value = self.candidates[value]
         assert (

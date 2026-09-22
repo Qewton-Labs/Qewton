@@ -224,7 +224,13 @@ def _colorbar_position(backend_figure, row, col) -> dict | None:
 
 
 def _apply_scale(
-    scale, min_key: str = "cmin", max_key: str = "cmax", backend_figure=None, row=None, col=None
+    scale,
+    min_key: str = "cmin",
+    max_key: str = "cmax",
+    backend_figure=None,
+    row=None,
+    col=None,
+    title: str | None = None,
 ) -> dict:
     """cmin/cmax/showscale kwargs for a trace, given a plot's ColorSpec.scale.
 
@@ -239,6 +245,12 @@ def _apply_scale(
     panel grid has them on hand already) place the colorbar within that
     cell instead of Plotly's own figure-wide default position, which
     several visible colorbars would otherwise collide at.
+
+    title (optional - typically plot.color.math_name) labels what the
+    colorbar encodes, the same way update_xaxes/update_yaxes label what an
+    axis encodes. Plotly's default `side="top"` reads naturally next to a
+    vertical colorbar without widening it the way a rotated side="right"
+    title would.
     """
     if scale is None:
         kwargs = {"showscale": True}
@@ -266,6 +278,9 @@ def _apply_scale(
             kwargs["colorbar"] = position
         elif scale is not None:
             kwargs["colorbar"] = dict(x=1.02)
+        if title is not None:
+            kwargs.setdefault("colorbar", {})
+            kwargs["colorbar"] = {**kwargs["colorbar"], "title": dict(text=title)}
     return kwargs
 
 

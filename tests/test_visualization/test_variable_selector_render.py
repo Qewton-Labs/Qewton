@@ -6,7 +6,7 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.visualization.figure import Figure
 from qewton.visualization.plots.data.mesh import MeshFieldPlot
-from qewton.visualization.plots.spec import ColorSpec, TimeSpec, VariableSpec
+from qewton.visualization.plots.spec import AxisSpec, ColorSpec, TimeSpec, SelectorSpec
 
 
 def _mesh_field_plot_with_selector(small_mesh_geometry, **kwargs):
@@ -16,24 +16,64 @@ def _mesh_field_plot_with_selector(small_mesh_geometry, **kwargs):
     config = DataConfiguration(
         GeometryAxes(small_mesh_geometry), FeatureAxes(temperature * pressure)
     )
-    selector = VariableSpec([temperature, pressure])
+    selector = SelectorSpec([temperature, pressure])
     plot = MeshFieldPlot(data, config, color=ColorSpec(selector), show_edges=False, **kwargs)
     return plot, selector
 
 
-class TestApplyVariableSelector:
-    def test_adds_one_restyle_button_per_candidate(self, small_mesh_geometry):
+class TestApplySelector:
+    def test_adds_one_update_button_per_candidate(self, small_mesh_geometry):
         plot, selector = _mesh_field_plot_with_selector(small_mesh_geometry)
         fig = Figure(plot)
         fig.draw()
-        fig._apply_variable_selectors()
+        fig._apply_selectors()
         menus = fig.backend_figure.layout.updatemenus
         assert len(menus) == 1
         assert [b.label for b in menus[0].buttons] == ["temperature", "pressure"]
-        assert all(b.method == "restyle" for b in menus[0].buttons)
+        # method="update" (not "restyle"): each button's args carry a
+        # relayout half too, so a click can retitle/retype axes as well as
+        # restyle trace data - restyle alone can't touch layout at all.
+        assert all(b.method == "update" for b in menus[0].buttons)
+        assert all(len(b.args) == 3 for b in menus[0].buttons)
+
+    def test_button_relayout_retitles_the_axis_it_switches(self):
+        """The whole point of method="update" over "restyle": clicking a
+        button must retitle the axis its SelectorSpec feeds, not just
+        restyle the trace - restyle has no layout half to do that with."""
+        from qewton.visualization.plots.data.samples import ScatterPlot
+
+        X, Y, Z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
+        sample_axis = BatchAxes(5)
+        data = np.random.randn(5, 3)
+        config = DataConfiguration(sample_axis, FeatureAxes(X * Y * Z))
+        x_selector = SelectorSpec([X, Z])
+        plot = ScatterPlot(data, config, x=AxisSpec(x_selector), y=Y)
+        fig = Figure(plot)
+        fig.draw()
+        fig._apply_selectors()
+
+        menu = fig.backend_figure.layout.updatemenus[0]
+        button = next(b for b in menu.buttons if b.label == "z")
+        _, relayout, _ = button.args
+        assert relayout["xaxis.title.text"] == Z.math_name
+
+    def test_raises_for_a_plot_with_more_than_one_selector_spec(self):
+        """TableScatter's x/y/color are three SelectorSpecs read by one
+        evaluate() call - independent per-spec buttons can't jointly
+        represent that, so this must fail loudly instead of silently
+        rendering wrong data for every combination but the initial one."""
+        from qewton.visualization.plots.table.scatter_table import TableScatter
+
+        rng = np.random.default_rng(0)
+        data = {k: rng.random(8) for k in ["a", "b", "c", "d"]}
+        plot = TableScatter(data, axis_keys=["a", "b"], objective_keys=["c", "d"])
+        fig = Figure(plot)
+        fig.draw()
+        with pytest.raises(NotImplementedError):
+            fig._apply_selectors()
 
     def test_leaves_the_live_trace_at_its_original_selection(self, small_mesh_geometry):
-        """_apply_variable_selectors() only adds the dropdown menu - it must
+        """_apply_selectors() only adds the dropdown menu - it must
         not change selector.state or the data actually drawn. FilledMeshArtist
         has no single trace carrying a continuous per-vertex value to
         inspect directly (it's binned across several flat-fill traces), so
@@ -41,7 +81,7 @@ class TestApplyVariableSelector:
         plot, selector = _mesh_field_plot_with_selector(small_mesh_geometry)
         fig = Figure(plot)
         fig.draw()
-        fig._apply_variable_selectors()
+        fig._apply_selectors()
         assert selector.state.name == "temperature"
         assert np.all(np.asarray(plot.evaluate().color) == 1.0)
 
@@ -49,8 +89,8 @@ class TestApplyVariableSelector:
         plot, selector = _mesh_field_plot_with_selector(small_mesh_geometry)
         fig = Figure(plot)
         fig.draw()
-        fig._apply_variable_selectors()
-        fig._apply_variable_selectors()
+        fig._apply_selectors()
+        fig._apply_selectors()
         assert len(fig.backend_figure.layout.updatemenus) == 1
 
     def test_coexists_with_a_timespec_animation_menu(self, small_mesh_geometry):
@@ -64,21 +104,21 @@ class TestApplyVariableSelector:
         config = DataConfiguration(
             step_axis, GeometryAxes(small_mesh_geometry), FeatureAxes(temperature * pressure)
         )
-        selector = VariableSpec([temperature, pressure])
+        selector = SelectorSpec([temperature, pressure])
         plot = MeshFieldPlot(
             data, config, color=ColorSpec(selector),
             controls=[TimeSpec(step_axis)], show_edges=False,
         )
         fig = Figure(plot)
         fig.draw()  # runs animate() internally, adding the Play/Pause menu
-        fig._apply_variable_selectors()
+        fig._apply_selectors()
         menus = fig.backend_figure.layout.updatemenus
         assert len(menus) == 2
         labels = {tuple(b.label for b in m.buttons) for m in menus}
         assert ("Play", "Pause") in labels
         assert ("temperature", "pressure") in labels
 
-    def test_no_op_without_any_variable_spec(self):
+    def test_no_op_without_any_selector_spec(self):
         from qewton.visualization.plots.data.samples import ScatterPlot
 
         X, Y = Variable("x", 1), Variable("y", 1)
@@ -88,7 +128,7 @@ class TestApplyVariableSelector:
         plot = ScatterPlot(data, config, x=X, y=Y)
         fig = Figure(plot)
         fig.draw()
-        fig._apply_variable_selectors()  # must not raise
+        fig._apply_selectors()  # must not raise
         assert fig.backend_figure.layout.updatemenus == ()
 
     def test_show_and_save_html_apply_the_selector(self, small_mesh_geometry, tmp_path, monkeypatch):

@@ -36,7 +36,7 @@ class Figure:
         self.panels: list[list[Overlay]] = []
         self.plots = []
         self.controls = []
-        self.variable_specs = []
+        self.selector_specs = []
 
         if plots is not None:
             if isinstance(plots, list):
@@ -57,7 +57,7 @@ class Figure:
         panel grid, one cell wide), applying the Figure's theme unless the
         plot already has its own, assigning it a color_index (its position
         among every plot in this Figure, in add order), and registering
-        its controls and any VariableSpecs it embeds."""
+        its controls and any SelectorSpecs it embeds."""
         self.panels.append([Overlay(plot)])
         self._register_plot(plot)
         self._sync_backend_figure()
@@ -80,7 +80,7 @@ class Figure:
 
     def _register_plot(self, plot: Plot):
         """Applies this Figure's theme and collects `plot`'s controls and
-        VariableSpecs - the bookkeeping shared by add_plot() and the
+        SelectorSpecs - the bookkeeping shared by add_plot() and the
         Layout-driven registration in __init__()."""
         plot.theme = self.theme
         plot.color_index = len(self.plots)
@@ -89,25 +89,25 @@ class Figure:
             if isinstance(spec, ControlSpec) and not isinstance(spec, FacetSpec):
                 if spec not in self.controls:
                     self.controls.append(spec)
-        for spec in plot.variable_specs:
-            if spec not in self.variable_specs:
-                self.variable_specs.append(spec)
+        for spec in plot.selector_specs:
+            if spec not in self.selector_specs:
+                self.selector_specs.append(spec)
 
-    def _rebuild_controls_and_variable_specs(self):
-        """Recomputes self.controls/self.variable_specs from self.plots -
+    def _rebuild_controls_and_selector_specs(self):
+        """Recomputes self.controls/self.selector_specs from self.plots -
         called after remove_plot()/replace_plot(), since either can orphan
-        a control or VariableSpec only the removed/replaced plot
+        a control or SelectorSpec only the removed/replaced plot
         referenced."""
         self.controls = []
-        self.variable_specs = []
+        self.selector_specs = []
         for plot in self.plots:
             for spec in plot.controls:
                 if isinstance(spec, ControlSpec) and not isinstance(spec, FacetSpec):
                     if spec not in self.controls:
                         self.controls.append(spec)
-            for spec in plot.variable_specs:
-                if spec not in self.variable_specs:
-                    self.variable_specs.append(spec)
+            for spec in plot.selector_specs:
+                if spec not in self.selector_specs:
+                    self.selector_specs.append(spec)
 
     def remove_plot(self, plot: Plot):
         """Removes `plot` from wherever it is in this Figure's panel grid.
@@ -122,7 +122,7 @@ class Figure:
             for overlay in row:
                 if overlay.remove(plot):
                     self.plots.remove(plot)
-                    self._rebuild_controls_and_variable_specs()
+                    self._rebuild_controls_and_selector_specs()
                     self._sync_backend_figure()
                     return
         raise ValueError(f"{plot} is not part of this Figure.")
@@ -146,7 +146,7 @@ class Figure:
                     self.plots[self.plots.index(old)] = new
                     new.theme = self.theme
                     new.color_index = old.color_index
-                    self._rebuild_controls_and_variable_specs()
+                    self._rebuild_controls_and_selector_specs()
                     self._sync_backend_figure()
                     return
         raise ValueError(f"{old} is not part of this Figure.")
@@ -491,32 +491,32 @@ class Figure:
                         )
                         cell_artists[key] = artist
                     else:
-                        artist.update(self.backend_figure, plot)
+                        artist.update(self.backend_figure, plot, row=row, col=col)
         finally:
             if row_spec is not None:
                 row_spec.state = original_row_state
             if col_spec is not None:
                 col_spec.state = original_col_state
 
-    def _apply_variable_selectors(self):
+    def _apply_selectors(self):
         """Static-export counterpart to DashApplication's dropdown widget -
         only called by show()/save_html()/save_png()/save_svg(), not draw()
-        itself, since a Dash app already handles VariableSpec server-side
+        itself, since a Dash app already handles SelectorSpec server-side
         and would otherwise get a redundant, non-functional copy baked into
         its figure too."""
-        for spec in self.variable_specs:
-            self.renderer.apply_variable_selector(self, self.backend_figure, spec)
+        for spec in self.selector_specs:
+            self.renderer.apply_selector(self, self.backend_figure, spec)
 
     def show(self):
         """Draws the figure and displays it (e.g. opening a browser tab)."""
         self.draw()
-        self._apply_variable_selectors()
+        self._apply_selectors()
         self.renderer.show(self.backend_figure)
 
     def save_html(self, path):
         """Draws the figure and writes it to `path` as an interactive HTML file."""
         self.draw()
-        self._apply_variable_selectors()
+        self._apply_selectors()
         self.renderer.save_html(self.backend_figure, path)
 
     def save_gif(self, path, fps=10):

@@ -1,10 +1,17 @@
 from plotly import graph_objects as go
+import numpy as np
 
 from qewton.visualization.renderers.plotly.common import (
     PlotlyArtist,
     _apply_scale,
     _cycled_color,
 )
+
+
+def _axis_type(values, log_scale):
+    if np.asarray(values).dtype.kind in "OSU":  # object/bytes/unicode -> categorical
+        return "category"
+    return "log" if log_scale else "linear"
 
 
 class ScatterArtist(PlotlyArtist):
@@ -21,7 +28,11 @@ class ScatterArtist(PlotlyArtist):
             marker.update(color=result.color, colorscale=cmap)
             marker.update(
                 _apply_scale(
-                    plot.color.scale, backend_figure=backend_figure, row=row, col=col
+                    plot.color.scale,
+                    backend_figure=backend_figure,
+                    row=row,
+                    col=col,
+                    title=plot.color.math_name,
                 )
             )
         else:
@@ -41,28 +52,42 @@ class ScatterArtist(PlotlyArtist):
 
         backend_figure.update_xaxes(
             title=plot.x.math_name,
-            type="log" if plot.x.log_scale else "linear",
+            type=_axis_type(result.x, plot.x.log_scale),
             row=row,
             col=col,
         )
         backend_figure.update_yaxes(
             title=plot.y.math_name,
-            type="log" if plot.y.log_scale else "linear",
+            type=_axis_type(result.y, plot.y.log_scale),
             row=row,
             col=col,
         )
 
         return cls(len(backend_figure.data) - 1)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         trace = backend_figure.data[self.figure_idx]
         trace.x = result.x
         trace.y = result.y
         if result.color is not None:
             trace.marker.color = result.color
+            trace.marker.colorbar.title = dict(text=plot.color.math_name)
             if plot.color.scale is not None:
                 trace.marker.cmin, trace.marker.cmax = plot.color.scale.range
+
+        backend_figure.update_xaxes(
+            title=plot.x.math_name,
+            type=_axis_type(result.x, plot.x.log_scale),
+            row=row,
+            col=col,
+        )
+        backend_figure.update_yaxes(
+            title=plot.y.math_name,
+            type=_axis_type(result.y, plot.y.log_scale),
+            row=row,
+            col=col,
+        )
 
 
 class BarArtist(PlotlyArtist):
@@ -85,21 +110,34 @@ class BarArtist(PlotlyArtist):
 
         backend_figure.update_xaxes(
             title=plot.x.math_name,
-            type="log" if plot.x.log_scale else "linear",
+            type=_axis_type(result.x, plot.x.log_scale),
             row=row,
             col=col,
         )
         backend_figure.update_yaxes(
             title=plot.y.math_name,
-            type="log" if plot.y.log_scale else "linear",
+            type=_axis_type(result.y, plot.y.log_scale),
             row=row,
             col=col,
         )
 
         return cls(len(backend_figure.data) - 1)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         trace = backend_figure.data[self.figure_idx]
         trace.x = result.x
         trace.y = result.y
+
+        backend_figure.update_xaxes(
+            title=plot.x.math_name,
+            type=_axis_type(result.x, plot.x.log_scale),
+            row=row,
+            col=col,
+        )
+        backend_figure.update_yaxes(
+            title=plot.y.math_name,
+            type=_axis_type(result.y, plot.y.log_scale),
+            row=row,
+            col=col,
+        )

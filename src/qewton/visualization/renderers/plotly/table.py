@@ -36,7 +36,7 @@ class ParallelCoordinatesArtist(PlotlyArtist):
             dimensions.append(dim)
         return dimensions
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         trace = backend_figure.data[self.figure_idx]
         trace.dimensions = self._dimensions(plot, result)

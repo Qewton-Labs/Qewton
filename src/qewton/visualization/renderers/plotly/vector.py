@@ -59,7 +59,7 @@ class ArrowField2DArtist(PlotlyArtist):
             hoverinfo="skip",
         )
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         new = self._trace(plot, plot.evaluate())
         trace = backend_figure.data[self.figure_idx]
         trace.x, trace.y = new.x, new.y
@@ -110,7 +110,7 @@ class ArrowField3DArtist(PlotlyArtist):
             opacity=plot.theme.opacity_default,
         )
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         new = self._trace(plot, plot.evaluate())
         trace = backend_figure.data[self.figure_idx]
         trace.x, trace.y, trace.z = new.x, new.y, new.z

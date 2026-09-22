@@ -6,7 +6,7 @@ from qewton.visualization.plots.spec import (
     ControlSpec,
     PlotSpec,
     SliderSpec,
-    VariableSpec,
+    SelectorSpec,
 )
 
 
@@ -20,22 +20,22 @@ def axis_names_from_variable(variable, n: int) -> list[str]:
     Variable("z", 1)`` yields ``["x", "y", "z"]``; a plain ``Variable("x",
     dim=3)`` is auto-named ``["x_1", "x_2", "x_3"]``.
 
-    Falls back to generic labels (``x``, ``y``, ``z``, then ``axis_3``,
-    ``axis_4``, ...) if `variable` is None or doesn't decompose into
-    exactly `n` leaves. Never raises - a wrong or missing axis label is
-    cosmetic, not worth failing a render over.
+    Falls back to generic labels (``axis_1``, ``axis_2``, ...) if `variable`
+    is None or doesn't decompose into exactly `n` leaves. Never raises - a
+    wrong or missing axis label is cosmetic, not worth failing a render
+    over.
 
-    Every returned label is wrapped for TeX math-mode rendering (e.g.
-    ``"x"`` -> ``"$x$"``), matching PlotSpec.math_name - these are always
-    axis titles, so MathJax renders them the same way.
+    A leaf's label is `leaf.math_name` (TeX math-mode, e.g. ``"x"`` ->
+    ``"$x$"``) - it's a real Variable, so it renders as math the same way
+    PlotSpec.math_name renders any other Variable-backed title. The generic
+    fallback isn't a Variable at all and stays plain text, matching
+    PlotSpec.math_name's same rule for a non-Variable spec.
     """
     if variable is not None:
         leaves = variable.leaves
         if len(leaves) == n:
-            return [f"${leaf.name}$" for leaf in leaves]
-    return [
-        f"${name}$" for name in (["x", "y", "z"] + [f"axis_{i}" for i in range(3, n)])[:n]
-    ]
+            return [leaf.math_name for leaf in leaves]
+    return [f"axis_{i}" for i in range(1, n + 1)]
 
 
 class Plot:
@@ -120,19 +120,19 @@ class Plot:
         raise NotImplementedError
 
     @property
-    def variable_specs(self) -> list[VariableSpec]:
-        """Every VariableSpec embedded in one of this plot's own PlotSpec
+    def selector_specs(self) -> list[SelectorSpec]:
+        """Every SelectorSpec embedded in one of this plot's own PlotSpec
         attributes (color, vector, x, y, ...), found generically by scanning
         for PlotSpec-typed attributes rather than needing per-role
         registration. Unlike `self.controls` (SliderSpec/FixedSpec/...,
         passed explicitly via the `controls=` constructor argument), a
-        VariableSpec is discovered this way because it is never itself a
+        SelectorSpec is discovered this way because it is never itself a
         whole-axis control - it only ever appears wrapped inside another
         spec's `variable_or_axes`."""
         found = []
         for value in vars(self).values():
             if isinstance(value, PlotSpec):
-                spec = value.embedded_variable_spec
+                spec = value.embedded_selector_spec
                 if spec is not None and spec not in found:
                     found.append(spec)
         return found

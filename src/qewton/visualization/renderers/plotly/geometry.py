@@ -55,7 +55,7 @@ class GeometryArtist(PlotlyArtist):
 
         return cls(mesh_idx)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         pass  # Geometry is static for now, later maybe parametric geometries
 
 
@@ -114,5 +114,5 @@ class GeometryArtist2D(PlotlyArtist):
 
         return cls(fill_idx)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         pass

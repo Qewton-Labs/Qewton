@@ -759,7 +759,7 @@ class Graph:
 
         from qewton.data.dataloaders.sampler.point_sampler import discretization_mode
         from qewton.visualization.auto import auto_plot
-        from qewton.visualization.plots.spec import VariableSpec
+        from qewton.visualization.plots.spec import SelectorSpec
 
         nodes_to_run = self._nodes_needed_for({p.node for p in ports})
         if device is not None:
@@ -786,9 +786,9 @@ class Graph:
             plots.append(auto_plot(data, config, plot_type, **controls_kwarg, **plot_kwargs))
 
         if variables and len(variables) > 1:
-            shared_variable_spec = VariableSpec(variables)
+            shared_selector_spec = SelectorSpec(variables)
             for plot in plots:
-                self._redirect_to_shared_variable(plot, variables, shared_variable_spec)
+                self._redirect_to_shared_variable(plot, variables, shared_selector_spec)
 
         return Overlay(plots[0]) if len(plots) == 1 else Row(*plots)
 
@@ -823,7 +823,7 @@ class Graph:
         )
         from qewton.visualization.auto import auto_plot, is_curve_like
         from qewton.visualization.layout import Overlay, Row
-        from qewton.visualization.plots.spec import ColorSpec, Scale, VariableSpec
+        from qewton.visualization.plots.spec import ColorSpec, Scale, SelectorSpec
 
         combined_variable = Variable.compose(variables) if variables else None
         pred_config = prediction_config or port.get_data_configuration(self)
@@ -968,10 +968,10 @@ class Graph:
         )
         plots = [reference_plot, prediction_plot]
 
-        shared_variable_spec = VariableSpec(variables) if variables and len(variables) > 1 else None
-        if shared_variable_spec is not None:
+        shared_selector_spec = SelectorSpec(variables) if variables and len(variables) > 1 else None
+        if shared_selector_spec is not None:
             for plot in plots:
-                self._redirect_to_shared_variable(plot, variables, shared_variable_spec)
+                self._redirect_to_shared_variable(plot, variables, shared_selector_spec)
 
         ref_color = getattr(reference_plot, "color", None)
         pred_color = getattr(prediction_plot, "color", None)
@@ -1010,9 +1010,9 @@ class Graph:
             error_plot = auto_plot(
                 error_data, ref_config, plot_type, **_named("Error", shared_controls)
             )
-            if shared_variable_spec is not None:
+            if shared_selector_spec is not None:
                 self._redirect_to_shared_variable(
-                    error_plot, variables, shared_variable_spec
+                    error_plot, variables, shared_selector_spec
                 )
             error_color = getattr(error_plot, "color", None)
             if isinstance(error_color, ColorSpec):
@@ -1070,7 +1070,7 @@ class Graph:
     ) -> None:
         """Points every PlotSpec attribute on `plot` that currently names
         one of `variables` (e.g. its `color`/`vector`/`y`) at `shared_spec`
-        instead, so switching the shared VariableSpec's state moves every
+        instead, so switching the shared SelectorSpec's state moves every
         panel together."""
         from qewton.visualization.plots.spec import PlotSpec
 

@@ -195,7 +195,7 @@ class NodeLinkArtist(PlotlyArtist):
             showlegend=False,
         )
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         layout = plot.evaluate()
         shapes, annotations = self._shapes_and_annotations(plot, layout)
 
