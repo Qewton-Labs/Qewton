@@ -320,9 +320,6 @@ class ControlSpec(PlotSpec):
     def __init__(
         self, init_state=None, n_dimensions: int = 1, variable_or_axes=None
     ) -> None:
-    def __init__(
-        self, init_state=None, n_dimensions: int = 1, variable_or_axes=None
-    ) -> None:
         # variable_or_axes defaults to None so a ControlSpec can be built
         # before its axis is known (`controls=FixedSpec(init_state=3)`) and
         # resolved later against whichever axis actually needs one - see

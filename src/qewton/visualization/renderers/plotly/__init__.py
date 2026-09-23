@@ -31,6 +31,8 @@ def _axis_layout_updates(backend_figure, trace) -> dict:
             updates[f"{axis_name}.title.text"] = axis.title.text
         updates[f"{axis_name}.type"] = axis.type
     return updates
+
+
 from qewton.visualization.renderers.base import Renderer
 from qewton.visualization.renderers.plotly.curve import LineArtist, PathArtist
 from qewton.visualization.renderers.plotly.geometry import (
@@ -40,6 +42,7 @@ from qewton.visualization.renderers.plotly.geometry import (
 from qewton.visualization.renderers.plotly.graph import NodeLinkArtist
 from qewton.visualization.renderers.plotly.grid import (
     HeatmapArtist,
+    ParametricHeatmapArtist,
     ImageArtist,
     ParametricSurfaceArtist,
     SurfaceArtist,
@@ -67,6 +70,7 @@ class PlotlyRenderer(Renderer):
 
     ImageArtist = ImageArtist
     HeatmapArtist = HeatmapArtist
+    ParametricHeatmapArtist = ParametricHeatmapArtist
     SurfaceArtist = SurfaceArtist
     ParametricSurfaceArtist = ParametricSurfaceArtist
     SurfaceMeshArtist = SurfaceMeshArtist

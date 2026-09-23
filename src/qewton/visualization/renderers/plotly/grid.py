@@ -49,17 +49,17 @@ class HeatmapArtist(PlotlyArtist):
         data, color = result.values, result.color
         c = plot.color
 
-        cmap = (
-            c.cmap
-            if c is not None and c.cmap is not None
-            else plot.theme.default_cmap
-        )
+        cmap = c.cmap if c is not None and c.cmap is not None else plot.theme.default_cmap
         if color is not None:
             data = color
 
         scale_kwargs = _apply_scale(
-            c.scale if c is not None else None, "zmin", "zmax",
-            backend_figure=backend_figure, row=row, col=col,
+            c.scale if c is not None else None,
+            "zmin",
+            "zmax",
+            backend_figure=backend_figure,
+            row=row,
+            col=col,
         )
         trace = go.Heatmap(z=data[..., 0], colorscale=cmap, **scale_kwargs)
 
@@ -91,6 +91,52 @@ class HeatmapArtist(PlotlyArtist):
             trace.zmin, trace.zmax = plot.color.scale.range
 
 
+class ParametricHeatmapArtist(PlotlyArtist):
+    """Draws a HeatmapPlot as a flat, colored grid at explicit 2D coordinates."""
+
+    @classmethod
+    def create(cls, backend_figure, plot, row=None, col=None):
+        result = plot.evaluate()
+        cmap = plot.color.cmap or plot.theme.default_cmap
+        scale_kwargs = _apply_scale(
+            plot.color.scale, backend_figure=backend_figure, row=row, col=col
+        )
+        idx = len(backend_figure.data)
+        backend_figure.add_trace(
+            go.Heatmap(
+                x=result.x,
+                y=result.y,
+                z=result.z[..., 0],
+                colorscale=cmap,
+                **scale_kwargs,
+            ),
+            row=row,
+            col=col,
+        )
+
+        backend_figure.update_xaxes(
+            title=plot.x.math_name,
+            type="log" if plot.x.log_scale else "linear",
+            row=row,
+            col=col,
+        )
+        backend_figure.update_yaxes(
+            title=plot.y.math_name,
+            type="log" if plot.y.log_scale else "linear",
+            row=row,
+            col=col,
+        )
+
+        return cls(idx)
+
+    def update(self, backend_figure, plot, row=None, col=None):
+        result = plot.evaluate()
+        trace = backend_figure.data[self.figure_idx]
+        trace.x, trace.y, trace.z = result.x, result.y, result.z[..., 0]
+        if plot.color.scale is not None:
+            trace.zmin, trace.zmax = plot.color.scale.range
+
+
 class SurfaceArtist(PlotlyArtist):
     """Draws a SurfacePlot as a 3D height field over an index grid."""
 
@@ -105,7 +151,9 @@ class SurfaceArtist(PlotlyArtist):
         data, color = result.values, result.color
         scale_kwargs = _apply_scale(
             plot.color.scale if plot.color is not None else None,
-            backend_figure=backend_figure, row=row, col=col,
+            backend_figure=backend_figure,
+            row=row,
+            col=col,
         )
         trace = go.Surface(
             z=data[..., 0], surfacecolor=color, colorscale=cmap, **scale_kwargs
@@ -119,8 +167,12 @@ class SurfaceArtist(PlotlyArtist):
         # together, not split across two different calls the way a 2D
         # HeatmapArtist can get away with.
         scene_axes = dict(
-            xaxis=dict(title=plot.x.math_name, type="log" if plot.x.log_scale else "linear"),
-            yaxis=dict(title=plot.y.math_name, type="log" if plot.y.log_scale else "linear"),
+            xaxis=dict(
+                title=plot.x.math_name, type="log" if plot.x.log_scale else "linear"
+            ),
+            yaxis=dict(
+                title=plot.y.math_name, type="log" if plot.y.log_scale else "linear"
+            ),
         )
         if plot.z is not None:
             scene_axes["zaxis"] = dict(

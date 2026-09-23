@@ -7,7 +7,7 @@ from pathlib import Path
 from qewton.optim.tuner.results.tune_results import TuneResultCollector
 from qewton.constraints.base import ConstraintObjective
 from qewton.visualization.plots.table.parallel_coordinates import ParallelCoordinatesPlot
-from qewton.visualization.plots.spec import ColorSpec, VariableSpec
+from qewton.visualization.plots.spec import ColorSpec, SelectorSpec
 from qewton.visualization.figure import Figure
 from qewton.visualization.plots.table.scatter_table import TableScatter
 from qewton.visualization.plots.table.heatmap import TableHeatMap
@@ -398,7 +398,7 @@ class TuningAnalyzer:
             objectives = list(self.metrics.keys())
         if color is None:
             if len(objectives) > 1:
-                color = ColorSpec(VariableSpec(candidates=objectives))
+                color = ColorSpec(SelectorSpec(candidates=objectives))
             else:
                 color = objectives[0]
         elif isinstance(color, str):
@@ -416,6 +416,7 @@ class TuningAnalyzer:
     def scatter_table_plot(
         self,
         log_axes: list[str] | None = None,
+        jitter: float = 0.0,
         **kwargs,
     ) -> Figure:
         """Creates a scatter table plot for the given axes and objectives.
@@ -423,6 +424,9 @@ class TuningAnalyzer:
         Args:
             log_axes (list[str], optional): Which axes should be shown in a
                 log scale. Defaults to [].
+            jitter (float, optional): Amount of jitter to add to the x/y
+                values. This helps to visualize overlapping points.
+                Defaults to 0.0.
 
         Returns:
             Figure: A Figure object containing the scatter table plot.
@@ -430,21 +434,21 @@ class TuningAnalyzer:
         """
         if log_axes is None:
             log_axes = []
-        combined_objective = self.combined_score()
-        table_data = self.df.copy()
-        table_data["combined_score"] = combined_objective
+        table_data, metric_keys = self._add_combined_score()
         scatter_plot = TableScatter(
             data=table_data,
             axis_keys=self.hp_names,
-            objective_keys=list(self.metrics.keys()) + ["combined_score"],
+            objective_keys=metric_keys,
             log_axes=log_axes,
+            jitter=jitter,
             **kwargs,
         )
         return Figure(scatter_plot)
 
     def heatmap_plot(
         self,
-        bins: int,
+        bins_x: int,
+        bins_y: int,
         axis_keys: list[str] | None = None,
         log_axes: list[str] | None = None,
         **kwargs,
@@ -472,15 +476,27 @@ class TuningAnalyzer:
             assert all(
                 key in self.numeric_params for key in axis_keys
             ), "Heatmap plot only supports numeric hyperparameters."
-        combined_objective = self.combined_score()
-        table_data = self.df.copy()
-        table_data["combined_score"] = combined_objective
+        table_data, metric_keys = self._add_combined_score()
         heatmap_plot = TableHeatMap(
             data=table_data,
-            bins=bins,
+            bins_x=bins_x,
+            bins_y=bins_y,
             axis_keys=axis_keys,
-            objective_keys=list(self.metrics.keys()) + ["combined_score"],
+            objective_keys=metric_keys,
             log_axes=log_axes,
             **kwargs,
         )
         return Figure(heatmap_plot)
+
+    def _add_combined_score(self) -> tuple[pd.DataFrame, list[str]]:
+        """Adds a combined score to the plotting data to compute the average
+        of multiple metrics. Will only be added if there is more the one
+        metric
+        """
+        table_data = self.df.copy()
+        keys = list(self.metrics.keys())
+        if len(self.metrics) > 1:
+            combined_objective = self.combined_score()
+            table_data["combined_score"] = combined_objective
+            keys.append("combined_score")
+        return table_data, keys
