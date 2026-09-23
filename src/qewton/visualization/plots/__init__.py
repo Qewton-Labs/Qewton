@@ -45,6 +45,6 @@ from .data import (
     ScatterPlot,
     BarPlot,
 )
-from .table import TablePlot, ParallelCoordinatesPlot
+from .table import TablePlot, ParallelCoordinatesPlot, TableScatter
 from .geometry import GeometryPlot
 from .graph import GraphPlot

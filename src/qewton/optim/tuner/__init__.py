@@ -9,8 +9,9 @@ from .random_search import RandomSearchTuner
 from .grid_search import GridSearchTuner
 
 from .results.tune_results import TuneResultCollector
-from .results.analyzer import TuningAnalyzer
 
-# Pytorch classes (only import when Pytorch is available)
+if importlib.util.find_spec("pandas") is not None:
+    from .results.analyzer import TuningAnalyzer
+
 if importlib.util.find_spec("optuna") is not None:
     from .optuna_tuner import OptunaTuner

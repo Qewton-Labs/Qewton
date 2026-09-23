@@ -314,7 +314,9 @@ class ControlSpec(PlotSpec):
     """Base class for a spec that reduces or partitions a plot's data by a
     dimension's current state (SliderSpec, FixedSpec, FacetSpec, TimeSpec)."""
 
-    def __init__(self, init_state=None, n_dimensions: int = 1, variable_or_axes=None) -> None:
+    def __init__(
+        self, init_state=None, n_dimensions: int = 1, variable_or_axes=None
+    ) -> None:
         # variable_or_axes defaults to None so a ControlSpec can be built
         # before its axis is known (`controls=FixedSpec(init_state=3)`) and
         # resolved later against whichever axis actually needs one - see
@@ -428,10 +430,13 @@ class VariableSpec(ControlSpec):
     valid (same required shape) regardless of which is selected.
     """
 
-    def __init__(self, candidates: list[Variable], init_index: int = 0):
+    def __init__(self, candidates: list[Variable] | list[str], init_index: int = 0):
         assert (
             len(candidates) >= 2
         ), "VariableSpec needs at least 2 candidates to choose between."
+        if all(isinstance(c, str) for c in candidates):
+            candidates = [Variable(name=name, dim=1) for name in candidates]  # type: ignore
+
         dims = {c.dim for c in candidates}
         assert len(dims) == 1, f"All candidates must share the same dim, got {dims}."
         self.candidates = candidates
