@@ -79,7 +79,7 @@ class SurfaceMeshArtist(PlotlyArtist):
 
         return cls(mesh_idx, edges_idx)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         vertices = _to_numpy(result.vertices)
         color = _to_numpy(result.color) if result.color is not None else None
@@ -227,7 +227,7 @@ class FilledMeshArtist(PlotlyArtist):
             showlegend=False, hoverinfo="skip",
         )
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         vertices = _to_numpy(result.vertices)[:, :2]
         cells = _detach_to_numpy(result.cells)

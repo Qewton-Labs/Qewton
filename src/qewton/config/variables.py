@@ -101,6 +101,23 @@ class Variable(Serializable):
         """The names of every leaf in this Variable's tree."""
         return {leaf.name for leaf in self.leaves}
 
+    @property
+    def math_name(self) -> str:
+        """`.name`, wrapped for TeX math-mode rendering (Plotly's MathJax
+        support) - every Variable is a plotted quantity, so every Variable
+        renders as a math symbol wherever a name is shown as a title/label.
+        The single place this wrapping is defined, so callers throughout
+        visualization (PlotSpec.math_name, axis_names_from_variable, ...)
+        stay consistent by deferring to it instead of re-wrapping their own
+        `$...$` in different places.
+
+        Anything that ends up named but isn't actually a Variable - a plain
+        Axes, or a TablePlot column key - is deliberately not a Variable in
+        the first place and has no equivalent here; it renders as plain
+        text unless the caller wraps it themselves.
+        """
+        return f"${self.name}$"
+
     def __getitem__(self, key):
         if isinstance(key, int):
             return self.leaves[key]

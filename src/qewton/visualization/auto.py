@@ -13,7 +13,7 @@ from qewton.visualization.plots.spec import (
     ColorSpec,
     ControlSpec,
     SliderSpec,
-    VariableSpec,
+    SelectorSpec,
     VectorSpec,
 )
 
@@ -139,9 +139,9 @@ def _distinct_quantities(variable: Variable) -> list[Variable]:
 
 def _auto_quantity(
     data_config: DataConfiguration, variable: Variable
-) -> "Variable | VariableSpec":
+) -> "Variable | SelectorSpec":
     """The single quantity to plot, or - when the FeatureAxes bundles
-    several distinct ones - a VariableSpec letting the user switch between
+    several distinct ones - a SelectorSpec letting the user switch between
     them, as long as they all share one dim (so the same Plot role stays
     valid regardless of which is selected)."""
     quantities = _distinct_quantities(variable)
@@ -149,7 +149,7 @@ def _auto_quantity(
         return quantities[0]
     dims = {q.dim for q in quantities}
     if len(dims) == 1:
-        return VariableSpec(quantities)
+        return SelectorSpec(quantities)
     names = ", ".join(q.name for q in quantities)
     raise ValueError(
         f"{data_config}'s FeatureAxes bundles multiple distinct variables "
@@ -177,7 +177,7 @@ def _resolve_control(spec, axis: Axes):
     still-unset `variable_or_axes` filled in and is then reused as-is (by
     identity) - the mechanism that lets one instance, passed to several
     auto_plot() calls, end up shared across them (one widget, moving them
-    together), the same way a shared Scale or VariableSpec already works.
+    together), the same way a shared Scale or SelectorSpec already works.
     """
     if isinstance(spec, type):
         # By keyword, not position: FixedSpec inherits ControlSpec.__init__
@@ -414,7 +414,7 @@ def _auto_geometry_plot(
 def _auto_flat_plot(data, data_config: DataConfiguration, **kwargs) -> Plot:
     """Unlike the geometry branch, two distinct scalar quantities are not
     ambiguous here - x/y is exactly what a ScatterPlot needs them for, so
-    this (unlike _auto_geometry_plot) only reaches for a VariableSpec once
+    this (unlike _auto_geometry_plot) only reaches for a SelectorSpec once
     ScatterPlot's 2-quantity case no longer applies (3+ distinct scalars)."""
     feature_axes = data_config.feature_axes
     variable = _require_named_variable(data_config, feature_axes)
@@ -448,7 +448,7 @@ def _auto_flat_plot(data, data_config: DataConfiguration, **kwargs) -> Plot:
             data,
             data_config,
             x=domain,
-            y=VariableSpec(quantities),
+            y=SelectorSpec(quantities),
             **_with_extra_controls(kwargs, rest, default_control),
         )
 
@@ -459,7 +459,7 @@ def _auto_flat_plot(data, data_config: DataConfiguration, **kwargs) -> Plot:
             f"variables ({names}) that auto_plot can't combine into one "
             "plot automatically. Construct a Plot explicitly, e.g. a "
             "ScatterPlot naming two of them, or a LinePlot with an explicit "
-            "VariableSpec."
+            "SelectorSpec."
         )
 
     raise ValueError(

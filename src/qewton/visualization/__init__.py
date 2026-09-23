@@ -10,7 +10,7 @@ from .plots.spec import (
     ColorSpec,
     AxisSpec,
     VectorSpec,
-    VariableSpec,
+    SelectorSpec,
     Scale,
 )
 from .plots.result import (

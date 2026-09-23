@@ -13,7 +13,7 @@ from qewton.visualization.plots.spec import (
     Scale,
     SliderSpec,
     TimeSpec,
-    VariableSpec,
+    SelectorSpec,
 )
 
 
@@ -88,6 +88,23 @@ class TestPlotSpecMathName:
         geometry = PointCloud(X, points)
         spec = AxisSpec(GeometryAxes(geometry))
         assert spec.math_name == spec.name == str(spec.variable_or_axes)
+
+    def test_selector_spec_of_real_variables_is_wrapped_for_math_mode(self):
+        """A SelectorSpec built from actual Variables (e.g. MeshFieldPlot
+        switching between two physical fields) names a math quantity same
+        as a fixed Variable would - only which candidate is a moving part,
+        not whether it's a Variable at all."""
+        temperature, pressure = Variable("temperature", 1), Variable("pressure", 1)
+        spec = ColorSpec(SelectorSpec([temperature, pressure]))
+        assert spec.math_name == "$temperature$"
+
+    def test_selector_spec_of_plain_strings_is_not_wrapped(self):
+        """SelectorSpec(candidates=["loss", "acc"]) (TableScatter's x/y/
+        color) keeps its candidates as plain strings, not Variables - a
+        TablePlot column key was never the caller claiming "loss"/"acc" is
+        a math quantity, so math_name must not wrap it."""
+        spec = AxisSpec(SelectorSpec(["loss", "acc"]))
+        assert spec.math_name == spec.name == "loss"
 
 
 class TestSliderSpecResolve:
@@ -173,23 +190,38 @@ class TestColorSpec:
         assert spec.name == "loss"
 
 
-class TestVariableSpec:
+class TestSelectorSpec:
     def test_requires_at_least_two_candidates(self):
         with pytest.raises(AssertionError):
-            VariableSpec([Variable("u", 1)])
+            SelectorSpec([Variable("u", 1)])
 
     def test_requires_matching_dims(self):
         with pytest.raises(AssertionError):
-            VariableSpec([Variable("u", 1), Variable("v", 2)])
+            SelectorSpec([Variable("u", 1), Variable("v", 2)])
+
+    def test_plain_string_candidates_are_stored_as_given(self):
+        """No Variable wrapping - a plain string candidate stays exactly
+        what was passed, so it's unambiguously not a Variable to every
+        consumer (see PlotSpec.math_name)."""
+        spec = SelectorSpec(["loss", "acc"])
+        assert spec.candidates == ["loss", "acc"]
+        assert spec.state == "loss"
+
+    def test_plain_string_candidates_still_enforce_matching_dims(self):
+        """A plain string is an implicit dim=1 scalar (candidate_dim), same
+        as before it was materialized into Variable(name, dim=1) - mixing
+        one against a real dim>1 Variable is still rejected."""
+        with pytest.raises(AssertionError):
+            SelectorSpec(["loss", Variable("v", 2)])
 
     def test_state_defaults_to_the_first_candidate(self):
         u, v = Variable("u", 1), Variable("v", 1)
-        spec = VariableSpec([u, v])
+        spec = SelectorSpec([u, v])
         assert spec.state is u
 
     def test_state_can_be_set_by_index_or_by_variable(self):
         u, v = Variable("u", 1), Variable("v", 1)
-        spec = VariableSpec([u, v])
+        spec = SelectorSpec([u, v])
         spec.state = 1
         assert spec.state is v
         spec.state = u
@@ -197,16 +229,16 @@ class TestVariableSpec:
 
     def test_state_rejects_a_variable_outside_the_candidates(self):
         u, v, w = Variable("u", 1), Variable("v", 1), Variable("w", 1)
-        spec = VariableSpec([u, v])
+        spec = SelectorSpec([u, v])
         with pytest.raises(AssertionError):
             spec.state = w
 
     def test_color_spec_transparently_unwraps_the_current_selection(self):
         """This is the whole point: ColorSpec never needs to know
-        VariableSpec exists - reading .variable_or_axes/.name just reflects
+        SelectorSpec exists - reading .variable_or_axes/.name just reflects
         whichever candidate is currently selected."""
         u, v = Variable("u", 1), Variable("v", 1)
-        selector = VariableSpec([u, v])
+        selector = SelectorSpec([u, v])
         color = ColorSpec(selector)
         assert color.variable_or_axes is u
         assert color.name == "u"
@@ -221,7 +253,7 @@ class TestVariableSpec:
         are needed for this to resolve to the right slice."""
         u, v = Variable("u", 1), Variable("v", 1)
         config = DataConfiguration(BatchAxes(10), FeatureAxes(u * v))
-        selector = VariableSpec([u, v])
+        selector = SelectorSpec([u, v])
         color = ColorSpec(selector)
 
         assert config.get_variable_slice(color.variable_or_axes) == (slice(None), slice(0, 1))
@@ -239,7 +271,7 @@ class TestVariableSpec:
         config = DataConfiguration(
             GeometryAxes(small_mesh_geometry), FeatureAxes(temperature * pressure)
         )
-        selector = VariableSpec([temperature, pressure])
+        selector = SelectorSpec([temperature, pressure])
         plot = MeshFieldPlot(data, config, color=ColorSpec(selector))
 
         assert np.all(plot.evaluate().color == 10.0)

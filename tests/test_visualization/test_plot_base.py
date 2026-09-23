@@ -18,8 +18,9 @@ from qewton.visualization.plots.spec import (
 
 
 class TestAxisNamesFromVariable:
-    """Every returned label is wrapped for TeX math-mode rendering (see
-    PlotSpec.math_name) - these are always axis titles."""
+    """A leaf name is wrapped for TeX math-mode rendering via
+    Variable.math_name, since it's a real Variable (see PlotSpec.
+    math_name); the generic fallback isn't a Variable and stays plain."""
 
     def test_decomposes_a_composed_variable_by_leaf_name(self):
         x, y, z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
@@ -32,18 +33,18 @@ class TestAxisNamesFromVariable:
 
     def test_falls_back_to_generic_names_on_leaf_count_mismatch(self):
         var = Variable("x", dim=2)
-        assert axis_names_from_variable(var, 3) == ["$x$", "$y$", "$z$"]
+        assert axis_names_from_variable(var, 3) == ["axis_1", "axis_2", "axis_3"]
 
     def test_falls_back_to_generic_names_when_variable_is_none(self):
-        assert axis_names_from_variable(None, 2) == ["$x$", "$y$"]
+        assert axis_names_from_variable(None, 2) == ["axis_1", "axis_2"]
 
     def test_falls_back_beyond_three_axes(self):
         assert axis_names_from_variable(None, 5) == [
-            "$x$",
-            "$y$",
-            "$z$",
-            "$axis_3$",
-            "$axis_4$",
+            "axis_1",
+            "axis_2",
+            "axis_3",
+            "axis_4",
+            "axis_5",
         ]
 
 

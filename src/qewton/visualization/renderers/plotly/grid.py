@@ -35,7 +35,7 @@ class ImageArtist(PlotlyArtist):
 
         return cls(len(backend_figure.data) - 1)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         image = plot.evaluate().values
         backend_figure.data[self.figure_idx].z = image
 
@@ -80,7 +80,7 @@ class HeatmapArtist(PlotlyArtist):
 
         return cls(len(backend_figure.data) - 1)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         data, color = result.values, result.color
         if color is not None:
@@ -130,7 +130,7 @@ class SurfaceArtist(PlotlyArtist):
 
         return cls(len(backend_figure.data) - 1)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         data, color = result.values, result.color
         trace = backend_figure.data[self.figure_idx]
@@ -177,7 +177,7 @@ class ParametricSurfaceArtist(PlotlyArtist):
         )
         return cls(idx)
 
-    def update(self, backend_figure, plot):
+    def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         trace = backend_figure.data[self.figure_idx]
         x, y, z = _mask_nan_color_as_gaps(result.x, result.y, result.z, result.color)

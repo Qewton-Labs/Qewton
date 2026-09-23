@@ -1,10 +1,42 @@
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 
-from qewton.visualization.plots.spec import FacetSpec
+from qewton.visualization.plots.spec import FacetSpec, SelectorSpec
+
+
+def _axis_layout_updates(backend_figure, trace) -> dict:
+    """The current title/type of the x/y axes `trace` is bound to, as a
+    flat {"xaxis3.title.text": ..., "xaxis3.type": ..., ...} relayout dict -
+    what a method="update" button's layout half needs to make a dropdown
+    also retitle/retype the axes an Artist.update() call just touched via
+    update_xaxes()/update_yaxes(), which method="restyle" alone can't reach.
+
+    Reads the axis back off `trace.xaxis`/`trace.yaxis` (Plotly's own "x",
+    "x2", "x3", ... trace-to-axis binding) rather than needing a facet
+    grid's row/col here too - whichever axis the trace actually ended up
+    on is whichever axis this reports on, grid or not.
+    """
+    updates = {}
+    for ref, prefix in ((trace.xaxis, "xaxis"), (trace.yaxis, "yaxis")):
+        # A trace outside any make_subplots() grid never got its xaxis/
+        # yaxis set explicitly (add_trace(row=None, col=None) leaves it
+        # None) and is bound to the figure's one implicit "xaxis"/"yaxis"
+        # by Plotly default - only a subplot grid trace carries an explicit
+        # "x"/"x2"/"x3", ... to translate.
+        axis_name = prefix if ref is None else f"{prefix}{ref[1:]}"
+        axis = getattr(backend_figure.layout, axis_name, None)
+        if axis is None:
+            continue
+        if axis.title is not None:
+            updates[f"{axis_name}.title.text"] = axis.title.text
+        updates[f"{axis_name}.type"] = axis.type
+    return updates
 from qewton.visualization.renderers.base import Renderer
 from qewton.visualization.renderers.plotly.curve import LineArtist, PathArtist
-from qewton.visualization.renderers.plotly.geometry import GeometryArtist, GeometryArtist2D
+from qewton.visualization.renderers.plotly.geometry import (
+    GeometryArtist,
+    GeometryArtist2D,
+)
 from qewton.visualization.renderers.plotly.graph import NodeLinkArtist
 from qewton.visualization.renderers.plotly.grid import (
     HeatmapArtist,
@@ -13,10 +45,16 @@ from qewton.visualization.renderers.plotly.grid import (
     SurfaceArtist,
 )
 from qewton.visualization.renderers.plotly.mesh import FilledMeshArtist, SurfaceMeshArtist
-from qewton.visualization.renderers.plotly.points import PointCloud2DArtist, PointCloud3DArtist
+from qewton.visualization.renderers.plotly.points import (
+    PointCloud2DArtist,
+    PointCloud3DArtist,
+)
 from qewton.visualization.renderers.plotly.table import ParallelCoordinatesArtist
 from qewton.visualization.renderers.plotly.tabular import BarArtist, ScatterArtist
-from qewton.visualization.renderers.plotly.vector import ArrowField2DArtist, ArrowField3DArtist
+from qewton.visualization.renderers.plotly.vector import (
+    ArrowField2DArtist,
+    ArrowField3DArtist,
+)
 
 
 class PlotlyRenderer(Renderer):
@@ -65,28 +103,24 @@ class PlotlyRenderer(Renderer):
             spans = figure.cell_spans(n_rows, n_cols)
             specs = [
                 [
-                    None
-                    if spans[r][c] is None
-                    else {
-                        "type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dims[r][c]],
-                        **(
-                            {"rowspan": spans[r][c][0]}
-                            if spans[r][c][0] > 1
-                            else {}
-                        ),
-                        **(
-                            {"colspan": spans[r][c][1]}
-                            if spans[r][c][1] > 1
-                            else {}
-                        ),
-                    }
+                    (
+                        None
+                        if spans[r][c] is None
+                        else {
+                            "type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dims[r][c]],
+                            **({"rowspan": spans[r][c][0]} if spans[r][c][0] > 1 else {}),
+                            **({"colspan": spans[r][c][1]} if spans[r][c][1] > 1 else {}),
+                        }
+                    )
                     for c in range(n_cols)
                 ]
                 for r in range(n_rows)
             ]
             titles = figure.cell_titles(n_rows, n_cols)
             fig = make_subplots(
-                rows=n_rows, cols=n_cols, specs=specs,
+                rows=n_rows,
+                cols=n_cols,
+                specs=specs,
                 subplot_titles=titles if any(titles) else None,
             )
         # The whole-figure title is Figure.title alone, set once here - never
@@ -111,7 +145,11 @@ class PlotlyRenderer(Renderer):
         fig.update_layout(
             paper_bgcolor=theme.background_color,
             plot_bgcolor=theme.background_color,
-            font=dict(family=theme.font_family, size=theme.font_size_labels, color=theme.text_color),
+            font=dict(
+                family=theme.font_family,
+                size=theme.font_size_labels,
+                color=theme.text_color,
+            ),
             title_font=dict(size=theme.font_size_title, color=theme.text_color),
             showlegend=theme.show_legend,
             legend=dict(
@@ -137,7 +175,9 @@ class PlotlyRenderer(Renderer):
         # Scene (3D) axes are a different schema - they additionally have
         # their own background plane (backgroundcolor/showbackground), which
         # 2D axes don't, so this can't just reuse axis_kwargs as-is.
-        scene_axis_kwargs = dict(axis_kwargs, showbackground=True, backgroundcolor=theme.background_color)
+        scene_axis_kwargs = dict(
+            axis_kwargs, showbackground=True, backgroundcolor=theme.background_color
+        )
         fig.update_scenes(
             bgcolor=theme.background_color,
             xaxis=scene_axis_kwargs,
@@ -199,7 +239,9 @@ class PlotlyRenderer(Renderer):
             frames.append(go.Frame(data=frame_data, traces=frame_traces, name=str(value)))
         spec.state = original_state
         for plot, artist in animated:
-            artist.update(backend_figure, plot)  # leave the live traces at the initial state
+            artist.update(
+                backend_figure, plot
+            )  # leave the live traces at the initial state
 
         backend_figure.frames = frames
         backend_figure.update_layout(
@@ -256,8 +298,8 @@ class PlotlyRenderer(Renderer):
         return backend_figure
 
     @staticmethod
-    def apply_variable_selector(figure, backend_figure, spec):
-        """Adds one Plotly dropdown (updatemenus, method="restyle") letting
+    def apply_selector(figure, backend_figure, spec):
+        """Adds one Plotly dropdown (updatemenus, method="update") letting
         an already-drawn static figure itself switch which variable is
         plotted - the static-export equivalent of DashApplication's
         dropdown widget, since a Dash app's own client/server round-trip
@@ -265,20 +307,50 @@ class PlotlyRenderer(Renderer):
 
         Only meaningful for the static/non-Dash path (Figure.show()/
         save_html()/save_png()/save_svg() call this after draw(); Dash's
-        own callback loop already handles VariableSpec entirely server-side
+        own callback loop already handles SelectorSpec entirely server-side
         and does not need this). Mirrors animate()'s replay-and-capture
         approach: temporarily set `spec` to each candidate, replay
-        Artist.update() to compute what that trace would look like, and
-        capture its Plotly attributes into one restyle button per candidate.
+        Artist.update() to compute what that trace (and the axes it
+        redraws into) would look like, and capture the result into one
+        button per candidate.
+
+        Raises NotImplementedError if any affected plot has more than one
+        SelectorSpec of its own (e.g. TableScatter's x/y/color, all read by
+        the same evaluate() call): each button here is baked by varying
+        exactly one spec at a time with every other spec frozen at
+        whatever state it happened to be in when *that* spec's own button
+        was built, so once a plot has two or more, only the initial
+        combination and single-spec deviations from it are ever reachable -
+        every other combination silently renders wrong data with no error.
+        That's a structural limit of baking independent, static buttons
+        with no server to recompute a joint state on click - see
+        DashApplication, which handles any number of SelectorSpecs per plot
+        correctly via one real callback, for a plot like that instead.
         """
         affected = [
             (plot, artist)
             for plot, cells in figure.artists.items()
-            if spec in plot.variable_specs
+            if spec in plot.selector_specs
             for artist in cells.values()
         ]
         if not affected:
             return backend_figure
+
+        for plot, _ in affected:
+            if len(plot.selector_specs) > 1:
+                raise NotImplementedError(
+                    f"{type(plot).__name__} has {len(plot.selector_specs)} "
+                    "SelectorSpecs feeding into one evaluate() call, so their "
+                    "dropdowns can't be baked as independent static buttons - "
+                    "each one's choices would silently ignore the others' "
+                    "current selection except at the combination the figure "
+                    "started at. Figure.show()/save_html()/save_png()/"
+                    "save_svg() only support a plot with at most one "
+                    "SelectorSpec; use "
+                    "qewton.visualization.applications.dash_app."
+                    "DashApplication for a plot with more than one, which "
+                    "resolves them all correctly via a real callback."
+                )
 
         original_state = spec.state
         trace_indices = [artist.figure_idx for _, artist in affected]
@@ -286,29 +358,85 @@ class PlotlyRenderer(Renderer):
         for candidate in spec.candidates:
             spec.state = candidate
             per_key_values: dict = {}
+            layout_updates: dict = {}
             for plot, artist in affected:
                 artist.update(backend_figure, plot)
-                trace_json = backend_figure.data[artist.figure_idx].to_plotly_json()
+                trace = backend_figure.data[artist.figure_idx]
+                trace_json = trace.to_plotly_json()
                 for key, value in trace_json.items():
                     if key in ("type", "uid"):
                         continue
                     per_key_values.setdefault(key, []).append(value)
+                # Artist.update() may have retitled/retyped the axes this
+                # trace is bound to (e.g. ScatterArtist tracking x/y through
+                # an AxisSpec) - restyle alone can't reach layout, so those
+                # need capturing separately for a method="update" button.
+                layout_updates.update(_axis_layout_updates(backend_figure, trace))
             buttons.append(
-                dict(label=candidate.name, method="restyle", args=[per_key_values, trace_indices])
+                dict(
+                    label=SelectorSpec.candidate_name(candidate),
+                    method="update",
+                    args=[per_key_values, layout_updates, trace_indices],
+                )
             )
         spec.state = original_state
         for plot, artist in affected:
-            artist.update(backend_figure, plot)  # leave the live traces at the initial state
+            artist.update(
+                backend_figure, plot
+            )  # leave the live traces at the initial state
 
         # animate() (TimeSpec) sets its own updatemenus wholesale, so this
         # only ever drops/replaces entries it added itself, tagged by name -
         # both can coexist on one figure.
-        menu_name = f"variable_selector_{id(spec)}"
-        kept = [m for m in backend_figure.layout.updatemenus if m.name != menu_name]
-        backend_figure.update_layout(
-            updatemenus=kept
-            + [dict(name=menu_name, buttons=buttons, direction="down", showactive=True)]
+        menu_name = f"selector_{id(spec)}"
+
+        # Keep any non-selector menus (e.g. animation controls) and
+        # rebuild selector menus with explicit positions so they do
+        # not overlap.
+        existing_selectors = []
+        kept = []
+        for menu in backend_figure.layout.updatemenus:
+            menu_name_value = getattr(menu, "name", None)
+            if menu_name_value is None and isinstance(menu, dict):
+                menu_name_value = menu.get("name")
+
+            to_plotly_json = getattr(menu, "to_plotly_json", None)
+            if callable(to_plotly_json):
+                menu_dict = to_plotly_json()
+            elif isinstance(menu, dict):
+                menu_dict = dict(menu)
+            else:
+                menu_dict = {}
+            if isinstance(menu_name_value, str) and menu_name_value.startswith(
+                "selector_"
+            ):
+                existing_selectors.append(menu_dict)
+            else:
+                kept.append(menu_dict)
+
+        # Replace/create this selector's menu content before laying all
+        # variable selectors out in a clean vertical stack.
+        existing_selectors = [m for m in existing_selectors if m.get("name") != menu_name]
+        existing_selectors.append(
+            dict(name=menu_name, buttons=buttons, direction="down", showactive=True)
         )
+
+        x = 1.01
+        y_start = 1.0
+        y_step = 0.12
+        laid_out_selectors = []
+        for idx, menu in enumerate(existing_selectors):
+            laid_out_selectors.append(
+                {
+                    **menu,
+                    "x": x,
+                    "xanchor": "left",
+                    "y": y_start - idx * y_step,
+                    "yanchor": "top",
+                }
+            )
+
+        backend_figure.update_layout(updatemenus=kept + laid_out_selectors)
         return backend_figure
 
     @staticmethod
@@ -363,7 +491,13 @@ class PlotlyRenderer(Renderer):
         static_layout.sliders = ()
 
         images = [
-            Image.open(io.BytesIO(go.Figure(data=frame.data, layout=static_layout).to_image(format="png")))
+            Image.open(
+                io.BytesIO(
+                    go.Figure(data=frame.data, layout=static_layout).to_image(
+                        format="png"
+                    )
+                )
+            )
             for frame in backend_figure.frames
         ]
 

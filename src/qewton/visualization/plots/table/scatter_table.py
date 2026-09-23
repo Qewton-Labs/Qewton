@@ -1,7 +1,7 @@
 import numpy as np
 
 from qewton.visualization.plots.result import ScatterResult
-from qewton.visualization.plots.spec import VariableSpec, ColorSpec, AxisSpec
+from qewton.visualization.plots.spec import SelectorSpec, ColorSpec, AxisSpec
 from qewton.visualization.plots.table.base import TablePlot
 
 
@@ -32,11 +32,11 @@ class TableScatter(TablePlot):
         title=None,
         theme=None,
     ):
-        self.x = AxisSpec(VariableSpec(candidates=axis_keys, init_index=0))
-        self.y = AxisSpec(VariableSpec(candidates=axis_keys, init_index=1))
+        self.x = AxisSpec(SelectorSpec(candidates=axis_keys, init_index=0))
+        self.y = AxisSpec(SelectorSpec(candidates=axis_keys, init_index=1))
         self.objective_keys = objective_keys
         if len(objective_keys) > 1:
-            self.color = ColorSpec(variable_or_axes=VariableSpec(objective_keys))
+            self.color = ColorSpec(variable_or_axes=SelectorSpec(objective_keys))
         else:
             self.color = ColorSpec(variable_or_axes=objective_keys[0])
         super().__init__(columns=data, title=title, theme=theme, controls=[])
