@@ -75,4 +75,3 @@ from .derivatives import (
 )
 from .creation import Zeros, ZerosLike, Ones, OnesLike, Identity
 from .geometry import MeshInterpolationNode
-from .functions import FunctionNode

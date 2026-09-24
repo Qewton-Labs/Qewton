@@ -358,8 +358,87 @@ class TestGraphLogic(unittest.TestCase):
         self.assertEqual(len(outs2), 2)
 
         # None output
-        g3, ins3, outs3 = Graph.from_function(lambda a: None)
-        self.assertEqual(len(outs3), 0)
+        with self.assertRaises(ValueError):
+            g3, ins3, outs3 = Graph.from_function(lambda a: None)
+
+    def test_remove_node_cleans_all_related_connections(self):
+        ext_node = MockNode(name="External")
+
+        # Internal edge
+        self.graph.connect(self.n1.output_ports[0], self.n2.input_ports[1])
+        # External edges
+        self.graph.connect_from_outside_of_graph(
+            ext_node.output_ports[0], self.n1.input_ports[0]
+        )
+        self.graph.connect_to_outside_of_graph(
+            self.n1.output_ports[0], ext_node.input_ports[0]
+        )
+        # Skip connection
+        self.graph.add_skip_connection(self.n1.output_ports[0], self.n2.input_ports[0])
+
+        self.graph.setup()
+        self.assertTrue(self.graph.graph_was_sorted)
+
+        self.graph.remove(self.n1)
+
+        self.assertNotIn(self.n1, self.graph.nodes)
+        self.assertNotIn(self.n1, self.graph.incoming_edges)
+        self.assertNotIn(self.n1, self.graph.outgoing_edges)
+        self.assertNotIn(self.n1, self.graph.dynamic_data_configs)
+
+        self.assertEqual(self.graph.incoming_edges[self.n2], [])
+        self.assertEqual(self.graph.edges_from_outside, [])
+        self.assertEqual(self.graph.edges_to_outside, [])
+        self.assertEqual(self.graph.skip_connections, [])
+
+        self.assertFalse(self.graph.graph_was_sorted)
+        self.assertEqual(self.graph.sorted_nodes, [])
+        self.assertEqual(self.graph.sorted_incoming_edges, [])
+
+    def test_remove_internal_edge_frees_input_port(self):
+        self.graph.connect(self.n1, self.n2.input_ports[0])
+        edge = self.graph.incoming_edges[self.n2][0]
+
+        self.graph.setup()
+        self.assertTrue(self.graph.graph_was_sorted)
+
+        self.graph.remove(edge)
+
+        self.assertNotIn(edge, self.graph.incoming_edges[self.n2])
+        self.assertNotIn(edge, self.graph.outgoing_edges[self.n1])
+        self.assertFalse(self.graph.graph_was_sorted)
+
+        n3 = MockNode(name="N3")
+        self.graph.connect(n3, self.n2.input_ports[0])
+        self.assertEqual(len(self.graph.incoming_edges[self.n2]), 1)
+        self.assertEqual(self.graph.incoming_edges[self.n2][0].from_port.node, n3)
+
+    def test_remove_edge_from_outside_of_graph(self):
+        ext_node = MockNode(name="External")
+
+        self.graph.connect_from_outside_of_graph(
+            ext_node.output_ports[0], self.n1.input_ports[0]
+        )
+        edge = self.graph.edges_from_outside[0]
+
+        self.graph.remove(edge)
+
+        self.assertEqual(self.graph.edges_from_outside, [])
+        self.assertEqual(self.graph.incoming_edges[self.n1], [])
+
+        # Input port should be free again
+        self.graph.connect_from_outside_of_graph(
+            ext_node.output_ports[0], self.n1.input_ports[0]
+        )
+        self.assertEqual(len(self.graph.edges_from_outside), 1)
+
+    def test_remove_skip_connection_edge(self):
+        self.graph.add_skip_connection(self.n1.output_ports[0], self.n2.input_ports[0])
+        edge = self.graph.skip_connections[0]
+
+        self.graph.remove(edge)
+
+        self.assertEqual(self.graph.skip_connections, [])
 
 
 class TestGraphAwareNodeSetup(unittest.TestCase):

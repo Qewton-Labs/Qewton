@@ -84,7 +84,16 @@ class Graph(Serializable):
                 if isinstance(tracking_vars, TrackingObject):
                     tracking_vars = (tracking_vars,)
                 out = func(*tracking_vars)  # type: ignore
-            input_ports = [var.to_ports for var in tracking_vars]  # type: ignore
+            if not tracking_vars is None:
+                for i, var in enumerate(tracking_vars):
+                    if len(var.to_ports) == 0:
+                        sig_value = list(sig.parameters.values())[i]
+                        raise ValueError(
+                            f"""Input {sig_value} of function {func.__name__} was 
+                            not used in the function body. Remove it from the function 
+                            if this is desired."""
+                        )
+                input_ports = [var.to_ports for var in tracking_vars]  # type: ignore
         else:
             with graph.tracker():
                 out = func()
@@ -237,21 +246,118 @@ class Graph(Serializable):
 
         # Configurations should match
         for from_port, to_port in zip(from_ports, to_ports):
-            from_config = self.dynamic_data_configs[from_node][from_port]
-            to_config = self.dynamic_data_configs[to_node][to_port]
-            try:
-                unified_config = from_config.unify_with(to_config)
-            except DataConfigMismatchError as e:
-                raise DataConfigMismatchError(
-                    f"Connection of {from_node.name} to {to_node.name} failed, "
-                    + f"because {e}"
-                ) from e
+            unified_config = self._unify_configs(from_node, to_node, to_port, from_port)
             edge = Edge(from_port, to_port)
             self.incoming_edges[to_node].append(edge)
             self.outgoing_edges[from_node].append(edge)
 
             self.update_data_configurations(from_node, from_port, unified_config[0])
             self.update_data_configurations(to_node, to_port, unified_config[1])
+
+    def _unify_configs(self, from_node, to_node, to_port, from_port):
+        from_config = self.dynamic_data_configs[from_node][from_port]
+        to_config = self.dynamic_data_configs[to_node][to_port]
+        try:
+            unified_config = from_config.unify_with(to_config)
+        except DataConfigMismatchError as e:
+            raise DataConfigMismatchError(
+                f"Connection of {from_node.name} to {to_node.name} failed, "
+                + f"because {e}"
+            ) from e
+
+        return unified_config
+
+    def remove(self, obj: Node | Edge):
+        """Removes a node or edge from the graph.
+
+        Args:
+            object (Node | Edge): The node or edge to be removed.
+        """
+        if isinstance(obj, Node):
+            if obj in self.nodes:
+                self.nodes.remove(obj)
+                self.incoming_edges.pop(obj, None)
+                self.outgoing_edges.pop(obj, None)
+                self.dynamic_data_configs.pop(obj, None)
+                # Remove edges connected to this node
+                self._remove_node_connections(self.edges_from_outside, obj)
+                self._remove_node_connections(self.edges_to_outside, obj)
+                self._remove_node_connections(self.skip_connections, obj)
+                # Remove also all edges that other nodes have to this node
+                for node in self.nodes:
+                    self._remove_node_connections(self.incoming_edges[node], obj)
+                    self._remove_node_connections(self.outgoing_edges[node], obj)
+        else:
+            # Remove the edge from the graph
+            if obj in self.edges_from_outside:
+                self.edges_from_outside.remove(obj)
+                self.incoming_edges[obj.to_port.node].remove(obj)
+            elif obj in self.edges_to_outside:
+                self.edges_to_outside.remove(obj)
+                self.outgoing_edges[obj.from_port.node].remove(obj)
+            elif obj in self.skip_connections:
+                self.skip_connections.remove(obj)
+            else:
+                # Remove from incoming and outgoing edges of nodes
+                if obj.to_port.node in self.incoming_edges:
+                    if obj in self.incoming_edges[obj.to_port.node]:
+                        self.incoming_edges[obj.to_port.node].remove(obj)
+                if obj.from_port.node in self.outgoing_edges:
+                    if obj in self.outgoing_edges[obj.from_port.node]:
+                        self.outgoing_edges[obj.from_port.node].remove(obj)
+        # Now we have to update the data configurations -> only possible
+        # be building them up from zero again.
+        self._recalculate_data_configurations()
+        # A graph is never sorted after a node or edge was removed, since the
+        # order might have changed.
+        self.graph_was_sorted = False
+        self.sorted_nodes = []
+        self.sorted_incoming_edges = []
+
+    def _remove_node_connections(self, edge_container: list[Edge], node: Node):
+        """Removes all edges from the provided edge list that are connected to the
+        specified node.
+
+        Args:
+            edge_list (list[Edge]): The list of edges to be filtered.
+            node (Node): The node whose connections should be removed.
+        """
+        edge_list = list(edge_container)  # Create a copy
+        for edge in edge_list:
+            if edge.from_port.node == node or edge.to_port.node == node:
+                edge_container.remove(edge)
+
+    def _recalculate_data_configurations(self):
+        # Reset all data configurations
+        for node in self.dynamic_data_configs.keys():
+            self.dynamic_data_configs[node] = node.copy_data_configs()
+        # Pass information over the edges
+        for edges in self.incoming_edges.values():
+            for edge in edges:
+                from_node, from_port, to_node, to_port = edge.endpoints()
+                unified_config = self._unify_configs(
+                    from_node, to_node, to_port, from_port
+                )
+                self.update_data_configurations(from_node, from_port, unified_config[0])
+                self.update_data_configurations(to_node, to_port, unified_config[1])
+        for edge in self.skip_connections:
+            from_node, from_port, to_node, to_port = edge.endpoints()
+            self.dynamic_data_configs[from_node][from_port] = self.dynamic_data_configs[
+                to_node
+            ][to_port]
+        for edge in self.edges_from_outside:
+            self._propagate_outside_edge(edge, keep="to")
+        for edge in self.edges_to_outside:
+            self._propagate_outside_edge(edge, keep="from")
+
+    def _propagate_outside_edge(self, edge: Edge, keep="to"):
+        from_node, from_port, to_node, to_port = edge.endpoints()
+        from_config = self.dynamic_data_configs[from_node][from_port]
+        to_config = self.dynamic_data_configs[to_node][to_port]
+        from_result, to_result = from_config.unify_with(to_config)
+        unified = to_result if keep == "to" else from_result
+        self.update_data_configurations(from_node, from_port, unified)
+        self.update_data_configurations(to_node, to_port, unified)
 
     def update_data_configurations(self, node: Node, port: Port, config_dict: dict):
         """Updates the data configurations recursively for the given node, port,
@@ -264,9 +370,6 @@ class Graph(Serializable):
             config_dict (dict): Mapping of configuration keys/values used to update the
                 node and neighbor data configurations.
         """
-        # visited_nodes = set[Node]({node}) # experimental, check whether this
-        # iterates forever
-        # visited_edges = set[Edge]({edge})
         updated_ports = node.update_data_configs(
             port, config_dict, self.dynamic_data_configs[node]
         )
