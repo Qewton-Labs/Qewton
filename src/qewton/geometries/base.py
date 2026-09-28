@@ -405,6 +405,24 @@ class DiscreteGeometry(Geometry[TensorType]):
         self.discretization_of: Geometry | None = None
         self.discretization_points = discretization_points
 
+    def bounding_box(self):
+        if self.discretization_points is not None:
+            self.discretization_points = self.backend.build_tensor(
+                self.discretization_points
+            )
+            bounding_box = []
+            for i in range(self.discretization_points.shape[-1]):
+                min_val = self.backend.math.min(self.discretization_points[..., i])
+                max_val = self.backend.math.max(self.discretization_points[..., i])
+                bounding_box.append(min_val)
+                bounding_box.append(max_val)
+            return self.backend.build_tensor(bounding_box)
+        if self.discretization_of is not None:
+            return self.discretization_of.bounding_box()
+        raise NotImplementedError(
+            "Bounding box is not implemented for this discrete geometry."
+        )
+
     def is_discretization_of(self, other_geometry: Geometry) -> bool:
         if self.discretization_of == other_geometry:
             return True

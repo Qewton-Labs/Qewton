@@ -48,15 +48,6 @@ class PointCloud(DiscreteGeometry[TensorType]):
             self.discretization_points, device=device
         )
 
-    def bounding_box(self):
-        bounding_box = []
-        for i in range(self.variable.dim):
-            min_val = self.backend.math.min(self.discretization_points[..., i])
-            max_val = self.backend.math.max(self.discretization_points[..., i])
-            bounding_box.append(min_val)
-            bounding_box.append(max_val)
-        return self.backend.build_tensor(bounding_box)
-
     def _get_volume(self):
         bounding_box = self.bounding_box()
         side_dist = bounding_box[1::2] - bounding_box[::2]

@@ -45,6 +45,8 @@ class Parallelogram(ContinuousGeometry[TensorType]):
 
     def contains(self, points):
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 2)
+        if hasattr(points, "device"):
+            self.move_to_device(points.device)
         origin = self.origin
         dir_1 = self.corner_1 - origin
         dir_2 = self.corner_2 - origin
@@ -152,8 +154,8 @@ class Parallelogram(ContinuousGeometry[TensorType]):
     def sample_grid(self, n_points: int, device: Device | str = cpu):
         self.move_to_device(device)
         n_side = int(math.ceil(math.sqrt(n_points)))
-        u = self.backend.math.linspace(0.0, 1.0, num=n_side, device=device)
-        v = self.backend.math.linspace(0.0, 1.0, num=n_side, device=device)
+        u = self.backend.math.linspace(0.0, 1.0, num=n_side + 2, device=device)[1:-1]
+        v = self.backend.math.linspace(0.0, 1.0, num=n_side + 2, device=device)[1:-1]
         uu, vv = self.backend.math.meshgrid(u, v)
         bary_coords = self.backend.math.concatenate(
             [

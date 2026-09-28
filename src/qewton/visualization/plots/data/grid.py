@@ -4,7 +4,11 @@ from qewton.config.axes import Axes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.visualization.plots.data.base import DataPlot
-from qewton.visualization.plots.result import GridResult, ParametricGridResult, VectorResult
+from qewton.visualization.plots.result import (
+    GridResult,
+    ParametricGridResult,
+    VectorResult,
+)
 from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec, VectorSpec
 
 
@@ -23,8 +27,9 @@ class StructuredGridPlot(DataPlot):
         z: AxisSpec | Variable | Axes | None = None,
         color: ColorSpec | Variable | None = None,
         controls: list[ControlSpec] | None = None,
+        **kwargs,
     ):
-        super().__init__(data, data_config, controls=controls)
+        super().__init__(data, data_config, controls=controls, **kwargs)
 
         self.x = x if isinstance(x, AxisSpec) else AxisSpec(x)
         self.y = y if isinstance(y, AxisSpec) else AxisSpec(y)
@@ -122,8 +127,11 @@ class HeatmapPlot(StructuredGridPlot):
         y: AxisSpec | Variable | Axes,
         color: ColorSpec | Variable | None = None,
         controls: list[ControlSpec] | None = None,
+        **kwargs,
     ):
-        super().__init__(data, data_config, x, y, color=color, controls=controls)
+        super().__init__(
+            data, data_config, x, y, color=color, controls=controls, **kwargs
+        )
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
         return renderer.HeatmapArtist.create(backend_figure, self, row=row, col=col)
@@ -296,7 +304,11 @@ class QuiverPlot(DataPlot):
 
         step = self.vector.subsample
         if step > 1:
-            points, vectors, magnitude = points[::step], vectors[::step], magnitude[::step]
+            points, vectors, magnitude = (
+                points[::step],
+                vectors[::step],
+                magnitude[::step],
+            )
 
         # Points a MeshInterpolationNode's point_filter excluded come back NaN
         # in every component - drop them rather than draw zero-length arrows.
@@ -309,5 +321,7 @@ class QuiverPlot(DataPlot):
         return (
             renderer.ArrowField2DArtist.create(backend_figure, self, row=row, col=col)
             if self._coord_dim == 2
-            else renderer.ArrowField3DArtist.create(backend_figure, self, row=row, col=col)
+            else renderer.ArrowField3DArtist.create(
+                backend_figure, self, row=row, col=col
+            )
         )

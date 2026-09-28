@@ -79,6 +79,7 @@ class Graph(Serializable):
         """
         graph = Graph()
         sig = inspect.signature(func)
+        not_used_inputs = []
         if len(sig.parameters) > 0:
             with graph.tracker(n_tracking_vars=len(sig.parameters)) as tracking_vars:
                 if isinstance(tracking_vars, TrackingObject):
@@ -87,12 +88,7 @@ class Graph(Serializable):
             if not tracking_vars is None:
                 for i, var in enumerate(tracking_vars):
                     if len(var.to_ports) == 0:
-                        sig_value = list(sig.parameters.values())[i]
-                        raise ValueError(
-                            f"""Input {sig_value} of function {func.__name__} was 
-                            not used in the function body. Remove it from the function 
-                            if this is desired."""
-                        )
+                        not_used_inputs.append(i)
                 input_ports = [var.to_ports for var in tracking_vars]  # type: ignore
         else:
             with graph.tracker():
@@ -126,6 +122,12 @@ class Graph(Serializable):
                     if out.last_output_port is not None
                     else [tracking_vars_idcs[out]]
                 )
+        for i in not_used_inputs:
+            if i not in output_ports:
+                sig_value = list(sig.parameters.values())[i]
+                raise ValueError(f"""Input {sig_value} of function {func.__name__} was 
+                    not used in the function body. Remove it from the function 
+                    if this is desired.""")
 
         return graph, input_ports, output_ports  # type: ignore
 
