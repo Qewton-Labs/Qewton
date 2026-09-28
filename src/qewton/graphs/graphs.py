@@ -1,10 +1,10 @@
 from __future__ import annotations
 from collections import deque
 from contextlib import contextmanager
-import inspect
+from copy import deepcopy
 from typing import Any, Callable, TYPE_CHECKING
 from warnings import warn
-
+import inspect
 import numpy as np
 
 from qewton.config.axes import FeatureAxes
@@ -80,6 +80,7 @@ class Graph(Serializable):
         graph = Graph()
         sig = inspect.signature(func)
         not_used_inputs = []
+        input_ports = []
         if len(sig.parameters) > 0:
             with graph.tracker(n_tracking_vars=len(sig.parameters)) as tracking_vars:
                 if isinstance(tracking_vars, TrackingObject):
@@ -93,7 +94,6 @@ class Graph(Serializable):
         else:
             with graph.tracker():
                 out = func()
-            input_ports = []
             tracking_vars = ()
         tracking_vars_idcs = {
             var: i for i, var in enumerate(tracking_vars)  # type: ignore
@@ -315,6 +315,98 @@ class Graph(Serializable):
         self.graph_was_sorted = False
         self.sorted_nodes = []
         self.sorted_incoming_edges = []
+
+    def duplicate(self) -> Graph:
+        """Creates a duplicate of the current graph, including all nodes and edges.
+
+        Returns:
+            Graph: A new instance of the graph with the same structure and nodes.
+        """
+
+        def edge_copy(edge: Edge) -> Edge:
+            return Edge(
+                edge.from_port,
+                edge.to_port,
+                connects_to_outside=edge.connects_to_outside,
+            )
+
+        new_graph = Graph()
+        for node in self.nodes:
+            new_graph.add_node(node, check_warning=False)
+        # Copy edges and connections
+        for node in self.nodes:
+            for edge in self.incoming_edges[node]:
+                new_graph.incoming_edges[node].append(edge_copy(edge))
+            for edge in self.outgoing_edges[node]:
+                new_graph.outgoing_edges[node].append(edge_copy(edge))
+            for edge in self.skip_connections:
+                new_graph.skip_connections.append(edge_copy(edge))
+        for edge in self.edges_from_outside:
+            new_graph.edges_from_outside.append(edge_copy(edge))
+        for edge in self.edges_to_outside:
+            new_graph.edges_to_outside.append(edge_copy(edge))
+        # Copy dynamic data configurations
+        config_dict = {}
+        for node, port_configs in self.dynamic_data_configs.items():
+            new_graph.dynamic_data_configs[node] = {}
+            for port, config in port_configs.items():
+                new_graph.dynamic_data_configs[node][port] = deepcopy(
+                    config, memo=config_dict
+                )
+        # Sorting
+        if self.graph_was_sorted:
+            new_graph.sort()
+        return new_graph
+
+    def replace_node(self, old_node: Node, new_node: Node):
+        """Replaces an existing node in the graph with a new node. Both
+        nodes must have the same number of input and output ports. The
+        connections will be transferred from the old node to the new node,
+        in respect to the order of the ports.
+
+        Args:
+            old_node (Node): The node to be replaced.
+            new_node (Node): The new node that will replace the old node.
+        """
+        if old_node not in self.nodes:
+            raise ValueError(f"Node {old_node.name} is not part of this graph.")
+        if new_node in self.nodes:
+            raise ValueError(f"Node {new_node.name} is already part of this graph.")
+
+        # Add the new node to the graph
+        self.add_node(new_node, check_warning=False)
+
+        # Transfer incoming edges from old_node to new_node
+        for edge in self.incoming_edges[old_node]:
+            edge.to_port.node = new_node
+            self.incoming_edges[new_node].append(edge)
+        self.incoming_edges.pop(old_node)
+
+        # Transfer outgoing edges from old_node to new_node
+        for edge in self.outgoing_edges[old_node]:
+            edge.from_port.node = new_node
+            self.outgoing_edges[new_node].append(edge)
+        self.outgoing_edges.pop(old_node)
+
+        # Transfer skip connections involving old_node to new_node
+        for edge in list(self.skip_connections):
+            if edge.from_port.node == old_node:
+                edge.from_port.node = new_node
+            if edge.to_port.node == old_node:
+                edge.to_port.node = new_node
+
+        # Update dynamic data configurations
+        self.dynamic_data_configs.pop(old_node)
+        self.dynamic_data_configs[new_node] = new_node.copy_data_configs()
+
+        # Remove the old node from the graph
+        self.nodes.remove(old_node)
+
+        # Recalculate data configurations after replacement
+        self._recalculate_data_configurations()
+
+        # Mark the graph as unsorted since the structure has changed
+        self.graph_was_sorted = False
 
     def _remove_node_connections(self, edge_container: list[Edge], node: Node):
         """Removes all edges from the provided edge list that are connected to the
@@ -934,6 +1026,11 @@ class Graph(Serializable):
 
         combined_variable = Variable.compose(variables) if variables else None
         pred_config = prediction_config or port.get_data_configuration(self)
+        if pred_config is None:
+            raise ValueError(
+                f"{port} has no DataConfiguration - a callable reference "
+                "needs the model's own evaluation points to call itself at."
+            )
         pred_variable = (
             combined_variable
             if combined_variable is not None
@@ -956,7 +1053,6 @@ class Graph(Serializable):
                 sampler.sampled_geometry.to_numpy()
 
             pred_data = port.node.backend.to_numpy(port.value)
-            pred_config = prediction_config or port.get_data_configuration(self)
             geometry_axes = pred_config.geometry_axes
             if geometry_axes is None:
                 raise ValueError(
@@ -994,10 +1090,13 @@ class Graph(Serializable):
             ref_data = ref_port.node.backend.to_numpy(ref_port.value)
             ref_config = reference_config or ref_port.get_data_configuration(self)
         else:
+            assert reference_config is not None
             ref_config = reference_config
             ref_geometry_axes = ref_config.geometry_axes
             if ref_geometry_axes is None:
                 raise ValueError("reference_config has no GeometryAxes.")
+            if isinstance(ref_geometry_axes, list):
+                ref_geometry_axes = ref_geometry_axes[0]
             ref_geometry = ref_geometry_axes.geometry
 
             ref_variable = (

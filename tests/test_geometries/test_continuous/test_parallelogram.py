@@ -98,8 +98,8 @@ def test_sample_grid(backend, device):
     points = para.sample_grid(4, device=device)
     assert points.shape == (4, 2)
     for p in points:
-        assert float(p[0]) in [0.0, 1.0]
-        assert float(p[1]) in [0.0, 1.0]
+        assert 0.0 < float(p[0]) < 1.0
+        assert 0.0 < float(p[1]) < 1.0
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
