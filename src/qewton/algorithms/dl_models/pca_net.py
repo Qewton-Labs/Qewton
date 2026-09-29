@@ -144,6 +144,10 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
         )
 
     def _build_network(self):
+        self.input_pca.refresh_port_data_configurations()
+        self.output_pca.refresh_port_data_configurations()
+        self.inverse_pca.refresh_port_data_configurations()
+
         graph = Graph()
         graph.add_node(self.output_pca)
         graph.connect(self.input_pca.output, self.fcn)
