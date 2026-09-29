@@ -460,6 +460,11 @@ class Node(ABC, Serializable, Generic[TensorType]):
         return TrainableParameters.create_empty(self.node_id)
 
     @property
+    def memory_consumption(self) -> int:
+        """Returns the memory consumption of this node in bytes."""
+        return 0
+
+    @property
     def _trainable_parameters(self) -> _TrainableParameterBase:
         """Internal method to return trainable parameters of this node. This is used
         to collect trainable parameters from all nodes in a graph.

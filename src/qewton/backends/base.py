@@ -194,6 +194,17 @@ class ComputingBackend(Backend[TensorType]):
             "The loading method must be implemented by subclasses of Backend."
         )
 
+    @classmethod
+    def memory_consumption(cls, data) -> int:
+        """Returns the memory consumption of the given data in bytes.
+
+        Args:
+            data (TensorType): The data to calculate the memory consumption of.
+        """
+        raise NotImplementedError(
+            "The memory consumption method must be implemented by subclasses of Backend."
+        )
+
 
 class DeepLearningBackend(ComputingBackend[TensorType]):
     """A Backend that implements all the necessary methods for deep learning.

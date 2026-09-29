@@ -425,6 +425,13 @@ class GraphNode(Node[TensorType]):
         output_ports_dict = dict(zip(outer_output_ports, output_ports))
         return graph, input_ports_dict, output_ports_dict
 
+    @property
+    def memory_consumption(self) -> int:
+        total_bytes = 0
+        for node in self._graph.nodes:
+            total_bytes += node.memory_consumption
+        return total_bytes
+
 
 class FromFunctionNode(GraphNode):
     """

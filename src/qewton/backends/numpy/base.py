@@ -94,3 +94,12 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
         if path.suffix != ".npy":
             path = path.with_suffix(".npy")
         return np.load(path, allow_pickle=True)
+
+    @classmethod
+    def memory_consumption(cls, data) -> int:
+        """Returns the memory consumption of the given data in bytes.
+
+        Args:
+            data (np.ndarray): The data to calculate the memory consumption of.
+        """
+        return data.nbytes

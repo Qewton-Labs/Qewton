@@ -323,28 +323,32 @@ class Graph(Serializable):
             Graph: A new instance of the graph with the same structure and nodes.
         """
 
-        def edge_copy(edge: Edge) -> Edge:
-            return Edge(
-                edge.from_port,
-                edge.to_port,
-                connects_to_outside=edge.connects_to_outside,
-            )
+        def edge_copy(edge: Edge, edge_mapping: dict[Edge, Edge]) -> Edge:
+            if not edge in edge_mapping:
+                new_edge = Edge(
+                    edge.from_port,
+                    edge.to_port,
+                    connects_to_outside=edge.connects_to_outside,
+                )
+                edge_mapping[edge] = new_edge
+            return edge_mapping[edge]
 
         new_graph = Graph()
         for node in self.nodes:
             new_graph.add_node(node, check_warning=False)
         # Copy edges and connections
+        edge_mapping = {}
         for node in self.nodes:
             for edge in self.incoming_edges[node]:
-                new_graph.incoming_edges[node].append(edge_copy(edge))
+                new_graph.incoming_edges[node].append(edge_copy(edge, edge_mapping))
             for edge in self.outgoing_edges[node]:
-                new_graph.outgoing_edges[node].append(edge_copy(edge))
+                new_graph.outgoing_edges[node].append(edge_copy(edge, edge_mapping))
             for edge in self.skip_connections:
-                new_graph.skip_connections.append(edge_copy(edge))
+                new_graph.skip_connections.append(edge_copy(edge, edge_mapping))
         for edge in self.edges_from_outside:
-            new_graph.edges_from_outside.append(edge_copy(edge))
+            new_graph.edges_from_outside.append(edge_copy(edge, edge_mapping))
         for edge in self.edges_to_outside:
-            new_graph.edges_to_outside.append(edge_copy(edge))
+            new_graph.edges_to_outside.append(edge_copy(edge, edge_mapping))
         # Copy dynamic data configurations
         config_dict = {}
         for node, port_configs in self.dynamic_data_configs.items():
@@ -358,7 +362,13 @@ class Graph(Serializable):
             new_graph.sort()
         return new_graph
 
-    def replace_node(self, old_node: Node, new_node: Node):
+    def replace_node(
+        self,
+        old_node: Node,
+        new_node: Node,
+        input_port_mapping: dict[Port, Port] | None = None,
+        output_port_mapping: dict[Port, Port] | None = None,
+    ):
         """Replaces an existing node in the graph with a new node. Both
         nodes must have the same number of input and output ports. The
         connections will be transferred from the old node to the new node,
@@ -367,11 +377,43 @@ class Graph(Serializable):
         Args:
             old_node (Node): The node to be replaced.
             new_node (Node): The new node that will replace the old node.
+            input_port_mapping (dict[InputPort, InputPort], optional):
+                A mapping of the input ports from the old node to the
+                new node. If not provided, the ports will be matched by
+                their order.
+            output_port_mapping (dict[OutputPort, OutputPort], optional):
+                A mapping of the output ports from the old node to the
+                new node. If not provided, the ports will be matched by
+                their order.
         """
         if old_node not in self.nodes:
             raise ValueError(f"Node {old_node.name} is not part of this graph.")
         if new_node in self.nodes:
             raise ValueError(f"Node {new_node.name} is already part of this graph.")
+
+        # Build the mapping between ports
+        if input_port_mapping is None:
+            if len(old_node.input_ports) != len(new_node.input_ports):
+                raise ValueError(
+                    f"Old node {old_node.name} and new node {new_node.name} must have "
+                    "the same number of input ports."
+                )
+            input_port_mapping = {
+                old_port: new_port
+                for old_port, new_port in zip(old_node.input_ports, new_node.input_ports)
+            }
+        if output_port_mapping is None:
+            if len(old_node.output_ports) != len(new_node.output_ports):
+                raise ValueError(
+                    f"Old node {old_node.name} and new node {new_node.name} must have "
+                    "the same number of output ports."
+                )
+            output_port_mapping = {
+                old_port: new_port
+                for old_port, new_port in zip(
+                    old_node.output_ports, new_node.output_ports
+                )
+            }
 
         # Add the new node to the graph
         self.add_node(new_node, check_warning=False)
@@ -379,12 +421,14 @@ class Graph(Serializable):
         # Transfer incoming edges from old_node to new_node
         for edge in self.incoming_edges[old_node]:
             edge.to_port.node = new_node
+            edge.to_port = input_port_mapping[edge.to_port]
             self.incoming_edges[new_node].append(edge)
         self.incoming_edges.pop(old_node)
 
         # Transfer outgoing edges from old_node to new_node
         for edge in self.outgoing_edges[old_node]:
             edge.from_port.node = new_node
+            edge.from_port = output_port_mapping[edge.from_port]
             self.outgoing_edges[new_node].append(edge)
         self.outgoing_edges.pop(old_node)
 
@@ -392,8 +436,10 @@ class Graph(Serializable):
         for edge in list(self.skip_connections):
             if edge.from_port.node == old_node:
                 edge.from_port.node = new_node
+                edge.from_port = output_port_mapping[edge.from_port]
             if edge.to_port.node == old_node:
                 edge.to_port.node = new_node
+                edge.to_port = input_port_mapping[edge.to_port]
 
         # Update dynamic data configurations
         self.dynamic_data_configs.pop(old_node)

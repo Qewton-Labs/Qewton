@@ -100,6 +100,14 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
             self._set_port_values(self.mean, self.std)
         return super().to(device)
 
+    @property
+    def memory_consumption(self) -> int:
+        total_bytes = 0
+        if self.state != NodeState.UNINITIALIZED:
+            total_bytes += self.backend.memory_consumption(self.mean)
+            total_bytes += self.backend.memory_consumption(self.std)
+        return total_bytes
+
     def forward(
         self, x: Annotated[TensorType, DataConfiguration(batch_axes, data_axes)]
     ) -> Annotated[TensorType, DataConfiguration(batch_axes, data_axes)]:

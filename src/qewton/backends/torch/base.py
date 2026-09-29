@@ -110,3 +110,7 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
         if path.suffix != ".pt":
             path = path.with_suffix(".pt")
         return torch.load(path, weights_only=True)
+
+    @classmethod
+    def memory_consumption(cls, data) -> int:
+        return data.element_size() * data.numel()

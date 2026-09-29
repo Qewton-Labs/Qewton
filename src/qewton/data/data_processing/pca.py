@@ -67,6 +67,14 @@ class PCANode(DataProcessingNode[TensorType]):
         self.port_v = self.output_ports[3]
         self.port_v.name = "V" + self.name
 
+    def refresh_port_data_configurations(self) -> None:
+        """Refresh static data configurations that depend on hyperparameters."""
+        self.input.update_static_data_configuration(self.x_data_config())
+        self.output.update_static_data_configuration(self.out_data_config())
+        self.port_u.update_static_data_configuration(self.out_u_config())
+        self.port_s.update_static_data_configuration(self.out_s_config())
+        self.port_v.update_static_data_configuration(self.out_v_config())
+
     def reset(self):
         self._state = NodeState.UNINITIALIZED
         self._set_port_values(None, None, None)
@@ -75,6 +83,7 @@ class PCANode(DataProcessingNode[TensorType]):
     def setup(self, graph: Graph) -> None:
         if self._state == NodeState.INITIALIZED:
             return
+        self.refresh_port_data_configurations()
         # First collect all data:
         total_data = []
         for _ in range(self.data_source_node.training_batches):
@@ -110,6 +119,15 @@ class PCANode(DataProcessingNode[TensorType]):
         self.port_u.set_value(pca_u)
         self.port_s.set_value(pca_s)
         self.port_v.set_value(pca_v)
+
+    @property
+    def memory_consumption(self) -> int:
+        total_bytes = 0
+        if self.state != NodeState.UNINITIALIZED:
+            total_bytes += self.backend.memory_consumption(self.pca_u)
+            total_bytes += self.backend.memory_consumption(self.pca_s)
+            total_bytes += self.backend.memory_consumption(self.pca_v)
+        return total_bytes
 
     def x_data_config(self):
         return DataConfiguration(self.batch_axes, EllipsisAxes())
@@ -166,11 +184,17 @@ class InversePCANode(DataProcessingNode[TensorType]):
         self.data_source_node: PCANode = pca_node
         self.backend: type[ComputingBackend[TensorType]] = pca_node.backend
 
+    def refresh_port_data_configurations(self) -> None:
+        """Refresh static data configurations that depend on the wrapped PCA node."""
+        self.input_ports[0].update_static_data_configuration(self.x_data_config())
+        self.output_ports[0].update_static_data_configuration(self.out_data_config())
+
     def setup(self, graph: Graph) -> None:
         if self.data_source_node.state == NodeState.UNINITIALIZED:
             raise RuntimeError(
                 f"PCA Node {self.data_source_node} has not been setup yet!"
             )
+        self.refresh_port_data_configurations()
         self._state = NodeState.INITIALIZED
 
     def x_data_config(self):
