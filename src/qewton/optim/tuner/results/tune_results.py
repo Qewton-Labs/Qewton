@@ -49,6 +49,7 @@ class TuneResultCollector:
         self.objective_names: list[str]
         self.csv_path: str
         self.csv_columns: list[str]
+        self.cb_keys: list[str] = []
 
     def set_hp_and_conditions(
         self, hp_dag: HyperParameterDAG, tuning_objectives: list[Constraint]
@@ -64,6 +65,16 @@ class TuneResultCollector:
         self.param_names = [hp.name for hp in hp_dag.sorted_nodes]
         self.tuning_objectives = tuning_objectives
         self.objective_names = [con.name for con in tuning_objectives]
+
+    def add_callback_info(self, train_state: TrainerState):
+        """
+        Add callback information from the training state to the collector.
+
+        Args:
+            train_state (TrainerState): The training state containing callback info.
+        """
+        for key in train_state.callback_info.keys():
+            self.cb_keys.append(key)
 
     def add_result(self, new_result: TrainResult):
         """
@@ -105,6 +116,7 @@ class TuneResultCollector:
                 writer = csv.writer(f)
                 info_keys = [self.termination_key, self.time_key, self.save_key]
                 self.csv_columns = self.param_names + self.objective_names + info_keys
+                self.csv_columns += self.cb_keys
                 writer = csv.DictWriter(f, fieldnames=self.csv_columns)
                 writer.writeheader()
             json_path = os.path.join(self.save_path, self.file_names["json"])
@@ -151,7 +163,7 @@ class TuneResultCollector:
 
         # Other information about the training process
         result_dict[self.termination_key] = result.train_state.termination_reason
-        result_dict[self.time_key] = result.train_state.total_train_time
+        result_dict[self.time_key] = int(result.train_state.total_train_time) + 1
         result_dict[self.save_key] = result.train_state.save_path
 
         # Add current hyperparameter values to the result dictionary
@@ -161,5 +173,12 @@ class TuneResultCollector:
                     result_dict[hp_name] = result.params[hp_name].__name__
                 else:
                     result_dict[hp_name] = result.params[hp_name]
+
+        # Add callback information to the result dictionary
+        for key in self.cb_keys:
+            if key in result.train_state.callback_info:
+                result_dict[key] = result.train_state.callback_info[key]
+            else:
+                result_dict[key] = None
 
         return result_dict

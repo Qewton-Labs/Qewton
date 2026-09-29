@@ -78,6 +78,8 @@ class Trainer:
         self.train_state = TrainerState(
             save_path, enable_logging=enable_logging, log_interval=log_interval
         )
+        for cb in self.callbacks:
+            cb.add_callback_info_to_state(self.train_state)
 
     def set_trainable_parameters(self, parameters: _TrainableParameterBase):
         """Attach the trainable parameter container used by optimization phases.

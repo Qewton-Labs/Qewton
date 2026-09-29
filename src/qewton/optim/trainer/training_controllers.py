@@ -55,6 +55,7 @@ class TrainerState:
         self.history: list[LogEntry] = []
         self.enable_logging = enable_logging
         self.log_interval = log_interval
+        self.callback_info: dict[str, Any] = {}
 
         self.stop_stage: bool = False
         self._stop_training: bool = False

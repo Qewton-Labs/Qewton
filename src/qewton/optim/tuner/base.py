@@ -158,6 +158,7 @@ class Tuner:
         save_path = self.build_save_path(save_path, self.trainer)
         self.result_collector = result_collector
         self.result_collector.save_path = save_path
+        self.result_collector.add_callback_info(trainer.train_state)
         self.result_collector.set_hp_and_conditions(self.hp_dag, self.tuning_objectives)
 
         # Queues for parallel processing

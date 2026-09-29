@@ -91,6 +91,12 @@ class ParameterNode(Node[TensorType]):
             params = self._trainable_parameter
         return TrainableParameters(self.node_id, params)
 
+    @property
+    def memory_consumption(self) -> int:
+        if self._trainable_parameter is None:
+            return 0
+        return self.backend.memory_consumption(self._trainable_parameter)
+
     def _parameters_to_save(self):
         return TrainableParameters(self.node_id, self._trainable_parameter)
 
