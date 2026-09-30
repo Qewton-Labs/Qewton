@@ -1,10 +1,12 @@
 from enum import Enum
+from typing import Callable
 
 from qewton.backends import TensorType, Backend, DEFAULT_DL_BACKEND
 
 from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.graphs.nodes import Node, OutputPort
+from qewton.constraints.weight_functions import ConstraintWeightFunction
 
 
 class ConstraintObjective(Enum):
@@ -26,6 +28,11 @@ class Constraint(Node):
     Args:
         weight (float | HyperParameter, optional): An additional weight for
             this constraint. Defaults to 1.0.
+        activation_condition (ConstraintWeightFunction, optional): A callable that
+            takes the current training iteration and returns a float (preferably
+            between 0 and 1) that represents whether this constraint should be
+            active or not. Defaults to None, which means the constraint is
+            always active.
         objective (ConstraintObjective, optional): Wether to minimize of maximize
             this constraint. Defaults to ConstraintObjective.MINIMIZE.
         evaluated_in_mode (EvaluationPhase, optional): When this constraint should
@@ -38,6 +45,7 @@ class Constraint(Node):
     def __init__(
         self,
         weight: float | HyperParameter = 1.0,
+        activation_condition: ConstraintWeightFunction | None = None,
         objective: ConstraintObjective = ConstraintObjective.MINIMIZE,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         name="Constraint",
@@ -45,6 +53,7 @@ class Constraint(Node):
         **kwargs,
     ):
         self.weight: HyperParameter = HyperParameter.from_value(weight, "Weight")
+        self.activation_condition: ConstraintWeightFunction | None = activation_condition
         self.objective: ConstraintObjective = objective
 
         self.evaluated_in_mode = evaluated_in_mode
@@ -60,7 +69,9 @@ class Constraint(Node):
         """
         return self.output_ports[0]
 
-    def get_loss(self, add_weight: bool = True):
+    def get_loss(
+        self, add_weight: bool = True, training_iteration: int = 0
+    ) -> TensorType:
         """Return the current loss value of this constraint,
         multiplied by the weight if add_weight is True.
 
@@ -78,10 +89,20 @@ class Constraint(Node):
                 "Loss value is not computed yet. Make sure to run the forward pass of the\
                     graph before getting the loss."
             )
-        return self.loss_port.value * (self.weight.value if add_weight else 1)
+        weight = self.weight.value if add_weight else 1
+        if add_weight and self.activation_condition is not None:
+            weight *= self.activation_condition(training_iteration)
+        return self.loss_port.value * weight
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
+        """Return a list of all hyperparameters of this constraint."""
+        if self.activation_condition is not None:
+            return (
+                [self.weight]
+                + self.activation_condition.hyperparameters
+                + super().hyperparameters
+            )
         return [self.weight] + super().hyperparameters
 
     def set_evaluation_mode(self, new_mode: EvaluationPhase):

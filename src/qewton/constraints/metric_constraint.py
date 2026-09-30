@@ -1,5 +1,6 @@
 from qewton.constraints.base import Constraint, ConstraintObjective
 from qewton.config.data_configurations import DataConfiguration
+from qewton.constraints.weight_functions import ConstraintWeightFunction
 from qewton.optim.parameters.categorical_hyperparameter import (
     HyperParameter,
     BooleanHyperparameter,
@@ -74,6 +75,7 @@ class MSEConstraint(MetricConstraint, GraphNode):
         relative: bool | BooleanHyperparameter = False,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         weight: float | ContinuousHyperparameter = 1,
+        activation_condition: ConstraintWeightFunction | None = None,
         backend=DEFAULT_DL_BACKEND,
         epsilon=1e-8,
     ):
@@ -94,6 +96,7 @@ class MSEConstraint(MetricConstraint, GraphNode):
         super().__init__(
             graph=new_graph,
             weight=weight,
+            activation_condition=activation_condition,
             relative=relative,
             input_ports=in_ports,
             output_ports=out_ports,

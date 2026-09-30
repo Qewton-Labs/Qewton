@@ -6,6 +6,7 @@ from qewton.config.axes import FeatureAxes, EllipsisAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 
+from qewton.constraints.weight_functions import ConstraintWeightFunction
 from qewton.graphs.control_nodes.wrapper_node import FunctionWrappingNode
 from qewton.graphs.graphs import Graph
 
@@ -53,6 +54,7 @@ class PINNConstraint(Constraint, GraphNode):
         reduction=None,
         name="PINNConstraint",
         weight: float | HyperParameter = 1,
+        activation_condition: ConstraintWeightFunction | None = None,
         track_residual: bool = True,
         objective: ConstraintObjective = ConstraintObjective.MINIMIZE,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
@@ -110,6 +112,7 @@ class PINNConstraint(Constraint, GraphNode):
             evaluated_in_mode=evaluated_in_mode,
             input_ports=self.residual_node.input_ports,
             output_ports=self.reduction_node.output_ports,
+            activation_condition=activation_condition,
             name=name,
             backend=backend,
         )
