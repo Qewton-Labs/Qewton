@@ -52,6 +52,7 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         variable: Variable,
         file_path: str,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
+        prune_z: bool = False,
     ) -> MeshGeometry:
         """Loads a *volume* mesh from a path.
 
@@ -62,11 +63,17 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
                 more, see the meshio documentation.
             backend (type[ComputingBackend[TensorType]], optional):
                 Defaults to DEFAULT_DL_BACKEND.
+            prune_z (bool, optional): If True, the z-coordinate of the mesh will be
+                removed. This is useful for 2D meshes that are stored in 3D.
 
         Returns:
             MeshGeometry: _description_
         """
-        return cls(variable=variable, mesh=Mesh.load_mesh(file_path, backend=backend))
+        return cls(
+            variable=variable,
+            mesh=Mesh.load_mesh(file_path, backend=backend, prune_z=prune_z),
+            backend=backend,
+        )
 
     def __and__(self, other):
         raise NotImplementedError("Mesh combinations are not supported yet.")
@@ -238,13 +245,18 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             found: bool array (n_points,) - whether a containing simplex was
                 found for each point.
         """
-        self._build_barycentric_cache()
+        point_device = cpu
+        if hasattr(points, "device"):
+            point_device = points.device
+            self.mesh.move_to_device(points.device)
+
+        self._build_barycentric_cache(point_device)
 
         if len(points) < len(self.mesh.cells):
-            return self._locate_point_based(points)
-        return self._locate_cell_based(points)
+            return self._locate_point_based(points, point_device)
+        return self._locate_cell_based(points, point_device)
 
-    def _build_barycentric_cache(self):
+    def _build_barycentric_cache(self, device: Device | str = cpu):
         if self.inv_A is None or self.v0 is None:
             vertices = self.mesh.vertices[self.mesh.cells]
             self.bbox_min = self.backend.math.min(vertices, axis=1)
@@ -252,13 +264,22 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             self.v0 = vertices[:, 0]
             mat_A = vertices[:, 1:] - self.v0[:, None]  # type: ignore
             self.inv_A = self.backend.linalg.inv(mat_A)
+        else:
+            self.bbox_min = self.backend.to(self.bbox_min, device=device)
+            self.bbox_max = self.backend.to(self.bbox_max, device=device)
+            self.v0 = self.backend.to(self.v0, device=device)
+            self.inv_A = self.backend.to(self.inv_A, device=device)
 
-    def _locate_point_based(self, points):
+    def _locate_point_based(self, points, device: Device | str = cpu):
         n_points = len(points)
         dim = self.variable.dim
-        cell_idx = self.backend.math.zeros(n_points, dtype=self.backend.dtypes[Int32])
-        weights = self.backend.math.zeros((n_points, dim + 1))  # type: ignore
-        found = self.backend.math.zeros(n_points, dtype=self.backend.dtypes[Bool])
+        cell_idx = self.backend.math.zeros(
+            n_points, dtype=self.backend.dtypes[Int32], device=device
+        )
+        weights = self.backend.math.zeros((n_points, dim + 1), device=device)  # type: ignore
+        found = self.backend.math.zeros(
+            n_points, dtype=self.backend.dtypes[Bool], device=device
+        )
 
         for i, p in enumerate(points):
             candidates = self.backend.math.where(
@@ -279,12 +300,16 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
 
         return cell_idx, weights, found
 
-    def _locate_cell_based(self, points):
+    def _locate_cell_based(self, points, device: Device | str = cpu):
         n_points = len(points)
         dim = self.variable.dim
-        cell_idx = self.backend.math.zeros(n_points, dtype=self.backend.dtypes[Int32])
-        weights = self.backend.math.zeros((n_points, dim + 1))  # type: ignore
-        found = self.backend.math.zeros(n_points, dtype=self.backend.dtypes[Bool])
+        cell_idx = self.backend.math.zeros(
+            n_points, dtype=self.backend.dtypes[Int32], device=device
+        )
+        weights = self.backend.math.zeros((n_points, dim + 1), device=device)  # type: ignore
+        found = self.backend.math.zeros(
+            n_points, dtype=self.backend.dtypes[Bool], device=device
+        )
 
         for cell in range(len(self.mesh.cells)):
             # bbox filter
@@ -375,9 +400,10 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
             )
             # Do concrete distance check via normal computation
             for cell in candidates[0]:
+                cell_mapped = self.mesh.map_cells_to_original(cell)
                 dist = self.backend.math.dot(
                     p - self.v0[cell],  # type: ignore
-                    self.geometry.mesh.boundary_normals[cell],
+                    self.geometry.mesh.boundary_normals[cell_mapped],
                 )
                 if abs(dist) <= self.geometry.contains_tol:
                     point_inside[i] = True
@@ -403,10 +429,10 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
             idx = self.backend.math.where(mask)[0]
             if len(idx) == 0:
                 continue
-
+            cell_mapped = self.mesh.map_cells_to_original(cell)
             distance = self.backend.math.dot(
                 (points[idx] - self.v0[cell]),  # type: ignore
-                self.geometry.mesh.boundary_normals[cell],
+                self.geometry.mesh.boundary_normals[cell_mapped],
             )
             bary_mask = self.backend.math.abs(distance) <= self.geometry.contains_tol
             point_inside[idx[bary_mask]] = True
@@ -461,7 +487,8 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         points, idx = self.mesh.sample_random_inside(n_points=n_points, device=device)
         if include_normals:
             self._move_normals(device=device)
-            normals = self.geometry.mesh.boundary_normals[idx]
+            idx_mapped = self.mesh.map_cells_to_original(idx)
+            normals = self.geometry.mesh.boundary_normals[idx_mapped]
             return points, normals
         return points
 
@@ -505,9 +532,10 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
                 missing_n, include_normals=include_normals, device=device
             )
             points = self.backend.math.concatenate([points, random_points], axis=0)
-
+        points = self.backend.to(points, device=device)
         if include_normals:
             self._move_normals(device=device)
+            face_idx = self.mesh.map_cells_to_original(face_idx)
             normals = self.geometry.mesh.boundary_normals[face_idx]
             if random_normals is not None:
                 normals = self.backend.math.concatenate([normals, random_normals], axis=0)
@@ -519,13 +547,16 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         local_area: TensorType = self.mesh.cell_volumes  # type: ignore
         n_areas = len(local_area)
         local_n = self.backend.math.maximum(
-            1, self.backend.math.round(local_area / total_area * n_points)  # type: ignore
-        ).astype(int)
+            self.backend.build_tensor(1),
+            self.backend.math.round(local_area / total_area * n_points),  # type: ignore
+        )
+        local_n = self.backend.cast_dtype(local_n, Int32)
         # check if we have enough points or not:
         diff = n_points - self.backend.math.sum(local_n)
         if diff != 0:
             # Fix number by adding or removing points, starting from the biggest area
-            idx = self.backend.math.argsort(local_area)[::-1]
+            idx = self.backend.math.argsort(local_area)
+            idx = self.backend.math.flip(idx, axis=0)
             for i in range(abs(diff)):
                 local_n[idx[i % n_areas]] += self.backend.math.sign(diff)
         return n_areas, local_n
@@ -569,7 +600,8 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         else:
             point_found, cell_idx = self._contains_cell_based_search(points)[0]
         normals = self.backend.math.zeros_like(points, device=device)
-        normals[point_found] = self.geometry.mesh.boundary_normals[cell_idx[point_found]]
+        mapped_idx = self.mesh.map_cells_to_original(cell_idx[point_found])
+        normals[point_found] = self.geometry.mesh.boundary_normals[mapped_idx]
         return normals
 
     def get_submesh(self, marker: int | str) -> MeshBoundaryGeometry:

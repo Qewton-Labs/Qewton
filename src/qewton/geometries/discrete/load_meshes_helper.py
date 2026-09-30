@@ -13,6 +13,7 @@ def load_file_with_meshio(
     marker_key: str | None = None,
     default_cell_tags: int = -1,
     backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    prune_z: bool = False,
 ):
     msh = meshio.read(file_path)
     # Read all cell data:
@@ -25,7 +26,10 @@ def load_file_with_meshio(
     cells, cell_markers, faces, face_markers = read_markers_from_file(
         msh, marker_key, default_cell_tags, p_key, priority[key_idx + 1], backend
     )
-    return msh.points, cells, cell_markers, faces, face_markers, msh.field_data
+    coords = msh.points
+    if prune_z and coords.shape[1] == 3:
+        coords = coords[:, :2]
+    return coords, cells, cell_markers, faces, face_markers, msh.field_data
 
 
 def read_markers_from_file(

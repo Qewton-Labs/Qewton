@@ -56,7 +56,14 @@ class GraphBasedTrainer(Trainer):
             callbacks = []
         if isinstance(callbacks, Callback):
             callbacks = [callbacks]
+        obj_name_list = []
         for train_obj in training_objectives:
+            if train_obj.name in obj_name_list:
+                raise ValueError(
+                    f"Duplicate train objective name {train_obj.name} found. \
+                        Please ensure that all training objectives have unique names."
+                )
+            obj_name_list.append(train_obj.name)
             assert train_obj.evaluated_in_mode in [
                 EvaluationPhase.TRAIN,
                 EvaluationPhase.ALWAYS,

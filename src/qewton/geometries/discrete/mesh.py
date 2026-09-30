@@ -60,6 +60,8 @@ class Mesh(Serializable, Generic[TensorType]):
             if cell_markers is not None
             else None
         )
+        # Maps cell indices to the original mesh
+        self.parent_cell_mapping: TensorType | None = None
         self.faces = (
             backend.build_tensor(faces, dtype=Int32, device=device)
             if faces is not None
@@ -83,6 +85,19 @@ class Mesh(Serializable, Generic[TensorType]):
         )
 
         self._find_boundary_facets(device)
+
+    def map_cells_to_original(self, cell_indices: TensorType) -> TensorType:
+        """Maps the given cell indices to the original mesh.
+
+        Args:
+            cell_indices (TensorType): The cell indices to map.
+
+        Returns:
+            TensorType: The mapped cell indices.
+        """
+        if self.parent_cell_mapping is None:
+            return cell_indices  # No parent provided -> identity mapping
+        return self.parent_cell_mapping[cell_indices]
 
     @property
     def vertex_count(self) -> int:
@@ -161,16 +176,18 @@ class Mesh(Serializable, Generic[TensorType]):
             normals[:, 1] = -normals_save
             normals /= self.backend.linalg.norm(normals, order=2, axis=1, keepdims=True)
         else:  # 1d case:
-            normals = self.backend.build_tensor([[-1.0], [1.0]], device=device)
+            normals = b_vertex[:, 0, :] - opposite_v
+            normals /= self.backend.linalg.norm(normals, order=2, axis=1, keepdims=True)
         # Fix sign of the normal vectors:
-        flip = (
-            self.backend.math.sum(
-                normals * (opposite_v - b_vertex.mean(axis=1)),
-                axis=1,
+        if self.boundary_faces.shape[1] != 1:
+            flip = (
+                self.backend.math.sum(
+                    normals * (opposite_v - b_vertex.mean(axis=1)),
+                    axis=1,
+                )
+                > 0
             )
-            > 0
-        )
-        normals[flip] *= -1
+            normals[flip] *= -1
         self.boundary_normals = normals
         # Compute also the normals at the vertices (take the average of the
         # adjacent faces)
@@ -198,6 +215,7 @@ class Mesh(Serializable, Generic[TensorType]):
         marker_key: str | None = None,
         default_cell_tags: int = -1,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
+        prune_z: bool = False,
     ) -> Mesh:
         """Load a mesh from the disk. The mesh should already be a "volume" mesh.
         Currently only simplex meshes are supported.
@@ -210,6 +228,8 @@ class Mesh(Serializable, Generic[TensorType]):
                 dont have any markers. Defaults to -1.
             backend (type[ComputingBackend[TensorType]], optional):
                 Defaults to DEFAULT_DL_BACKEND.
+            prune_z (bool, optional): If True, the z-coordinate of the
+                vertices will be pruned if the mesh is 3D. Defaults to False.
 
         Raises:
             ImportError: Use Meshio to convert and read the mesh, raises an error if
@@ -234,6 +254,7 @@ class Mesh(Serializable, Generic[TensorType]):
                 marker_key=marker_key,
                 default_cell_tags=default_cell_tags,
                 backend=backend,
+                prune_z=prune_z,
             )
         )
         return cls(
@@ -348,13 +369,15 @@ class Mesh(Serializable, Generic[TensorType]):
         )
         new_cells = inverse_map[new_cells]
 
-        return Mesh(
+        sub_mesh = Mesh(
             vertices=remaining_vertices,
             cells=new_cells,
             cell_markers=self.cell_markers[mask],
             marker_labels=self.marker_labels,
             backend=self.backend,
         )
+        sub_mesh.parent_cell_mapping = self.backend.math.arange(len(self.cells))[mask]
+        return sub_mesh
 
     def sample_random_from_vertices(
         self, n_points: int, device: Device | str = cpu
@@ -367,6 +390,28 @@ class Mesh(Serializable, Generic[TensorType]):
         )
         self.vertices = self.backend.to(self.vertices, device=device)
         return self.vertices[idx], idx
+
+    def move_to_device(self, device: Device | str = cpu) -> None:
+        self.vertices = self.backend.to(self.vertices, device=device)
+        self.cells = self.backend.to(self.cells, device=device)
+        if self.cell_markers is not None:
+            self.cell_markers = self.backend.to(self.cell_markers, device=device)
+        if self.faces is not None:
+            self.faces = self.backend.to(self.faces, device=device)
+        if self.face_markers is not None:
+            self.face_markers = self.backend.to(self.face_markers, device=device)
+        if self.cell_volumes is not None:
+            self.cell_volumes = self.backend.to(self.cell_volumes, device=device)
+        if self.cell_probability_weights is not None:
+            self.cell_probability_weights = self.backend.to(
+                self.cell_probability_weights, device=device
+            )
+        if len(self.boundary_normals) > 0:
+            self.boundary_normals = self.backend.to(self.boundary_normals, device=device)
+        if len(self.boundary_normals_at_vertex) > 0:
+            self.boundary_normals_at_vertex = self.backend.to(
+                self.boundary_normals_at_vertex, device=device
+            )
 
     def sample_grid_from_vertices(
         self, n_points: int, device: Device | str = cpu

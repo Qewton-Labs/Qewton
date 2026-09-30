@@ -102,6 +102,7 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         """
         cache_key = (max_vertex_distance, device)
         if cache_key not in self._mesh_cache:
+            print(self.source_geometry)
             mesh_geometry = (
                 self.source_geometry.create_mesh(max_vertex_distance, device)
                 if device is not None

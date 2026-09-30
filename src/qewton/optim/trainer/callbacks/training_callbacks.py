@@ -30,7 +30,10 @@ class GraphEvalCallback(Callback):
                 graph.run(self.evaluation_phase)
 
             for constraint in self.constraints:
-                value = constraint.get_loss()
+                value = constraint.get_loss(
+                    self.evaluation_phase == EvaluationPhase.TRAIN,
+                    training_iteration=state.iteration,
+                )
                 state.losses[self.evaluation_phase][constraint.name] = value
 
 
