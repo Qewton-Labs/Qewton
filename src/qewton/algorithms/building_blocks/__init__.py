@@ -46,6 +46,8 @@ from .math import (
     Mean,
     Negative,
     Inner,
+    Norm,
+    Dot,
 )
 
 from .array_operations import (
