@@ -160,3 +160,31 @@ class Sigmoid(Node[TensorType]):
                 same shape and dtype as input.
         """
         return self.backend.nn.sigmoid(x)
+
+
+class SoftPlus(Node[TensorType]):
+    """Softplus activation function.
+
+    Applies the softplus activation function element-wise to the input tensor.
+    Maps input values to the range (0, ∞), providing a smooth approximation of ReLU.
+
+    Attributes:
+        ellipsis_axes (EllipsisAxes): Configuration for tensor axes handling.
+    """
+
+    ellipsis_axes = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Number[TensorType, DataConfiguration(ellipsis_axes)],
+    ) -> Number[TensorType, DataConfiguration(ellipsis_axes)]:
+        """Forward pass of Softplus activation.
+
+        Args:
+            x: Input tensor of any shape.
+
+        Returns:
+            TensorType: Output tensor with values in range (0, ∞),
+                same shape and dtype as input.
+        """
+        return self.backend.nn.softplus(x)

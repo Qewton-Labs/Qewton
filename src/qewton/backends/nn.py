@@ -31,6 +31,11 @@ class NNBackend(Backend[TensorType]):
     def softmax(x: Any, /, dim: int = -1) -> TensorType:
         pass
 
+    @staticmethod
+    @abstractmethod
+    def softplus(x: Any, /) -> TensorType:
+        pass
+
     # endregion
 
     # region: convolutional properties
