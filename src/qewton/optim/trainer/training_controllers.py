@@ -6,6 +6,7 @@ import os
 
 from qewton.optim.trainer.optimizers.optimizers import Optimizer
 from qewton.optim.trainer.optimizers.schedulers import LR_Scheduler
+from qewton.constraints.base import ConstraintObjective
 from qewton.optim.base import EvaluationPhase
 
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -56,6 +57,7 @@ class TrainerState:
         self.enable_logging = enable_logging
         self.log_interval = log_interval
         self.callback_info: dict[str, Any] = {}
+        self.callback_objectives: dict[str, ConstraintObjective] = {}
 
         self.stop_stage: bool = False
         self._stop_training: bool = False

@@ -1,5 +1,5 @@
 from .parameters import ParameterNode
-from .activation_functions import ReLU, Tanh, Sigmoid, AdaptiveActivation
+from .activation_functions import ReLU, Tanh, Sigmoid, AdaptiveActivation, SoftPlus
 from .linear import Linear, FunctionalLinear
 from .conv import (
     FunctionalConv,
@@ -46,6 +46,8 @@ from .math import (
     Mean,
     Negative,
     Inner,
+    Norm,
+    Dot,
 )
 
 from .array_operations import (

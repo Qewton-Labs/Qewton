@@ -1,6 +1,7 @@
 from typing import Literal
 
 from qewton.graphs.nodes import Node
+from qewton.constraints.base import ConstraintObjective
 from qewton.optim.trainer.training_controllers import TrainerState
 from qewton.optim.trainer.callbacks.base_callback import Callback
 
@@ -30,6 +31,7 @@ class ModelParameterSizeCallback(Callback):
 
     def add_callback_info_to_state(self, state: TrainerState):
         state.callback_info[self.memory_key] = 0
+        state.callback_objectives[self.memory_key] = ConstraintObjective.MINIMIZE
 
     def on_training_start(self, state: TrainerState):
         total_size = 0

@@ -462,6 +462,33 @@ class Dot(Node[TensorType]):
         return self.backend.math.inner(x, y)
 
 
+class Norm(Node[TensorType]):
+    """Norm node that computes the p-norm of the input tensor along the
+    last axis. Always keeps the last dimension (keepdims=True).
+    Has one input port and one output port.
+    """
+
+    dim_1 = AxesDim(None)
+    ell_ax = EllipsisAxes()
+
+    def __init__(
+        self,
+        ord: float | str = 2,
+        name: str | None = None,
+        state: NodeState = NodeState.FIXED,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        **kwargs,
+    ) -> None:
+        self.ord = ord
+        super().__init__(name, state, backend, **kwargs)
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
+    ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(1,)))]:
+        return self.backend.linalg.norm(x, order=self.ord, axis=-1, keepdims=True)
+
+
 class Inner(Node[TensorType]):
     """Inner product node that computes the element-wise product sum along the last axis.
     Supports keepdims option to retain dimension after reduction.
@@ -498,7 +525,6 @@ class ReductionNode(Node[TensorType]):
     """Base class for reduction operations (Mean, Sum, Std) that reduce tensor dimensions.
     Supports axis specification and keepdims option.
     """
-
 
     def __init__(
         self,
@@ -630,7 +656,6 @@ class Mean(ReductionNode[TensorType]):
     Has one input port and one output port.
     """
 
-
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
     ) -> Annotated[TensorType, DC(EllipsisAxes())]:
@@ -642,7 +667,6 @@ class Sum(ReductionNode[TensorType]):
     Has one input port and one output port.
     """
 
-
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
     ) -> Annotated[TensorType, DC(EllipsisAxes())]:
@@ -653,7 +677,6 @@ class Std(ReductionNode[TensorType]):
     """Standard deviation reduction node that computes the standard deviation along the specified axis.
     Has one input port and one output port.
     """
-
 
     def forward(
         self, x: Annotated[TensorType, DC(EllipsisAxes())]
@@ -671,7 +694,6 @@ class Flatten(Node[TensorType]):
     """Flatten node that reshapes input tensor to 2D by flattening dimensions between start_dim and end_dim.
     Has one input port and one output port.
     """
-
 
     def __init__(
         self,
@@ -696,7 +718,6 @@ class Transpose(Node[TensorType]):
     """Transpose node that permutes the dimensions of the input tensor.
     Has one input port and one output port.
     """
-
 
     def __init__(
         self,

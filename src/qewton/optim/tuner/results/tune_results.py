@@ -50,6 +50,7 @@ class TuneResultCollector:
         self.csv_path: str
         self.csv_columns: list[str]
         self.cb_keys: list[str] = []
+        self.cb_objectives: list[None | str] = []
 
     def set_hp_and_conditions(
         self, hp_dag: HyperParameterDAG, tuning_objectives: list[Constraint]
@@ -75,6 +76,11 @@ class TuneResultCollector:
         """
         for key in train_state.callback_info.keys():
             self.cb_keys.append(key)
+        for key in self.cb_keys:
+            if key not in train_state.callback_objectives:
+                self.cb_objectives.append(None)
+            else:
+                self.cb_objectives.append(train_state.callback_objectives[key].name)
 
     def add_result(self, new_result: TrainResult):
         """
@@ -126,10 +132,11 @@ class TuneResultCollector:
                     self.hp_type_key: [
                         str(hp.__class__.__name__) for hp in self.hp_dag.sorted_nodes
                     ],
-                    self.objective_names_key: self.objective_names,
+                    self.objective_names_key: self.objective_names + self.cb_keys,
                     self.objective_values_key: [
                         str(obj.objective) for obj in self.tuning_objectives
-                    ],
+                    ]
+                    + self.cb_objectives,
                 }
                 json.dump(info_dict, f, indent=4)
 

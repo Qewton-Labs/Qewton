@@ -1500,6 +1500,18 @@ class TrackingObject:
         abs_node = Abs()
         return abs_node(self)
 
+    def norm(self, ord: float | str = 2):
+        from qewton.algorithms.building_blocks.math import Norm
+
+        norm_node = Norm(ord=ord)
+        return norm_node(self)
+
+    def sqrt(self):
+        from qewton.algorithms.building_blocks.math import Sqrt
+
+        sqrt_node = Sqrt()
+        return sqrt_node(self)
+
     def __getitem__(self, key):
         from qewton.algorithms.building_blocks.array_operations import Slice
 
@@ -1542,11 +1554,11 @@ class TrackingObject:
         grad_node = Gradient()
         return grad_node(self, with_respect_to)
 
-    def normal_derivative(self, with_respect_to, normals):
+    def normal_derivative(self, normals, with_respect_to):
         from qewton.algorithms.building_blocks.derivatives import NormalDerivative
 
         norm_der_node = NormalDerivative()
-        return norm_der_node(self, with_respect_to, normals)
+        return norm_der_node(self, normals, with_respect_to)
 
     def laplacian(self, with_respect_to):
         from qewton.algorithms.building_blocks.derivatives import Laplacian

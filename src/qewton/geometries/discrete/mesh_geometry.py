@@ -35,7 +35,10 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         ), "Dimension of variable must match dimension of mesh vertices."
         self.mesh = mesh
         super().__init__(
-            variable=variable, shape=(mesh.vertices.shape[0],), backend=backend
+            variable=variable,
+            shape=(mesh.vertices.shape[0],),
+            discretization_points=mesh.vertices,
+            backend=backend,
         )
         if discretization_of is not None:
             self.discretization_of = discretization_of
