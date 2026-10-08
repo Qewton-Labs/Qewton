@@ -10,6 +10,7 @@ from qewton.config.devices import Device
 from qewton.data.dataloaders.base import DataNode
 from qewton.geometries.base import Geometry, BoundaryGeometry
 from qewton.geometries.discrete.sampled_geometry import SampledGeometry
+from qewton.geometries.discrete.product_mesh_geometry import ProductMeshGeometry
 from qewton.graphs.nodes import NodeState, OutputPort
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType, ComputingBackend
 from qewton.config.data_configurations import DataConfiguration
@@ -202,7 +203,7 @@ class PointSampler(DataNode[TensorType]):
 
     def set_mesh_mode(
         self,
-        max_vertex_distance: float | None = None,
+        max_vertex_distance: float | dict[Variable, float] | None = None,
         device: Device | str | None = None,
     ):
         self.mesh_mode = True
@@ -296,23 +297,28 @@ class PointSampler(DataNode[TensorType]):
                     "active_discretization currently cannot produce normals"
                 )
             geometry = self._active_discretization
-            points = geometry.discretization_points
-            mesh = getattr(geometry, "mesh", None)
+            # The reference geometry may live on another device than this
+            # sampler and the model it feeds.
+            points = self.backend.to(
+                self.backend.build_tensor(geometry.discretization_points), self._device
+            )
 
             # for plotting: store the current points and cells
-            self.sampled_geometry.set_current_discretization(
-                points, mesh.cells if mesh is not None else None
-            )
+            self._store_discretization(geometry, points)
             return points
 
         if self.mesh_mode:
-            mesh = self.sampled_geometry.visualization_mesh(
+            geometry = self.sampled_geometry.visualization_geometry(
                 self.current_mesh_max_vertex_distance, self.current_mesh_device
             )
-            points = mesh.vertices
+            points = (
+                geometry.discretization_points
+                if isinstance(geometry, ProductMeshGeometry)
+                else geometry.mesh.vertices
+            )
 
             # for plotting: store the current points and cells
-            self.sampled_geometry.set_current_discretization(points, mesh.cells)
+            self._store_discretization(geometry, points)
 
             if self.compute_normals:
                 raise NotImplementedError("Mesh mode currently cannot produce normals")
@@ -345,6 +351,18 @@ class PointSampler(DataNode[TensorType]):
         if self.compute_normals:
             return points, normals
         return points
+
+    def _store_discretization(self, geometry: Geometry, points: TensorType):
+        """Records `points` and the cells of `geometry` in sampled_geometry.
+        A product mesh is passed on as such, so its cells are only built
+        when needed."""
+        if isinstance(geometry, ProductMeshGeometry):
+            self.sampled_geometry.set_current_discretization(points, product=geometry)
+            return
+        mesh = getattr(geometry, "mesh", None)
+        self.sampled_geometry.set_current_discretization(
+            points, mesh.cells if mesh is not None else None
+        )
 
     def to(self, device: str | Device):
         super().to(device)

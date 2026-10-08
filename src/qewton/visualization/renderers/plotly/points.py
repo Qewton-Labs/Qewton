@@ -17,7 +17,7 @@ def _point_cloud_name(plot) -> str | None:
     Variable, math-wrapped to match axis titles."""
     if plot.color is not None:
         return plot.color.math_name
-    geometry = plot.data_config.geometry_axes.geometry
+    geometry = plot.drawn_geometry_axes.geometry
     return f"${geometry.variable.name}$" if geometry.variable is not None else None
 
 
@@ -36,7 +36,7 @@ class PointCloud2DArtist(PlotlyArtist):
     def create(cls, backend_figure, plot, row=None, col=None):
         trace = cls._trace(plot, plot.evaluate(), backend_figure, row, col)
         backend_figure.add_trace(trace, row=row, col=col)
-        geometry = plot.data_config.geometry_axes.geometry
+        geometry = plot.drawn_geometry_axes.geometry
         if plot.coordinate_dim == 1:
             x_name = axis_names_from_variable(_spatial_variable(geometry), 1)[0]
             y_name = ""
@@ -86,7 +86,7 @@ class PointCloud3DArtist(PlotlyArtist):
     def create(cls, backend_figure, plot, row=None, col=None):
         trace = cls._trace(plot, plot.evaluate(), backend_figure, row, col)
         backend_figure.add_trace(trace, row=row, col=col)
-        geometry = plot.data_config.geometry_axes.geometry
+        geometry = plot.drawn_geometry_axes.geometry
         x_name, y_name, z_name = axis_names_from_variable(_spatial_variable(geometry), 3)
         backend_figure.update_scenes(
             row=row, col=col,

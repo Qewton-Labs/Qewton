@@ -1,9 +1,10 @@
 import numpy as np
 
+from qewton.config.axes import GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.spec import ControlSpec, PlotSpec
+from qewton.visualization.plots.spec import ControlSpec, PlotSpec, drawn_geometry_axes
 
 
 class CoordTransform:
@@ -49,6 +50,35 @@ class DataPlot(Plot):
             else:
                 size = entry_slc.stop - entry_slc.start
             spec.resolve(range(size))
+            if entry_slc is None:
+                spec.set_coordinates(self._dim_coordinates(axis_slc, size))
+
+    def _dim_coordinates(self, axis_slc, size: int) -> np.ndarray | None:
+        """Coordinates along a data dimension, if it is the only dimension
+        of a GeometryAxes over a 1-dimensional geometry (e.g. the time axis
+        of space-time data) - None otherwise."""
+        dim = PlotSpec.as_single_dim(axis_slc)
+        dim = dim if dim >= 0 else self.data.ndim + dim
+        offset = 0
+        for axes in self.data_config.axes:
+            if offset == dim:
+                break
+            offset += len(axes.shape)
+        else:
+            return None
+        if not isinstance(axes, GeometryAxes) or len(axes.shape) != 1:
+            return None
+        geometry = axes.geometry
+        if geometry.dim != 1:
+            return None
+        mesh = getattr(geometry, "mesh", None)
+        points = mesh.vertices if mesh is not None else geometry.discretization_points
+        if points is None:
+            return None
+        if not isinstance(points, np.ndarray):
+            points = geometry.backend.to_numpy(points)
+        points = np.asarray(points).reshape(-1)
+        return points if len(points) == size else None
 
     def _resolve_controls(self) -> list[tuple[ControlSpec, int]]:
         """(spec, dim index in the original self.data) for each control spec,
@@ -139,10 +169,17 @@ class DataPlot(Plot):
                 reduced = reduced[tuple(indexer)]
         return reduced
 
+    @property
+    def drawn_geometry_axes(self):
+        """The GeometryAxes this plot draws: every GeometryAxes of
+        `data_config` except those one of its controls steps through. See
+        drawn_geometry_axes() in plots.spec."""
+        return drawn_geometry_axes(self.data_config, self.controls)
+
     def _geometry_dims(self) -> tuple[int, int]:
-        """(start, stop) range in self.data that this plot's GeometryAxes
-        occupies, for use with reduce_coordinates()."""
-        geom_axes = self.data_config.geometry_axes
+        """(start, stop) range in self.data that this plot's drawn
+        GeometryAxes occupies, for use with reduce_coordinates()."""
+        geom_axes = self.drawn_geometry_axes
         axis_slc, entry_slc = PlotSpec.get_slice(geom_axes, self.data_config)
         assert entry_slc is None
         if isinstance(axis_slc, slice):

@@ -5,6 +5,63 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 
 
+def _contains_variable(variable: Variable, searched: Variable) -> bool:
+    """Whether `searched` is `variable` itself or part of it."""
+    if searched == variable:
+        return True
+    return any(_contains_variable(child, searched) for child in variable.children)
+
+
+def _targets_axes(control, axes: Axes, data_config: DataConfiguration) -> bool:
+    """Whether `control` reduces every dimension of `axes`."""
+    try:
+        axis_slc, entry_slc = PlotSpec.get_slice(control.variable_or_axes, data_config)
+    except (ValueError, KeyError):
+        return False
+    if entry_slc is not None or len(axes.shape) != 1:
+        return False
+    n_dims = sum(len(a.shape) for a in data_config.axes)
+    if isinstance(axis_slc, slice):
+        if axis_slc.stop - axis_slc.start != 1:
+            return False
+        axis_slc = axis_slc.start
+    axis_slc = axis_slc if axis_slc >= 0 else n_dims + axis_slc
+    offset = 0
+    for candidate in data_config.axes:
+        if candidate is axes:
+            return axis_slc == offset
+        offset += len(candidate.shape)
+    return False
+
+
+def drawn_geometry_axes(
+    data_config: DataConfiguration, controls: list | None = None
+) -> GeometryAxes | list[GeometryAxes] | None:
+    """The GeometryAxes of `data_config` that a plot draws: all GeometryAxes
+    except those a control steps through, e.g. the time axis of space-time
+    data with a TimeSpec on it.
+
+    Args:
+        data_config (DataConfiguration): The configuration of the data.
+        controls (list | None, optional): The plot's ControlSpecs.
+            Defaults to None.
+
+    Returns:
+        GeometryAxes | list[GeometryAxes] | None: The single drawn
+            GeometryAxes, a list if there are several, None if there is none
+            - the same convention as DataConfiguration.geometry_axes.
+    """
+    drawn = [
+        axes
+        for axes in data_config.axes
+        if isinstance(axes, GeometryAxes)
+        and not any(_targets_axes(c, axes, data_config) for c in controls or [])
+    ]
+    if len(drawn) == 1:
+        return drawn[0]
+    return drawn or None
+
+
 class PlotSpec:
     """Base class declaring how a Plot maps one role (x, y, color, ...) onto
     a Variable/Axes (for a DataPlot) or a column name (for a TablePlot)."""
@@ -144,8 +201,14 @@ class PlotSpec:
                         assert len(i_axis.shape) == 1, "for now only 1-axis variables"
                         return counter, i_var.get_slice(variable_or_axis)
                 if isinstance(i_axis, GeometryAxes):
-                    if i_axis.geometry.variable.dim == len(i_axis.shape):
-                        axis_slc = i_axis.geometry.variable.get_slice(variable_or_axis)
+                    geometry_variable = i_axis.geometry.variable
+                    if geometry_variable.is_empty and len(i_axis.shape) == 1:
+                        return counter, None
+                    if not _contains_variable(geometry_variable, variable_or_axis):
+                        counter += len(i_axis.shape)
+                        continue
+                    if geometry_variable.dim == len(i_axis.shape):
+                        axis_slc = geometry_variable.get_slice(variable_or_axis)
                         # Variable.get_slice(self) returns slice(None) (the
                         # "whole thing" convention for array indexing, e.g.
                         # data[..., :]) when `variable_or_axis` is the
@@ -156,7 +219,7 @@ class PlotSpec:
                         stop = (
                             axis_slc.stop
                             if axis_slc.stop is not None
-                            else i_axis.geometry.variable.dim
+                            else geometry_variable.dim
                         )
                         return (slice(counter + start, counter + stop), None)
                     elif len(i_axis.shape) == 1:
@@ -326,6 +389,9 @@ class ControlSpec(PlotSpec):
         # auto_plot()'s _resolve_control().
         super().__init__(n_dimensions=n_dimensions, variable_or_axes=variable_or_axes)
         self._state = init_state
+        #: Physical coordinate of each state (e.g. the time of each time
+        #: step), indexed by state - None if the dimension has none.
+        self.coordinates: list[float] | None = None
 
     @property
     def state(self):
@@ -343,6 +409,29 @@ class ControlSpec(PlotSpec):
         passes `range(data.shape[dim])`, a TablePlot passes the column's
         sorted unique values), so the same ControlSpec subclasses work with
         every input family."""
+
+    def set_coordinates(self, coordinates) -> None:
+        """Sets the physical coordinate of each state, e.g. the time of each
+        time step, unless coordinates were already set. Called by the
+        owning Plot when the control's dimension has coordinates."""
+        if self.coordinates is None and coordinates is not None:
+            self.coordinates = [float(c) for c in coordinates]
+
+    def coordinate(self, state) -> float | None:
+        """The physical coordinate of `state`, or None if unknown."""
+        if self.coordinates is None:
+            return None
+        return self.coordinates[state]
+
+    def label(self, state) -> str:
+        """Display text for `state`: its coordinate if known, else the
+        state itself."""
+        coordinate = self.coordinate(state)
+        return str(state) if coordinate is None else f"{coordinate:.4g}"
+
+    def state_at(self, coordinate: float):
+        """The state whose coordinate is closest to `coordinate`."""
+        return int(np.argmin(np.abs(np.asarray(self.coordinates) - coordinate)))
 
 
 class SliderSpec(ControlSpec):
@@ -510,10 +599,29 @@ class TimeSpec(ControlSpec):
             n_dimensions=1, variable_or_axes=variable_or_axes, init_state=None
         )
         self.values = values
-        self.duration = duration  # ms per frame while the Play button runs
+        #: Average ms per frame while the Play button runs - see frame_weights().
+        self.duration = duration
 
     def resolve(self, values):
         if self.values is None:
             self.values = list(values)
         if self._state is None:
             self._state = self.values[0]
+
+    def frame_weights(self) -> list[float]:
+        """Relative display time of each frame in `values`, with mean 1.
+
+        With coordinates (e.g. physical time), each frame is shown in
+        proportion to the time until the next frame, so non-uniform time
+        steps play back in physical time; the last frame gets the mean step.
+        Without coordinates, every frame is shown equally long.
+        """
+        n = len(self.values)
+        if self.coordinates is None or n < 2:
+            return [1.0] * n
+        times = np.array([self.coordinates[v] for v in self.values])
+        steps = np.abs(np.diff(times))
+        if steps.sum() == 0:
+            return [1.0] * n
+        steps = np.append(steps, steps.mean())
+        return list(steps / steps.mean())

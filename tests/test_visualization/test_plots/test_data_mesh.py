@@ -86,6 +86,12 @@ class TestFilledMeshArtist:
         backend_figure = Figure(plot).draw()
         assert len(backend_figure.data) == plot.n_bins + 1
 
+    def test_2d_fills_are_outlined_in_their_own_color(self, circle_mesh_geometry):
+        plot = self._field_plot(circle_mesh_geometry, show_edges=False)
+        backend_figure = Figure(plot).draw()
+        for trace in backend_figure.data[: plot.n_bins]:
+            assert trace.line.color == trace.fillcolor
+
     def test_n_bins_is_configurable(self, circle_mesh_geometry):
         plot = self._field_plot(circle_mesh_geometry, show_edges=False, n_bins=8)
         backend_figure = Figure(plot).draw()
@@ -224,3 +230,65 @@ class TestMeshVectorPlot:
         cfg2 = DataConfiguration(GeometryAxes(circle_mesh_geometry), FeatureAxes(V2))
         b2 = Figure(MeshVectorPlot(vec2, cfg2, vector=VectorSpec(V2))).draw()
         assert b2.data[0].type == "scatter"
+
+
+class TestCurveField:
+    """MeshFieldPlot on meshes of line segments, e.g. a domain boundary."""
+
+    @staticmethod
+    def _boundary_plot(**kwargs):
+        from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
+        from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+
+        U = Variable("u", 1)
+        X = Variable("x", 2)
+        square = Rectangle(X, [0.0, 0.0], 1.0, 1.0)
+        boundary = MeshGeometry(X, square.boundary.create_mesh(0.25).mesh)
+        vertices = np.asarray(boundary.mesh.vertices)
+        field = vertices.sum(axis=1, keepdims=True)
+        config = DataConfiguration(GeometryAxes(boundary), FeatureAxes(U))
+        return MeshFieldPlot(field, config, color=ColorSpec(U), **kwargs)
+
+    @staticmethod
+    def _curve_3d_plot():
+        from qewton.geometries.discrete.mesh import Mesh
+        from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+
+        U = Variable("u", 1)
+        s = np.linspace(0, 2 * np.pi, 9)
+        vertices = np.stack([np.cos(s), np.sin(s), s], axis=1)
+        helix = MeshGeometry(
+            Variable("y", 3),
+            Mesh(vertices=vertices, cells=[[i, i + 1] for i in range(8)]),
+        )
+        config = DataConfiguration(GeometryAxes(helix), FeatureAxes(U))
+        return MeshFieldPlot(s[:, None], config, color=ColorSpec(U))
+
+    def test_line_cells_have_cell_dim_one(self):
+        assert self._boundary_plot().cell_dim == 1
+
+    def test_2d_curve_draws_one_line_trace_per_bin_plus_colorbar(self):
+        plot = self._boundary_plot(n_bins=8)
+        backend_figure = Figure(plot).draw()
+        assert len(backend_figure.data) == 9
+        assert all(trace.mode == "lines" for trace in backend_figure.data[:8])
+        drawn = sum(trace.x.count(None) for trace in backend_figure.data[:8])
+        assert drawn == len(plot.mesh.cells)
+
+    def test_2d_curve_bins_follow_the_values(self):
+        plot = self._boundary_plot(n_bins=4)
+        backend_figure = Figure(plot).draw()
+        lowest = backend_figure.data[0]
+        points = np.array(
+            [(x, y) for x, y in zip(lowest.x, lowest.y) if x is not None]
+        )
+        # u = x_1 + x_2 ranges over [0, 2]; the lowest bin holds the corner (0, 0)
+        assert points.sum(axis=1).max() <= 0.75
+
+    def test_3d_curve_colors_one_line_per_vertex(self):
+        plot = self._curve_3d_plot()
+        backend_figure = Figure(plot).draw()
+        assert len(backend_figure.data) == 1
+        trace = backend_figure.data[0]
+        assert trace.type == "scatter3d"
+        assert len(trace.line.color) == len(trace.x)

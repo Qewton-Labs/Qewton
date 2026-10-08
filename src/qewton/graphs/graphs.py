@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from qewton.visualization.plots.base import Plot
     from qewton.visualization.plots.graph import GraphPlot
     from qewton.visualization.layout import Layout
+    from qewton.visualization.plots.spec import Scale
 
 
 class Graph:
@@ -623,9 +624,10 @@ class Graph:
         reference: "Port | Callable | Any" = None,
         error: str | None = "signed",
         plot_type: type["Plot"] | None = None,
-        max_vertex_distance: float = 0.05,
+        max_vertex_distance: float | dict[Variable, float] = 0.05,
         device: Device | str | None = None,
         share_scale: bool = True,
+        scale: "Scale | None" = None,
         controls=None,
         variables: list[Variable] | None = None,
         prediction_config: DataConfiguration | None = None,
@@ -648,7 +650,8 @@ class Graph:
         Args:
             port: One Port, or a list of Ports, to visualize.
             reference: Already-loaded reference data (requires
-                `reference_config`), another Port from this same graph (e.g.
+                `reference_config`; a numpy array or a backend tensor on any
+                device), another Port from this same graph (e.g.
                 a DataLoader's "true output" port, for an operator-learning
                 comparison), or a callable, evaluated at `port`'s own
                 points. Reference data (plain or from a Port) must be built
@@ -667,7 +670,10 @@ class Graph:
                 explicit Plot type if auto-selection doesn't apply, or None
                 (default) to auto-select.
             max_vertex_distance: Passed to discretization_mode() - caps the
-                mesh resolution used while sampling in mesh mode. Unused
+                mesh resolution used while sampling in mesh mode. A dict
+                sets it per geometry Variable, e.g. `{T: 0.1, X: 0.02}` for
+                the factors of a space-time domain; geometries missing from
+                it use None (the coarsest mesh). Unused
                 with `reference` set (the reference's own points are used
                 instead).
             device: If given, every node needed to reach `port` is moved
@@ -679,13 +685,26 @@ class Graph:
                 prediction panels share one color Scale, so they read on
                 the same range at a glance. The error panel always gets its
                 own Scale regardless of this flag.
+            scale: A Scale for the color range, e.g.
+                `Scale(vmin=0.0, vmax=1.0)` - one fixed colorbar over every
+                slider state and animation frame. With `reference` set, it is
+                shared by the reference and prediction panels in place of
+                `share_scale`'s own; the error panel keeps its own Scale.
+                None (default) leaves the range to the plot. Raises a
+                ValueError if the plot has no color.
             controls: A ControlSpec class, instance, or `{axis: class-or-
                 instance}` dict, used to resolve a control for any axis left
                 over after `port`'s (and, with `reference` set, every
                 panel's) own roles - None (default) behaves as SliderSpec.
                 With `reference` set, one resolved instance per axis is
                 shared across every panel, so a slider dragged in one moves
-                them all.
+                them all. A list of ControlSpec instances is used as-is. A
+                dict key or single instance that no axis takes a control
+                for raises a ValueError instead of being ignored.
+                On a product geometry (e.g. a space-time domain), a control
+                bound to one of its 1-dimensional factor Variables, e.g.
+                `[TimeSpec(T)]`, steps through that factor while the other
+                factors are drawn - see auto_plot().
             variables: Narrows `port` (and `reference`, unless it already
                 names exactly this combination) down to just these
                 Variables' own slice of a composed FeatureAxes before
@@ -749,6 +768,7 @@ class Graph:
                 max_vertex_distance,
                 device,
                 share_scale,
+                scale,
                 controls,
                 variables,
                 prediction_config,
@@ -783,7 +803,12 @@ class Graph:
             config = p.get_data_configuration(self)  # type: ignore
             if combined_variable is not None:
                 data, config = self._narrow_to_variable(data, config, combined_variable)
-            plots.append(auto_plot(data, config, plot_type, **controls_kwarg, **plot_kwargs))
+            scale_kwarg = {} if scale is None else {"scale": scale}
+            plots.append(
+                auto_plot(
+                    data, config, plot_type, **controls_kwarg, **scale_kwarg, **plot_kwargs
+                )
+            )
 
         if variables and len(variables) > 1:
             shared_selector_spec = SelectorSpec(variables)
@@ -792,15 +817,27 @@ class Graph:
 
         return Overlay(plots[0]) if len(plots) == 1 else Row(*plots)
 
+    @staticmethod
+    def _reference_to_numpy(reference, port: Port) -> np.ndarray:
+        """Reference values as a numpy array - also from a backend tensor on
+        any device (e.g. a CUDA tensor), which np.asarray can't convert."""
+        if not isinstance(reference, np.ndarray):
+            try:
+                reference = port.node.backend.to_numpy(reference)
+            except (AttributeError, TypeError):
+                pass
+        return np.asarray(reference)
+
     def _visualize_with_reference(
         self,
         port: Port,
         reference: "Port | Callable | Any",
         error: str | None,
         plot_type,
-        max_vertex_distance: float,
+        max_vertex_distance: float | dict[Variable, float],
         device,
         share_scale: bool,
+        scale,
         controls,
         variables: list[Variable] | None,
         prediction_config: DataConfiguration | None,
@@ -861,7 +898,7 @@ class Graph:
                 if isinstance(points, np.ndarray)
                 else np.asarray(geometry_axes.geometry.backend.to_numpy(points))
             )
-            ref_data = np.asarray(reference(points))
+            ref_data = self._reference_to_numpy(reference(points), port)
             ref_config = pred_config
         elif isinstance(reference, Port):
             ref_port = reference
@@ -927,7 +964,7 @@ class Graph:
             # mode gave it ref_geometry's points, so prediction reuses
             # ref_config directly instead.
             pred_config = ref_config
-            ref_data = np.asarray(reference)
+            ref_data = self._reference_to_numpy(reference, port)
 
         if combined_variable is not None:
             pred_data, pred_config = self._narrow_to_variable(
@@ -975,12 +1012,14 @@ class Graph:
 
         ref_color = getattr(reference_plot, "color", None)
         pred_color = getattr(prediction_plot, "color", None)
-        if (
-            share_scale
-            and isinstance(ref_color, ColorSpec)
-            and isinstance(pred_color, ColorSpec)
-        ):
-            shared_scale = Scale()
+        has_colors = isinstance(ref_color, ColorSpec) and isinstance(pred_color, ColorSpec)
+        if scale is not None and not has_colors:
+            raise ValueError(
+                "scale= is not used, since the reference and prediction plots "
+                "have no color."
+            )
+        if has_colors and (share_scale or scale is not None):
+            shared_scale = scale if scale is not None else Scale()
             ref_color.scale = shared_scale
             pred_color.scale = shared_scale
 

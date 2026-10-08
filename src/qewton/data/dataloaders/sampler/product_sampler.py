@@ -71,9 +71,36 @@ class ProductSampler(PointSampler[TensorType]):
             )
         )
 
+    def set_mesh_mode(
+        self,
+        max_vertex_distance: float | dict[Variable, float] | None = None,
+        device: Device | str | None = None,
+    ):
+        super().set_mesh_mode(max_vertex_distance, device)
+        self.sampler_a.set_mesh_mode(max_vertex_distance, device)
+        self.sampler_b.set_mesh_mode(max_vertex_distance, device)
+
+    def unset_mesh_mode(self):
+        super().unset_mesh_mode()
+        self.sampler_a.unset_mesh_mode()
+        self.sampler_b.unset_mesh_mode()
+
+    def forward(self):
+        # In mesh mode both samplers mesh their own geometry, so each
+        # GeometryAxes of the output refers to a meshed SampledGeometry.
+        if self.mesh_mode and self._active_discretization is None:
+            points, _ = self._combine(
+                self.sampler_a.forward(), None, self.sampler_b.forward(), None
+            )
+            return points
+        return super().forward()
+
     def sample_points(self) -> tuple[TensorType, TensorType | None]:
         points_a, normals_a = self.sampler_a.sample_points()
         points_b, normals_b = self.sampler_b.sample_points()
+        return self._combine(points_a, normals_a, points_b, normals_b)
+
+    def _combine(self, points_a, normals_a, points_b, normals_b):
         # Sampler is assumed to always return points in the shape of
         # (GeometryAxes1, ..., FeatureAxes)
         a_shape = self.backend.math.shape(points_a)

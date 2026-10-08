@@ -199,7 +199,7 @@ class ParametricSurfaceArtist(PlotlyArtist):
         camera silently reframes around it every redraw and the view looks
         static even though the actual position moved.
         """
-        geometry = plot.data_config.geometry_axes.geometry
+        geometry = plot.drawn_geometry_axes.geometry
         points = geometry.discretization_points
         names = axis_names_from_variable(_spatial_variable(geometry), 3)
         return {

@@ -159,10 +159,10 @@ class EmbeddedGridPlot(DataPlot):
     ):
         super().__init__(data, data_config, controls=controls, **kwargs)
 
-        geom_axes = data_config.geometry_axes
+        geom_axes = self.drawn_geometry_axes
         assert isinstance(
             geom_axes, GeometryAxes
-        ), "Currently only DataConfigurations with a single GeometryAxes are supported."
+        ), "Exactly one GeometryAxes without a control is supported."
         geometry = geom_axes.geometry
         points = geometry.discretization_points
         if points is None or points.shape[-1] != 3:
@@ -196,7 +196,7 @@ class EmbeddedGridPlot(DataPlot):
         slc = self.data_config.get_variable_slice(self.color.variable_or_axes)
         values = np.asarray(data[slice_map(slc)])
 
-        geometry = self.data_config.geometry_axes.geometry
+        geometry = self.drawn_geometry_axes.geometry
         points = self.reduce_coordinates(
             geometry.discretization_points, self._geometry_dims()
         )  # -> (N1, N2, 3)
@@ -250,7 +250,7 @@ class QuiverPlot(DataPlot):
     ):
         super().__init__(data, data_config, controls=controls, **kwargs)
 
-        geometry = data_config.geometry_axes.geometry
+        geometry = self.drawn_geometry_axes.geometry
         points = geometry.discretization_points
         if points is None or points.shape[-1] not in (2, 3):
             raise ValueError(
@@ -277,7 +277,7 @@ class QuiverPlot(DataPlot):
         slc = self.data_config.get_variable_slice(self.vector.variable_or_axes)
         vectors = np.asarray(data[slice_map(slc)]).reshape(-1, self._coord_dim)
 
-        geometry = self.data_config.geometry_axes.geometry
+        geometry = self.drawn_geometry_axes.geometry
         points = self.reduce_coordinates(
             geometry.discretization_points, self._geometry_dims()
         ).reshape(-1, self._coord_dim)

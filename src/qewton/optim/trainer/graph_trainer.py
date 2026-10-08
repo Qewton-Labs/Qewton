@@ -80,6 +80,7 @@ class GraphBasedTrainer(Trainer):
         self.validation_graphs = set[Graph]()
         self.validation_constraints = set[Constraint]()
         self._find_all_constraints()
+        self._make_constraint_names_unique()
 
         # Add callbacks that evaluate the graphs
         train_callback = GraphEvalCallback(
@@ -186,6 +187,27 @@ class GraphBasedTrainer(Trainer):
             if add_val:
                 self.validation_constraints.add(con)
                 self.validation_graphs.add(graph)
+
+    def _make_constraint_names_unique(self):
+        """Losses are recorded and looked up by constraint name, so distinct
+        constraints sharing a name would overwrite each other's loss. Such
+        constraints are renamed by appending an index ("PDE", "PDE_2", ...),
+        in the order of `training_objectives`, then of creation."""
+        in_graphs = sorted(
+            (n for graph in self.graphs for n in graph.nodes if isinstance(n, Constraint)),
+            key=lambda n: n.node_id,
+        )
+        ordered: list[Constraint] = []
+        for constraint in [*self.training_objectives, *in_graphs]:
+            if not any(constraint is c for c in ordered):
+                ordered.append(constraint)
+        taken: set[str] = set()
+        for constraint in ordered:
+            name, index = constraint.name, 2
+            while name in taken:
+                name, index = f"{constraint.name}_{index}", index + 1
+            constraint.name = name
+            taken.add(name)
 
     def _find_training_graphs(self, constraints: list[Constraint]) -> set[Graph]:
         found_constraints = set()

@@ -40,6 +40,9 @@ class PINNConstraint(Constraint, GraphNode):
             residual of the physics conditions.
         reduction (_type_, optional): A custom reduction function.
             Defaults to None and the MSE.
+        name (str | None, optional): The name of the constraint, under which
+            its loss is recorded. Defaults to None and the name of the
+            residual function, or "PINNConstraint" for a lambda or a Node.
 
     Raises:
         AssertionError: If the residual function does not return a single value.
@@ -51,7 +54,7 @@ class PINNConstraint(Constraint, GraphNode):
         self,
         residual,
         reduction=None,
-        name="PINNConstraint",
+        name: str | None = None,
         weight: float | HyperParameter = 1,
         track_residual: bool = True,
         objective: ConstraintObjective = ConstraintObjective.MINIMIZE,
@@ -59,6 +62,10 @@ class PINNConstraint(Constraint, GraphNode):
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         self.track_residual = track_residual
+        if name is None:
+            name = getattr(residual, "__name__", "<lambda>")
+            if isinstance(residual, Node) or name == "<lambda>":
+                name = "PINNConstraint"
 
         if reduction is None:
             reduction = MSN()

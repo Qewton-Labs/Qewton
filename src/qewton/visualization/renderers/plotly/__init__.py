@@ -44,7 +44,11 @@ from qewton.visualization.renderers.plotly.grid import (
     ParametricSurfaceArtist,
     SurfaceArtist,
 )
-from qewton.visualization.renderers.plotly.mesh import FilledMeshArtist, SurfaceMeshArtist
+from qewton.visualization.renderers.plotly.mesh import (
+    CurveFieldArtist,
+    FilledMeshArtist,
+    SurfaceMeshArtist,
+)
 from qewton.visualization.renderers.plotly.points import (
     PointCloud2DArtist,
     PointCloud3DArtist,
@@ -71,6 +75,7 @@ class PlotlyRenderer(Renderer):
     ParametricSurfaceArtist = ParametricSurfaceArtist
     SurfaceMeshArtist = SurfaceMeshArtist
     FilledMeshArtist = FilledMeshArtist
+    CurveFieldArtist = CurveFieldArtist
     GeometryArtist = GeometryArtist
     GeometryArtist2D = GeometryArtist2D
     LineArtist = LineArtist
@@ -234,8 +239,9 @@ class PlotlyRenderer(Renderer):
             frame_data, frame_traces = [], []
             for plot, artist in animated:
                 artist.update(backend_figure, plot)
-                frame_data.append(backend_figure.data[artist.figure_idx].to_plotly_json())
-                frame_traces.append(artist.figure_idx)
+                for idx in artist.trace_indices:
+                    frame_data.append(backend_figure.data[idx].to_plotly_json())
+                    frame_traces.append(idx)
             frames.append(go.Frame(data=frame_data, traces=frame_traces, name=str(value)))
         spec.state = original_state
         for plot, artist in animated:
@@ -244,6 +250,16 @@ class PlotlyRenderer(Renderer):
             )  # leave the live traces at the initial state
 
         backend_figure.frames = frames
+        # Plotly indexes a per-frame duration list by position in the
+        # played sequence, which "fromcurrent" shortens - so non-uniform
+        # frame durations always play from the first frame.
+        weights = spec.frame_weights()
+        uniform = all(w == weights[0] for w in weights)
+        play_frame = (
+            dict(duration=spec.duration, redraw=True)
+            if uniform
+            else [dict(duration=spec.duration * w, redraw=True) for w in weights]
+        )
         backend_figure.update_layout(
             updatemenus=[
                 dict(
@@ -256,8 +272,8 @@ class PlotlyRenderer(Renderer):
                             args=[
                                 None,
                                 dict(
-                                    frame=dict(duration=spec.duration, redraw=True),
-                                    fromcurrent=True,
+                                    frame=play_frame,
+                                    fromcurrent=uniform,
                                     transition=dict(duration=0),
                                 ),
                             ],
@@ -278,6 +294,7 @@ class PlotlyRenderer(Renderer):
             ],
             sliders=[
                 dict(
+                    currentvalue=dict(prefix=f"{spec.name} = "),
                     steps=[
                         dict(
                             method="animate",
@@ -288,10 +305,10 @@ class PlotlyRenderer(Renderer):
                                     frame=dict(duration=0, redraw=True),
                                 ),
                             ],
-                            label=str(value),
+                            label=spec.label(value),
                         )
                         for value in spec.values
-                    ]
+                    ],
                 )
             ],
         )
@@ -453,7 +470,7 @@ class PlotlyRenderer(Renderer):
         backend_figure.write_html(path, include_mathjax="cdn")
 
     @staticmethod
-    def save_gif(backend_figure, path, fps=10):
+    def save_gif(backend_figure, path, fps=10, frame_weights=None):
         """Rasterizes each animation frame to a PNG (via Plotly's optional
         'kaleido' static-image backend) and assembles them into a looping
         GIF (via Pillow). Both are imported lazily, right here, rather than
@@ -505,7 +522,10 @@ class PlotlyRenderer(Renderer):
             path,
             save_all=True,
             append_images=images[1:],
-            duration=int(1000 / fps),
+            duration=[
+                int(1000 / fps * w)
+                for w in (frame_weights or [1.0] * len(images))
+            ],
             loop=0,
         )
 

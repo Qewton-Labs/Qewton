@@ -48,9 +48,11 @@ class Renderer:
         raise NotImplementedError()
 
     @staticmethod
-    def save_gif(backend_figure, path, fps=10):
+    def save_gif(backend_figure, path, fps=10, frame_weights=None):
         """Renders each animation frame (see `animate()`) to a static image
-        and assembles them into a looping GIF. Requires `backend_figure` to
+        and assembles them into a looping GIF, showing frame i for
+        `frame_weights[i] / fps` seconds (equally long without weights, see
+        TimeSpec.frame_weights()). Requires `backend_figure` to
         already carry frames, i.e. `Figure.draw()` must have run with a
         TimeSpec present. An implementation may depend on an optional
         rasterization library (e.g. Plotly needs 'kaleido'), imported

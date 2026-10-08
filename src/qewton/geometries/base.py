@@ -9,6 +9,24 @@ from qewton.backends.base import ComputingBackend, TensorType
 from qewton.backends import DEFAULT_DL_BACKEND
 
 
+def vertex_distance_for(
+    max_vertex_distance: float | dict[Variable, float] | None, variable: Variable
+) -> float | None:
+    """The maximum vertex distance that applies to the geometry of `variable`.
+
+    Args:
+        max_vertex_distance (float | dict[Variable, float] | None): One value
+            for every geometry, or one per geometry variable.
+        variable (Variable): The variable of the geometry being meshed.
+
+    Returns:
+        float | None: The value for `variable`, None if a dict has no entry.
+    """
+    if isinstance(max_vertex_distance, dict):
+        return max_vertex_distance.get(variable)
+    return max_vertex_distance
+
+
 class Geometry(Generic[TensorType]):
     """Represents a geometric shape for sampling points, computing normal
     vectors, plotting, etc.
