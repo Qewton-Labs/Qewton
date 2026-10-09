@@ -57,6 +57,8 @@ class ArrayLikeDataSet(DataSet):
         """Validates and updates the size of dimensions in the data configurations
         based on the actual shape of the provided data objects.
         """
+        if all(data is None for data in self._data):
+            return  # No data to validate against
         assert len(self._data) == len(
             self._data_configs
         ), "A separate DataConfig is required for each data object."
@@ -142,6 +144,7 @@ class BackendDataSet(ArrayLikeDataSet):
         data: Any,
         data_configs: DataConfiguration | list[DataConfiguration],
         backend: type[Backend],
+        data_paths: list[str] | None = None,
         save_data: bool = False,
     ):
         """Initialize the BackendDataSet.
@@ -160,26 +163,46 @@ class BackendDataSet(ArrayLikeDataSet):
         self.backend = backend
         items = data if isinstance(data_configs, (list, tuple)) else [data]
         for item in items:
-            if not isinstance(item, self.backend.default_dtype):
+            if item is not None and not isinstance(item, self.backend.default_dtype):
                 raise TypeError(f"{self.backend.__name__} only handles \
                         {self.backend.default_dtype.__name__}, not {type(item)}.")
 
         super().__init__(data, data_configs, save_data=save_data)
+        self.data_paths = data_paths
 
     @classmethod
-    def from_file(cls, path, data_configs, backend, **kwargs):
+    def from_file(
+        cls,
+        path: str | list[str],
+        data_configs: DataConfiguration | list[DataConfiguration],
+        backend: type[Backend],
+        load_on_setup: bool = False,
+        **kwargs,
+    ):
         """Load a Backend dataset from a file using the provided backend load.
 
         Args:
-            path (str): Path to the saved tensors.
-            data_configs: The configuration for the data being loaded.
-            **kwargs: Additional arguments passed e.g. to torch.load.
+            path (str | list[str]): Path(s) to the data file(s).
+            data_configs (DataConfiguration | list[DataConfiguration]): Configuration
+                defining the dimensions and semantics of the data.
+            backend (type[Backend]): The backend associated with the data.
+            load_on_setup (bool, optional): If True, the data will be loaded during
+                the setup phase. Defaults to False.
 
         Returns:
             DataSet: Initialized dataset instance.
         """
-        data = backend.load_data(path, **kwargs)
-        return cls(data, data_configs, backend)
+        path = list(path) if isinstance(path, str) else path
+        if not load_on_setup:
+            data = [backend.load_data(p, **kwargs) for p in path]  # type: ignore
+        else:
+            data = [None] * len(path)
+        return cls(data, data_configs, backend, data_paths=path, save_data=False)
+
+    def setup(self):
+        if self.data_paths is not None:
+            for i, path in enumerate(self.data_paths):
+                self._data[i] = self.backend.load_data(path)  # type: ignore
 
     def to(self, device):
         """Move tensor to device (cpu/cuda)."""
