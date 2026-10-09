@@ -33,10 +33,10 @@ class PointCloudPlot(DataPlot):
     ):
         super().__init__(data, data_config, controls=controls, **kwargs)
 
-        geom_axes = data_config.geometry_axes
+        geom_axes = self.drawn_geometry_axes
         assert isinstance(
             geom_axes, GeometryAxes
-        ), "Currently only DataConfigurations with a single GeometryAxes are supported."
+        ), "Exactly one GeometryAxes without a control is supported."
         points = self._resolve_points(geom_axes.geometry)
         if points is None or points.shape[-1] not in (1, 2, 3):
             raise ValueError(
@@ -67,7 +67,7 @@ class PointCloudPlot(DataPlot):
         distinct from `embedding_dim`, which is the chart's own
         dimensionality (a 1D point cloud still draws on a plain 2D chart,
         baselined at y=0)."""
-        points = self._resolve_points(self.data_config.geometry_axes.geometry)
+        points = self._resolve_points(self.drawn_geometry_axes.geometry)
         return points.shape[-1]
 
     @property
@@ -77,7 +77,7 @@ class PointCloudPlot(DataPlot):
     def evaluate(self):
         data, index_map, slice_map = self.apply_controls()
 
-        geometry = self.data_config.geometry_axes.geometry
+        geometry = self.drawn_geometry_axes.geometry
         raw_points = self._resolve_points(geometry)
         points = (
             raw_points

@@ -261,3 +261,70 @@ def test_pinn_pipeline_mixed_split_concat(simple_adam):
     )
     trainer.run()
     assert trainer.train_state.iteration == 5
+
+
+class TestConstraintNames:
+    """Losses are recorded by constraint name - distinct constraints must
+    never overwrite each other's loss."""
+
+    @staticmethod
+    def _pipelines():
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.geometries.continuous.domains_1d.interval import Interval
+
+        X, U = Variable("x", 1), Variable("u", 1)
+        model = FCN(in_neurons=X, out_neurons=U, hidden_neurons=4, n_hidden_layers=1)
+
+        def residual(u: U):
+            return u - 1.0
+
+        inner = PINNPipeline(RandomUniformSampler(Interval(X, 0.0, 1.0), 10), [model], residual=residual)
+        boundary = PINNPipeline(
+            RandomUniformSampler(Interval(X, 0.0, 1.0).boundary, 4), [model], residual=residual
+        )
+        return inner, boundary
+
+    def test_default_name_is_the_residual_function_name(self):
+        inner, _ = self._pipelines()
+        assert inner.constraint.name == "residual"
+
+    def test_a_lambda_residual_falls_back_to_pinn_constraint(self):
+        constraint = PINNConstraint(lambda u: u)
+        assert constraint.name == "PINNConstraint"
+
+    def test_a_node_residual_falls_back_to_pinn_constraint(self):
+        U = Variable("u", 1)
+
+        def residual(u: U):
+            return u
+
+        constraint = PINNConstraint(FunctionWrappingNode(residual))
+        assert constraint.name == "PINNConstraint"
+
+    def test_duplicate_names_get_an_index_and_both_losses_count(self, simple_adam):
+        inner, boundary = self._pipelines()
+        trainer = GraphBasedTrainer(
+            optimization_phases=[simple_adam],
+            graphs=[inner, boundary],
+            training_objectives=[inner.constraint, boundary.constraint],
+            device="cpu",
+        )
+        assert (inner.constraint.name, boundary.constraint.name) == ("residual", "residual_2")
+        trainer.run()
+        from qewton.optim.base import EvaluationPhase
+
+        assert set(trainer.train_state.losses[EvaluationPhase.TRAIN]) == {
+            "residual", "residual_2"
+        }
+
+    def test_a_name_clash_after_construction_raises_instead_of_overwriting(self, simple_adam):
+        inner, boundary = self._pipelines()
+        trainer = GraphBasedTrainer(
+            optimization_phases=[simple_adam],
+            graphs=[inner, boundary],
+            training_objectives=[inner.constraint, boundary.constraint],
+            device="cpu",
+        )
+        boundary.constraint.name = inner.constraint.name
+        with pytest.raises(ValueError, match="overwrite"):
+            trainer.run()

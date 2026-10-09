@@ -2,7 +2,9 @@ from qewton.geometries.discrete.mesh import Mesh
 
 from qewton.backends import TensorType
 from qewton.config.devices import Device
-from qewton.geometries.base import DiscreteGeometry, Geometry
+from qewton.config.variables import Variable
+from qewton.geometries.base import DiscreteGeometry, Geometry, vertex_distance_for
+from qewton.geometries.product import ProductGeometry
 
 
 class SampledGeometry(DiscreteGeometry[TensorType]):
@@ -22,7 +24,10 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
 
         self._current_points = None
         self._current_cells = None
-        self._mesh_cache: dict[tuple[float | None, Device | str | None], Mesh] = {}
+        self._current_factors: list | None = None
+        self._current_product = None
+        self._is_numpy = False
+        self._mesh_cache: dict[tuple, Geometry] = {}
 
         super().__init__(
             shape=(n_points,), variable=geometry.variable, backend=geometry.backend
@@ -57,10 +62,30 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         self._current_points = value
 
     def set_current_discretization(
-        self, points: TensorType, cells: TensorType | None = None
+        self, points: TensorType, cells: TensorType | None = None, product=None
     ):
+        """Stores the points (and cells) the sampler currently provides.
+
+        Args:
+            points (TensorType): The current points.
+            cells (TensorType | None, optional): Cell connectivity of the
+                points. Defaults to None.
+            product (ProductMeshGeometry | None, optional): Set when the points
+                are the vertices of a product mesh. Its factors are exposed as
+                `factors`, and its cells are only built when `mesh` is
+                accessed. Defaults to None.
+        """
         self._current_points = points
         self._current_cells = cells
+        self._current_product = product
+        self._current_factors = product.factors if product is not None else None
+        self._is_numpy = False
+
+    @property
+    def factors(self) -> list | None:
+        """The meshed factor geometries, if the current points are the
+        vertices of a product mesh (first factor varying slowest), else None."""
+        return self._current_factors
 
     def to_numpy(self) -> None:
         """Converts the current discretization to plain numpy, in place."""
@@ -68,6 +93,7 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
             self._current_points = self.backend.to_numpy(self._current_points)
         if self._current_cells is not None:
             self._current_cells = self.backend.to_numpy(self._current_cells)
+        self._is_numpy = True
 
     @property
     def mesh(self) -> Mesh | None:
@@ -78,16 +104,28 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         MeshPlot, GeometryPlot) checks `geometry.mesh is not None` rather
         than `isinstance(geometry, MeshGeometry)` precisely so it never
         needs to know SampledGeometry exists."""
+        if self._current_cells is None and self._current_product is not None:
+            cells = self._current_product.mesh.cells
+            self._current_cells = self.backend.to_numpy(cells) if self._is_numpy else cells
         if self._current_cells is None:
             return None
         return Mesh(self._current_points, self._current_cells, backend=self.backend)  # type: ignore
 
     def visualization_mesh(
         self,
-        max_vertex_distance: float | None = None,
+        max_vertex_distance: float | dict | None = None,
         device: Device | str | None = None,
     ) -> Mesh:
         """Mesh of the source geometry at the given resolution and device,
+        see `visualization_geometry()`."""
+        return self.visualization_geometry(max_vertex_distance, device).mesh
+
+    def visualization_geometry(
+        self,
+        max_vertex_distance: float | dict[Variable, float] | None = None,
+        device: Device | str | None = None,
+    ) -> Geometry:
+        """Meshed source geometry at the given resolution and device,
         built once per distinct (resolution, device) pair and reused
         afterwards.
 
@@ -95,18 +133,29 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         still honouring a changed resolution/device. Within one run only one
         mesh is ever used, so values and vertex positions cannot mismatch.
 
+        `max_vertex_distance` may be a dict with one value per geometry
+        variable: a ProductGeometry receives it as-is to mesh each factor,
+        any other geometry uses the entry of its own variable.
+
         `device=None` (default) falls back to Geometry.create_mesh()'s own
         cpu default - PointSampler.set_mesh_mode() is the one that actually
         resolves a concrete device (its own current one, unless overridden),
         so this only sees None when called directly, outside mesh mode.
         """
-        cache_key = (max_vertex_distance, device)
+        cache_key = (
+            frozenset(max_vertex_distance.items())
+            if isinstance(max_vertex_distance, dict)
+            else max_vertex_distance,
+            device,
+        )
         if cache_key not in self._mesh_cache:
-            print(self.source_geometry)
-            mesh_geometry = (
+            if not isinstance(self.source_geometry, ProductGeometry):
+                max_vertex_distance = vertex_distance_for(
+                    max_vertex_distance, self.source_geometry.variable
+                )
+            self._mesh_cache[cache_key] = (
                 self.source_geometry.create_mesh(max_vertex_distance, device)
                 if device is not None
                 else self.source_geometry.create_mesh(max_vertex_distance)
             )
-            self._mesh_cache[cache_key] = mesh_geometry.mesh
         return self._mesh_cache[cache_key]

@@ -8,6 +8,24 @@ from qewton.constraints.base import Constraint
 from qewton.data.dataloaders.base import DataNode
 
 
+def _record_losses(state: TrainerState, phase: EvaluationPhase, entries) -> None:
+    """Writes `(key, owner, loss)` entries into `state.losses[phase]`.
+
+    Raises:
+        ValueError: If two different owners (constraints or loss functions)
+            have the same key, since one loss would overwrite the other.
+    """
+    owners: dict[str, Any] = {}
+    for key, owner, loss in entries:
+        if key in owners and owners[key] is not owner:
+            raise ValueError(
+                f"Two different losses are named {key!r}, so one would "
+                "overwrite the other. Give them distinct names."
+            )
+        owners[key] = owner
+        state.losses[phase][key] = loss
+
+
 class GraphEvalCallback(Callback):
 
     def __init__(
@@ -53,9 +71,11 @@ class FunctionEvalCallback(Callback):
 
     def training_step(self, phase_idx: int, state: TrainerState):
         if phase_idx % self.evaluation_interval == 0:
-            for fn in self.functions:
-                loss = fn(phase_idx, state)
-                state.losses[self.evaluation_phase][fn.__name__] = loss
+            _record_losses(
+                state,
+                self.evaluation_phase,
+                ((fn.__name__, fn, fn(phase_idx, state)) for fn in self.functions),
+            )
 
 
 class CacheDataCallback(Callback):

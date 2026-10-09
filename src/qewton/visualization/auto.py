@@ -9,12 +9,15 @@ from qewton.visualization.plots.data.grid import EmbeddedGridPlot, HeatmapPlot, 
 from qewton.visualization.plots.data.mesh import MeshFieldPlot, MeshVectorPlot
 from qewton.visualization.plots.data.points import PointCloudPlot
 from qewton.visualization.plots.data.samples import ScatterPlot
+from qewton.visualization.product_view import product_view
 from qewton.visualization.plots.spec import (
     ColorSpec,
+    Scale,
     ControlSpec,
     SliderSpec,
     SelectorSpec,
     VectorSpec,
+    drawn_geometry_axes,
 )
 
 
@@ -23,6 +26,14 @@ def auto_plot(
 ) -> Plot:
     """Builds a Plot for `data`, choosing a sensible type and its required
     roles (x/y/color/vector) from `data_config`'s axes alone.
+
+    Data on a product geometry (e.g. a meshed space-time domain, or the
+    output of a ProductSampler) is first restructured by product_view(),
+    with or without `plot_type`: each factor whose Variable a control in
+    `controls=` is bound to, e.g. `[TimeSpec(T)]`, becomes an axis of its
+    own, and the remaining factors are drawn as one geometry. If those
+    would exceed 3 dimensions, the 1-dimensional factors get a default
+    control instead, as long as that choice is unambiguous.
 
     With `plot_type=None` (default):
         - A GeometryAxes wrapping a MeshGeometry, plus a scalar (dim=1)
@@ -62,20 +73,91 @@ def auto_plot(
     With an explicit `plot_type`, this is a plain pass-through -
     `plot_type(data, data_config, **kwargs)` - no auto-selection happens,
     and `**kwargs` must supply that type's required roles directly, exactly
-    as if it were constructed directly.
+    as if it were constructed directly - `controls=` then has to be a list.
+
+    `scale=` (a Scale) sets the color range of the ColorSpec auto_plot
+    creates, e.g. `Scale(vmin=0.0, vmax=1.0)` for one fixed colorbar over
+    every slider state and animation frame.
+
+    Raises:
+        ValueError: If part of `controls=` would be ignored: a dict key, or
+            a single ControlSpec instance, that no axis of the data takes a
+            control for - or, with an explicit `plot_type`, `controls=`
+            given as anything but a list. Also if `scale=` is given but the
+            chosen plot has no color, or together with an explicit
+            `plot_type`.
     """
+    scale = kwargs.pop("scale", None)
+    requested_controls = kwargs.get("controls")
+    data, data_config, controls = product_view(data, data_config, requested_controls)
+    if controls is not None:
+        kwargs["controls"] = controls
+
     if plot_type is not None:
+        if scale is not None:
+            raise ValueError(
+                "With an explicit plot_type, pass the Scale in its ColorSpec, "
+                "e.g. color=ColorSpec(u, scale=scale), not as scale=."
+            )
+        if controls is not None and not isinstance(controls, list):
+            raise ValueError(
+                f"With an explicit plot_type, controls has to be a list of "
+                f"ControlSpec instances, not {controls!r}."
+            )
         return plot_type(data, data_config, **kwargs)
 
-    geometry_axes = data_config.geometry_axes
+    explicit_controls = kwargs.get("controls")
+    geometry_axes = drawn_geometry_axes(
+        data_config, explicit_controls if isinstance(explicit_controls, list) else []
+    )
     if isinstance(geometry_axes, list):
         raise ValueError(
-            f"{data_config} has multiple GeometryAxes - auto_plot can't pick "
-            "one. Construct a Plot explicitly."
+            f"{data_config} has multiple GeometryAxes without a control - "
+            "auto_plot can't pick one. Construct a Plot explicitly."
         )
     if geometry_axes is not None:
-        return _auto_geometry_plot(data, data_config, geometry_axes, **kwargs)
-    return _auto_flat_plot(data, data_config, **kwargs)
+        plot = _auto_geometry_plot(data, data_config, geometry_axes, scale, **kwargs)
+    else:
+        plot = _auto_flat_plot(data, data_config, **kwargs)
+    _check_controls_used(requested_controls, plot)
+    color = getattr(plot, "color", None)
+    if scale is not None and (color is None or color.scale is not scale):
+        raise ValueError(
+            f"scale= is not used, since the chosen {type(plot).__name__} has "
+            "no color."
+        )
+    return plot
+
+
+def _check_controls_used(controls, plot: Plot) -> None:
+    """Raises if a dict entry or a single ControlSpec instance passed as
+    `controls=` did not end up as one of `plot`'s controls, instead of
+    silently ignoring it. A ControlSpec class only names the type for
+    whatever axes are left over, so it is never unused."""
+
+    def bound_to(control, key) -> bool:
+        target = control.variable_or_axes
+        return target is key or (isinstance(key, Variable) and target == key)
+
+    taken = [c.name for c in plot.controls]
+    hint = (
+        "To bind a control to a Variable, e.g. the time of a space-time "
+        "domain, pass a list such as controls=[TimeSpec(T)]."
+    )
+    if isinstance(controls, dict):
+        unused = [k for k in controls if not any(bound_to(c, k) for c in plot.controls)]
+        if unused:
+            raise ValueError(
+                f"controls has entries for {unused}, but they are not axes of "
+                "the data left over for a control, so they would be ignored. "
+                f"Controls in use: {taken}. {hint}"
+            )
+    elif isinstance(controls, ControlSpec):
+        if not any(c is controls for c in plot.controls):
+            raise ValueError(
+                f"controls={controls.name} is not used, since no axis of the "
+                f"data is left over for it. Controls in use: {taken}. {hint}"
+            )
 
 
 def is_curve_like(plot: Plot) -> bool:
@@ -252,15 +334,21 @@ def _with_extra_controls(kwargs: dict, axes: list[Axes], controls=SliderSpec) ->
 
 
 def _auto_geometry_plot(
-    data, data_config: DataConfiguration, geometry_axes: GeometryAxes, **kwargs
+    data,
+    data_config: DataConfiguration,
+    geometry_axes: GeometryAxes,
+    scale: Scale | None = None,
+    **kwargs,
 ) -> Plot:
     feature_axes = data_config.feature_axes
     variable = _require_named_variable(data_config, feature_axes)
     quantity = _auto_quantity(data_config, variable)
     geometry = geometry_axes.geometry
     default_control, kwargs = _split_controls_default(kwargs)
+    # GeometryAxes besides the drawn one are already stepped through by a control.
+    all_geometry_axes = [a for a in data_config.axes if isinstance(a, GeometryAxes)]
     kwargs = _with_extra_controls(
-        kwargs, _other_axes(data_config, geometry_axes, feature_axes), default_control
+        kwargs, _other_axes(data_config, *all_geometry_axes, feature_axes), default_control
     )
 
     # The plotted quantity IS this geometry's own coordinate Variable (e.g.
@@ -299,7 +387,9 @@ def _auto_geometry_plot(
                 "explicitly if this is intentional."
             )
         if quantity.dim == 1:
-            return MeshFieldPlot(data, data_config, color=ColorSpec(quantity), **kwargs)
+            return MeshFieldPlot(
+                data, data_config, color=ColorSpec(quantity, scale=scale), **kwargs
+            )
         if quantity.dim == geometry.dim:
             return MeshVectorPlot(
                 data, data_config, vector=VectorSpec(quantity), **kwargs
@@ -340,7 +430,7 @@ def _auto_geometry_plot(
             if quantity.dim == 1:
                 return HeatmapPlot(
                     data, data_config, x=leaves[0], y=leaves[1],
-                    color=ColorSpec(quantity), **kwargs
+                    color=ColorSpec(quantity, scale=scale), **kwargs
                 )
             if quantity.dim == 2:
                 return QuiverPlot(
@@ -355,7 +445,7 @@ def _auto_geometry_plot(
         if coord_dim == 3:
             if quantity.dim == 1:
                 return EmbeddedGridPlot(
-                    data, data_config, color=ColorSpec(quantity), **kwargs
+                    data, data_config, color=ColorSpec(quantity, scale=scale), **kwargs
                 )
             if quantity.dim == 3:
                 return QuiverPlot(
@@ -394,7 +484,9 @@ def _auto_geometry_plot(
                 "Plot explicitly if this is intentional."
             )
         if quantity.dim == 1:
-            return PointCloudPlot(data, data_config, color=ColorSpec(quantity), **kwargs)
+            return PointCloudPlot(
+                data, data_config, color=ColorSpec(quantity, scale=scale), **kwargs
+            )
         if quantity.dim == 3:
             return QuiverPlot(data, data_config, vector=VectorSpec(quantity), **kwargs)
         raise ValueError(

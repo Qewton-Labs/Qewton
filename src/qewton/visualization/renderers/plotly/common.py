@@ -40,13 +40,20 @@ def _edge_trace(
     )
 
 
+#: Width of the outline covering seams between filled triangles.
+_SEAM_WIDTH = 0.5
+
+
 def _triangle_fill_trace(
     vertices: np.ndarray, cells: np.ndarray, color: str, opacity: float = 1.0
 ) -> go.Scatter:
     """Fills a 2D triangulation as one trace. Each triangle is a
     None-separated segment, which Plotly fills independently - so holes and
     disconnected components need no special handling, and an empty `cells`
-    yields a valid, empty trace rather than an error."""
+    yields a valid, empty trace rather than an error.
+
+    Each triangle is also outlined thinly in its fill color: anti-aliasing
+    otherwise leaves a visible seam between neighboring triangles."""
     xs, ys = [], []
     for tri in cells:
         pts = vertices[tri]
@@ -59,7 +66,7 @@ def _triangle_fill_trace(
         fill="toself",
         fillcolor=color,
         opacity=opacity,
-        line=dict(width=0),  # no interior edges - boundary drawn separately
+        line=dict(color=color, width=_SEAM_WIDTH),
         hoverinfo="skip",
         showlegend=False,
     )
@@ -96,6 +103,12 @@ class PlotlyArtist(Artist):
     def __init__(self, idx) -> None:
         super().__init__()
         self.figure_idx = idx
+
+    @property
+    def trace_indices(self) -> list[int]:
+        """Every trace in `backend_figure.data` this artist updates, e.g.
+        to snapshot them all into an animation frame."""
+        return [self.figure_idx]
 
 
 def _mask_nan_color_as_gaps(x, y, z, color):

@@ -524,10 +524,18 @@ class Figure:
 
         Only meaningful with a TimeSpec control somewhere in the Figure -
         `draw()` must populate `backend_figure.frames`, which is then
-        rasterized frame by frame and assembled into the GIF.
+        rasterized frame by frame and assembled into the GIF. `fps` applies
+        to equally spaced frames; with non-uniform time steps, each frame is
+        shown in proportion to its time step (TimeSpec.frame_weights()).
         """
         self.draw()
-        self.renderer.save_gif(self.backend_figure, path, fps=fps)
+        spec = self._animation_spec()
+        self.renderer.save_gif(
+            self.backend_figure,
+            path,
+            fps=fps,
+            frame_weights=spec.frame_weights() if spec is not None else None,
+        )
 
     def save_png(self, path, **kwargs):
         """Draws the figure and writes its current state to `path` as a PNG."""

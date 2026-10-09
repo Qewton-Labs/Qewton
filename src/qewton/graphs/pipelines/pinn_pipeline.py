@@ -69,7 +69,7 @@ class PINNPipeline(Graph):
             a PINNConstraint from, if not constraint is provided.
             Defaults to None.
         residual_name (str | None, optional): A name for the constraint.
-            Defaults to None.
+            Defaults to None and the name of the residual function.
         reduction (Callable | None, optional): A function that is coupled
             to the residual function to build the PINNConstraint. Defaults to None.
         weight (float, optional): A weight for the constraint. Defaults to 1.0.
@@ -93,8 +93,6 @@ class PINNPipeline(Graph):
 
         if constraint is None:
             assert residual is not None, "Either constraint or residual must be provided."
-            if residual_name is None:
-                residual_name = "PINNConstraint"
             self.constraint = PINNConstraint(
                 residual,
                 reduction,

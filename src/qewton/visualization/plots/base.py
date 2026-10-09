@@ -7,6 +7,7 @@ from qewton.visualization.plots.spec import (
     PlotSpec,
     SliderSpec,
     SelectorSpec,
+    TimeSpec,
 )
 
 
@@ -146,31 +147,36 @@ class Plot:
         plot families because every `evaluate()` returns a result dataclass
         with a `.color` field.
 
-        For a plot with SliderSpec controls, values are collected across
-        every slider state rather than only the state current when this
-        runs, so the color range stays fixed while scrubbing instead of
-        jumping around as the slider moves. FixedSpec controls are left
-        alone since they never change state.
+        For a plot with SliderSpec or TimeSpec controls, values are
+        collected across every slider state and animation frame rather than
+        only the state current when this runs, so the color range stays
+        fixed while scrubbing or playing instead of jumping around.
+        FixedSpec controls are left alone since they never change state.
         """
         spec = getattr(self, "color", None)
         if spec is None or spec.scale is None:
             return None
 
-        sliders = [c for c in self.controls if isinstance(c, SliderSpec)]
-        if not sliders:
+        stepping = [c for c in self.controls if isinstance(c, (SliderSpec, TimeSpec))]
+        if not stepping:
             return getattr(self.evaluate(), "color", None)
 
-        originals = [s.state for s in sliders]
+        originals = [s.state for s in stepping]
         try:
             all_values = []
-            state_ranges = (range(s.minimum, s.maximum + 1, s.step) for s in sliders)
+            state_ranges = (
+                s.values
+                if isinstance(s, TimeSpec)
+                else range(s.minimum, s.maximum + 1, s.step)
+                for s in stepping
+            )
             for states in itertools.product(*state_ranges):
-                for slider, state in zip(sliders, states):
-                    slider.state = state
+                for control, state in zip(stepping, states):
+                    control.state = state
                 values = getattr(self.evaluate(), "color", None)
                 if values is not None:
                     all_values.append(np.asarray(values).reshape(-1))
             return np.concatenate(all_values) if all_values else None
         finally:
-            for slider, original in zip(sliders, originals):
-                slider.state = original
+            for control, original in zip(stepping, originals):
+                control.state = original

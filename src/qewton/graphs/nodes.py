@@ -256,6 +256,10 @@ class Node(ABC, Serializable, Generic[TensorType]):
             return self._name if self._name is not None else self.__class__.__name__
         return self.__class__.__name__
 
+    @name.setter
+    def name(self, value: str):
+        self._name = value
+
     @classmethod
     def set_tracking(cls, set_active: bool):
         cls._tracking_phase = set_active
