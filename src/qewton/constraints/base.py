@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Callable
 
 from qewton.backends import TensorType, Backend, DEFAULT_DL_BACKEND
 

@@ -43,7 +43,6 @@ def worker(
                 for cb in local_trainer.callbacks:
                     if isinstance(cb, TuningCallback):
                         cb.set_tune_state(tune_state)
-
             local_trainer.set_hyperparameter(params)
             local_trainer.run(show_progress=False)
         except Exception as e:
@@ -211,7 +210,7 @@ class Tuner:
 
     def run(self):
         if sys.platform == "linux" or sys.platform == "linux2":
-            context_str = "fork"
+            context_str = "spawn"
         else:
             context_str = "spawn"
 

@@ -120,9 +120,8 @@ class TrainerState:
 
     def clear_data_dict(self):
         """Reset stored loss values for all evaluation phases."""
-        for phase in EvaluationPhase:
-            for k in self.losses[phase]:
-                self.losses[phase][k] = None
+        for k in self.losses[EvaluationPhase.TRAIN]:
+            self.losses[EvaluationPhase.TRAIN][k] = None
 
     def check_file_path(self, callbacks):
         """Validate the save path and create a unique directory when needed.
@@ -139,6 +138,7 @@ class TrainerState:
         while os.path.exists(file_path):
             counter += 1
             file_path = f"{self.save_path}_{counter}"
+            time.sleep(0.25)  # Avoid race conditions in multi-process scenarios
 
         os.makedirs(file_path, exist_ok=True)
         self.save_path = file_path

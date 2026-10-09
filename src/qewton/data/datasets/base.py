@@ -66,6 +66,10 @@ class DataSet(ABC, Serializable):
         """
         return self[:]
 
+    def setup(self):
+        """Optional setup method for subclasses to override."""
+        pass
+
     @property
     def metadata(self) -> dict:
         """Optional metadata associated with the dataset (e.g., HDF5 attributes)."""

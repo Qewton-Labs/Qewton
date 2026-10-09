@@ -801,7 +801,6 @@ class Graph(Serializable):
             dict[Port, Edge]: The incoming edges of the last_node in this
                 graph as a dictionary of [Port, Edge].
         """
-        self._check_graph_was_sorted()
         nodes_to_run = self._build_path_to_node(last_node)
         for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
             if node == last_node:
