@@ -192,9 +192,11 @@ class BackendDataSet(ArrayLikeDataSet):
         Returns:
             DataSet: Initialized dataset instance.
         """
-        path = list(path) if isinstance(path, str) else path
+        path = [path] if not isinstance(path, list) else path
         if not load_on_setup:
             data = [backend.load_data(p, **kwargs) for p in path]  # type: ignore
+            if len(data) == 1:
+                data = data[0]
         else:
             data = [None] * len(path)
         return cls(data, data_configs, backend, data_paths=path, save_data=False)
