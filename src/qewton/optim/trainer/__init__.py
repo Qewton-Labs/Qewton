@@ -14,6 +14,7 @@ from .callbacks.training_callbacks import (
 from .callbacks.progressbar_callback import ProgressBarCallback
 from .callbacks.log_callback import CSVLogger, LogCallback, TensorboardLogger
 from .callbacks.memory_callback import ModelParameterSizeCallback
+from .callbacks.stoper_callback import NaNStoppingCallback
 
 from .optimizers.optimizers import Optimizer, Adam, SGD, LBFGS
 from .optimizers.schedulers import LR_Scheduler, StepLR, ExponentialLR, CosineAnnealingLR

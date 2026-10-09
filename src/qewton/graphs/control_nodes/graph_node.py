@@ -1,4 +1,5 @@
 from __future__ import annotations
+from copy import deepcopy
 from typing import Callable
 import inspect
 
@@ -315,20 +316,23 @@ class GraphNode(Node[TensorType]):
         if self.configs_defined_in_forward:
             return super().copy_data_configs()
         dynamic_configs = {}
+        copy_memory = {}
         for input_port in self.input_ports:
             for e in self._graph.edges_from_outside + self._graph.skip_connections:
                 if e.from_port == input_port:
                     inner_config = self._graph.dynamic_data_configs[e.to_port.node][
                         e.to_port
                     ]
-                    dynamic_configs[input_port] = inner_config
+                    dynamic_configs[input_port] = deepcopy(inner_config, memo=copy_memory)
         for output_port in self.output_ports:
             for e in self._graph.edges_to_outside + self._graph.skip_connections:
                 if e.to_port == output_port:
                     inner_config = self._graph.dynamic_data_configs[e.from_port.node][
                         e.from_port
                     ]
-                    dynamic_configs[output_port] = inner_config
+                    dynamic_configs[output_port] = deepcopy(
+                        inner_config, memo=copy_memory
+                    )
         return dynamic_configs
 
     def _configs_were_defined_in_forward(self):
