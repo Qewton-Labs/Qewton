@@ -11,6 +11,9 @@ from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.graphs.graphs import Graph
 from qewton.config.variables import Variable
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.axes import FeatureAxes, EllipsisAxes, BatchAxes
+from qewton.config.dtypes import Number
 
 
 class FCNDeepONet(DeepONet[TensorType]):
@@ -84,6 +87,9 @@ class FCNDeepONet(DeepONet[TensorType]):
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
         **kwargs,
     ):
+        self.inner_ellipsis_axes = EllipsisAxes()
+        self.batch_axes = BatchAxes(None)
+
         self.output_dim = output if isinstance(output, int) else output.dim
         self.output_strategy: DefaultMerger.MERGE_TYPES = output_strategy
         self.intermediate_neurons = HyperParameter.from_value(
@@ -115,7 +121,6 @@ class FCNDeepONet(DeepONet[TensorType]):
             backend=backend,
             **kwargs,
         )
-
         self.branch_port = self.input_ports[0]
         self.trunk_port = self.input_ports[1]
 
@@ -181,3 +186,55 @@ class FCNDeepONet(DeepONet[TensorType]):
             input_ports=self.branch_net.input_ports + self.trunk_net.input_ports,
             output_ports=self.merge_node.output_ports,
         )
+
+    def branch_data_config(self):
+        if isinstance(self.branch_input, int):
+            f_axis = FeatureAxes(shape=(self.branch_input,))
+        elif isinstance(self.branch_input, Variable):
+            f_axis = FeatureAxes(self.branch_input)
+        else:
+            f_axis = FeatureAxes(shape=(self.branch_input.value,))
+        return DataConfiguration(
+            self.batch_axes,
+            self.inner_ellipsis_axes,
+            f_axis,
+            dtype=self.backend.default_dtype,
+        )
+
+    def trunk_data_config(self):
+        if isinstance(self.trunk_input, int):
+            f_axis = FeatureAxes(shape=(self.trunk_input,))
+        elif isinstance(self.trunk_input, Variable):
+            f_axis = FeatureAxes(self.trunk_input)
+        else:
+            f_axis = FeatureAxes(shape=(self.trunk_input.value,))
+        return DataConfiguration(
+            self.batch_axes,
+            self.inner_ellipsis_axes,
+            f_axis,
+            dtype=self.backend.default_dtype,
+        )
+
+    def output_data_config(self):
+        if isinstance(self.output_dim, int):
+            f_axis = FeatureAxes(shape=(self.output_dim,))
+        elif isinstance(self.output_dim, Variable):
+            f_axis = FeatureAxes(self.output_dim)
+        else:
+            f_axis = FeatureAxes(shape=self.output_dim)
+        return DataConfiguration(
+            self.batch_axes,
+            self.inner_ellipsis_axes,
+            f_axis,
+            dtype=self.backend.default_dtype,
+        )
+
+    def forward(
+        self,
+        branch_input: Number[TensorType, branch_data_config],
+        trunk_input: Number[TensorType, trunk_data_config],
+    ) -> Number[TensorType, output_data_config]:
+        self.input_ports[0].set_value(branch_input)
+        self.input_ports[1].set_value(trunk_input)
+        self.run()
+        return self.output_ports[0].value  # type: ignore

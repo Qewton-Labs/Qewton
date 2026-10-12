@@ -1048,7 +1048,12 @@ class Graph(Serializable):
             scale_kwarg = {} if scale is None else {"scale": scale}
             plots.append(
                 auto_plot(
-                    data, config, plot_type, **controls_kwarg, **scale_kwarg, **plot_kwargs
+                    data,
+                    config,
+                    plot_type,
+                    **controls_kwarg,
+                    **scale_kwarg,
+                    **plot_kwargs,
                 )
             )
 
@@ -1265,7 +1270,9 @@ class Graph(Serializable):
 
         ref_color = getattr(reference_plot, "color", None)
         pred_color = getattr(prediction_plot, "color", None)
-        has_colors = isinstance(ref_color, ColorSpec) and isinstance(pred_color, ColorSpec)
+        has_colors = isinstance(ref_color, ColorSpec) and isinstance(
+            pred_color, ColorSpec
+        )
         if scale is not None and not has_colors:
             raise ValueError(
                 "scale= is not used, since the reference and prediction plots "
