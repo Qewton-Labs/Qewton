@@ -72,6 +72,13 @@ class TorchBackend(DeepLearningBackend[torch.Tensor]):
         return data.to(cls.get_device(device))
 
     @classmethod
+    def move_to_same_device(cls, data, reference) -> torch.Tensor:
+        if hasattr(reference, "device"):
+            device = reference.device
+            return data.to(device)
+        return data
+
+    @classmethod
     def from_numpy(cls, data, dtype=Float32):
         converted_type = cls.dtypes.get(dtype, dtype)
         return torch.from_numpy(data).to(converted_type)

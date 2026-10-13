@@ -97,6 +97,9 @@ class Mesh(Serializable, Generic[TensorType]):
         """
         if self.parent_cell_mapping is None:
             return cell_indices  # No parent provided -> identity mapping
+        cell_indices = self.backend.move_to_same_device(
+            cell_indices, self.parent_cell_mapping
+        )
         return self.parent_cell_mapping[cell_indices]
 
     @property
@@ -411,6 +414,10 @@ class Mesh(Serializable, Generic[TensorType]):
         if len(self.boundary_normals_at_vertex) > 0:
             self.boundary_normals_at_vertex = self.backend.to(
                 self.boundary_normals_at_vertex, device=device
+            )
+        if self.parent_cell_mapping is not None:
+            self.parent_cell_mapping = self.backend.to(
+                self.parent_cell_mapping, device=device
             )
 
     def sample_grid_from_vertices(

@@ -224,7 +224,7 @@ class DataLoader(DataNode[TensorType]):
         self.test_permutation = []
         self._permutation_splits = {}
         self._phase_data_sets = {}
-        if all(d is not None for d in self.data_set):
+        if self.data_set.data_set_loaded:
             self._setup_iteration()
 
         super().__init__(batch_size=batch_size, name=name, backend=backend)
@@ -329,7 +329,7 @@ class DataLoader(DataNode[TensorType]):
         self.mode = new_mode
 
     def setup(self) -> None:
-        if any(d is None for d in self.data_set):
+        if not self.data_set.data_set_loaded:
             self.data_set.setup()
             self._setup_iteration()
 

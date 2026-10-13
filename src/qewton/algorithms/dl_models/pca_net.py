@@ -5,9 +5,11 @@ from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.data.dataloaders.base import DataNode
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
+from qewton.algorithms.building_blocks.activation_functions import Tanh
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.algorithms.dl_models.fcn import FCN
 from qewton.config.variables import Variable
+from qewton.graphs.nodes import Node
 from qewton.data.data_processing.pca import PCANode, InversePCANode
 from qewton.data.data_processing.normalization import (
     StdNormalizationNode,
@@ -62,6 +64,7 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
         data_source_node: DataNode[TensorType],
         fcn_hidden_layers: int | HyperParameter,
         fcn_hidden_neurons: int | HyperParameter,
+        activation_function: type[Node] | HyperParameter = Tanh,
         normalize_data: bool | HyperParameter = True,
         normalization_eps: float = 1.0e-6,
         name: str = "PCANet",
@@ -78,6 +81,9 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
         self.fcn_hidden_neurons = HyperParameter.from_value(
             fcn_hidden_neurons, "FCN hidden neurons"
         )
+        self.activation = HyperParameter.from_value(
+            activation_function, "FCN Activations"
+        )
         self.normalization_eps = normalization_eps
 
         self.input_variable = input_variable
@@ -90,6 +96,7 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
             hidden_neurons=self.fcn_hidden_neurons,
             out_neurons=self.pca_n_output,
             n_hidden_layers=self.fcn_hidden_layers,
+            activation=self.activation,
             backend=backend,
             name="FCN",
         )
