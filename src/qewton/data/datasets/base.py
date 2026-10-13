@@ -74,3 +74,12 @@ class DataSet(ABC, Serializable):
     def metadata(self) -> dict:
         """Optional metadata associated with the dataset (e.g., HDF5 attributes)."""
         return {}
+
+    @property
+    def data_set_loaded(self) -> bool:
+        """Check if the dataset is fully loaded into memory.
+
+        Returns:
+            bool: True if all data objects are loaded, False otherwise.
+        """
+        return True

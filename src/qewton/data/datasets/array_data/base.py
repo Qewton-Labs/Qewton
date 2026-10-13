@@ -94,6 +94,15 @@ class ArrayLikeDataSet(DataSet):
     def get_batch(self, idcs) -> list[Any]:
         return [data[idcs] for data in self._data]
 
+    @property
+    def data_set_loaded(self) -> bool:
+        """Check if the dataset is fully loaded into memory.
+
+        Returns:
+            bool: True if all data objects are loaded, False otherwise.
+        """
+        return all(data is not None for data in self._data)
+
     def get_continuous_batch(self, start_idx, end_idx) -> list[Any]:
         return [data[start_idx:end_idx] for data in self._data]
 
