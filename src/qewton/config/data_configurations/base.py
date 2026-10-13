@@ -525,10 +525,14 @@ class DataConfiguration(Serializable):
         serializer.set_serialization_data(id(self), data_config)
 
     def load(self, serializer: Deserializer, data_config: dict) -> None:
-        super().load(serializer, data_config)
+        setattr(self, "axes", serializer.id_to_obj[data_config["axes"]])
         from qewton.backends.base import TensorType
 
         # TODO: How to handle the dtypes?
         dtype = data_config.get("dtype", None)
+        setattr(self, "dtype", None)
         if isinstance(dtype, str) and dtype == "~TensorType":
             self.dtype = TensorType
+
+    def ready_to_load(self, serializer: Deserializer, data_config: dict) -> bool:
+        return serializer.ready_to_reference.get(data_config["axes"], False)
