@@ -145,6 +145,18 @@ class ComputingBackend(Backend[TensorType]):
         )
 
     @classmethod
+    def move_to_same_device(cls, data, reference) -> TensorType:
+        """Moves the data to the same device as the reference.
+
+        Args:
+            data (TensorType): The data to move.
+            reference (TensorType): The reference data.
+        Returns:
+            TensorType: The moved data.
+        """
+        raise NotImplementedError("The moving to the same device is backend dependent.")
+
+    @classmethod
     def cast_dtype(cls, data, dtype):
         """Changes the data type of the given data.
 

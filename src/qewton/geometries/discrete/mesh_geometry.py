@@ -142,6 +142,7 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         return self.mesh.sample_random_inside(n_points=n_points, device=device)[0]
 
     def sample_grid(self, n_points: int, device: Device | str = cpu) -> TensorType:
+        self.mesh.move_to_device(device=device)
         mins = self.bounding_box()[::2]
         maxs = self.bounding_box()[1::2]
 
@@ -260,6 +261,7 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         return self._locate_cell_based(points, point_device)
 
     def _build_barycentric_cache(self, device: Device | str = cpu):
+        self.mesh.move_to_device(device=device)
         if self.inv_A is None or self.v0 is None:
             vertices = self.mesh.vertices[self.mesh.cells]
             self.bbox_min = self.backend.math.min(vertices, axis=1)
@@ -274,6 +276,7 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
             self.inv_A = self.backend.to(self.inv_A, device=device)
 
     def _locate_point_based(self, points, device: Device | str = cpu):
+        self.mesh.move_to_device(device=device)
         n_points = len(points)
         dim = self.variable.dim
         cell_idx = self.backend.math.zeros(
@@ -304,6 +307,7 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         return cell_idx, weights, found
 
     def _locate_cell_based(self, points, device: Device | str = cpu):
+        self.mesh.move_to_device(device=device)
         n_points = len(points)
         dim = self.variable.dim
         cell_idx = self.backend.math.zeros(
@@ -465,12 +469,7 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
         return points
 
     def _move_normals(self, device: Device | str):
-        self.geometry.mesh.boundary_normals_at_vertex = self.backend.to(
-            self.geometry.mesh.boundary_normals_at_vertex, device=device
-        )
-        self.geometry.mesh.boundary_normals = self.backend.to(
-            self.geometry.mesh.boundary_normals, device=device
-        )
+        self.geometry.mesh.move_to_device(device=device)
 
     def sample_grid_from_discretization(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
@@ -487,6 +486,7 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
     def sample_random_uniform(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
+        self.geometry.mesh.move_to_device(device=device)
         points, idx = self.mesh.sample_random_inside(n_points=n_points, device=device)
         if include_normals:
             self._move_normals(device=device)
@@ -498,6 +498,7 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
     def sample_grid(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
+        self.geometry.mesh.move_to_device(device=device)
         # Allocate points based on area:
         n_areas, local_n = self._compute_local_distribution(n_points)
 
@@ -520,7 +521,9 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
             face_idx.extend([area_counter] * len(new_points))
 
         points = self.backend.math.vstack(all_points)
-        face_idx = self.backend.build_tensor(face_idx, dtype=self.backend.dtypes[Int32])
+        face_idx = self.backend.build_tensor(
+            face_idx, dtype=self.backend.dtypes[Int32], device=device
+        )
         # Check how many points we have and either cut them or add some more
         random_normals = None
         if len(points) > n_points:
@@ -597,6 +600,7 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
             )
 
     def normal(self, points, device: Device | str = cpu):
+        self.geometry.mesh.move_to_device(device=device)
         self._build_face_bbox()
         if len(points) < len(self.mesh.cells):
             point_found, cell_idx = self._contains_point_based_search(points)
