@@ -24,7 +24,7 @@ class ScatterArtist(PlotlyArtist):
         result = plot.evaluate()
         marker = dict(size=plot.theme.marker_size)
         if result.color is not None:
-            cmap = plot.color.cmap or plot.theme.default_cmap
+            cmap = plot.theme.resolve_cmap(plot.color.cmap)
             marker.update(color=result.color, colorscale=cmap)
             marker.update(
                 _apply_scale(

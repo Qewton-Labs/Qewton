@@ -187,16 +187,21 @@ class VectorSpec(PlotSpec):
     """Declares a 2D or 3D vector-valued role (e.g. a QuiverPlot's arrows),
     with the display parameters that control how it's drawn.
 
+    How the arrows are colored is a separate role - the plot's own `color`
+    (a ColorSpec), which defaults to the vector magnitude.
+
     Args:
         variable_or_axes: The 2D or 3D Variable/Axes the vector components
             come from - or a SelectorSpec, to switch between several
             same-dim candidates.
-        scale: Multiplier applied to every vector's length.
+        scale: Multiplier applied to every vector's length. None (default)
+            autoscales: the longest vector in the whole data is drawn about
+            as long as the typical spacing between drawn arrows, so arrows
+            (and 3D cones, whose width grows with their length) don't
+            overlap. Pass a number for an absolute factor instead, e.g. to
+            keep lengths comparable between separate plots.
         normalize: If True, normalizes each vector to unit length before
             applying `scale`.
-        cmap: Colormap for `color_by_magnitude`; falls back to the theme's
-            default if unset.
-        color_by_magnitude: If True, colors arrows by vector magnitude.
         subsample: Draws every `subsample`-th vector only, decimated after
             `normalize`/`scale` are applied - a display decision about which
             arrows to draw, not a change to what the field itself is.
@@ -205,10 +210,8 @@ class VectorSpec(PlotSpec):
     def __init__(
         self,
         variable_or_axes,
-        scale=1.0,
+        scale=None,
         normalize=False,
-        cmap=None,
-        color_by_magnitude=False,
         subsample=1,
     ):
         dim = variable_or_axes.dim
@@ -216,8 +219,6 @@ class VectorSpec(PlotSpec):
         super().__init__(dim, variable_or_axes)
         self.scale = scale
         self.normalize = normalize
-        self.cmap = cmap
-        self.color_by_magnitude = color_by_magnitude
         assert subsample >= 1, "subsample must be >= 1"
         self.subsample = subsample
 
@@ -309,7 +310,12 @@ class ColorSpec(PlotSpec):
         scale: Scale | None = None,
     ) -> None:
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
-        self.cmap = cmap  # if not specified, plots resort to default cmap of theme
+        # A qewton colormap (a role like cmaps.diverging, resolved against
+        # the Figure's theme at draw time, or a concrete one like
+        # cmaps.meadow), or a renderer-native colormap name/list passed
+        # through as-is. None uses the theme's sequential colormap. See
+        # Theme.resolve_cmap().
+        self.cmap = cmap
         self.scale = scale  # if set, shared with every other spec using the same Scale
 
 

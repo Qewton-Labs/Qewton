@@ -854,10 +854,21 @@ class Graph(Serializable):
                     in_port.clear_value()
             node.run()
 
-    def diagram(self, depth: int = 1) -> GraphPlot:
+    def diagram(self,
+                depth: int = 1,
+                show_port_names: bool = False,
+                show_edge_labels: bool = True) -> GraphPlot:
+        """`show_port_names`: when True, a node with more than one input or
+        output port also gets a small name label at each of its own ports
+        (in addition to the node's own title) - off by default, since most
+        graphs read fine from node names alone and the extra labels add
+        visual noise to a dense diagram."""
         from qewton.visualization.plots.graph import GraphPlot
 
-        return GraphPlot(self, depth=depth)
+        return GraphPlot(self,
+                         depth=depth,
+                         show_port_names=show_port_names,
+                         show_edge_labels=show_edge_labels)
 
     def visualize(
         self,
@@ -1068,6 +1079,7 @@ class Graph(Serializable):
         from qewton.visualization.auto import auto_plot, is_curve_like
         from qewton.visualization.layout import Overlay, Row
         from qewton.visualization.plots.spec import ColorSpec, Scale, SelectorSpec
+        from qewton.visualization.themes import cmaps
 
         combined_variable = Variable.compose(variables) if variables else None
         pred_config = prediction_config or port.get_data_configuration(self)
@@ -1273,7 +1285,7 @@ class Graph(Serializable):
             if isinstance(error_color, ColorSpec):
                 error_color.scale = error_scale
                 if error_color.cmap is None and diverging:
-                    error_color.cmap = "RdBu"
+                    error_color.cmap = cmaps.diverging
             plots.append(error_plot)
 
         return Overlay(*plots) if is_curve else Row(*plots)

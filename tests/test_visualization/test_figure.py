@@ -9,7 +9,8 @@ from qewton.config.variables import Variable
 from qewton.visualization.figure import Figure
 from qewton.visualization.plots.data.curve import LinePlot
 from qewton.visualization.plots.data.samples import ScatterPlot
-from qewton.visualization.plots.spec import FacetSpec, TimeSpec
+from qewton.visualization.layout import Row
+from qewton.visualization.plots.spec import FacetSpec, SliderSpec, TimeSpec
 
 
 def _scatter_with_facet(n_facets, n_samples):
@@ -197,3 +198,78 @@ class TestSaveImage:
         monkeypatch.setitem(sys.modules, "kaleido", None)
         with pytest.raises(ImportError, match="kaleido"):
             Figure(self._scatter_plot()).save_png(str(tmp_path / "out.png"))
+
+
+def _slider_line_plot(n_steps=4, n_samples=10, controls=None):
+    Y = Variable("y", 1)
+    step_axis = BatchAxes(n_steps)
+    sample_axis = BatchAxes(n_samples)
+    data = np.stack([np.full(n_samples, float(step)) for step in range(n_steps)])[..., None]
+    config = DataConfiguration(step_axis, sample_axis, FeatureAxes(Y))
+    spec = SliderSpec(step_axis)
+    plot = LinePlot(data, config, x=sample_axis, y=Y, controls=[spec, *(controls or [])])
+    return plot, spec, step_axis
+
+
+class TestStaticSlider:
+    """show()/save_html() bake a single SliderSpec into a Plotly slider,
+    the same way a SelectorSpec becomes a dropdown."""
+
+    @staticmethod
+    def _static(fig):
+        fig.draw()
+        fig._apply_selectors()
+        fig._apply_sliders()
+        return fig.backend_figure
+
+    def test_one_step_per_state_with_that_states_data(self):
+        plot, spec, _ = _slider_line_plot(n_steps=4)
+        backend_figure = self._static(Figure(plot))
+        assert len(backend_figure.layout.sliders) == 1
+        steps = backend_figure.layout.sliders[0].steps
+        assert [step.label for step in steps] == ["0", "1", "2", "3"]
+        for state, step in enumerate(steps):
+            assert np.allclose(step.args[0]["y"][0], state)
+
+    def test_live_traces_and_state_stay_at_the_initial_state(self):
+        plot, spec, _ = _slider_line_plot(n_steps=4)
+        spec.state = 2
+        backend_figure = self._static(Figure(plot))
+        assert spec.state == 2
+        assert np.allclose(backend_figure.data[0].y, 2)
+        assert backend_figure.layout.sliders[0].active == 2
+
+    def test_a_shared_slider_steps_every_plot_using_it(self):
+        plot_a, spec, _ = _slider_line_plot()
+        # same SliderSpec instance, like visualize()'s reference/prediction panels
+        plot_b = LinePlot(
+            plot_a.data, plot_a.data_config,
+            x=plot_a.data_config.axes[1], y=plot_a.y.variable_or_axes, controls=[spec],
+        )
+        backend_figure = self._static(Figure(Row(plot_a, plot_b)))
+        assert len(backend_figure.layout.sliders) == 1
+        assert list(backend_figure.layout.sliders[0].steps[0].args[2]) == [0, 1]
+
+    def test_two_sliders_warn_and_keep_the_initial_state(self):
+        plot_a, _, _ = _slider_line_plot()
+        plot_b, _, _ = _slider_line_plot()
+        with pytest.warns(UserWarning, match="2 SliderSpecs"):
+            backend_figure = self._static(Figure(Row(plot_a, plot_b)))
+        assert len(backend_figure.layout.sliders) == 0
+
+    def test_coexists_with_a_timespec_slider(self):
+        plot, spec, _ = _slider_line_plot()
+        animated, _, _ = _TimeSpecFixture.animated_line_plot()
+        backend_figure = self._static(Figure(Row(plot, animated)))
+        assert len(backend_figure.layout.sliders) == 2
+        assert len(backend_figure.frames) == 4
+
+    def test_dash_path_gets_no_static_slider(self):
+        plot, _, _ = _slider_line_plot()
+        assert len(Figure(plot).draw().layout.sliders) == 0
+
+    def test_save_html_contains_the_slider(self, tmp_path):
+        plot, _, _ = _slider_line_plot()
+        path = tmp_path / "slider.html"
+        Figure(plot).save_html(path)
+        assert '"sliders"' in path.read_text()

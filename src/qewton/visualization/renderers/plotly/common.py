@@ -1,6 +1,7 @@
 import itertools
 
 from plotly import graph_objects as go
+from plotly.colors import sample_colorscale
 import numpy as np
 
 from qewton.backends import resolve_backend
@@ -96,6 +97,14 @@ class PlotlyArtist(Artist):
     def __init__(self, idx) -> None:
         super().__init__()
         self.figure_idx = idx
+
+    @property
+    def trace_indices(self) -> list[int]:
+        """Every trace in `backend_figure.data` this artist owns and
+        refreshes in update() - what a static frame/dropdown snapshot
+        (PlotlyRenderer.animate()/apply_selector()) must capture. Artists
+        drawing more than one trace override this."""
+        return [self.figure_idx]
 
 
 def _mask_nan_color_as_gaps(x, y, z, color):
@@ -282,6 +291,58 @@ def _apply_scale(
             kwargs.setdefault("colorbar", {})
             kwargs["colorbar"] = {**kwargs["colorbar"], "title": dict(text=title)}
     return kwargs
+
+
+def _bin_values(values, n_bins, scale):
+    """(bin_idx, bin_centers, vmin, vmax) for drawing a continuous field
+    as `n_bins` flat-colored traces - Plotly's 2D primitives (and go.Cone)
+    take one color per trace only, so per-element coloring means one trace
+    per value bin. vmin/vmax come from the shared Scale's trained range
+    when one is set, else the values themselves, matching _apply_scale's
+    own convention."""
+    if scale is not None and scale.range is not None:
+        vmin, vmax = scale.range
+    elif len(values) > 0:
+        vmin = float(np.nanmin(values))
+        vmax = float(np.nanmax(values))
+    else:
+        vmin, vmax = 0.0, 1.0
+    if vmin == vmax:
+        vmax = vmin + 1e-9  # degenerate (uniform field) - avoid a zero-width range
+    edges = np.linspace(vmin, vmax, n_bins + 1)
+    bin_idx = np.clip(np.digitize(values, edges[1:-1]), 0, n_bins - 1)
+    centers = (edges[:-1] + edges[1:]) / 2
+    return bin_idx, centers, vmin, vmax
+
+
+def _bin_colors(cmap, centers, vmin, vmax) -> list[str]:
+    """One colorscale sample per bin center from _bin_values()."""
+    return sample_colorscale(cmap, list(np.clip((centers - vmin) / (vmax - vmin), 0, 1)))
+
+
+def _colorbar_carrier_trace(
+    cmap, vmin, vmax, scale, backend_figure=None, row=None, col=None, three_d=False
+):
+    """An invisible single-point trace whose only purpose is showing a
+    continuous colorbar for an artist's discretely-binned traces (see
+    _bin_values) - _apply_scale's cmin/cmax (when a shared Scale set them)
+    are overridden by the actual bin range, since a single dummy point
+    gives Plotly nothing to infer a range from on its own. `three_d` makes
+    it a go.Scatter3d, for artists drawing into a `scene`."""
+    marker = {
+        "colorscale": cmap, "color": [vmin],
+        **_apply_scale(scale, backend_figure=backend_figure, row=row, col=col),
+        "cmin": vmin, "cmax": vmax,
+    }
+    if three_d:
+        return go.Scatter3d(
+            x=[None], y=[None], z=[None], mode="markers", marker=marker,
+            showlegend=False, hoverinfo="skip",
+        )
+    return go.Scatter(
+        x=[None], y=[None], mode="markers", marker=marker,
+        showlegend=False, hoverinfo="skip",
+    )
 
 
 def _cycled_color(plot) -> str:

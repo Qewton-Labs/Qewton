@@ -3,11 +3,10 @@ import numpy as np
 from qewton.config.axes import Axes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.visualization.plots.data.base import DataPlot
+from qewton.visualization.plots.data.base import DataPlot, VectorFieldPlotMixin
 from qewton.visualization.plots.result import (
     GridResult,
     ParametricGridResult,
-    VectorResult,
 )
 from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec, VectorSpec
 
@@ -231,7 +230,7 @@ class EmbeddedGridPlot(DataPlot):
         )
 
 
-class QuiverPlot(DataPlot):
+class QuiverPlot(VectorFieldPlotMixin, DataPlot):
     """A vector field on a structured grid, drawn as arrows - the grid
     counterpart to MeshVectorPlot (mesh vertices) and EmbeddedGridPlot
     (scalar color on a grid). Draws any structured grid whose coordinates
@@ -243,6 +242,10 @@ class QuiverPlot(DataPlot):
     dimension moves the drawn arrow positions correctly, not just the
     vectors.
 
+    Arrows are colored by the vector magnitude by default, or by any scalar
+    `color` field - see VectorFieldPlotMixin. `n_bins` is how many distinct
+    colors the arrows are drawn in (one trace each, see ArrowField2DArtist).
+
     Grid points a MeshInterpolationNode's `point_filter` excluded (outside
     the source mesh) come back NaN in every vector component - those points
     are dropped entirely rather than drawn as degenerate zero-length arrows.
@@ -253,7 +256,9 @@ class QuiverPlot(DataPlot):
         data,
         data_config: DataConfiguration,
         vector: VectorSpec | Variable,
+        color: ColorSpec | Variable | bool | None = None,
         controls: list[ControlSpec] | None = None,
+        n_bins: int = 32,
         **kwargs,
     ):
         super().__init__(data, data_config, controls=controls, **kwargs)
@@ -275,6 +280,8 @@ class QuiverPlot(DataPlot):
                 f"needs exactly {self._coord_dim} (the grid is embedded in "
                 f"{self._coord_dim}D space)."
             )
+        self._init_vector_color(color)
+        self.n_bins = n_bins
 
     @property
     def embedding_dim(self) -> int:
@@ -282,40 +289,11 @@ class QuiverPlot(DataPlot):
 
     def evaluate(self):
         data, index_map, slice_map = self.apply_controls()
-        slc = self.data_config.get_variable_slice(self.vector.variable_or_axes)
-        vectors = np.asarray(data[slice_map(slc)]).reshape(-1, self._coord_dim)
-
         geometry = self.data_config.geometry_axes.geometry
         points = self.reduce_coordinates(
             geometry.discretization_points, self._geometry_dims()
         ).reshape(-1, self._coord_dim)
-        if len(points) != len(vectors):
-            raise ValueError(
-                f"{self.vector.name} yields {len(vectors)} vectors but the grid "
-                f"has {len(points)} points. Unresolved batch dimensions? Add a "
-                "SliderSpec or FixedSpec for them."
-            )
-
-        magnitude = np.linalg.norm(vectors, axis=1)
-        if self.vector.normalize:
-            safe = np.where(magnitude > 0, magnitude, 1.0)[:, None]
-            vectors = vectors / safe
-        vectors = vectors * self.vector.scale
-
-        step = self.vector.subsample
-        if step > 1:
-            points, vectors, magnitude = (
-                points[::step],
-                vectors[::step],
-                magnitude[::step],
-            )
-
-        # Points a MeshInterpolationNode's point_filter excluded come back NaN
-        # in every component - drop them rather than draw zero-length arrows.
-        valid = ~np.isnan(vectors).any(axis=1)
-        points, vectors, magnitude = points[valid], vectors[valid], magnitude[valid]
-
-        return VectorResult(positions=points, vectors=vectors, magnitude=magnitude)
+        return self._evaluate_arrows(data, slice_map, points)
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
         return (

@@ -1,6 +1,15 @@
+import warnings
+
 from qewton.visualization.layout import Layout, Overlay, Row, normalize
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.spec import AxisSpec, ControlSpec, FacetSpec, Scale, TimeSpec
+from qewton.visualization.plots.spec import (
+    AxisSpec,
+    ControlSpec,
+    FacetSpec,
+    Scale,
+    SliderSpec,
+    TimeSpec,
+)
 from qewton.visualization.renderers.base import Artist, Renderer
 from qewton.visualization.themes.base import Theme
 from qewton.visualization.renderers import DEFAULT_RENDERER
@@ -507,16 +516,39 @@ class Figure:
         for spec in self.selector_specs:
             self.renderer.apply_selector(self, self.backend_figure, spec)
 
+    def _apply_sliders(self):
+        """Static-export counterpart to DashApplication's slider widget, for
+        exactly one SliderSpec - see Renderer.apply_slider(). Each state is
+        baked independently with every other control frozen, so with two
+        or more SliderSpecs most combinations would be unreachable or show
+        wrong data; those figures keep their initial state with a warning
+        instead. Only called by show()/save_html(), like _apply_selectors().
+        """
+        sliders = [c for c in self.controls if isinstance(c, SliderSpec)]
+        if len(sliders) == 1:
+            self.renderer.apply_slider(self, self.backend_figure, sliders[0])
+        elif len(sliders) > 1:
+            warnings.warn(
+                f"Figure has {len(sliders)} SliderSpecs "
+                f"({', '.join(s.name for s in sliders)}) - show()/save_html() "
+                "can only bake a single slider into a static figure, so only "
+                "the initial state is shown. Use DashApplication for "
+                "interactive sliders.",
+                stacklevel=3,
+            )
+
     def show(self):
         """Draws the figure and displays it (e.g. opening a browser tab)."""
         self.draw()
         self._apply_selectors()
+        self._apply_sliders()
         self.renderer.show(self.backend_figure)
 
     def save_html(self, path):
         """Draws the figure and writes it to `path` as an interactive HTML file."""
         self.draw()
         self._apply_selectors()
+        self._apply_sliders()
         self.renderer.save_html(self.backend_figure, path)
 
     def save_gif(self, path, fps=10):

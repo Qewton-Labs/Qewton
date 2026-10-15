@@ -16,7 +16,7 @@ class ParallelCoordinatesArtist(PlotlyArtist):
         result: TableResult = plot.evaluate()
         line = dict()
         if result.color is not None:
-            cmap = plot.color.cmap or plot.theme.default_cmap
+            cmap = plot.theme.resolve_cmap(plot.color.cmap)
             line.update(color=result.color, colorscale=cmap)
             line.update(
                 _apply_scale(

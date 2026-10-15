@@ -1,9 +1,11 @@
 import numpy as np
 
+from qewton.backends import resolve_backend
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.spec import ControlSpec, PlotSpec
+from qewton.visualization.plots.result import VectorResult
+from qewton.visualization.plots.spec import ColorSpec, ControlSpec, PlotSpec
 
 
 class CoordTransform:
@@ -204,3 +206,143 @@ class DataPlot(Plot):
                 f"{role} must be scalar (dim=1), got dim={n}. "
                 "Select a single component, or use a vector-aware plot type."
             )
+
+
+class VectorFieldPlotMixin:
+    """Shared vector and color handling for arrow-field plots - QuiverPlot
+    (grid points) and MeshVectorPlot (mesh vertices) differ only in where
+    the arrow positions come from.
+
+    Expects `self.vector` (a VectorSpec) to be set before
+    `_init_vector_color()` runs. The `color` role then resolves as:
+
+    - None (default): colors by vector magnitude, i.e. a ColorSpec on the
+      vector's own Variable - pass `ColorSpec(vector_variable, cmap=...,
+      scale=...)` explicitly to keep magnitude coloring with a custom
+      colormap or a shared Scale.
+    - a scalar ColorSpec/Variable: colors each arrow by that field instead,
+      the same way SurfacePlot decouples its color from its height.
+    - False: flat, uncolored arrows in the theme's `vector_color`.
+    """
+
+    def _init_vector_color(self, color: ColorSpec | Variable | bool | None):
+        if color is False:
+            self.color = None
+        elif color is None:
+            self.color = ColorSpec(
+                self.vector.embedded_selector_spec or self.vector.variable_or_axes
+            )
+        else:
+            self.color = color if isinstance(color, ColorSpec) else ColorSpec(color)
+            if not self.colors_by_magnitude:
+                self.require_scalar(self.color, "color")
+
+    @property
+    def colors_by_magnitude(self) -> bool:
+        return (
+            self.color is not None
+            and self.color.variable_or_axes is self.vector.variable_or_axes
+        )
+
+    def _evaluate_arrows(self, data, slice_map, positions: np.ndarray) -> VectorResult:
+        """Extracts one vector (and color value) per position from the
+        already control-reduced `data`, then applies the VectorSpec's
+        normalize/scale/subsample.
+
+        Arrows whose vector or color is NaN (e.g. grid points a
+        MeshInterpolationNode's point_filter excluded) are dropped entirely
+        rather than drawn as degenerate zero-length arrows.
+        """
+        to_numpy = resolve_backend(data).to_numpy
+        positions = np.asarray(resolve_backend(positions).to_numpy(positions))
+        n_components = positions.shape[-1]
+        slc = self.data_config.get_variable_slice(self.vector.variable_or_axes)
+        vectors = np.asarray(to_numpy(data[slice_map(slc)])).reshape(-1, n_components)
+        if len(vectors) != len(positions):
+            raise ValueError(
+                f"{self.vector.name} yields {len(vectors)} vectors but the plot "
+                f"has {len(positions)} positions. Unresolved batch dimensions? "
+                "Add a SliderSpec or FixedSpec for them."
+            )
+
+        magnitude = np.linalg.norm(vectors, axis=1)
+        color = None
+        if self.colors_by_magnitude:
+            # The magnitude of the raw field, before normalize/scale - those
+            # only change how long an arrow is drawn, not what it encodes.
+            color = magnitude
+        elif self.color is not None:
+            slc = self.data_config.get_variable_slice(self.color.variable_or_axes)
+            color = np.asarray(to_numpy(data[slice_map(slc)])).reshape(-1)
+            if len(color) != len(positions):
+                raise ValueError(
+                    f"{self.color.name} yields {len(color)} values but the plot "
+                    f"has {len(positions)} positions. Unresolved batch "
+                    "dimensions? Add a SliderSpec or FixedSpec for them."
+                )
+
+        if self.vector.normalize:
+            safe = np.where(magnitude > 0, magnitude, 1.0)[:, None]
+            vectors = vectors / safe
+
+        # Decimate after normalize, not before: subsampling only changes
+        # which arrows are drawn, never what a drawn arrow means.
+        keep = np.zeros(len(positions), dtype=bool)
+        keep[:: self.vector.subsample] = True
+        keep &= ~np.isnan(vectors).any(axis=1)
+        if color is not None:
+            keep &= ~np.isnan(color)
+
+        scale = self.vector.scale
+        if scale is None:
+            scale = self._auto_scale(positions[keep], n_components)
+        vectors = vectors * scale
+
+        return VectorResult(
+            positions=positions[keep],
+            vectors=vectors[keep],
+            magnitude=magnitude[keep],
+            color=color[keep] if color is not None else None,
+        )
+
+    #: Longest arrow length under autoscaling, as a fraction of the typical
+    #: spacing between drawn arrows - a bit below 1, so neighboring arrows
+    #: (and 3D cones, whose width grows with their length) don't touch.
+    auto_scale_fill = 0.8
+
+    def _auto_scale(self, positions: np.ndarray, n_components: int) -> float:
+        """VectorSpec(scale=None)'s factor: the longest vector in the WHOLE
+        data (every control state, not just the drawn one) maps to
+        `auto_scale_fill` times the typical spacing of the drawn positions -
+        so arrow lengths stay comparable while a slider moves."""
+        if self.vector.normalize:
+            reference = 1.0
+        else:
+            slc = self.data_config.get_variable_slice(self.vector.variable_or_axes)
+            full = np.asarray(resolve_backend(self.data).to_numpy(self.data[slc]))
+            norms = np.linalg.norm(full.reshape(-1, n_components), axis=1)
+            reference = float(np.nanmax(norms)) if np.isfinite(norms).any() else 0.0
+        spacing = _typical_spacing(positions)
+        if reference <= 0 or spacing <= 0:
+            return 1.0
+        return self.auto_scale_fill * spacing / reference
+
+
+def _typical_spacing(positions: np.ndarray, n_probe: int = 128) -> float:
+    """Median nearest-neighbor distance among `positions`, estimated from up
+    to `n_probe` probe points (deterministically chosen) against all of
+    them - O(n_probe * n) instead of a full O(n^2) distance matrix, and
+    robust to how the points are arranged (a grid, a planar slice embedded
+    in 3D, or mesh vertices). 0 for fewer than two distinct points."""
+    positions = np.asarray(positions, dtype=np.float64)
+    if len(positions) < 2:
+        return 0.0
+    rng = np.random.default_rng(0)
+    probes = positions[rng.choice(len(positions), min(n_probe, len(positions)), replace=False)]
+    nearest = []
+    for probe in probes:
+        dist = np.linalg.norm(positions - probe, axis=1)
+        dist = dist[dist > 0]  # the probe itself, and exact duplicates
+        if len(dist):
+            nearest.append(dist.min())
+    return float(np.median(nearest)) if nearest else 0.0

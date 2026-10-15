@@ -3,19 +3,37 @@ from qewton.data.dataloaders.base import DataNode
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.visualization.plots.result import ClusterBox, EdgeLayout, GraphLayoutResult, NodeLayout, PortLayout
 
-#: Layout constants - "units" are arbitrary but self-consistent (node width
+#: Layout constants - "units" are arbitrary but self-consistent (node height
 #: is derived from label length in the same units used for spacing), not
 #: literal pixels. Tunable if real graphs render too cramped/sparse.
-COLUMN_GAP = 1.4
+#: Node width is now fixed, not label-driven (see _node_size) - the card's
+#: title renders rotated 90 degrees (see NodeLinkArtist._card_annotations),
+#: so it's the node's HEIGHT that needs to grow with label length instead,
+#: keeping nodes/columns narrow even for a long chain of nodes with varied
+#: name lengths - exactly what point 7 of Nick's correction list asked for.
+NODE_WIDTH = 1.0
+#: Scaled down from the old 1.4 to keep the same ratio to node width as
+#: before (COLUMN_GAP was ~0.93x MIN_WIDTH=1.5) - at the old absolute value
+#: a column gap would now be wider than a node itself, exactly the "too
+#: wide" look point 7 asked to avoid.
+COLUMN_GAP = 0.9
 ROW_GAP = 0.6
 PORT_ROW_HEIGHT = 0.35
 BASE_HEIGHT = 0.55
-CHAR_WIDTH = 0.095
-MIN_WIDTH = 1.5
+#: Per-character height contribution for the now-vertical title, the
+#: rotated-90-degrees counterpart of the old (horizontal-title) CHAR_WIDTH.
+CHAR_HEIGHT = 0.1
 LABEL_PADDING = 0.4
 CLUSTER_MARGIN = 0.5
 CLUSTER_GAP = 0.8
 BARYCENTER_PASSES = 4
+#: Row-distance (in the same "how many rows apart" units as a rank's own
+#: node ordering) within which a "long" edge (one skipping at least one
+#: intermediate rank entirely) is considered to visually cut through a row
+#: it passes near - see _reduce_node_crossings. 1.0 means "anything closer
+#: than one full row spacing away" gets penalized, tapering to 0 at exactly
+#: that distance.
+NODE_CROSSING_RADIUS = 1.0
 
 
 class GraphLayout:
@@ -86,9 +104,16 @@ def _node_category(node) -> str:
 
 
 def _node_size(node) -> tuple[float, float]:
-    width = max(MIN_WIDTH, CHAR_WIDTH * len(_node_label(node)) + LABEL_PADDING)
+    """Width is a fixed constant (NODE_WIDTH) - the title no longer grows it,
+    since it's drawn rotated 90 degrees (see NodeLinkArtist._card_annotations)
+    and so needs HEIGHT, not width, to fit a long name. Height is the max of
+    three independent floors: the base minimum, enough rows for the node's
+    own ports, and enough length for its (now vertical) title."""
+    width = NODE_WIDTH
     n_ports = max(1, len(node.input_ports), len(node.output_ports))
-    height = max(BASE_HEIGHT, PORT_ROW_HEIGHT * n_ports + 0.2)
+    port_height = PORT_ROW_HEIGHT * n_ports + 0.2
+    title_height = CHAR_HEIGHT * len(_node_label(node)) + LABEL_PADDING
+    height = max(BASE_HEIGHT, port_height, title_height)
     return width, height
 
 
@@ -130,11 +155,13 @@ def _rank_nodes(graph_like, level_nodes) -> dict:
     return rank
 
 
-def _reduce_crossings(graph_like, level_nodes, by_rank: dict[int, list]) -> None:
+def _reduce_crossings(graph_like, level_nodes, by_rank: dict[int, list], rank: dict) -> None:
     """A handful of barycenter passes (Sugiyama's classic heuristic):
     reorder each rank by the mean position of its neighbors in the adjacent
-    rank, alternating which neighbor direction drives the sweep. Mutates
-    by_rank's lists in place."""
+    rank, alternating which neighbor direction drives the sweep. Then one
+    more pass specifically targets a different problem barycenter alone
+    never touches - see _reduce_node_crossings. Mutates by_rank's lists in
+    place."""
     node_set = set(level_nodes)
     position = {node: float(i) for nodes in by_rank.values() for i, node in enumerate(nodes)}
 
@@ -164,6 +191,139 @@ def _reduce_crossings(graph_like, level_nodes, by_rank: dict[int, list]) -> None
         for r in range(max_rank - 1, -1, -1):
             reorder(by_rank.get(r, []), incoming=False)
 
+    # A "long" edge - one whose rank gap is more than 1, i.e. it skips at
+    # least one intermediate rank entirely rather than connecting adjacent
+    # columns - never shares an endpoint with any node in a rank it merely
+    # passes through, so plain barycenter ordering (which only ever pulls a
+    # node toward ITS OWN neighbors) has no way to even notice that edge,
+    # let alone route around whatever ends up sitting in that column at the
+    # row its straight line happens to cross. _reduce_node_crossings is a
+    # separate, deliberately small refinement pass purely for that case.
+    def _related(a, b) -> frozenset:
+        """Every node directly adjacent (either direction) to `a` or `b`,
+        `a`/`b` themselves included - the set this long edge's presence
+        near a row is entirely unsurprising for, since they're already
+        visually tied to one of its own endpoints by a real edge of their
+        own. Excluded from the node-crossing penalty below for exactly that
+        reason: a bystander with NO connection to either endpoint ending up
+        in this edge's way is the actual problem worth nudging away from,
+        not a node that was always going to cluster near here anyway."""
+        related = {a, b}
+        for n in (a, b):
+            related.update(p for e in graph_like.outgoing_edges.get(n, []) if (p := e.to_port.node) in node_set)
+            related.update(p for e in graph_like.incoming_edges.get(n, []) if (p := e.from_port.node) in node_set)
+        return frozenset(related)
+
+    def _candidate_edges():
+        # Regular edges - `node_set`-filtered here too (not just in the
+        # skip_connections loop below): outgoing_edges can point at a node
+        # OUTSIDE this level entirely (a boundary edge leaving to the
+        # composite wrapper itself, rather than one of its own already-
+        # placed inner nodes - see _build_edges's own comment on exactly
+        # this), which `rank` has no entry for at all. The original,
+        # pre-refactor one-line version of this filtered via `in node_set
+        # and rank[...] - ...` in the same `if`, short-circuiting before
+        # ever indexing `rank` - splitting the edge collection out into
+        # this generator dropped that guard by accident, which is exactly
+        # what turned into a bare KeyError on a real (depth=1) graph.
+        for node in level_nodes:
+            for edge in graph_like.outgoing_edges.get(node, []):
+                if edge.to_port.node in node_set:
+                    yield node, edge.to_port.node
+        # ...and skip_connections (see _build_edges) - a ResNet-style skip
+        # is, structurally, exactly the case this whole pass exists for: it
+        # explicitly jumps past one or more ranks by design, yet _rank_nodes
+        # never counts it (a node's rank only ever follows its "regular"
+        # dependency edges), so without this it wouldn't show up as a long
+        # edge at all despite being the single most likely one to visually
+        # cut across an unrelated node sitting in between.
+        for edge in getattr(graph_like, "skip_connections", []):
+            if edge.from_port.node in node_set and edge.to_port.node in node_set:
+                yield edge.from_port.node, edge.to_port.node
+
+    long_edges = [
+        (src, dst, _related(src, dst))
+        for src, dst in _candidate_edges()
+        if rank[dst] - rank[src] > 1
+    ]
+    _reduce_node_crossings(by_rank, rank, position, long_edges)
+
+
+def _reduce_node_crossings(
+    by_rank: dict[int, list], rank: dict, position: dict, long_edges: list[tuple]
+) -> None:
+    """Nudges a rank's own node ordering to also dodge any "long" edge that
+    passes straight through that rank on its way from an earlier one to a
+    later one (see _reduce_crossings) - a cost term entirely separate from
+    (and additive to, not a replacement for) ordinary edge-crossing
+    minimization, since the two can conflict: the best ordering for
+    minimizing crossings between ADJACENT ranks is not necessarily the one
+    that keeps a long edge, several ranks away from either of its own
+    endpoints, clear of an unrelated node.
+
+    For each intermediate rank `r` a long edge spans, that edge's own
+    straight-line path implies a "virtual row" at `r` - the linear
+    interpolation, between the edge's two (rank, row) endpoints, of its row
+    at `r` - using the same row-index units `_reduce_crossings`'s own
+    `position` dict already tracks (valid because every rank within one
+    level shares the same row_height/offset_y - see _place_level - so row
+    index alone, with no y-coordinate math, is already directly comparable
+    across ranks). A rank's own node sitting within NODE_CROSSING_RADIUS
+    rows of that virtual row reads, once actually drawn, as the edge
+    visually cutting across that node's card - UNLESS it's one of that
+    edge's own `related` nodes (see _related above), which pay no penalty
+    at all: without that exemption, a node that's only "in the way" because
+    it's genuinely wired to one of the edge's own endpoints could get
+    shuffled around for no visual benefit, and - worse - in a rank where
+    every node happens to be one of a handful of mutually-interchangeable
+    bystanders, the total penalty is identical under ANY permutation (one
+    of them always ends up in the one bad slot), so a swap search blind to
+    "related" never finds a reason to prefer putting the genuinely-expected
+    node there instead of an unconnected one.
+
+    Only adjacent-swap exchanges are tried (a simple greedy local search,
+    repeated to a fixed point) - cheap, and sufficient: a long edge is the
+    exception in a typical qewton graph (mostly linear chains plus
+    occasional composites), not the common case, so this only ever has a
+    handful of candidate ranks/swaps to actually consider."""
+    if not long_edges:
+        return
+
+    def penalty_at(node, r) -> float:
+        row = position[node]
+        total = 0.0
+        for src, dst, related in long_edges:
+            if node in related:
+                continue
+            sr, dr = rank[src], rank[dst]
+            if not (sr < r < dr):
+                continue
+            t = (r - sr) / (dr - sr)
+            virtual_row = position[src] + (position[dst] - position[src]) * t
+            gap = abs(row - virtual_row)
+            if gap < NODE_CROSSING_RADIUS:
+                total += 1.0 - gap / NODE_CROSSING_RADIUS
+        return total
+
+    for r, rank_nodes in by_rank.items():
+        if len(rank_nodes) < 2:
+            continue
+        if not any(rank[src] < r < rank[dst] for src, dst, _related in long_edges):
+            continue  # no long edge even spans this rank - nothing to dodge
+        changed = True
+        while changed:
+            changed = False
+            for i in range(len(rank_nodes) - 1):
+                a, b = rank_nodes[i], rank_nodes[i + 1]
+                before = penalty_at(a, r) + penalty_at(b, r)
+                position[a], position[b] = position[b], position[a]
+                after = penalty_at(a, r) + penalty_at(b, r)
+                if after < before - 1e-9:
+                    rank_nodes[i], rank_nodes[i + 1] = b, a
+                    changed = True
+                else:
+                    position[a], position[b] = position[b], position[a]  # revert
+
 
 def _place_level(
     graph_like, remaining_depth, offset_x, offset_y, nodes_out, ports_out, clusters_out, port_anchor, levels_out
@@ -182,7 +342,7 @@ def _place_level(
     by_rank: dict[int, list] = {}
     for node in level_nodes:
         by_rank.setdefault(rank[node], []).append(node)
-    _reduce_crossings(graph_like, level_nodes, by_rank)
+    _reduce_crossings(graph_like, level_nodes, by_rank, rank)
 
     if not level_nodes:
         return 0.0, 0.0
@@ -388,17 +548,24 @@ def _place_cluster(
         levels_out,
     )
 
-    _register_ports(node.input_ports, cluster_x0, y, in_height, port_anchor, ports_out, show_labels=True, is_input=True)
-    _register_ports(node.output_ports, cluster_x1, y, out_height, port_anchor, ports_out, show_labels=True, is_input=False)
+    in_ports = _register_ports(
+        node.input_ports, cluster_x0, y, in_height, port_anchor, ports_out, show_labels=True, is_input=True
+    )
+    out_ports = _register_ports(
+        node.output_ports, cluster_x1, y, out_height, port_anchor, ports_out, show_labels=True, is_input=False
+    )
 
     half_height = max(inner_height, in_height, out_height) / 2 + CLUSTER_MARGIN
     clusters_out.append(
         ClusterBox(
             label=f"{node.name} ({type(node).__name__}, {len(inner_graph.sorted_nodes)} nodes)",
+            category=_node_category(node),
             x0=cluster_x0,
             y0=y - half_height,
             x1=cluster_x1,
             y1=y + half_height,
+            input_ports=in_ports,
+            output_ports=out_ports,
         )
     )
 

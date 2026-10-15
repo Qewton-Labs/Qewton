@@ -52,7 +52,7 @@ class PointCloud2DArtist(PlotlyArtist):
         y = positions[:, 1] if positions.shape[-1] > 1 else np.zeros(positions.shape[0])
         marker = dict(size=plot.theme.marker_size)
         if result.color is not None:
-            cmap = plot.color.cmap or plot.theme.default_cmap
+            cmap = plot.theme.resolve_cmap(plot.color.cmap)
             marker.update(color=_to_numpy(result.color), colorscale=cmap)
             marker.update(
                 _apply_scale(plot.color.scale, backend_figure=backend_figure, row=row, col=col)
@@ -99,7 +99,7 @@ class PointCloud3DArtist(PlotlyArtist):
         positions = _to_numpy(result.positions)
         marker = dict(size=plot.theme.marker_size)
         if result.color is not None:
-            cmap = plot.color.cmap or plot.theme.default_cmap
+            cmap = plot.theme.resolve_cmap(plot.color.cmap)
             marker.update(color=_to_numpy(result.color), colorscale=cmap)
             marker.update(
                 _apply_scale(plot.color.scale, backend_figure=backend_figure, row=row, col=col)

@@ -49,7 +49,7 @@ class HeatmapArtist(PlotlyArtist):
         data, color = result.values, result.color
         c = plot.color
 
-        cmap = c.cmap if c is not None and c.cmap is not None else plot.theme.default_cmap
+        cmap = plot.theme.resolve_cmap(c.cmap if c is not None else None)
         if color is not None:
             data = color
 
@@ -97,7 +97,7 @@ class ParametricHeatmapArtist(PlotlyArtist):
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
-        cmap = plot.color.cmap or plot.theme.default_cmap
+        cmap = plot.theme.resolve_cmap(plot.color.cmap)
         scale_kwargs = _apply_scale(
             plot.color.scale, backend_figure=backend_figure, row=row, col=col
         )
@@ -142,10 +142,7 @@ class SurfaceArtist(PlotlyArtist):
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
-        cmap = plot.theme.default_cmap
-        if plot.color is not None:
-            if plot.color.cmap is not None:
-                cmap = plot.color.cmap
+        cmap = plot.theme.resolve_cmap(plot.color.cmap if plot.color is not None else None)
 
         result = plot.evaluate()
         data, color = result.values, result.color
@@ -204,7 +201,7 @@ class ParametricSurfaceArtist(PlotlyArtist):
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
-        cmap = plot.color.cmap or plot.theme.default_cmap
+        cmap = plot.theme.resolve_cmap(plot.color.cmap)
         scale_kwargs = _apply_scale(
             plot.color.scale, backend_figure=backend_figure, row=row, col=col
         )

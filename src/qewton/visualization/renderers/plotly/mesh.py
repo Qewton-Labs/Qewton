@@ -1,5 +1,4 @@
 from plotly import graph_objects as go
-from plotly.colors import sample_colorscale
 import numpy as np
 
 from qewton.visualization.plots.base import axis_names_from_variable
@@ -7,6 +6,9 @@ from qewton.visualization.renderers.plotly.common import (
     _detach_to_numpy,
     PlotlyArtist,
     _apply_scale,
+    _bin_colors,
+    _bin_values,
+    _colorbar_carrier_trace,
     _edge_trace,
     _edge_trace_2d,
     _mesh_edges,
@@ -26,6 +28,10 @@ class SurfaceMeshArtist(PlotlyArtist):
         super().__init__(mesh_idx)
         self.edges_idx = edges_idx
 
+    @property
+    def trace_indices(self) -> list[int]:
+        return [self.figure_idx] + ([self.edges_idx] if self.edges_idx is not None else [])
+
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
@@ -33,7 +39,7 @@ class SurfaceMeshArtist(PlotlyArtist):
         color = _to_numpy(result.color) if result.color is not None else None
 
         spec = getattr(plot, "color", None)
-        cmap = (spec.cmap if spec is not None and spec.cmap else None) or plot.theme.default_cmap
+        cmap = plot.theme.resolve_cmap(spec.cmap if spec is not None else None)
 
         kwargs = dict(
             x=vertices[:, 0],
@@ -139,22 +145,10 @@ class FilledMeshArtist(PlotlyArtist):
         self.colorbar_idx = colorbar_idx
         self.edges_idx = edges_idx
 
-    @staticmethod
-    def _bin(triangle_values, n_bins, scale):
-        """(bin_idx, bin_centers, vmin, vmax) - vmin/vmax come from the
-        shared Scale's trained range when one is set, else the triangle
-        values themselves, matching _apply_scale's own convention."""
-        if scale is not None and scale.range is not None:
-            vmin, vmax = scale.range
-        else:
-            vmin = float(np.nanmin(triangle_values))
-            vmax = float(np.nanmax(triangle_values))
-        if vmin == vmax:
-            vmax = vmin + 1e-9  # degenerate (uniform field) - avoid a zero-width range
-        edges = np.linspace(vmin, vmax, n_bins + 1)
-        bin_idx = np.clip(np.digitize(triangle_values, edges[1:-1]), 0, n_bins - 1)
-        centers = (edges[:-1] + edges[1:]) / 2
-        return bin_idx, centers, vmin, vmax
+    @property
+    def trace_indices(self) -> list[int]:
+        edges = [self.edges_idx] if self.edges_idx is not None else []
+        return self.fill_indices + edges + [self.colorbar_idx]
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
@@ -162,11 +156,11 @@ class FilledMeshArtist(PlotlyArtist):
         vertices = _to_numpy(result.vertices)[:, :2]
         cells = _detach_to_numpy(result.cells)
         color = _to_numpy(result.color)
-        cmap = plot.color.cmap or plot.theme.default_cmap
+        cmap = plot.theme.resolve_cmap(plot.color.cmap)
 
         triangle_values = color[cells].mean(axis=1)
-        bin_idx, centers, vmin, vmax = cls._bin(triangle_values, plot.n_bins, plot.color.scale)
-        bin_colors = sample_colorscale(cmap, list(np.clip((centers - vmin) / (vmax - vmin), 0, 1)))
+        bin_idx, centers, vmin, vmax = _bin_values(triangle_values, plot.n_bins, plot.color.scale)
+        bin_colors = _bin_colors(cmap, centers, vmin, vmax)
 
         fill_indices = []
         for i in range(plot.n_bins):
@@ -195,7 +189,7 @@ class FilledMeshArtist(PlotlyArtist):
 
         colorbar_idx = len(backend_figure.data)
         backend_figure.add_trace(
-            cls._colorbar_carrier_trace(cmap, vmin, vmax, plot.color.scale, backend_figure, row, col),
+            _colorbar_carrier_trace(cmap, vmin, vmax, plot.color.scale, backend_figure, row, col),
             row=row,
             col=col,
         )
@@ -210,33 +204,16 @@ class FilledMeshArtist(PlotlyArtist):
 
         return cls(fill_indices, colorbar_idx, edges_idx)
 
-    @staticmethod
-    def _colorbar_carrier_trace(cmap, vmin, vmax, scale, backend_figure=None, row=None, col=None):
-        """An invisible single-point trace whose only purpose is showing a
-        continuous colorbar for this artist's discretely-binned fills -
-        _apply_scale's cmin/cmax (when a shared Scale set them) are
-        overridden by the actual bin range, since a single dummy point
-        gives Plotly nothing to infer a range from on its own."""
-        marker = {
-            "colorscale": cmap, "color": [vmin],
-            **_apply_scale(scale, backend_figure=backend_figure, row=row, col=col),
-            "cmin": vmin, "cmax": vmax,
-        }
-        return go.Scatter(
-            x=[None], y=[None], mode="markers", marker=marker,
-            showlegend=False, hoverinfo="skip",
-        )
-
     def update(self, backend_figure, plot, row=None, col=None):
         result = plot.evaluate()
         vertices = _to_numpy(result.vertices)[:, :2]
         cells = _detach_to_numpy(result.cells)
         color = _to_numpy(result.color)
-        cmap = plot.color.cmap or plot.theme.default_cmap
+        cmap = plot.theme.resolve_cmap(plot.color.cmap)
 
         triangle_values = color[cells].mean(axis=1)
-        bin_idx, centers, vmin, vmax = self._bin(triangle_values, plot.n_bins, plot.color.scale)
-        bin_colors = sample_colorscale(cmap, list(np.clip((centers - vmin) / (vmax - vmin), 0, 1)))
+        bin_idx, centers, vmin, vmax = _bin_values(triangle_values, plot.n_bins, plot.color.scale)
+        bin_colors = _bin_colors(cmap, centers, vmin, vmax)
 
         for i, trace_idx in enumerate(self.fill_indices):
             new = _triangle_fill_trace(vertices, cells[bin_idx == i], bin_colors[i])

@@ -51,11 +51,14 @@ class MeshResult:
 
 @dataclass
 class VectorResult:
-    """Result of MeshVectorPlot.evaluate()."""
+    """Result of MeshVectorPlot/QuiverPlot.evaluate(). `color` holds one
+    value per arrow (the magnitude by default, see VectorFieldPlotMixin), or
+    None for flat, uncolored arrows."""
 
     positions: np.ndarray
     vectors: np.ndarray
     magnitude: np.ndarray
+    color: np.ndarray | None = None
 
 
 @dataclass
@@ -164,13 +167,43 @@ class NodeLayout:
 
 @dataclass
 class ClusterBox:
-    """The outline drawn around an expanded composite node's contents."""
+    """The card drawn around an expanded composite node's own contents -
+    same beveled/notched card treatment NodeLinkArtist gives a leaf
+    NodeLayout (see its class docstring), just sized to contain the inner
+    nodes/edges placed inside it, with its own ports on the left/right
+    boundary (a composite's ports have no box of their own even here - see
+    PortLayout) and its title anchored in a corner rather than centered,
+    since the center is already occupied by inner content.
+
+    `category` mirrors NodeLayout.category (same "constraint"|"datanode"|
+    "graphnode"|"default" bucket, from the same node's own _node_category())
+    - an expanded composite should still read as the same color it would
+    have drawn as if left collapsed."""
 
     label: str
+    category: str
     x0: float
     y0: float
     x1: float
     y1: float
+    input_ports: list[PortLayout]
+    output_ports: list[PortLayout]
+
+    @property
+    def x(self) -> float:
+        return (self.x0 + self.x1) / 2
+
+    @property
+    def y(self) -> float:
+        return (self.y0 + self.y1) / 2
+
+    @property
+    def width(self) -> float:
+        return self.x1 - self.x0
+
+    @property
+    def height(self) -> float:
+        return self.y1 - self.y0
 
 
 @dataclass

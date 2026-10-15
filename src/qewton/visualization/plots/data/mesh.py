@@ -3,8 +3,8 @@ import numpy as np
 from qewton.config.axes import GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.visualization.plots.data.base import DataPlot
-from qewton.visualization.plots.result import MeshResult, VectorResult
+from qewton.visualization.plots.data.base import DataPlot, VectorFieldPlotMixin
+from qewton.visualization.plots.result import MeshResult
 from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec, VectorSpec
 
 
@@ -177,8 +177,12 @@ class MeshSurfacePlot(MeshPlot):
         return renderer.SurfaceMeshArtist.create(backend_figure, self, row=row, col=col)
 
 
-class MeshVectorPlot(MeshPlot):
+class MeshVectorPlot(VectorFieldPlotMixin, MeshPlot):
     """Vector field sampled at mesh vertices, drawn as arrows.
+
+    Arrows are colored by the vector magnitude by default, or by any scalar
+    `color` field on the vertices - see VectorFieldPlotMixin. `n_bins` is
+    how many distinct colors the arrows are drawn in (one trace each).
 
     Cells are not needed for the arrows themselves - combine with a GeometryPlot
     or MeshFieldPlot in the same Figure to show the underlying domain.
@@ -189,7 +193,9 @@ class MeshVectorPlot(MeshPlot):
         data,
         data_config: DataConfiguration,
         vector: VectorSpec | Variable,
+        color: ColorSpec | Variable | bool | None = None,
         controls: list[ControlSpec] | None = None,
+        n_bins: int = 32,
         **kwargs,
     ):
         super().__init__(data, data_config, controls=controls, show_edges=False, **kwargs)
@@ -200,34 +206,13 @@ class MeshVectorPlot(MeshPlot):
             raise ValueError(
                 f"vector has {n_components} components but the mesh is {self.dim}D."
             )
+        self._init_vector_color(color)
+        self.n_bins = n_bins
 
     def evaluate(self):
         data, index_map, slice_map = self.apply_controls()
-        slc = self.data_config.get_variable_slice(self.vector.variable_or_axes)
-        vectors = np.asarray(data[slice_map(slc)]).reshape(-1, self.dim)
-        if len(vectors) != self.n_vertices:
-            raise ValueError(
-                f"{self.vector.name} yields {len(vectors)} vectors but the mesh has "
-                f"{self.n_vertices} vertices. Unresolved batch dimensions?"
-            )
-
-        magnitude = np.linalg.norm(vectors, axis=1)
-        if self.vector.normalize:
-            safe = np.where(magnitude > 0, magnitude, 1.0)[:, None]
-            vectors = vectors / safe
-        vectors = vectors * self.vector.scale
-
         positions = self.coord_transform.apply(self.mesh.vertices)
-
-        step = self.vector.subsample
-        if step > 1:
-            # Decimate after normalize/scale, not before: subsampling only
-            # changes which arrows are drawn, never what a drawn arrow means.
-            positions = positions[::step]
-            vectors = vectors[::step]
-            magnitude = magnitude[::step]
-
-        return VectorResult(positions=positions, vectors=vectors, magnitude=magnitude)
+        return self._evaluate_arrows(data, slice_map, positions)
 
     @property
     def embedding_dim(self) -> int:

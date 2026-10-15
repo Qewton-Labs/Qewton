@@ -43,7 +43,7 @@ class TestGraphPlot:
         node_shapes = [s for s in backend_figure.layout.shapes if s.fillcolor != "rgba(0,0,0,0)"]
         colors = {s.fillcolor for s in node_shapes}
         # fcn (graphnode) and Source/Loss (default) must differ
-        assert LIGHT_THEME.node_color_by_type["graphnode"] in colors
+        assert LIGHT_THEME.node_color_by_type["graphnode"]["fill"] in colors
         assert LIGHT_THEME.node_color_default in colors
 
     def test_ports_fill_with_the_theme_background_not_a_fixed_white(self, simple_graph):

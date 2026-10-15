@@ -38,6 +38,15 @@ class Renderer:
         raise NotImplementedError()
 
     @staticmethod
+    def apply_slider(figure, backend_figure, spec):
+        """Adds UI to an already-drawn static backend_figure stepping
+        through every state of one SliderSpec, without needing a running
+        Dash app - the slider counterpart to `apply_selector()`, called
+        only on the same static export/display path. Backends without a
+        way to embed this in a static figure can leave it unimplemented."""
+        raise NotImplementedError()
+
+    @staticmethod
     def show(backend_figure):
         """Displays the figure (e.g. opening a browser tab)."""
         raise NotImplementedError()
