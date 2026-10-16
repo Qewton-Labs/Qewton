@@ -56,7 +56,7 @@ from .plots.table import *
 from .layout import Layout, Overlay, Row, Column
 from .auto import auto_plot
 from .renderers.base import Artist, Renderer
-from .applications import RenderApplication, DashApplication
+from .applications import RenderApplication, DashApplication, TrameApplication
 from .themes import Theme, DEFAULT_THEME, LIGHT_THEME, DARK_THEME
 from .figure import Figure
 from .nodes import PlotNode
