@@ -58,19 +58,20 @@ if False:
     sys.exit(0)
 
 # Trame plotly figure
-if True:
+if False:
     app = viz.TrameApplication.create(figure)
     app.server.start()
     sys.exit(0)
 
 # Trame VTK figure
-if False:
-    fields = {"scalar_field": field,
-              "pressure": fem_pressure,
-              "velocity": np.linalg.norm(fem_velocity, axis=1)[:, None],
-              "velocity_X": fem_velocity[:, 0:1],
-              "velocity_Y": fem_velocity[:, 1:2],
-              "velocity_Z": fem_velocity[:, 2:3]}
-    app = viz.TrameApplication.createMesh(mesh_geo, fields)
+if True:
+    scalar_fields = {"scalar_field": field,
+                     "pressure": fem_pressure,
+                     "Xvelocity": np.linalg.norm(fem_velocity, axis=1)[:, None],
+                     "Xvelocity_X": fem_velocity[:, 0:1],
+                     "Xvelocity_Y": fem_velocity[:, 1:2],
+                     "Xvelocity_Z": fem_velocity[:, 2:3]}
+    vector_fields = {"velocity": fem_velocity}
+    app = viz.TrameApplication.createMesh(mesh_geo, scalar_fields, vector_fields)
     app.server.start()
     sys.exit(0)

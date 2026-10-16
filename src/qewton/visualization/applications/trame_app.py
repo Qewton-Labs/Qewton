@@ -20,18 +20,20 @@ from vtkmodules.vtkCommonDataModel import (
     vtkPiecewiseFunction,
     vtkPolyData,
     VTK_TETRA,
-    VTK_TRIANGLE
+    VTK_TRIANGLE,
 )
-#from vtkmodules.vtkRenderingVolume import (
+
+# from vtkmodules.vtkRenderingVolume import (
 #    vtkProjectedTetrahedraMapper
-#)
-#import vtkmodules.vtkRenderingOpenGL2
+# )
+# import vtkmodules.vtkRenderingOpenGL2
 from vtkmodules.vtkRenderingVolumeOpenGL2 import (
     vtkOpenGLProjectedTetrahedraMapper,
 )
 from vtkmodules.vtkFiltersCore import vtkContourFilter
-#from vtkmodules.vtkFiltersSources import vtkConeSource
-#from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
+
+# from vtkmodules.vtkFiltersSources import vtkConeSource
+# from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
 
 from vtkmodules.vtkRenderingCore import (
@@ -64,6 +66,7 @@ from vtkmodules.util.numpy_support import (
 # VTK STUFF
 # -----------------------------------------------------------------------------
 
+
 def create_mesh(vertices, cells, cell_type):
     vertices = np.ascontiguousarray(vertices, dtype=np.float64)
     cells = np.ascontiguousarray(cells, dtype=np.int64)
@@ -76,10 +79,7 @@ def create_mesh(vertices, cells, cell_type):
     points.SetData(numpy_to_vtk(vertices, deep=True))
 
     # Cell connectivity
-    offsets = (
-        np.arange(n_cells + 1, dtype=np.int64)
-        * n_vertices_per_cell
-    )
+    offsets = np.arange(n_cells + 1, dtype=np.int64) * n_vertices_per_cell
     connectivity = cells.ravel()
 
     vtk_cells = vtkCellArray()
@@ -102,8 +102,9 @@ def create_mesh(vertices, cells, cell_type):
 
     return mesh
 
+
 # Configure scene encoder
-#configure_serializer(encode_lut=True, skip_light=True)
+# configure_serializer(encode_lut=True, skip_light=True)
 
 # -----------------------------------------------------------------------------
 # Constants
@@ -124,6 +125,15 @@ class LookupTable:
     Inverted_Greyscale = 3
 
 
+VECTOR_COMPONENTS = [
+    {"text": "Magnitude", "value": "Magnitude"},
+    {"text": "X", "value": "X"},
+    {"text": "Y", "value": "Y"},
+    {"text": "Z", "value": "Z"},
+]
+COMPONENT_INDEX = {"X": 0, "Y": 1, "Z": 2, "Magnitude": -1}
+
+
 # -----------------------------------------------------------------------------
 # VTK pipeline
 # -----------------------------------------------------------------------------
@@ -137,30 +147,30 @@ renderWindowInteractor.SetRenderWindow(renderWindow)
 renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
 
 # Enable polygon offset for coincident geometry
-#vtkMapper.SetResolveCoincidentTopologyToPolygonOffset()
+# vtkMapper.SetResolveCoincidentTopologyToPolygonOffset()
 
 # Tune the offset if needed
-#vtkMapper.SetResolveCoincidentTopologyPolygonOffsetParameters(0.0, 0.0)
+# vtkMapper.SetResolveCoincidentTopologyPolygonOffsetParameters(0.0, 0.0)
 
 # Cone
 
-#cone_source = vtkConeSource()
-#mapper = vtkPolyDataMapper()
-#mapper.SetInputConnection(cone_source.GetOutputPort())
-#actor = vtkActor()
-#actor.SetMapper(mapper)
-#actor.GetProperty().SetColor(1.0, 0.0, 0.0)
-#actor.GetProperty().SetOpacity(0.5)
-#actor.SetPosition(2.0, 0.0, 0.0)
-#renderer.AddActor(actor)
+# cone_source = vtkConeSource()
+# mapper = vtkPolyDataMapper()
+# mapper.SetInputConnection(cone_source.GetOutputPort())
+# actor = vtkActor()
+# actor.SetMapper(mapper)
+# actor.GetProperty().SetColor(1.0, 0.0, 0.0)
+# actor.GetProperty().SetOpacity(0.5)
+# actor.SetPosition(2.0, 0.0, 0.0)
+# renderer.AddActor(actor)
 #
-#mesh_actor = actor
+# mesh_actor = actor
 
 # Read Data
 if False:
     reader = vtkXMLUnstructuredGridReader()
-    #filename = os.path.join(CURRENT_DIRECTORY, "trame-data/disk_out_ref.vtu")
-    #print("cwd:", CURRENT_DIRECTORY)
+    # filename = os.path.join(CURRENT_DIRECTORY, "trame-data/disk_out_ref.vtu")
+    # print("cwd:", CURRENT_DIRECTORY)
     filename = "src/qewton/visualization/trame-data/disk_out_ref.vtu"
     print("filename:", filename)
     reader.SetFileName(filename)
@@ -218,49 +228,49 @@ if False:
     mesh_mapper.SetUseLookupTableScalarRange(True)
 
     # Contour
-    #contour = vtkContourFilter()
-    #contour.SetInputConnection(reader.GetOutputPort())
-    #contour_mapper = vtkDataSetMapper()
-    #contour_mapper.SetInputConnection(contour.GetOutputPort())
-    #contour_actor = vtkActor()
-    #contour_actor.SetMapper(contour_mapper)
-    #renderer.AddActor(contour_actor)
+    # contour = vtkContourFilter()
+    # contour.SetInputConnection(reader.GetOutputPort())
+    # contour_mapper = vtkDataSetMapper()
+    # contour_mapper.SetInputConnection(contour.GetOutputPort())
+    # contour_actor = vtkActor()
+    # contour_actor.SetMapper(contour_mapper)
+    # renderer.AddActor(contour_actor)
     #
     ## Contour: ContourBy default array
-    #contour_value = 0.5 * (default_max + default_min)
-    #contour.SetInputArrayToProcess(
+    # contour_value = 0.5 * (default_max + default_min)
+    # contour.SetInputArrayToProcess(
     #    0, 0, 0, default_array.get("type"), default_array.get("text")
-    #)
-    #contour.SetValue(0, contour_value)
+    # )
+    # contour.SetValue(0, contour_value)
     #
     ## Contour: Setup default representation to surface
-    #contour_actor.GetProperty().SetRepresentationToSurface()
-    #contour_actor.GetProperty().SetPointSize(1)
-    #contour_actor.GetProperty().EdgeVisibilityOff()
+    # contour_actor.GetProperty().SetRepresentationToSurface()
+    # contour_actor.GetProperty().SetPointSize(1)
+    # contour_actor.GetProperty().EdgeVisibilityOff()
     #
     ## Contour: Apply rainbow color map
-    #contour_lut = contour_mapper.GetLookupTable()
-    #contour_lut.SetHueRange(0.666, 0.0)
-    #contour_lut.SetSaturationRange(1.0, 1.0)
-    #contour_lut.SetValueRange(1.0, 1.0)
-    #contour_lut.Build()
+    # contour_lut = contour_mapper.GetLookupTable()
+    # contour_lut.SetHueRange(0.666, 0.0)
+    # contour_lut.SetSaturationRange(1.0, 1.0)
+    # contour_lut.SetValueRange(1.0, 1.0)
+    # contour_lut.Build()
     #
     ## Contour: Color by default array
-    #contour_mapper.SelectColorArray(default_array.get("text"))
-    #contour_mapper.GetLookupTable().SetRange(default_min, default_max)
-    #if default_array.get("type") == vtkDataObject.FIELD_ASSOCIATION_POINTS:
+    # contour_mapper.SelectColorArray(default_array.get("text"))
+    # contour_mapper.GetLookupTable().SetRange(default_min, default_max)
+    # if default_array.get("type") == vtkDataObject.FIELD_ASSOCIATION_POINTS:
     #    contour_mapper.SetScalarModeToUsePointFieldData()
-    #else:
+    # else:
     #    contour_mapper.SetScalarModeToUseCellFieldData()
-    #contour_mapper.SetScalarVisibility(True)
-    #contour_mapper.SetUseLookupTableScalarRange(True)
+    # contour_mapper.SetScalarVisibility(True)
+    # contour_mapper.SetUseLookupTableScalarRange(True)
 
 # Cube Axes
 cube_axes = vtkCubeAxesActor()
 renderer.AddActor(cube_axes)
 
 # Cube Axes: Boundaries, camera, and styling
-#cube_axes.SetBounds(mesh_actor.GetBounds())
+# cube_axes.SetBounds(mesh_actor.GetBounds())
 cube_axes.SetCamera(renderer.GetActiveCamera())
 cube_axes.SetXLabelFormat("%6.1f")
 cube_axes.SetYLabelFormat("%6.1f")
@@ -301,14 +311,38 @@ def color_by_array(actor, mesh, array):
     name = array.get("text")
     mapper = actor.GetMapper()
     mapper.SelectColorArray(name)
-    mesh.GetPointData().SetActiveScalars(name)
-    #mapper.GetLookupTable().SetRange(_min, _max)
-    ##if array.get("type") == vtkDataObject.FIELD_ASSOCIATION_POINTS:
-    ##    mapper.SetScalarModeToUsePointFieldData()
-    ##else:
-    ##    mapper.SetScalarModeToUseCellFieldData()
-    #mapper.SetScalarVisibility(True)
-    #mapper.SetUseLookupTableScalarRange(True)
+    # mesh.GetPointData().SetActiveScalars(name)
+    mapper.SetScalarModeToUsePointFieldData()
+    mapper.SetScalarRange(_min, _max)
+    mapper.ScalarVisibilityOn()
+
+
+def color_by_field(actor, mesh, field, component=None):
+    mapper = actor.GetMapper()
+    name = field["text"]
+    lut = mapper.GetLookupTable()
+
+    mapper.SetScalarModeToUsePointFieldData()
+    mapper.SelectColorArray(name)
+    if field["type"] == "scalar":
+        print("Color by", name, "range:", *field["range"])
+        mapper.SetScalarRange(*field["range"])
+        lut.SetVectorModeToComponent()
+        lut.SetVectorComponent(0)
+    else:
+        comp = component or "Magnitude"
+        value_range = field["component_ranges"][comp]
+        mapper.SetScalarRange(*value_range)
+
+        if comp == "Magnitude":
+            lut.SetVectorModeToMagnitude()
+        else:
+            lut.SetVectorModeToComponent()
+            lut.SetVectorComponent(COMPONENT_INDEX[comp])
+
+        mapper.ColorByArrayComponent(name, COMPONENT_INDEX[comp])
+        print("Color by", name, ",", comp, "range:", *field["component_ranges"][comp])
+    mapper.ScalarVisibilityOn()
 
 
 # Color Map Callback
@@ -333,7 +367,6 @@ def use_preset(actor, preset):
     lut.Build()
 
 
-
 # -----------------------------------------------------------------------------
 # GUI elements
 # -----------------------------------------------------------------------------
@@ -354,24 +387,25 @@ class TrameApplication(TrameApp, RenderApplication):
         app = TrameApplication()
 
         app._build_figure_ui(figure)
-        #_build_ui._register_callbacks(figure)
+        # _build_ui._register_callbacks(figure)
         return app
 
     @staticmethod
-    def createMesh(mesh, fields):
+    def createMesh(mesh, scalar_fields, vector_fields):
         """Builds a Trame app displaying `mesh`"""
         app = TrameApplication()
 
-        app._build_mesh_ui(mesh, fields)
+        app._build_mesh_ui(mesh, scalar_fields, vector_fields)
         return app
 
     def _hide_kitware_link(self):
         # Inject CSS to hide ONLY the Kitware website link inside the footer
         from trame.widgets import client
+
         client.Style(".v-footer a[href*='kitware.com'] { display: none !important; }")
 
     def _build_figure_ui(self, figure):
-        #with SinglePageWithDrawerLayout(self.server, theme=("theme", "light"), hide_footer=True) as self.ui:
+        # with SinglePageWithDrawerLayout(self.server, theme=("theme", "light"), hide_footer=True) as self.ui:
         with SinglePageLayout(self.server, full_height=True) as self.ui:
             self._hide_kitware_link()
             title = figure.title if figure.title else "Plot"
@@ -387,14 +421,23 @@ class TrameApplication(TrameApp, RenderApplication):
                 )
                 pfig.update(figure.draw())
 
-    def _build_mesh_ui(self, mesh, fields):
-        with SinglePageWithDrawerLayout(self.server, theme=("theme", "light"), hide_footer=True) as self.ui:
+    def _build_mesh_ui(self, mesh, scalar_fields, vector_fields):
+        self._init_vtk()
+        self._init_mesh(mesh, scalar_fields, vector_fields)
+
+        with SinglePageWithDrawerLayout(
+            self.server, theme=("theme", "light"), hide_footer=True
+        ) as self.ui:
+            self.state.vtk_field_types = {
+                f["value"]: f["type"] for f in self.vtk_color_fields
+            }
+
             self._hide_kitware_link()
-            title = "Mesh" # mesh.title if mesh.title else "Mesh"
+            title = "Mesh"  # mesh.title if mesh.title else "Mesh"
             self.ui.title.set_text("Qewton VTK Viewer: " + title)
             self.state.trame__title = "Qewton"
 
-            #with self.ui.toolbar:
+            # with self.ui.toolbar:
             #    v3.VSpacer()
             #    v3.VSelect(
             #        v_model=("active_plot_name", title),
@@ -415,19 +458,17 @@ class TrameApplication(TrameApp, RenderApplication):
             with self.ui.footer as footer:
                 v3.VLabel("Qewton Viewer")
 
-            self._init_vtk()
-            self._init_mesh(mesh, fields)
             with self.ui.content:
                 # content components
                 with v3.VContainer(
                     fluid=True,
                     classes="pa-0 fill-height",
                 ):
-                    #view = vtk.VtkRemoteView(renderWindow, interactive_ratio=1)
+                    # view = vtk.VtkRemoteView(renderWindow, interactive_ratio=1)
                     view = vtk.VtkLocalView(renderWindow)
-                    #view = vtk.VtkRemoteLocalView(
+                    # view = vtk.VtkRemoteLocalView(
                     #    self._renderWindow, namespace="view", mode="local", interactive_ratio=1
-                    #)
+                    # )
                     self.ctrl.view_update = view.update
                     self.ctrl.view_reset_camera = view.reset_camera
 
@@ -439,130 +480,112 @@ class TrameApplication(TrameApp, RenderApplication):
                 for i, m in enumerate(self.vtk_meshes):
                     self.mesh_card(m[0], i)
 
-
     def _init_vtk(self):
-        #self._renderer = vtkRenderer()
-        #self._renderWindow = vtkRenderWindow()
-        #self._renderWindow.AddRenderer(self._renderer)
+        # self._renderer = vtkRenderer()
+        # self._renderWindow = vtkRenderWindow()
+        # self._renderWindow.AddRenderer(self._renderer)
         self._renderWindow = renderWindow
 
-    def _init_mesh(self, mesh, fields):
-        #self._init_cone_mesh()
-        self._init_unstructured_grid(mesh, fields)
+    def _init_mesh(self, mesh, scalar_fields, vector_fields):
+        # self._init_cone_mesh()
+        self._init_unstructured_grid(mesh, scalar_fields, vector_fields)
 
     def _init_scalar_fields(self, mesh, fields: dict):
-        mi, ma = 0, 1
         self.vtk_scalar_fields = []
-        for i, (name, f) in enumerate(fields.items()):
+        for name, f in fields.items():
             values = np.asarray(f, dtype=np.float64)
-            vtk_values = numpy_to_vtk(
-                values,
-                deep=True,
-                array_type=None,
-            )
+            vtk_values = numpy_to_vtk(values, deep=True, array_type=None)
             vtk_values.SetName(name)
             mesh.GetPointData().AddArray(vtk_values)
-            if i == 0:
-                mesh.GetPointData().SetActiveScalars(name)
-                mi, ma = values.min(), values.max()
-            self.vtk_scalar_fields.append({
-                                "text": name,
-                                "value": i,
-                                "range": [values.min(), values.max()]
-                            })
-        return mi, ma
+            self.vtk_scalar_fields.append(
+                {
+                    "text": name,
+                    "value": name,
+                    "type": "scalar",
+                    "range": [values.min(), values.max()],
+                }
+            )
 
+    def _init_vector_fields(self, mesh, vector_fields: dict):
+        self.vtk_vector_fields = []
+        for name, v in vector_fields.items():
+            values = np.asarray(v, dtype=np.float64)
+            assert values.ndim == 2 and (values.shape[1] == 2 or values.shape[1] == 3)
 
-    def _init_unstructured_grid(self, qmesh: 'qewton.geometries.MeshGeometry', fields):
+            vtk_values = numpy_to_vtk(values, deep=True, array_type=None)
+            dim = values.shape[1]
+            vtk_values.SetNumberOfComponents(dim)
+            vtk_values.SetName(name)
+            mesh.GetPointData().AddArray(vtk_values)
+
+            magnitudes = np.linalg.norm(values, axis=1)
+            component_ranges = {
+                "X": [values[:, 0].min(), values[:, 0].max()],
+                "Y": [values[:, 1].min(), values[:, 1].max()],
+                "Z": [values[:, 2].min(), values[:, 2].max()] if dim == 3 else None,
+                "Magnitude": [magnitudes.min(), magnitudes.max()],
+            }
+
+            self.vtk_vector_fields.append(
+                {
+                    "text": name,
+                    "value": name,
+                    "type": "vector",
+                    "component_ranges": component_ranges,
+                }
+            )
+
+    def _init_unstructured_grid(
+        self, qmesh: "qewton.geometries.MeshGeometry", scalar_fields, vector_fields
+    ):
         tet_mesh = create_mesh(qmesh.mesh.vertices, qmesh.mesh.cells, VTK_TETRA)
-        mi, ma = self._init_scalar_fields(tet_mesh, fields)
+        self._init_scalar_fields(tet_mesh, scalar_fields)
+        self._init_vector_fields(tet_mesh, vector_fields)
+        self.vtk_color_fields = self.vtk_scalar_fields + self.vtk_vector_fields
 
-        vol_render = False
-        if False and vol_render:
-            volume_mapper = vtkOpenGLProjectedTetrahedraMapper()
-            volume_mapper.SetInputData(tet_mesh)
-
-            if False:
-                # Map scalar values to colors
-                color = vtkColorTransferFunction()
-                #color.AddRGBPoint(0.0, 0.0, 0.0, 1.0)  # Blue
-                #color.AddRGBPoint(1.0, 1.0, 0.0, 0.0)  # Red
-                color.AddRGBPoint(0.0, 0.0, 0.0, 0.0)
-                color.AddRGBPoint(64.0, 1.0, 0.0, 0.0)
-                color.AddRGBPoint(128.0, 0.0, 0.0, 1.0)
-                color.AddRGBPoint(192.0, 0.0, 1.0, 0.0)
-                color.AddRGBPoint(255.0, 0.0, 0.2, 0.0)
-
-                # Map scalar values to opacity
-                opacity = vtkPiecewiseFunction()
-                opacity.AddPoint(20, 0.0)
-                opacity.AddPoint(255, 0.2)
-
-                volume_property = vtkVolumeProperty()
-                volume_property.SetColor(color)
-                volume_property.SetScalarOpacity(opacity)
-                volume_property.ShadeOn()
-                volume_property.SetInterpolationTypeToLinear()
-            else:
-                scalar_range = tet_mesh.GetPointData().GetScalars().GetRange()
-                vmin, vmax = scalar_range
-
-                color = vtkColorTransferFunction()
-                color.AddRGBPoint(vmin, 0.0, 1.0, 0.0)  # Green
-                color.AddRGBPoint(vmax, 1.0, 0.0, 0.0)  # Red
-
-                opacity = vtkPiecewiseFunction()
-                opacity.AddPoint(vmin, 0.5)
-                opacity.AddPoint(vmax, 1.0)
-
-                volume_property = vtkVolumeProperty()
-                volume_property.SetColor(color)
-                volume_property.SetScalarOpacity(opacity)
-                volume_property.SetInterpolationTypeToLinear()
-
-            volume = vtkVolume()
-            volume.SetMapper(volume_mapper)
-            volume.SetProperty(volume_property)
-
-            renderer.AddVolume(volume)
-        else:
-            tet_mapper = vtkDataSetMapper()
-            tet_mapper.SetInputData(tet_mesh)
-            tet_actor = vtkActor()
-            tet_actor.SetMapper(tet_mapper)
-            #actor.GetProperty().SetRepresentationToWireframe()
-            #tet_mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(1.0, 1.0)
-            tet_mapper.SetColorModeToMapScalars()
-            tet_mapper.ScalarVisibilityOn()
-            tet_mapper.SetScalarRange(mi, ma)
-            lut = vtkLookupTable()
-            lut.SetNumberOfTableValues(256)
-            lut.SetHueRange(0.667, 0.0)  # Blue to red
-            lut.SetRange(mi, ma)
-            lut.Build()
-            tet_mapper.SetLookupTable(lut)
-            renderer.AddActor(tet_actor)
-            cube_axes.SetBounds(tet_actor.GetBounds())
+        tet_mapper = vtkDataSetMapper()
+        tet_mapper.SetInputData(tet_mesh)
+        tet_actor = vtkActor()
+        tet_actor.SetMapper(tet_mapper)
+        # actor.GetProperty().SetRepresentationToWireframe()
+        # tet_mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(1.0, 1.0)
+        # tet_mapper.SetColorModeToMapScalars()
+        # tet_mapper.ScalarVisibilityOn()
+        # tet_mapper.SetScalarRange(mi, ma)
+        # lut = vtkLookupTable()
+        # lut.SetNumberOfTableValues(256)
+        # lut.SetHueRange(0.667, 0.0)  # Blue to red
+        # lut.SetRange(mi, ma)
+        # lut.Build()
+        # tet_mapper.SetLookupTable(lut)
+        renderer.AddActor(tet_actor)
+        cube_axes.SetBounds(tet_actor.GetBounds())
 
         self.vtk_meshes = [("Mesh", tet_actor, tet_mapper, tet_mesh)]
 
         # TODO: share vtkPoints among meshes
-        submeshes = [name for name, value in qmesh.mesh.marker_labels.items() if value[1] == 2]
-        #submeshes = []
-        #submeshes = submeshes[:1]
+        submeshes = [
+            name for name, value in qmesh.mesh.marker_labels.items() if value[1] == 2
+        ]
+        # submeshes = []
+        # submeshes = submeshes[:1]
         for i, surf_name in enumerate(submeshes):
             surface_geo = qmesh.boundary.get_submesh(surf_name)
-            surface_mesh = create_mesh(surface_geo.mesh.vertices, surface_geo.mesh.cells, VTK_TRIANGLE)
+            surface_mesh = create_mesh(
+                surface_geo.mesh.vertices, surface_geo.mesh.cells, VTK_TRIANGLE
+            )
             surface_mapper = vtkDataSetMapper()
             surface_mapper.SetInputData(surface_mesh)
             surface_actor = vtkActor()
             surface_actor.SetMapper(surface_mapper)
             colors = [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)]
-            surface_actor.GetProperty().SetColor(*colors[i%3])
-            #surface_actor.GetProperty().SetOpacity(0.5)
-            #surface_mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-1.0, -1.0)
+            surface_actor.GetProperty().SetColor(*colors[i % 3])
+            # surface_actor.GetProperty().SetOpacity(0.5)
+            # surface_mapper.SetRelativeCoincidentTopologyPolygonOffsetParameters(-1.0, -1.0)
             renderer.AddActor(surface_actor)
-            self.vtk_meshes.append((surf_name, surface_actor, surface_mapper, surface_mesh))
+            self.vtk_meshes.append(
+                (surf_name, surface_actor, surface_mapper, surface_mesh)
+            )
 
     def _init_cone_mesh(self):
         cone_source = vtkConeSource()
@@ -576,11 +599,9 @@ class TrameApplication(TrameApp, RenderApplication):
         renderer.AddActor(mesh_actor)
         cube_axes.SetBounds(mesh_actor.GetBounds())
 
-
-
-# -----------------------------------------------------------------------------
-# Callbacks
-# -----------------------------------------------------------------------------
+    # -----------------------------------------------------------------------------
+    # Callbacks
+    # -----------------------------------------------------------------------------
 
     @change("cube_axes_visibility")
     def update_cube_axes_visibility(self, cube_axes_visibility, **_):
@@ -595,7 +616,7 @@ class TrameApplication(TrameApp, RenderApplication):
     # Visibility Change
     def visibility_change(self, event):
         id = event["id"]
-        idx = int(id)-1
+        idx = int(id) - 1
         visibility = event["visible"]
 
         self.vtk_meshes[idx][1].SetVisibility(visibility)
@@ -616,17 +637,24 @@ class TrameApplication(TrameApp, RenderApplication):
         use_preset(mesh_actor, mesh_color_preset)
         self.ctrl.view_update()
 
-    def update_mesh_color_array(self, mesh_id, mesh_color_array_idx, **_):
+    def update_mesh_color_array_(self, mesh_id, mesh_color_array_idx, **_):
         array = self.vtk_scalar_fields[mesh_color_array_idx]
         mesh_actor = self.vtk_meshes[mesh_id][1]
         mesh = self.vtk_meshes[mesh_id][3]
         color_by_array(mesh_actor, mesh, array)
         self.ctrl.view_update()
 
-# -----------------------------------------------------------------------------
-# GUI elements
-# -----------------------------------------------------------------------------
+    def update_mesh_color_array(
+        self, mesh_id, mesh_color_field, mesh_color_component=None, **_
+    ):
+        mesh_actor = self.vtk_meshes[mesh_id][1]
+        mesh = self.vtk_meshes[mesh_id][3]
+        color_by_field(mesh_actor, mesh, mesh_color_field, mesh_color_component)
+        self.ctrl.view_update()
 
+    # -----------------------------------------------------------------------------
+    # GUI elements
+    # -----------------------------------------------------------------------------
 
     def standard_buttons(self):
         v3.VCheckbox(
@@ -663,11 +691,11 @@ class TrameApplication(TrameApp, RenderApplication):
         assert len(self.vtk_meshes) >= 1
         pipeline = []
         for i, m in enumerate(self.vtk_meshes):
-            #p = {"id": str(i+1), "parent": "0" if i == 0 else "1", "visible": 1, "name": m[0]}
-            p = {"id": str(i+1), "parent": str(i), "visible": 1, "name": m[0]}
+            # p = {"id": str(i+1), "parent": "0" if i == 0 else "1", "visible": 1, "name": m[0]}
+            p = {"id": str(i + 1), "parent": str(i), "visible": 1, "name": m[0]}
             pipeline.append(p)
         trame.GitTree(
-            sources=("pipeline",pipeline),
+            sources=("pipeline", pipeline),
             actives_change=(self.actives_change, "[$event]"),
             visibility_change=(self.visibility_change, "[$event]"),
         )
@@ -686,34 +714,54 @@ class TrameApplication(TrameApp, RenderApplication):
 
     def _make_representation_callback(self, mesh_id):
         def on_change(**kwargs):
-            ui_id = str(mesh_id+1)
+            ui_id = str(mesh_id + 1)
             value = kwargs[f"mesh_representation_{ui_id}"]
             self.update_mesh_representation(mesh_id, value)
+
         return on_change
 
     def _make_opacity_callback(self, mesh_id):
         def on_change(**kwargs):
-            ui_id = str(mesh_id+1)
+            ui_id = str(mesh_id + 1)
             value = kwargs[f"mesh_opacity_{ui_id}"]
             self.update_mesh_opacity(mesh_id, value)
+
         return on_change
 
     def _make_color_preset_callback(self, mesh_id):
         def on_change(**kwargs):
-            ui_id = str(mesh_id+1)
+            ui_id = str(mesh_id + 1)
             value = kwargs[f"mesh_color_preset_{ui_id}"]
             self.update_mesh_color_preset(mesh_id, value)
+
         return on_change
 
     def _make_color_array_callback(self, mesh_id):
         def on_change(**kwargs):
-            ui_id = str(mesh_id+1)
+            ui_id = str(mesh_id + 1)
             value = kwargs[f"mesh_color_array_idx_{ui_id}"]
             self.update_mesh_color_array(mesh_id, value)
+
+        return on_change
+
+    def _make_color_field_callback(self, mesh_id):
+        def on_change(**kwargs):
+            ui_id = str(mesh_id + 1)
+            field_name = kwargs[f"mesh_color_field_{ui_id}"]
+            component = kwargs.get(f"mesh_color_component_{ui_id}", None)
+            field = next(f for f in self.vtk_color_fields if f["value"] == field_name)
+            # Explicitly set state variable to control visibility
+            setattr(
+                self.state, f"mesh_color_is_vector_{ui_id}", field["type"] == "vector"
+            )
+            self.update_mesh_color_array(mesh_id, field, component)
+
         return on_change
 
     def mesh_card(self, title, mesh_id):
-        ui_id = str(mesh_id+1)
+        ui_id = str(mesh_id + 1)
+        default_field = self.vtk_color_fields[0]
+        self.state[f"mesh_color_is_vector_{ui_id}"] = default_field["type"] == "vector"
         with self.ui_card(title=title, ui_id=ui_id):
             # Representation
             v3.VSelect(
@@ -735,15 +783,16 @@ class TrameApplication(TrameApp, RenderApplication):
                 outlined=True,
                 classes="pt-1",
             )
-            callback = self._make_representation_callback(mesh_id)
-            self.state.change(f"mesh_representation_{ui_id}")(callback)
-            with v3.VRow(classes="pt-2", density="compact"):
-                with v3.VCol(cols="6"):
+            with v3.VRow(classes="pt-2", density="compact", no_gutters=True):
+                with v3.VCol(classes="pr-1", cols="6"):
                     # Color By
                     v3.VSelect(
                         label="Color by",
-                        v_model=(f"mesh_color_array_idx_{ui_id}", 0),
-                        items=("array_list", self.vtk_scalar_fields),
+                        v_model=(
+                            f"mesh_color_field_{ui_id}",
+                            self.vtk_color_fields[0]["value"],
+                        ),
+                        items=("color_field_list", self.vtk_color_fields),
                         item_title="text",
                         item_value="value",
                         hide_details=True,
@@ -751,8 +800,20 @@ class TrameApplication(TrameApp, RenderApplication):
                         outlined=True,
                         classes="pt-1",
                     )
-                    callback = self._make_color_array_callback(mesh_id)
-                    self.state.change(f"mesh_color_array_idx_{ui_id}")(callback)
+                with v3.VCol(classes="pl-1", cols="6"):
+                    v3.VSelect(
+                        v_show=(f"mesh_color_is_vector_{ui_id}",),
+                        label="Component",
+                        v_model=(f"mesh_color_component_{ui_id}", "Magnitude"),
+                        items=("component_list", VECTOR_COMPONENTS),
+                        item_title="text",
+                        item_value="value",
+                        hide_details=True,
+                        density="compact",
+                        outlined=True,
+                        classes="pt-1",
+                    )
+            with v3.VRow(classes="pt-2", density="compact", no_gutters=True):
                 with v3.VCol(cols="6"):
                     # Color Map
                     v3.VSelect(
@@ -774,8 +835,6 @@ class TrameApplication(TrameApp, RenderApplication):
                         outlined=True,
                         classes="pt-1",
                     )
-                    callback = self._make_color_preset_callback(mesh_id)
-                    self.state.change(f"mesh_color_preset_{ui_id}")(callback)
             v3.VSlider(
                 # Opacity
                 v_model=(f"mesh_opacity_{ui_id}", 1.0),
@@ -787,5 +846,13 @@ class TrameApplication(TrameApp, RenderApplication):
                 hide_details=True,
                 density="compact",
             )
+
+            callback = self._make_representation_callback(mesh_id)
+            self.state.change(f"mesh_representation_{ui_id}")(callback)
+            callback = self._make_color_field_callback(mesh_id)
+            self.state.change(f"mesh_color_field_{ui_id}")(callback)
+            self.state.change(f"mesh_color_component_{ui_id}")(callback)
+            callback = self._make_color_preset_callback(mesh_id)
+            self.state.change(f"mesh_color_preset_{ui_id}")(callback)
             callback = self._make_opacity_callback(mesh_id)
             self.state.change(f"mesh_opacity_{ui_id}")(callback)
