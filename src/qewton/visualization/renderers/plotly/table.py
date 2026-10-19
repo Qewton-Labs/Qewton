@@ -1,3 +1,5 @@
+"""Plotly artist for parallel-coordinates plots."""
+
 from plotly import graph_objects as go
 import numpy as np
 
@@ -6,13 +8,21 @@ from qewton.visualization.renderers.plotly.common import PlotlyArtist, _apply_sc
 
 
 class ParallelCoordinatesArtist(PlotlyArtist):
-    """One polyline per row, across one vertical axis per table column - the
-    non-cartesian counterpart to ScatterArtist/BarArtist: go.Parcoords lays
-    out its own axes internally, so this needs no x/y role at all, matching
-    ParallelCoordinatesPlot.embedding_dim == None."""
+    """Draws a parallel-coordinates plot as ``go.Parcoords``.
+
+    Used for
+    :class:`~qewton.visualization.plots.table.parallel_coordinates.ParallelCoordinatesPlot`.
+    One polyline per table row and one axis per column, optionally colored.
+    Categorical columns get their labels as ticks; log-scale columns are
+    drawn as ``log10`` values with ticks labeled in the original scale.
+    """
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         result: TableResult = plot.evaluate()
         line = dict()
         if result.color is not None:
@@ -48,6 +58,10 @@ class ParallelCoordinatesArtist(PlotlyArtist):
         return dimensions
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         result = plot.evaluate()
         trace = backend_figure.data[self.figure_idx]
         trace.dimensions = self._dimensions(plot, result)

@@ -1,3 +1,6 @@
+"""Feedforward network models: :class:`FFN`, :class:`FCN`, :class:`QRES`
+and :class:`DeepRitzNet`."""
+
 from typing import Annotated, Generic
 
 from qewton.algorithms.building_blocks.math import Power, Add
@@ -14,25 +17,48 @@ from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
 class FFN(GraphNode, Generic[TensorType]):
-    """Feedforward Neural Network (FFN) implementation.
+    """Feedforward neural network built from layer blocks and activations.
+
+    The network is a sequence of ``n_hidden_layers + 1`` layer blocks with
+    an activation after every block except the last. It is rebuilt in
+    :meth:`setup` from the current hyperparameter values.
 
     Args:
-        layer_blocks (Node) : A node that represents the computation of the network
-            that happens in between the neurons (e.g. a linear layer for a FCN).
-        in_neurons (int | HyperParameter | Variable): The number of input neurons
-            or a variable representing it.
-        hidden_neurons (int | HyperParameter): The number of neurons in
-            each hidden layer.
-        out_neurons (int | HyperParameter | Variable): The number of output
-            neurons or a variable representing it.
-        n_hidden_layers (int | HyperParameter): Number of hidden layers.
-        bias (bool | HyperParameter, optional): If a bias should be included.
-            Defaults to True.
-        activation (type[Node] | HyperParameter, optional): The activation
-            function in each layer. Defaults to ReLU.
-        name (str, optional): Name of the model. Defaults to "ffn".
-        backend (type[Backend[TensorType]], optional): What backend this
-            model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
+        layer_blocks: The node class computing one layer, e.g.
+            :class:`~qewton.algorithms.building_blocks.linear.Linear`. It is
+            called with ``in_neurons``, ``out_neurons``, ``bias`` and
+            ``backend``.
+        in_neurons: The number of input neurons, or a variable whose dimension
+            gives it and which is then used as the input feature variable.
+        hidden_neurons: The number of neurons in each hidden layer.
+        out_neurons: The number of output neurons, or a variable whose
+            dimension gives it and which is then used as the output feature
+            variable.
+        n_hidden_layers: The number of hidden layers.
+        bias: Whether the layers include a bias.
+        activation: The activation node class applied after each hidden layer.
+        name: The name of the node.
+        backend: The backend used for computations.
+
+    Attributes:
+        input_var (Variable or None): The input feature variable, if given.
+        output_var (Variable or None): The output feature variable, if given.
+        layer_blocks (type[Node]): The node class computing one layer.
+        in_neurons (HyperParameter): The number of input neurons.
+        hidden_neurons (HyperParameter): The number of hidden neurons.
+        out_neurons (HyperParameter): The number of output neurons.
+        n_hidden_layers (HyperParameter): Architecture hyperparameter: the
+            number of hidden layers.
+        bias (HyperParameter): Architecture hyperparameter: whether the
+            layers include a bias.
+        activation (HyperParameter): Architecture hyperparameter: the
+            activation node class.
+        hyperparameters (list of HyperParameter): All architecture
+            hyperparameters.
+
+    Notes:
+        Subclasses may override ``_build_network`` to build a different graph
+        from the hyperparameters.
     """
 
     def __init__(
@@ -83,6 +109,11 @@ class FFN(GraphNode, Generic[TensorType]):
         self.set_state(NodeState.UNINITIALIZED)
 
     def reset(self):
+        """Mark the network as uninitialized and reset the node.
+
+        Returns:
+            Any: The result of the parent's ``reset``.
+        """
         self.set_state(NodeState.UNINITIALIZED)
         return super().reset()
 
@@ -106,8 +137,10 @@ class FFN(GraphNode, Generic[TensorType]):
         return SequentialGraph(*nodes)
 
     def setup(self):
-        """Initializes the neural network itself for the current
-        set of parameters.
+        """Build the network for the current hyperparameter values.
+
+        Only acts if the node is uninitialized. Sets the input and output
+        data configurations and marks the node as initialized.
         """
         if self.state == NodeState.UNINITIALIZED:
             new_graph = self._build_network(self.backend)
@@ -132,11 +165,11 @@ class FFN(GraphNode, Generic[TensorType]):
         ]
 
     def x_data_config(self):
-        """Build the expected input data configuration based on the
-        input variable or number of input neurons.
+        """Build the expected input data configuration.
 
         Returns:
-            DataConfiguration: The input data configuration for the FCN.
+            DataConfiguration: Arbitrary leading axes and one feature axis,
+                given by the input variable or the number of input neurons.
         """
         self.ellipsis_axes = EllipsisAxes()
         if self.input_var is not None:
@@ -152,11 +185,12 @@ class FFN(GraphNode, Generic[TensorType]):
         )
 
     def out_data_config(self):
-        """Build the expected output data configuration based on the
-        output variable or number of output neurons.
+        """Build the expected output data configuration.
 
         Returns:
-            DataConfiguration: The output data configuration for the FCN.
+            DataConfiguration: The leading axes of the input and one feature
+                axis, given by the output variable or the number of output
+                neurons.
         """
         b_end = self.backend.default_dtype
         if self.output_var is not None:
@@ -174,29 +208,34 @@ class FFN(GraphNode, Generic[TensorType]):
     def forward(
         self, x: Annotated[TensorType, x_data_config]
     ) -> Annotated[TensorType, out_data_config]:
+        """Evaluate the network.
+
+        Args:
+            x: The input, see :meth:`x_data_config`.
+
+        Returns:
+            TensorType: The output, see :meth:`out_data_config`.
+        """
         self.input_ports[0].set_value(x)
         self.run()
         return self.output_ports[0].value  # type: ignore
 
 
 class FCN(FFN[TensorType]):
-    """Fully Connected Network (FCN) implementation.
+    """Fully connected network: an :class:`FFN` of linear layers.
 
     Args:
-        in_neurons (int | HyperParameter | Variable): The number of input neurons
-            or a variable representing it.
-        hidden_neurons (int | HyperParameter): The number of neurons in
-            each hidden layer.
-        out_neurons (int | HyperParameter | Variable): The number of output
-            neurons or a variable representing it.
-        n_hidden_layers (int | HyperParameter): Number of hidden layers.
-        bias (bool | HyperParameter, optional): If a bias should be included.
-            Defaults to True.
-        activation (type[Node] | HyperParameter, optional): The activation
-            function in each layer. Defaults to Tanh.
-        name (str, optional): Name of the model. Defaults to "fcn".
-        backend (type[Backend[TensorType]], optional): What backend this
-            model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
+        in_neurons: The number of input neurons, or a variable whose dimension
+            gives it and which is then used as the input feature variable.
+        hidden_neurons: The number of neurons in each hidden layer.
+        out_neurons: The number of output neurons, or a variable whose
+            dimension gives it and which is then used as the output feature
+            variable.
+        n_hidden_layers: The number of hidden layers.
+        bias: Whether the layers include a bias.
+        activation: The activation node class applied after each hidden layer.
+        name: The name of the node.
+        backend: The backend used for computations.
     """
 
     def __init__(
@@ -224,29 +263,27 @@ class FCN(FFN[TensorType]):
 
 
 class QRES(FFN[TensorType]):
-    """Implementation of the architecture used in the QRES paper [1]_.
-    Consists of fully connected layers and residual connections.
+    """Quadratic residual network: an :class:`FFN` of quadratic layers.
 
     Args:
-        in_neurons (int | HyperParameter | Variable): The number of input neurons
-            or a variable representing it.
-        hidden_neurons (int | HyperParameter): The number of neurons in
-            each hidden layer.
-        out_neurons (int | HyperParameter | Variable): The number of output
-            neurons or a variable representing it.
-        n_hidden_layers (int | HyperParameter): Number of hidden layers.
-        bias (bool | HyperParameter, optional): If a bias should be included.
-            Defaults to True.
-        activation (type[Node] | HyperParameter, optional): The activation
-            function in each layer. Defaults to ReLU.
-        name (str, optional): Name of the model. Defaults to "fcn".
-        backend (type[Backend[TensorType]], optional): What backend this
-            model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
+        in_neurons: The number of input neurons, or a variable whose dimension
+            gives it and which is then used as the input feature variable.
+        hidden_neurons: The number of neurons in each hidden layer.
+        out_neurons: The number of output neurons, or a variable whose
+            dimension gives it and which is then used as the output feature
+            variable.
+        n_hidden_layers: The number of hidden layers.
+        bias: Whether the layers include a bias.
+        activation: The activation node class applied after each hidden layer.
+        name: The name of the node.
+        backend: The backend used for computations.
 
     Notes:
-        [1] Jie Bu and Anuj Karpatne, "Quadratic Residual Networks:
-            A New Class of Neural Networks for Solving Forward and Inverse Problems
-            in Physics Involving PDEs", 2021
+        The layers are
+        :class:`~qewton.algorithms.building_blocks.linear.Quadratic` blocks, as
+        in Jie Bu and Anuj Karpatne, "Quadratic Residual Networks: A New Class
+        of Neural Networks for Solving Forward and Inverse Problems in Physics
+        Involving PDEs", 2021.
     """
 
     def __init__(
@@ -274,30 +311,32 @@ class QRES(FFN[TensorType]):
 
 
 class DeepRitzNet(FCN[TensorType]):
-    """Implementation of the architecture used in the Deep Ritz paper [1]_.
-    Consists of fully connected layers and residual connections.
+    """Residual network used in the Deep Ritz method.
+
+    A linear input layer, `depth` residual blocks and a linear output
+    layer. Each residual block applies twice a linear layer followed by
+    ``ReLU(x**3)`` and adds the block input to the result.
 
     Args:
-        in_neurons (int | HyperParameter | Variable): The number of input neurons
-            or a variable representing it.
-        out_neurons (int | HyperParameter | Variable): The number of output
-            neurons or a variable representing it.
-        width (int | HyperParameter): The width of the used hidden
-            fully connected layers.
-        depth (int | HyperParameter): The amount of subsequent residual blocks.
-        bias (bool | HyperParameter, optional): If a bias should be included.
-            Defaults to True.
-        name (str, optional): Name of the model. Defaults to "fcn".
-        backend (type[Backend[TensorType]], optional): What backend this
-            model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
+        in_neurons: The number of input neurons, or a variable whose dimension
+            gives it and which is then used as the input feature variable.
+        out_neurons: The number of output neurons, or a variable whose
+            dimension gives it and which is then used as the output feature
+            variable.
+        width: The width of the hidden linear layers.
+        depth: The number of residual blocks.
+        bias: Whether the layers include a bias.
+        name: The name of the node.
+        backend: The backend used for computations.
 
     Notes:
-        [1] Weinan E and Bing Yu, "The Deep Ritz method: A deep learning-based numerical
-        algorithm for solving variational problems", 2017
-
-    TODO: Improve initialization of the network-weights, as the current one can
-    blow-up for deeper networks.
+        Architecture from Weinan E and Bing Yu, "The Deep Ritz method: A deep
+        learning-based numerical algorithm for solving variational problems",
+        2017.
     """
+
+    # TODO: Improve the weight initialization, the current one can blow up
+    # for deeper networks.
 
     def __init__(
         self,

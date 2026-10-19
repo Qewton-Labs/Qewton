@@ -1,3 +1,5 @@
+"""DeepONet with fully connected branch and trunk networks."""
+
 import math
 
 from qewton.algorithms.dl_models.deeponet.base import DeepONet
@@ -17,58 +19,79 @@ from qewton.config.dtypes import Number
 
 
 class FCNDeepONet(DeepONet[TensorType]):
-    """A DeepONet architecture that uses fully connected networks (FCNs)
-    for both the branch and trunk networks.
-    The merge node can be configured to handle different output strategies,
-    allowing for flexibility in how the outputs of the branch and trunk networks
-    are combined. All inputs of the branch network will be flattened before
-    being passed to the FCN. This DeepONet expects inputs of shape:
-    - Branch input: (batch_size, discretization_shape, branch_input_dim)
-    - Trunk input: (batch_size, discretization_shape, trunk_input_dim)
-    where discretization_shape can be any shape, only trunk and branch
-    need to be on the same discretization shape. The output will have shape:
-    - Output: (batch_size, discretization_shape, output_dim)
+    """DeepONet with fully connected branch and trunk networks.
+
+    Both networks are :class:`~qewton.algorithms.dl_models.fcn.FCN`
+    instances; their outputs are combined by a
+    :class:`~qewton.algorithms.dl_models.deeponet.merge_nodes.DefaultMerger`.
+    All non-batch axes of the branch input are flattened before the branch
+    FCN. Expected shapes:
+
+    - branch input: ``(batch_size, *discretization_shape, branch_input_dim)``
+    - trunk input: ``(batch_size, *discretization_shape, trunk_input_dim)``
+    - output: ``(batch_size, *discretization_shape, output_dim)``
+
+    `discretization_shape` is arbitrary, but must be the same for branch
+    and trunk.
 
     Args:
-        trunk_input (int | Variable): The input dimension for
-            the trunk network.
-        branch_input (int | Variable): The input dimension for
+        trunk_input: The input dimension of the trunk network, or the input
+            variable.
+        branch_input: The input dimension of the (flattened) branch network
+            input, or the input variable. Updated to the flattened size when
+            the branch input configuration becomes known.
+        output: The output dimension of the DeepONet, or the output variable.
+        trunk_hidden_neurons: The number of neurons in each hidden layer of the
+            trunk network.
+        branch_hidden_neurons: The number of neurons in each hidden layer of
             the branch network.
-        output (int | Variable): The dimension of the final output of the DeepONet.
-            If the output dimension is greater than 1, the merge node will
-            be configured following the specified output strategy.
-        trunk_hidden_neurons (int | HyperParameter): The number of hidden neurons
-            in each layer of the trunk network.
-        branch_hidden_neurons (int | HyperParameter): The number of hidden neurons
-            in each layer of the branch network.
-        trunk_hidden_layers (int | HyperParameter): The number of hidden layers
-            in the trunk network.
-        branch_hidden_layers (int | HyperParameter): The number of hidden layers
-            in the branch network.
-        intermediate_neurons (int | HyperParameter): The number of neurons in
-            the intermediate layer which is the output of both the branch and
-            trunk networks before merging.
-        output_strategy (Literal["split", "split_branch", "split_trunk"], optional):
-            The strategy that is used to merge the branch and trunk net.
-            In case of a single output, the merge node will be an Inner product node.
-            In case of multiple outputs, the merge node will be a graph that
-            reshapes the outputs of the branch and trunk networks and then performs
-            an element-wise multiplication followed by a summation. The reshaping
-            is done according to the specified output strategy:
-            - "split": Both the branch and trunk networks will have
-              output_dim * intermediate_neurons neurons in the last layer, which will
-              be reshaped to (output_dim, intermediate_neurons) before merging.
-            - "split_branch": Only the branch network will have
-              output_dim * intermediate_neurons, the trunk net output will be
-              multiplied with all branch net outputs.
-            - "split_trunk": Only the trunk network will have
-              output_dim * intermediate_neurons, the branch net output will be
-              multiplied with all trunk net outputs.
-            Defaults to "split".
-        activations (type[Node] | HyperParameter, optional): Defaults to ReLU.
-        name (str, optional): Defaults to "FCNDeepONet".
-        backend (type[ComputingBackend[TensorType]], optional):
-            Defaults to DEFAULT_DL_BACKEND.
+        trunk_hidden_layers: The number of hidden layers of the trunk network.
+        branch_hidden_layers: The number of hidden layers of the branch
+            network.
+        intermediate_neurons: The number of features per output dimension that
+            branch and trunk output before merging.
+        output_strategy: How branch and trunk outputs are merged for multiple
+            outputs:
+
+            - ``"split"``: both networks output
+              ``output_dim * intermediate_neurons`` values, reshaped to
+              ``(output_dim, intermediate_neurons)`` before merging.
+            - ``"split_branch"``: only the branch network outputs
+              ``output_dim * intermediate_neurons`` values; the trunk output is
+              multiplied with each of them.
+            - ``"split_trunk"``: only the trunk network outputs
+              ``output_dim * intermediate_neurons`` values; the branch output is
+              multiplied with each of them.
+
+            For a single output, the merge is an inner product.
+        activations: The activation node class of both networks.
+        name (str, optional): The name of the node. Defaults to
+            ``"FCNDeepONet"``.
+        backend: The backend used for computations.
+        **kwargs: Passed on to
+            :class:`~qewton.algorithms.dl_models.deeponet.base.DeepONet`.
+
+    Attributes:
+        output_dim (int): The output dimension.
+        output_strategy (str): The merge strategy.
+        trunk_input (int or Variable or HyperParameter): The input dimension
+            or variable of the trunk.
+        branch_input (int or Variable or HyperParameter): The input dimension
+            or variable of the branch.
+        intermediate_neurons (HyperParameter): Architecture hyperparameter
+            shared by trunk and branch.
+        activations (HyperParameter): Architecture hyperparameter shared by
+            trunk and branch.
+        trunk_hidden_neurons (HyperParameter): Architecture hyperparameter of
+            the trunk net.
+        trunk_n_hidden_layers (HyperParameter): Architecture hyperparameter of
+            the trunk net.
+        branch_hidden_neurons (HyperParameter): Architecture hyperparameter of
+            the branch net.
+        branch_n_hidden_layers (HyperParameter): Architecture hyperparameter
+            of the branch net.
+        branch_port (InputPort): The input port of the branch.
+        trunk_port (InputPort): The input port of the trunk.
     """
 
     def __init__(
@@ -164,6 +187,20 @@ class FCNDeepONet(DeepONet[TensorType]):
         return merge_node, branch_net, trunk_net
 
     def update_data_configs(self, updated_port, config_dict, dynamic_configs):
+        """Propagate data configurations and adapt the branch input size.
+
+        If the branch input port is updated and its non-batch shape is fully
+        known, `branch_input` is set to the product of that shape.
+
+        Args:
+            updated_port (Port): The port whose configuration changed.
+            config_dict (dict): Passed on to the parent implementation.
+            dynamic_configs (dict): The current dynamic data configuration per
+                port.
+
+        Returns:
+            list: The ports returned by the parent implementation.
+        """
         ports = super().update_data_configs(updated_port, config_dict, dynamic_configs)
         if updated_port == self._input_ports[0]:
             branch_config_shape = dynamic_configs[updated_port].shape[1:]
@@ -174,6 +211,8 @@ class FCNDeepONet(DeepONet[TensorType]):
         return ports
 
     def setup(self) -> None:
+        """Rebuild branch, trunk and merge node for the current
+        hyperparameter values and connect them."""
         self.merge_node, self.branch_net, self.trunk_net = self._build_network(
             self.backend
         )
@@ -188,6 +227,12 @@ class FCNDeepONet(DeepONet[TensorType]):
         )
 
     def branch_data_config(self):
+        """Build the expected branch input data configuration.
+
+        Returns:
+            DataConfiguration: A batch axis, arbitrary inner axes and the
+                branch feature axis.
+        """
         if isinstance(self.branch_input, int):
             f_axis = FeatureAxes(shape=(self.branch_input,))
         elif isinstance(self.branch_input, Variable):
@@ -202,6 +247,12 @@ class FCNDeepONet(DeepONet[TensorType]):
         )
 
     def trunk_data_config(self):
+        """Build the expected trunk input data configuration.
+
+        Returns:
+            DataConfiguration: A batch axis, arbitrary inner axes and the trunk
+                feature axis.
+        """
         if isinstance(self.trunk_input, int):
             f_axis = FeatureAxes(shape=(self.trunk_input,))
         elif isinstance(self.trunk_input, Variable):
@@ -216,6 +267,12 @@ class FCNDeepONet(DeepONet[TensorType]):
         )
 
     def output_data_config(self):
+        """Build the output data configuration.
+
+        Returns:
+            DataConfiguration: A batch axis, the inner axes of the inputs and
+                the output feature axis.
+        """
         if isinstance(self.output_dim, int):
             f_axis = FeatureAxes(shape=(self.output_dim,))
         elif isinstance(self.output_dim, Variable):
@@ -234,6 +291,15 @@ class FCNDeepONet(DeepONet[TensorType]):
         branch_input: Number[TensorType, branch_data_config],
         trunk_input: Number[TensorType, trunk_data_config],
     ) -> Number[TensorType, output_data_config]:
+        """Evaluate the DeepONet.
+
+        Args:
+            branch_input: The branch input, see :meth:`branch_data_config`.
+            trunk_input: The trunk input, see :meth:`trunk_data_config`.
+
+        Returns:
+            TensorType: The output, see :meth:`output_data_config`.
+        """
         self.input_ports[0].set_value(branch_input)
         self.input_ports[1].set_value(trunk_input)
         self.run()

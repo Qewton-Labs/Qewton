@@ -1,37 +1,25 @@
-"""
-qewton_palette.py
-==================
+"""Qewton color palette as Plotly-native color values.
 
-Plotly-native Farbdefinitionen aus der Qewton-Farbpalette, zur Nutzung durch
-``qewton.visualization.themes``.
-
-Sieben Farbfamilien, je vier Abstufungen A (blasseste Tönung) bis D (kräftigster/
-dunkelster Ton) -- unverändert übernommen, nirgends neu gemischt:
+Seven color families with four shades each, from A (palest) to D
+(strongest/darkest):
 
     red     A=#fce3de  B=#f7a38e  C=#f38f7f  D=#bc4b4f
     orange  A=#fde7d7  B=#fbc299  C=#f9b381  D=#e76727
-    yellow  A=#fdf0d0  B=#fee1a5  C=#fddb91  D=#eaa52b   (Daten-Knoten)
-    green   A=#e2efe5  B=#aed6be  C=#94c9ad  D=#3e835a   (Loss-Knoten)
-    blue    A=#e3ecf3  B=#b7d2e6  C=#99bcdf  D=#245691   (Modell-/Netzwerk-Knoten)
+    yellow  A=#fdf0d0  B=#fee1a5  C=#fddb91  D=#eaa52b   (data nodes)
+    green   A=#e2efe5  B=#aed6be  C=#94c9ad  D=#3e835a   (loss nodes)
+    blue    A=#e3ecf3  B=#b7d2e6  C=#99bcdf  D=#245691   (model nodes)
     violet  A=#e3dfed  B=#a09ec6  C=#8d89ba  D=#53548a
     brown   A=#ebe2d9  B=#b6a595  C=#a18e7f  D=#826b59
 
-Jede Colorscale unten entsteht durch feine (64-stufige) Interpolation im
-OKLab-Farbraum zwischen diesen festen Ankerpunkten -- wahrnehmungsgleich-
-mäßiger als Plotlys eigene (lineare sRGB-)Interpolation zwischen wenigen
-Stützstellen, die unterwegs oft bräunlich-graue Zwischentöne erzeugt. Plotly
-akzeptiert eine Colorscale direkt als Liste von ``[position, "#rrggbb"]``-
-Paaren (``colorscale=...``), ganz ohne globale Registrierung wie bei
-matplotlib. Als typisierte Objekte (``qewton.viz.cmaps.meadow`` usw., plus
-die Rollen ``cmaps.sequential/diverging/cyclic``) stehen sie in
-``themes/cmaps.py`` -- so werden sie in ``ColorSpec(cmap=...)`` und den
-``*_cmap``-Feldern des Themes verwendet.
+Every colorscale is interpolated in OKLab space between fixed anchors
+taken from these families, sampled at 64 stops, in Plotly's format: a list
+of ``[position, "#rrggbb"]`` pairs. Besides the families, the module
+defines theme-dependent chrome colors (background, ink, border), the node
+card colors and the categorical color order.
 
-Für nicht-matplotlib-freie Analyse/Notebook-Arbeit existiert außerdem
-``qewton_colormaps.py`` mit denselben Farben als registrierte matplotlib-
-Colormaps -- beide Module leiten aus denselben 28 Werten ab, keines
-"gewinnt"; welches benutzt wird, hängt nur vom Werkzeug ab (Plotly hier
-im Backend, matplotlib für Ad-hoc-Notebook-Plots).
+:mod:`~qewton.visualization.themes.cmaps` wraps the colorscales as typed
+colormap objects; :class:`~qewton.visualization.themes.base.Theme` uses
+the remaining values.
 """
 
 from __future__ import annotations
@@ -41,7 +29,7 @@ from typing import Sequence
 
 
 # --------------------------------------------------------------------------
-# OKLab-Kern (Björn Ottosson) -- keine Abhängigkeiten außer der Standardlib.
+# OKLab conversion (Björn Ottosson), standard library only.
 # --------------------------------------------------------------------------
 
 def _s2lin(c: float) -> float:
@@ -101,10 +89,10 @@ def _mix_oklab_hex(h1: str, h2: str, t: float) -> str:
 
 
 def _oklab_colorscale(anchors: Sequence[str], n: int = 64) -> list[list]:
-    """Plotly-Colorscale (Liste von [position (0..1), '#rrggbb']) durch
-    stückweise OKLab-Interpolation zwischen `anchors`. 64 Stützstellen sind
-    fein genug, dass Plotlys eigene (lineare) Interpolation ZWISCHEN ihnen
-    perzeptuell unauffällig bleibt, halten die Figure-JSON aber klein."""
+    """Plotly colorscale (list of [position (0..1), '#rrggbb']) by
+    piecewise OKLab interpolation between `anchors`, sampled at `n` stops.
+    With 64 stops, Plotly's linear interpolation between them is not
+    noticeable, and the figure JSON stays small."""
     k = len(anchors) - 1
     out = []
     for i in range(n):
@@ -117,21 +105,21 @@ def _oklab_colorscale(anchors: Sequence[str], n: int = 64) -> list[list]:
 
 
 # --------------------------------------------------------------------------
-# Chrome-Tokens aus dem Design System (project/tokens.json) -- NICHT aus den
-# 7 SVG-Familien abgeleitet, sondern eigene neutrale Werte fuers Figuren-
-# Chrome (Hintergrund, Tinte/Linien, Gitterlinien). Je ein Wert pro Theme,
-# anders als die family-Swatches oben, die theme-unabhaengig sind.
+# Chrome tokens from the design system (project/tokens.json): neutral
+# values for figure chrome (background, ink/lines, gridlines), not derived
+# from the color families. One value per theme, unlike the families, which
+# are theme-independent.
 # --------------------------------------------------------------------------
 
 QEWTON_SURFACE_CANVAS: dict[str, str] = {"light": "#ffffff", "dark": "#0a0e13"}
 QEWTON_INK: dict[str, str] = {"light": "#14181c", "dark": "#eef1f4"}
-# Translucent hairline token (CSS rgba() -- Plotly accepts this directly as
-# a shape/gridline color string) fuer dezente Gitterlinien/Haarlinien.
+# Translucent hairline token for subtle gridlines (CSS rgba(), which Plotly
+# accepts as a color string).
 QEWTON_BORDER: dict[str, str] = {"light": "rgba(20,24,28,0.12)", "dark": "rgba(255,255,255,0.12)"}
 
 
 # --------------------------------------------------------------------------
-# Die 28 festen Ankerfarben aus graph_farben.svg -- unverändert.
+# The 28 fixed anchor colors (from graph_farben.svg).
 # --------------------------------------------------------------------------
 
 QEWTON_FAMILIES: dict[str, dict[str, str]] = {
@@ -144,21 +132,22 @@ QEWTON_FAMILIES: dict[str, dict[str, str]] = {
     "brown":  {"A": "#ebe2d9", "B": "#b6a595", "C": "#a18e7f", "D": "#826b59"},
 }
 
-# Die 3 im SVG schwarz umrandeten Node-/Karten-Farbpaare.
+# Fill/border color pairs of the three node card roles.
 QEWTON_NODE_COLORS: dict[str, dict[str, str]] = {
     "data":  {"fill": QEWTON_FAMILIES["yellow"]["B"], "border": QEWTON_FAMILIES["yellow"]["C"]},
     "model": {"fill": QEWTON_FAMILIES["blue"]["B"],   "border": QEWTON_FAMILIES["blue"]["C"]},
     "loss":  {"fill": QEWTON_FAMILIES["green"]["B"],  "border": QEWTON_FAMILIES["green"]["C"]},
 }
 
-# CVD-optimierte Reihenfolge (worst-case ΔE 15.4 normalsichtig / 14.5 unter
-# simulierter Protanopie/Deuteranopie zwischen benachbarten Familien).
+# Categorical order optimized for color vision deficiency: worst-case ΔE
+# between neighboring families is 15.4 for normal vision and 14.5 under
+# simulated protanopia/deuteranopia.
 QEWTON_CATEGORICAL_ORDER: list[str] = ["red", "yellow", "blue", "brown", "orange", "violet", "green"]
 QEWTON_CATEGORICAL_COLORS: list[str] = [QEWTON_FAMILIES[f]["C"] for f in QEWTON_CATEGORICAL_ORDER]
 
 
 # --------------------------------------------------------------------------
-# Colorscales (Plotly-Format: Liste von [position, hex])
+# Colorscales (Plotly format: list of [position, hex])
 # --------------------------------------------------------------------------
 
 def _sequential(name: str) -> list[list]:
@@ -171,35 +160,35 @@ QEWTON_SEQUENTIAL: dict[str, list[list]] = {name: _sequential(name) for name in 
 QEWTON_MEADOW = _oklab_colorscale(
     [QEWTON_FAMILIES["violet"]["D"], QEWTON_FAMILIES["blue"]["D"],
      QEWTON_FAMILIES["green"]["D"], QEWTON_FAMILIES["yellow"]["D"], QEWTON_FAMILIES["yellow"]["A"]]
-)  # wie "viridis": dunkles Violett -> Blau -> Grün -> blasses Gelb
+)  # like "viridis": dark violet -> blue -> green -> pale yellow
 
 QEWTON_DUSK = _oklab_colorscale(
     [QEWTON_FAMILIES["blue"]["D"], QEWTON_FAMILIES["violet"]["D"], QEWTON_FAMILIES["red"]["D"],
      QEWTON_FAMILIES["orange"]["D"], QEWTON_FAMILIES["yellow"]["D"], QEWTON_FAMILIES["yellow"]["B"], "#ffffff"]
-)  # wie "plasma": Blau -> Violett -> Rot -> Orange -> Gelb -> Weiß
+)  # like "plasma": blue -> violet -> red -> orange -> yellow -> white
 
 QEWTON_REDBLUE = _oklab_colorscale(
     [QEWTON_FAMILIES["red"]["D"], QEWTON_FAMILIES["red"]["C"], QEWTON_FAMILIES["red"]["B"],
      QEWTON_FAMILIES["red"]["A"], "#ffffff",
      QEWTON_FAMILIES["blue"]["A"], QEWTON_FAMILIES["blue"]["B"], QEWTON_FAMILIES["blue"]["C"],
      QEWTON_FAMILIES["blue"]["D"]]
-)  # diverging, Pivot reines Weiß
+)  # diverging, pure white pivot
 
 QEWTON_ORANGEVIOLET_PAPER = _oklab_colorscale(
     [QEWTON_FAMILIES["orange"]["D"], QEWTON_FAMILIES["orange"]["C"], QEWTON_FAMILIES["orange"]["B"],
      QEWTON_FAMILIES["orange"]["A"], QEWTON_FAMILIES["brown"]["A"],
      QEWTON_FAMILIES["violet"]["A"], QEWTON_FAMILIES["violet"]["B"], QEWTON_FAMILIES["violet"]["C"],
      QEWTON_FAMILIES["violet"]["D"]]
-)  # diverging, Pivot der warme Papier-Neutralton aus brown-A statt reinem Weiß
+)  # diverging, warm paper-neutral pivot (brown A)
 
 QEWTON_PHASE = _oklab_colorscale(
     [QEWTON_FAMILIES[n]["C"] for n in ("red", "orange", "yellow", "green", "blue", "violet", "red")]
-)  # cyclic, schließt exakt -- für Phasenwinkel/periodische Größen
+)  # cyclic (closes exactly), for phase angles/periodic quantities
 
 QEWTON_SPECTRUM = _oklab_colorscale(
     [QEWTON_FAMILIES[n]["C"] for n in ("red", "orange", "yellow", "green", "blue", "violet")]
-)  # miscellaneous: echte Hue-Reihenfolge ohne brown, NICHT wahrnehmungsgleichmäßig
-   # -- nur für viele unterscheidbare Bänder, nie für Daten mit Größenordnung
+)  # hue order without brown, NOT perceptually uniform: only for many
+   # distinguishable bands, never for data with a magnitude
 
 __all__ = [
     "QEWTON_SURFACE_CANVAS", "QEWTON_INK", "QEWTON_BORDER",

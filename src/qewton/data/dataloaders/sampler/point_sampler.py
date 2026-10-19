@@ -1,3 +1,5 @@
+"""Base class for samplers that draw points from a geometry."""
+
 from __future__ import annotations
 from abc import abstractmethod
 from contextlib import contextmanager
@@ -29,13 +31,17 @@ from qewton.optim.parameters.categorical_hyperparameter import (
 def discretization_mode(
     samplers, max_vertex_distance, device: Device | str | None = None
 ):
-    """Switch samplers to mesh mode for one run.
+    """Context manager that switches samplers to mesh mode.
 
-    `device` is only where the freshly-generated mesh points themselves are
-    built (Geometry.create_mesh()'s own `device` argument defaults to cpu,
-    regardless of wherever the sampler/model actually live) - it does not
-    move the sampler or anything else; pass an explicit `device` to
-    Graph.visualize() for that.
+    Inside the context, every sampler outputs the vertices of a mesh of its
+    geometry, see :meth:`PointSampler.set_mesh_mode`.
+
+    Args:
+        samplers (iterable of PointSampler): The samplers to switch.
+        max_vertex_distance (float or dict or None): The mesh resolution, one
+            value or one per geometry variable.
+        device: The device the mesh points are built on. Defaults to each
+            sampler's own device. The samplers themselves are not moved.
     """
     for s in samplers:
         s.set_mesh_mode(max_vertex_distance, device)
@@ -48,11 +54,17 @@ def discretization_mode(
 
 @contextmanager
 def active_discretization_mode(samplers, geometry):
-    """Evaluate `samplers` at `geometry`'s own points for one run (used by
-    `graph.visualize(port, reference=...)`), instead of whatever they would
-    otherwise sample or mesh. Every sampler gets the same
-    geometry, mirroring discretization_mode()'s uniform mesh-mode
-    injection - there is no per-sampler override for a multi-sampler graph.
+    """Context manager that makes samplers output a geometry's points.
+
+    Inside the context, every sampler outputs the discretization points of
+    `geometry` instead of sampling or meshing, see
+    :attr:`PointSampler.active_discretization`. All samplers get the same
+    geometry.
+
+    Args:
+        samplers (iterable of PointSampler): The samplers to switch.
+        geometry (Geometry): A discrete geometry with
+            ``discretization_points``.
     """
     for s in samplers:
         s.active_discretization = geometry
@@ -64,24 +76,59 @@ def active_discretization_mode(samplers, geometry):
 
 
 class PointSampler(DataNode[TensorType]):
-    """Parent class for sampling individual points from a geometry.
+    """Base class for data nodes that sample points from a geometry.
+
+    The node has one output port for the points, named after the geometry
+    variable, and optionally one for the normals. Each forward pass
+    returns, in this order of precedence: the points of
+    `active_discretization`, the vertices of a mesh in mesh mode, the next
+    cached batch, or newly sampled points. The current points are also
+    stored in `sampled_geometry`, e.g. for plotting.
 
     Args:
-        geometry (Geometry): The geometry in which points should be sampled.
-        n_points (int | Hyperparameter): The number of points that should be sampled.
-        filter_fn (callable, optional): An additional filter that specifies at which
-            location points should be sampled. Internally a rejection sampling
-            strategy is used. Default is None.
-        compute_normals (bool, optional): Whether to compute normals to each sampled
-            points. This is only possible for BoundaryGeometries. Defaults to False.
-        normal_name (str | Variable): The name for the output port of the normals.
-            Defaults to "normals".
-        name (str, optional): The name of the node. Defaults to "PointSampler".
-        state (NodeState, optional): The state of the node.
-            Defaults to NodeState.FIXED.
-        backend (type[ComputingBackend[TensorType]], optional): What backend the node
-            should use for computations, etc. Defaults to the deep learning
-            backend (DEFAULT_DL_BACKEND).
+        geometry: The geometry to sample from. Must use the same backend as the
+            node.
+        n_points: The number of points sampled per batch.
+        filter_fn: Restricts where points are sampled, by rejection sampling.
+            Its parameters are annotated with the variables (parts of the
+            geometry variable) whose coordinates they receive; it returns a
+            boolean mask of accepted points.
+        compute_normals: Whether to also output the normal vector at each
+            point. Only possible for a
+            :class:`~qewton.geometries.base.BoundaryGeometry`.
+        normal_name: The variable, or the name of the variable, of the normal
+            output port.
+        name: The name of the node.
+        state: The state of the node.
+        backend: The backend used for computations.
+
+    Raises:
+        ValueError: If `compute_normals` is set for a geometry that is not a
+            boundary.
+
+    Attributes:
+        geometry (Geometry): The geometry to sample from.
+        sampled_geometry (SampledGeometry): Holds the points of the current
+            forward pass, see
+            :class:`~qewton.geometries.discrete.sampled_geometry.SampledGeometry`.
+        compute_normals (bool): Whether normals are output.
+        normal_name (str or Variable): The variable of the normal output port.
+        filter_fn (callable or None): The rejection filter.
+        point_cache (TensorType or None): Cached batches of points, see
+            :meth:`cache`.
+        normal_cache (TensorType or None): Cached batches of normals, see
+            :meth:`cache`.
+        mesh_mode (bool): Whether mesh mode is active, see
+            :meth:`set_mesh_mode`.
+        active_discretization (Geometry or None): If set, the sampler outputs
+            the discretization points of this geometry, overriding sampling and
+            mesh mode. Setting it validates the geometry and raises
+            :class:`ValueError` if its dimension differs from the sampler's,
+            its bounding box does not overlap the sampler's domain on some
+            axis, or any of its points lies outside the domain.
+
+    Notes:
+        Subclasses must implement :meth:`sample_points`.
     """
 
     def __init__(
@@ -144,13 +191,6 @@ class PointSampler(DataNode[TensorType]):
 
     @property
     def active_discretization(self) -> Geometry | None:
-        """The geometry to evaluate this sampler's model at for one run,
-        overriding both normal sampling and mesh mode - injected by
-        `graph.visualize(port, reference=...)` so the model is evaluated
-        exactly where a loaded reference already has data, rather than
-        matching the reference onto the model's own points (which would
-        leak interpolation error into the comparison).
-        """
         return self._active_discretization
 
     @active_discretization.setter
@@ -160,14 +200,8 @@ class PointSampler(DataNode[TensorType]):
         self._active_discretization = geometry
 
     def _validate_active_discretization(self, geometry: Geometry) -> None:
-        """Dimension is a hard requirement - object identity between
-        `geometry.variable` and this sampler's own `self.geometry.variable`
-        is preferred (reusing one Variable instance end to end avoids any
-        matching problem at all), but not itself checked here. The
-        bounding-box and containment checks catch a badly-matched reference
-        before it ever reaches the model, rather than producing an error
-        plot that looks like a bad model rather than a units/domain bug.
-        """
+        # Checks dimension, bounding-box overlap and containment. Variable
+        # identity is not checked.
         own_variable = self.geometry.variable
         if geometry.variable.dim != own_variable.dim:
             raise ValueError(
@@ -212,15 +246,25 @@ class PointSampler(DataNode[TensorType]):
         max_vertex_distance: float | dict[Variable, float] | None = None,
         device: Device | str | None = None,
     ):
+        """Switch the sampler to mesh mode.
+
+        In mesh mode, the forward pass outputs the vertices of a mesh of
+        the geometry (see
+        :meth:`~qewton.geometries.discrete.sampled_geometry.SampledGeometry.visualization_geometry`)
+        and stores the cells in `sampled_geometry`.
+
+        Args:
+            max_vertex_distance: The mesh resolution, one value or one per
+                geometry variable.
+            device: The device the mesh is built on. Defaults to the sampler's
+                current device.
+        """
         self.mesh_mode = True
         self.current_mesh_max_vertex_distance = max_vertex_distance
-        # Falls back to this sampler's own current device (self._device,
-        # kept up to date by DataNode.to()) rather than Geometry.create_mesh()'s
-        # own cpu default, so mesh mode lands on wherever the sampler/model
-        # already live unless a call site (Graph.visualize()) overrides it.
         self.current_mesh_device = device if device is not None else self._device
 
     def unset_mesh_mode(self):
+        """Leave mesh mode and return to normal sampling."""
         self.mesh_mode = False
 
     def _check_normal_sampling_possible(self):
@@ -252,18 +296,17 @@ class PointSampler(DataNode[TensorType]):
         )
 
     def __len__(self):
+        """Return the number of points sampled per batch."""
         return self.batch_size
 
     def cache(self, n_batches=1):
-        """Caches a number of sampling points, such that they are only computed
-        once at the beginning and afterwards read from memory. Can be useful
-        when data computation is expensive or always the same points should be
-        used.
+        """Sample a number of batches once and serve them from memory.
+
+        Later forward passes cycle through the cached batches.
 
         Args:
-            n_batches (int, optional): How many points should be cached.
-                The number n_batches is in respect to the batch_size. Defaults to 1,
-                hence one batch of points is sampled.
+            n_batches (int, optional): The number of batches to cache (at least
+                one). Defaults to 1.
         """
         run_sampling = max(n_batches, 1)
         point_list, normal_list = [], []
@@ -279,23 +322,44 @@ class PointSampler(DataNode[TensorType]):
         self.cache_idx = 0
 
     def clear_cache(self):
-        """Clears the cache and goes back to *online* sampling."""
+        """Clear the cache and return to sampling on every forward pass."""
         self.point_cache = None
         self.normal_cache = None
         self.created_cache = False
 
     def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
+        """Return whether the sampler provides data in `phase`.
+
+        Args:
+            phase: The evaluation phase.
+
+        Returns:
+            bool: Always ``True``.
+        """
         return True
 
     @abstractmethod
     def sample_points(self) -> tuple[TensorType, TensorType | None]:
+        """Sample one batch of points.
+
+        Returns:
+            tuple of TensorType: The points and the normals, or ``None`` for
+                the normals if `compute_normals` is not set.
+        """
         pass
 
     def forward(self) -> TensorType | tuple[TensorType, TensorType | None]:
-        """Executes the data loading for one batch.
+        """Return the points (and normals) for one batch.
 
-        This method handles split indexing, batch slicing, and moving data to
-        the appropriate device.
+        Returns:
+            TensorType or tuple of TensorType: The points, or
+                ``(points, normals)`` if `compute_normals` is set. Points of
+                `active_discretization` are flattened to shape
+                ``(n_points, dim)`` and moved to the sampler's device.
+
+        Raises:
+            NotImplementedError: If normals are requested together with
+                `active_discretization` or mesh mode.
         """
         if self._active_discretization is not None:
             if self.compute_normals:
@@ -309,8 +373,8 @@ class PointSampler(DataNode[TensorType]):
                 self.backend.build_tensor(geometry.discretization_points), self._device
             )
             # A structured reference (e.g. a grid, or a product of point sets)
-            # is evaluated as a flat batch of points like any other sample -
-            # Graph.visualize() restores the structure on the result.
+            # is evaluated as a flat batch of points; Graph.visualize()
+            # restores the structure on the result.
             points = points.reshape(-1, points.shape[-1])
 
             # for plotting: store the current points and cells
@@ -363,9 +427,8 @@ class PointSampler(DataNode[TensorType]):
         return points
 
     def _store_discretization(self, geometry: Geometry, points: TensorType):
-        """Records `points` and the cells of `geometry` in sampled_geometry.
-        A product mesh is passed on as such, so its cells are only built
-        when needed."""
+        # A product mesh is passed on as such, so its cells are only built
+        # when needed.
         if isinstance(geometry, ProductMeshGeometry):
             self.sampled_geometry.set_current_discretization(points, product=geometry)
             return
@@ -375,18 +438,26 @@ class PointSampler(DataNode[TensorType]):
         )
 
     def to(self, device: str | Device):
+        """Move the node and its cached points to `device`.
+
+        Args:
+            device: The target device.
+        """
         super().to(device)
-        # Not gated on created_cache: a subclass (e.g. GridSampler) can
-        # populate point_cache/normal_cache on its own, outside the
-        # cache()/created_cache opt-in mechanism - whatever's actually
-        # cached needs to move with the sampler regardless of how it got
-        # there, or it silently keeps serving stale-device tensors forever.
+        # Not gated on created_cache: subclasses (e.g. GridSampler) may fill
+        # point_cache/normal_cache without cache().
         if self.point_cache is not None:
             self.point_cache = self.backend.to(self.point_cache, self._device)
         if self.normal_cache is not None:
             self.normal_cache = self.backend.to(self.normal_cache, self._device)
 
     def __mul__(self, other):
+        """Return the product of two samplers.
+
+        Returns:
+            ProductSampler: See
+                :class:`~qewton.data.dataloaders.sampler.product_sampler.ProductSampler`.
+        """
         from .product_sampler import ProductSampler
 
         return ProductSampler(self, other)

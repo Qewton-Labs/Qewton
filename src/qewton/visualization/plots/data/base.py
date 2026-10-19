@@ -1,3 +1,6 @@
+"""Base class :class:`DataPlot` and shared helpers for plots of data
+described by a DataConfiguration."""
+
 import numpy as np
 
 from qewton.backends import resolve_backend
@@ -15,9 +18,21 @@ from qewton.visualization.plots.spec import (
 
 
 class CoordTransform:
-    """Transforms a plot's evaluated point positions before they're drawn."""
+    """Transforms a plot's evaluated point positions before they are drawn.
+
+    Notes:
+        Subclasses must implement :meth:`apply`.
+    """
 
     def apply(self, vertices: np.ndarray) -> np.ndarray:
+        """Return the transformed positions.
+
+        Args:
+            vertices: Point positions, shape ``(n_points, dim)``.
+
+        Returns:
+            numpy.ndarray: The transformed positions.
+        """
         raise NotImplementedError
 
 
@@ -25,13 +40,49 @@ class IdentityCoord(CoordTransform):
     """A CoordTransform that leaves point positions unchanged."""
 
     def apply(self, vertices: np.ndarray) -> np.ndarray:
+        """Return `vertices` unchanged."""
         return vertices
 
 
 class DataPlot(Plot):
-    """Base class for a Plot whose values come from `data` + a
-    `DataConfiguration` - the most common input family, underlying the grid,
-    mesh, curve and scatter plot families."""
+    """Base class for a Plot whose values come from `data` described by a
+    DataConfiguration.
+
+    The input family underlying the grid, mesh, point, curve and sample
+    plot families. At construction, every control is resolved against the
+    size of its data dimension (see
+    :meth:`~qewton.visualization.plots.spec.ControlSpec.resolve`) and, for
+    the dimension of a one-dimensional geometry (e.g. time), gets that
+    geometry's coordinates.
+
+    Args:
+        data (array_like): The data to plot, indexable like an array of any
+            supported backend.
+        data_config: The
+            :class:`~qewton.config.data_configurations.DataConfiguration`
+            describing the dimensions of `data`.
+        title (str, optional): Panel heading.
+        label (str, optional): Legend entry text.
+        theme (Theme, optional): Theme used to draw this plot.
+        controls: Control specs reducing or partitioning `data`.
+        coord_transform: Transform applied to point positions before drawing.
+            Defaults to :class:`IdentityCoord`.
+
+    Attributes:
+        data (array_like): The data to plot.
+        data_config (DataConfiguration): The configuration describing `data`.
+        coord_transform (CoordTransform): Transform applied to point positions.
+        drawn_geometry_axes (GeometryAxes or list of GeometryAxes or None): The
+            GeometryAxes this plot draws: all GeometryAxes of `data_config`
+            except those a control steps through. See
+            :func:`~qewton.visualization.plots.spec.drawn_geometry_axes`.
+
+    Notes:
+        Subclasses must implement
+        :meth:`~qewton.visualization.plots.base.Plot.evaluate` (usually
+        starting with :meth:`apply_controls`) and
+        :meth:`~qewton.visualization.plots.base.Plot.create_artist`.
+    """
 
     def __init__(
         self,
@@ -62,8 +113,8 @@ class DataPlot(Plot):
 
     def _dim_coordinates(self, axis_slc, size: int) -> np.ndarray | None:
         """Coordinates along a data dimension, if it is the only dimension
-        of a GeometryAxes over a 1-dimensional geometry (e.g. the time axis
-        of space-time data) - None otherwise."""
+        of a GeometryAxes over a 1D geometry (e.g. the time axis of
+        space-time data) and the sizes match - None otherwise."""
         dim = PlotSpec.as_single_dim(axis_slc)
         dim = dim if dim >= 0 else self.data.ndim + dim
         offset = 0
@@ -89,10 +140,8 @@ class DataPlot(Plot):
 
     def _resolve_controls(self) -> list[tuple[ControlSpec, int]]:
         """(spec, dim index in the original self.data) for each control spec,
-        sorted by dim index descending - so collapsing one dimension during
-        apply_controls()/reduce_coordinates() never shifts the indices still
-        to be processed. Shared by both, since a control on a geometry
-        dimension must reduce data and geometry coordinates the same way."""
+        sorted by dim index descending, so collapsing one dimension never
+        shifts the indices still to be processed."""
         resolved = []
         for spec in self.controls:
             axis_slc, entry_slc = PlotSpec.get_slice(
@@ -110,16 +159,22 @@ class DataPlot(Plot):
         return resolved
 
     def apply_controls(self):
-        """Slices `self.data` down to the current Fixed/Slider/Facet control
-        states, one dimension removed per control.
+        """Slice `data` down to the current control states.
+
+        Each control removes the dimension it acts on, indexed at its
+        current state.
 
         Returns:
-            tuple: `(sliced, index_map, slice_map)` - the reduced array,
-                plus two helpers to translate positions computed against the
-                original (unreduced) `self.data`/`self.data_config` into
-                positions in `sliced`: `index_map(original_idx)` for a
-                single dimension index, `slice_map(slc)` for a slice tuple
-                (e.g. from `DataConfiguration.get_variable_slice`).
+            tuple: ``(sliced, index_map, slice_map)``, where
+
+            - ``sliced`` (array_like) is the reduced data.
+            - ``index_map`` (callable) maps a dimension index of the original
+              `data` to the corresponding index in `sliced`.
+            - ``slice_map`` (callable) maps a slice tuple computed against the
+              original `data_config` (e.g. from
+              ``DataConfiguration.get_variable_slice``) onto `sliced` by
+              dropping the entries of removed dimensions. Raises
+              NotImplementedError for a tuple containing Ellipsis.
         """
         resolved = self._resolve_controls()
 
@@ -136,10 +191,6 @@ class DataPlot(Plot):
             return original_idx - shift
 
         def slice_map(slc: tuple) -> tuple:
-            """Maps a slice tuple computed against the original
-            `data_config` (one entry per original dimension, e.g. from
-            `get_variable_slice`) onto `sliced`'s already-reduced
-            dimensions, by dropping the entries the controls consumed."""
             if Ellipsis in slc:
                 raise NotImplementedError(
                     "slice_map does not yet support slices containing Ellipsis."
@@ -149,22 +200,22 @@ class DataPlot(Plot):
         return sliced, index_map, slice_map
 
     def reduce_coordinates(self, points, geometry_dims: tuple[int, int]):
-        """Applies the same control reduction as apply_controls() to an array
-        indexed by the geometry's own dimensions (e.g. discretization_points).
+        """Apply the control reduction of :meth:`apply_controls` to geometry
+        coordinates.
 
-        `apply_controls()` only slices `self.data`; a geometry's coordinates
-        live in a separate array and are otherwise never touched, so a control
-        on a geometry dimension would desynchronize values from coordinates
-        (data reduced, coordinates still describing every state). A control
-        that reduces a geometry dimension must reduce the geometry coordinates
-        the same way.
+        Controls on a geometry dimension reduce `points` the same way they
+        reduce `data`, so drawn positions stay in sync with drawn values.
 
         Args:
-            points: Array indexed by the geometry's dimensions, plus a
-                trailing coordinate-component axis that is never reduced
-                (e.g. discretization_points, shape (..., n_components)).
-            geometry_dims: (start, stop) range the geometry's dimensions
-                occupy in self.data - see _geometry_dims().
+            points (array_like): Array indexed by the geometry's dimensions
+                plus a trailing coordinate-component axis that is never
+                reduced, e.g. ``discretization_points`` with shape ``(...,
+                n_components)``.
+            geometry_dims: ``(start, stop)`` range the geometry's dimensions
+                occupy in `data`.
+
+        Returns:
+            array_like: The reduced `points`.
         """
         start, _ = geometry_dims
         reduced = points
@@ -178,9 +229,6 @@ class DataPlot(Plot):
 
     @property
     def drawn_geometry_axes(self):
-        """The GeometryAxes this plot draws: every GeometryAxes of
-        `data_config` except those one of its controls steps through. See
-        drawn_geometry_axes() in plots.spec."""
         return drawn_geometry_axes(self.data_config, self.controls)
 
     def _geometry_dims(self) -> tuple[int, int]:
@@ -204,9 +252,8 @@ class DataPlot(Plot):
 
     def _resolve_structural_dim(self, spec) -> int:
         """Resolves a PlotSpec that must refer to exactly one full array
-        dimension (not a channel slice) to its index in self.data. Shared by
-        every plot family with a structural axis role (StructuredGridPlot's
-        x/y, LinePlot's x)."""
+        dimension (not a channel slice) to its index in self.data. Raises
+        ValueError otherwise."""
         axis_slc, entry_slc = PlotSpec.get_slice(spec.variable_or_axes, self.data_config)
         if entry_slc is not None:
             raise ValueError(
@@ -227,12 +274,15 @@ class DataPlot(Plot):
 
     @staticmethod
     def component_count(spec, data_config: DataConfiguration) -> int:
-        """Number of feature components a spec resolves to (1 means scalar).
+        """Return the number of feature components a spec resolves to.
 
-        Used to reject vector variables where a scalar is required, which would
-        otherwise silently render only the first component. Shared by every
-        plot family that can take either a scalar or vector spec (MeshPlot's
-        color/z, EmbeddedGridPlot's color).
+        Args:
+            spec (PlotSpec): The spec to inspect.
+            data_config: The configuration of the data.
+
+        Returns:
+            int: The Variable's dimension, or the length of the last entry of
+                the spec's slice; 1 means scalar.
         """
         var = spec.variable_or_axes
         if isinstance(var, Variable):
@@ -242,6 +292,15 @@ class DataPlot(Plot):
         return (last.stop - last.start) if isinstance(last, slice) else 1
 
     def require_scalar(self, spec, role: str):
+        """Check that `spec` resolves to a scalar.
+
+        Args:
+            spec (PlotSpec): The spec to check.
+            role: Name of the role, used in the error message.
+
+        Raises:
+            ValueError: If `spec` has more than one component.
+        """
         n = self.component_count(spec, self.data_config)
         if n != 1:
             raise ValueError(
@@ -251,20 +310,40 @@ class DataPlot(Plot):
 
 
 class VectorFieldPlotMixin:
-    """Shared vector and color handling for arrow-field plots - QuiverPlot
-    (grid points) and MeshVectorPlot (mesh vertices) differ only in where
-    the arrow positions come from.
+    """Shared vector and color handling for arrow-field plots.
 
-    Expects `self.vector` (a VectorSpec) to be set before
-    `_init_vector_color()` runs. The `color` role then resolves as:
+    Used by :class:`~qewton.visualization.plots.data.grid.QuiverPlot`
+    (grid points) and
+    :class:`~qewton.visualization.plots.data.mesh.MeshVectorPlot` (mesh
+    vertices), which differ only in where the arrow positions come from.
+
+    The `color` argument of those plots resolves as:
 
     - None (default): colors by vector magnitude, i.e. a ColorSpec on the
-      vector's own Variable - pass `ColorSpec(vector_variable, cmap=...,
-      scale=...)` explicitly to keep magnitude coloring with a custom
-      colormap or a shared Scale.
-    - a scalar ColorSpec/Variable: colors each arrow by that field instead,
-      the same way SurfacePlot decouples its color from its height.
-    - False: flat, uncolored arrows in the theme's `vector_color`.
+      vector's own Variable. Pass ``ColorSpec(vector_variable, cmap=...,
+      scale=...)`` to keep magnitude coloring with a custom colormap or a
+      shared Scale.
+    - a scalar ColorSpec or Variable: colors each arrow by that field.
+    - False: flat, uncolored arrows in the theme's ``vector_color``.
+
+    Arrows whose vector or color is NaN are dropped. With
+    ``VectorSpec(scale=None)``, the longest vector in the whole data (all
+    control states) is drawn `auto_scale_fill` times the typical spacing
+    between drawn positions.
+
+    Attributes:
+        colors_by_magnitude (bool): Whether arrows are colored by the vector
+            magnitude.
+        auto_scale_fill (float): Longest arrow length under autoscaling, as a
+            fraction of the typical spacing between drawn arrows.
+
+    Notes:
+        Must be combined with a
+        :class:`~qewton.visualization.plots.data.base.DataPlot`. The plot must
+        set ``self.vector`` (a
+        :class:`~qewton.visualization.plots.spec.VectorSpec`) before calling
+        ``_init_vector_color()``, and builds its result with
+        ``_evaluate_arrows()``.
     """
 
     def _init_vector_color(self, color: ColorSpec | Variable | bool | None):
@@ -289,12 +368,8 @@ class VectorFieldPlotMixin:
     def _evaluate_arrows(self, data, slice_map, positions: np.ndarray) -> VectorResult:
         """Extracts one vector (and color value) per position from the
         already control-reduced `data`, then applies the VectorSpec's
-        normalize/scale/subsample.
-
-        Arrows whose vector or color is NaN (e.g. grid points a
-        MeshInterpolationNode's point_filter excluded) are dropped entirely
-        rather than drawn as degenerate zero-length arrows.
-        """
+        normalize/subsample/scale. Arrows whose vector or color is NaN are
+        dropped."""
         to_numpy = resolve_backend(data).to_numpy
         positions = np.asarray(resolve_backend(positions).to_numpy(positions))
         n_components = positions.shape[-1]
@@ -310,8 +385,7 @@ class VectorFieldPlotMixin:
         magnitude = np.linalg.norm(vectors, axis=1)
         color = None
         if self.colors_by_magnitude:
-            # The magnitude of the raw field, before normalize/scale - those
-            # only change how long an arrow is drawn, not what it encodes.
+            # Magnitude of the raw field, before normalize/scale.
             color = magnitude
         elif self.color is not None:
             slc = self.data_config.get_variable_slice(self.color.variable_or_axes)
@@ -327,8 +401,6 @@ class VectorFieldPlotMixin:
             safe = np.where(magnitude > 0, magnitude, 1.0)[:, None]
             vectors = vectors / safe
 
-        # Decimate after normalize, not before: subsampling only changes
-        # which arrows are drawn, never what a drawn arrow means.
         keep = np.zeros(len(positions), dtype=bool)
         keep[:: self.vector.subsample] = True
         keep &= ~np.isnan(vectors).any(axis=1)
@@ -347,16 +419,12 @@ class VectorFieldPlotMixin:
             color=color[keep] if color is not None else None,
         )
 
-    #: Longest arrow length under autoscaling, as a fraction of the typical
-    #: spacing between drawn arrows - a bit below 1, so neighboring arrows
-    #: (and 3D cones, whose width grows with their length) don't touch.
     auto_scale_fill = 0.8
 
     def _auto_scale(self, positions: np.ndarray, n_components: int) -> float:
-        """VectorSpec(scale=None)'s factor: the longest vector in the WHOLE
-        data (every control state, not just the drawn one) maps to
-        `auto_scale_fill` times the typical spacing of the drawn positions -
-        so arrow lengths stay comparable while a slider moves."""
+        """VectorSpec(scale=None)'s factor: the longest vector in the whole
+        data (every control state) maps to `auto_scale_fill` times the
+        typical spacing of the drawn positions. 1.0 if either is zero."""
         if self.vector.normalize:
             reference = 1.0
         else:
@@ -372,10 +440,8 @@ class VectorFieldPlotMixin:
 
 def _typical_spacing(positions: np.ndarray, n_probe: int = 128) -> float:
     """Median nearest-neighbor distance among `positions`, estimated from up
-    to `n_probe` probe points (deterministically chosen) against all of
-    them - O(n_probe * n) instead of a full O(n^2) distance matrix, and
-    robust to how the points are arranged (a grid, a planar slice embedded
-    in 3D, or mesh vertices). 0 for fewer than two distinct points."""
+    to `n_probe` deterministically chosen probe points against all points.
+    0 for fewer than two distinct points."""
     positions = np.asarray(positions, dtype=np.float64)
     if len(positions) < 2:
         return 0.0

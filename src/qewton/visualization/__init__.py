@@ -22,7 +22,6 @@ from .plots.result import (
     CurveResult,
     PathResult,
     ScatterResult,
-    Column,
     TableResult,
     PortLayout,
     NodeLayout,

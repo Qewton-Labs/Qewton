@@ -1,3 +1,5 @@
+"""Plotly artists for vector fields."""
+
 import numpy as np
 from plotly import graph_objects as go
 
@@ -13,20 +15,16 @@ from qewton.visualization.renderers.plotly.common import (
 
 
 class _BinnedArrowArtist(PlotlyArtist):
-    """Arrows colored per arrow, drawn as one flat-colored trace per value
-    bin - neither a single go.Scatter (2D) nor a single go.Cone (3D) can
-    color its arrows by an arbitrary per-arrow value (Scatter has one line
-    color per trace, Cone only colors by its own u/v/w norm, which breaks
-    as soon as the arrows are normalized or colored by another field). Same
-    approach as FilledMeshArtist: `plot.n_bins` traces, some possibly empty,
-    so a redraw never changes the trace count, plus one invisible trace
-    carrying the continuous colorbar.
+    """Base class for arrow artists coloring arrows by value bins.
 
-    A plot with `color=False` draws all arrows into a single trace in the
-    theme's flat `vector_color`, with no colorbar.
+    Arrows are grouped into ``plot.n_bins`` value bins, one flat-colored
+    trace per bin (some possibly empty), plus an invisible colorbar carrier
+    trace. Without a color field, all arrows go into one trace in
+    ``theme.vector_color`` and there is no colorbar.
 
-    Subclasses provide `_arrow_trace` (one bin's trace), `_copy_arrow_trace`
-    (in-place update) and `_set_axis_titles`.
+    Subclasses must implement the static methods ``_arrow_trace`` (one
+    bin's trace), ``_copy_arrow_trace`` (in-place update) and
+    ``_set_axis_titles``, and set ``three_d`` for 3D.
     """
 
     three_d = False
@@ -44,9 +42,8 @@ class _BinnedArrowArtist(PlotlyArtist):
 
     @staticmethod
     def _bins(plot, result):
-        """(masks, colors, colorbar) - one boolean mask over the arrows and
-        one color per trace, and (cmap, vmin, vmax) for the colorbar, or
-        None for flat, uncolored arrows."""
+        """(masks, colors, colorbar): one arrow mask and one color per
+        trace, and (cmap, vmin, vmax) or None for uncolored arrows."""
         n = len(result.positions)
         if result.color is None:
             return [np.ones(n, dtype=bool)], [plot.theme.vector_color], None
@@ -58,6 +55,10 @@ class _BinnedArrowArtist(PlotlyArtist):
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         result = plot.evaluate()
         positions, vectors = _to_numpy(result.positions), _to_numpy(result.vectors)
         masks, colors, colorbar = cls._bins(plot, result)
@@ -89,6 +90,10 @@ class _BinnedArrowArtist(PlotlyArtist):
         return cls(arrow_indices, colorbar_idx, row, col)
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         result = plot.evaluate()
         positions, vectors = _to_numpy(result.positions), _to_numpy(result.vectors)
         masks, colors, colorbar = self._bins(plot, result)
@@ -104,12 +109,30 @@ class _BinnedArrowArtist(PlotlyArtist):
 
 
 class ArrowField2DArtist(_BinnedArrowArtist):
-    """Arrows as line segments with a rotated-marker arrowhead at the tip -
-    Plotly has no native 2D quiver primitive in graph_objects, so this builds
-    one from go.Scatter the same way common._edge_trace builds mesh edges:
-    one (start, tip, None) triple per arrow in a single trace per color bin,
-    with marker.angleref="previous" rotating the tip marker to match the
-    segment direction."""
+    """Draws a 2D vector field as arrows.
+
+    Used for 2D :class:`~qewton.visualization.plots.data.grid.QuiverPlot` and
+    :class:`~qewton.visualization.plots.data.mesh.MeshVectorPlot`. Each arrow
+    is a line segment from its position to position + vector with an arrow
+    marker at the tip, rotated along the segment via
+    ``angleref="previous"``. Coloring by value bins as described in
+    ``_BinnedArrowArtist``.
+
+    Args:
+        arrow_indices (list of int): Indices of the arrow traces, one per bin.
+        colorbar_idx (int, optional): Index of the colorbar carrier trace, if
+            colored.
+        row (int, optional): Facet grid row.
+        col (int, optional): Facet grid column.
+
+    Attributes:
+        arrow_indices (list of int): Indices of the arrow traces.
+        colorbar_idx (int or None): Index of the colorbar carrier trace.
+        row (int or None): Facet grid row.
+        col (int or None): Facet grid column.
+        trace_indices (list of int): The arrow traces and, if present, the
+            colorbar carrier.
+    """
 
     @staticmethod
     def _arrow_trace(plot, positions, vectors, color):
@@ -144,12 +167,29 @@ class ArrowField2DArtist(_BinnedArrowArtist):
 
 
 class ArrowField3DArtist(_BinnedArrowArtist):
-    """3D arrows via go.Cone - Plotly's native vector-field primitive, so
-    (unlike the 2D case) no manual segment-building is needed. Cones use
-    sizemode="raw": each cone is exactly as long as its (scaled) vector,
-    the same convention the 2D artist draws tips at - "scaled" would size
-    every bin's trace relative to its own max norm, so cones of different
-    colors would no longer be comparable."""
+    """Draws a 3D vector field as cones.
+
+    Used for 3D :class:`~qewton.visualization.plots.data.grid.QuiverPlot` and
+    :class:`~qewton.visualization.plots.data.mesh.MeshVectorPlot`. Each bin is
+    one ``go.Cone`` trace with a single-color colorscale and
+    ``sizemode="raw"``, so every cone is exactly as long as its vector.
+    Coloring by value bins as described in ``_BinnedArrowArtist``.
+
+    Args:
+        arrow_indices (list of int): Indices of the cone traces, one per bin.
+        colorbar_idx (int, optional): Index of the colorbar carrier trace, if
+            colored.
+        row (int, optional): Facet grid row.
+        col (int, optional): Facet grid column.
+
+    Attributes:
+        arrow_indices (list of int): Indices of the cone traces.
+        colorbar_idx (int or None): Index of the colorbar carrier trace.
+        row (int or None): Facet grid row.
+        col (int or None): Facet grid column.
+        trace_indices (list of int): The cone traces and, if present, the
+            colorbar carrier.
+    """
 
     three_d = True
 

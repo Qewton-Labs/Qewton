@@ -45,7 +45,7 @@ class TestThemeDataclass:
         theme = Theme()
         for field in (
             "geometry_color", "vector_color", "line_color", "grid_color",
-            "node_color_by_type", "node_color_default", "cluster_outline_color",
+            "node_color_by_type", "node_color_default",
         ):
             assert hasattr(theme, field)
 

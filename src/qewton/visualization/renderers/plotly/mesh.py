@@ -1,3 +1,5 @@
+"""Plotly artists for fields on meshes."""
+
 from plotly import graph_objects as go
 import numpy as np
 
@@ -18,10 +20,22 @@ from qewton.visualization.renderers.plotly.common import (
 
 
 class SurfaceMeshArtist(PlotlyArtist):
-    """3D triangulated mesh with optional per-vertex coloring.
+    """Draws a 3D triangle mesh as ``go.Mesh3d``.
 
-    Serves both MeshFieldPlot (3D surfaces) and MeshSurfacePlot (2D mesh
-    elevated into 3D) - both return a MeshResult with 3D vertices.
+    Used for a 3D :class:`~qewton.visualization.plots.data.mesh.MeshFieldPlot`
+    and for a :class:`~qewton.visualization.plots.data.mesh.MeshSurfacePlot`
+    (2D mesh elevated by a data value). The color field is per vertex or
+    per cell; without one, the mesh is drawn in ``theme.geometry_color``.
+    With ``plot.show_edges`` a wireframe trace is added.
+
+    Args:
+        mesh_idx (int): Index of the mesh trace.
+        edges_idx (int, optional): Index of the wireframe trace, if any.
+
+    Attributes:
+        edges_idx (int or None): Index of the wireframe trace, if any.
+        trace_indices (list of int): The mesh trace and, if present, the
+            wireframe trace.
     """
 
     def __init__(self, mesh_idx, edges_idx=None):
@@ -34,6 +48,10 @@ class SurfaceMeshArtist(PlotlyArtist):
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         result = plot.evaluate()
         vertices, cells = _to_numpy(result.vertices), _detach_to_numpy(result.cells)
         color = _to_numpy(result.color) if result.color is not None else None
@@ -86,11 +104,15 @@ class SurfaceMeshArtist(PlotlyArtist):
         return cls(mesh_idx, edges_idx)
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         result = plot.evaluate()
         vertices = _to_numpy(result.vertices)
         color = _to_numpy(result.color) if result.color is not None else None
         trace = backend_figure.data[self.figure_idx]
-        # z may change when a control moves (MeshSurfacePlot), x/y never do
+        # Only z can change (MeshSurfacePlot); x/y are fixed.
         trace.z = vertices[:, 2]
         if color is not None:
             trace.intensity = color
@@ -102,12 +124,9 @@ class SurfaceMeshArtist(PlotlyArtist):
 
     @staticmethod
     def _scene_axis_titles(plot) -> dict:
-        """x/y always come from the mesh's own ambient coordinate Variable
-        (MeshFieldPlot and MeshSurfacePlot alike - the mesh itself never
-        moves). z differs: MeshFieldPlot's z genuinely is the mesh's own
-        3rd coordinate (part of the same Variable), but MeshSurfacePlot's z
-        is a *data* value elevating a 2D mesh - it has its own named AxisSpec
-        (`plot.z`) instead, unrelated to the mesh's 2D coordinate Variable."""
+        """Scene axis titles: x/y from the mesh's coordinate Variable; z
+        from `plot.z` if the plot has one (MeshSurfacePlot), else the
+        Variable's third component."""
         geometry = plot.drawn_geometry_axes.geometry
         z_spec = getattr(plot, "z", None)
         if z_spec is not None:
@@ -121,22 +140,28 @@ class SurfaceMeshArtist(PlotlyArtist):
 
 
 class FilledMeshArtist(PlotlyArtist):
-    """Scalar field on a 2D triangulation, drawn as flat-shaded fills binned
-    by value.
+    """Draws a scalar field on a 2D triangulation as binned flat fills.
 
-    Plotly has no 2D primitive with per-triangle Gouraud shading, and the
-    alternative (go.Mesh3d at z=0) draws into a `scene` cell, which can
-    never sit beside a genuinely cartesian cell (HeatmapPlot) in one row -
-    exactly the comparison layout this exists for. Instead: one
-    go.Scatter(fill="toself") trace per value bin, each batching every
-    triangle whose value falls in it (one fillcolor per trace - the cost is
-    flat, per-triangle shading instead of per-vertex interpolation).
+    Used for a 2D :class:`~qewton.visualization.plots.data.mesh.MeshFieldPlot`.
+    Each triangle is colored by the mean of its vertex values. Triangles
+    are grouped into ``plot.n_bins`` value bins, each drawn as one
+    ``go.Scatter(fill="toself")`` trace (some possibly empty), plus an
+    invisible trace carrying the continuous colorbar and, with
+    ``plot.show_edges``, a wireframe trace. The y-axis is scale-anchored to
+    x.
 
-    Always creates exactly `plot.n_bins` fill traces, some possibly empty,
-    so a redraw whose bin occupancy shifted doesn't change the trace count.
-    A separate invisible trace carries the continuous colorbar, since no
-    single visible trace holds the full value range for Plotly to infer one
-    from.
+    Args:
+        fill_indices (list of int): Indices of the fill traces, one per bin.
+        colorbar_idx (int): Index of the colorbar carrier trace.
+        edges_idx (int, optional): Index of the wireframe trace, if any.
+
+    Attributes:
+        fill_indices (list of int): Indices of the fill traces, one per bin.
+        colorbar_idx (int): Index of the colorbar carrier trace.
+        edges_idx (int or None): Index of the wireframe trace, if any.
+        trace_indices (list of int): The fill traces and the colorbar carrier;
+            the wireframe is not included because a 2D mesh's vertices never
+            move.
     """
 
     def __init__(self, fill_indices, colorbar_idx, edges_idx=None):
@@ -147,11 +172,14 @@ class FilledMeshArtist(PlotlyArtist):
 
     @property
     def trace_indices(self) -> list[int]:
-        # The wireframe is left out: a 2D mesh's vertices never move.
         return self.fill_indices + [self.colorbar_idx]
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         result = plot.evaluate()
         vertices = _to_numpy(result.vertices)[:, :2]
         cells = _detach_to_numpy(result.cells)
@@ -198,13 +226,17 @@ class FilledMeshArtist(PlotlyArtist):
         x_name, y_name = axis_names_from_variable(geometry.variable, 2)
         backend_figure.update_xaxes(title=x_name, row=row, col=col)
         backend_figure.update_yaxes(title=y_name, row=row, col=col)
-        # Same known gap as GeometryArtist2D: exact only for the
-        # non-faceted case (one cell's xaxis is literally named "x").
+        # scaleanchor="x" is exact only for a non-faceted figure, where the
+        # cell's x-axis is named "x".
         backend_figure.update_yaxes(scaleanchor="x", row=row, col=col)
 
         return cls(fill_indices, colorbar_idx, edges_idx)
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         result = plot.evaluate()
         vertices = _to_numpy(result.vertices)[:, :2]
         cells = _detach_to_numpy(result.cells)
@@ -245,13 +277,26 @@ def _segment_coordinates(vertices: np.ndarray, segments: np.ndarray) -> list[lis
 
 
 class CurveFieldArtist(PlotlyArtist):
-    """Scalar field on a curve made of line segments (e.g. the boundary of a
-    2D domain), drawn as colored lines.
+    """Draws a scalar field on line segments as colored lines.
 
-    In 3D one go.Scatter3d trace colors its line per vertex. go.Scatter
-    lines in 2D have a single color each, so the segments are binned by
-    value into `plot.n_bins` traces, plus an invisible trace carrying the
-    colorbar - the same approach as FilledMeshArtist.
+    Used for a :class:`~qewton.visualization.plots.data.mesh.MeshFieldPlot` on
+    a curve (e.g. the boundary of a 2D domain). In 3D, one
+    ``go.Scatter3d`` trace colors its line per vertex. In 2D, segments are
+    colored by the mean of their end values and binned into
+    ``plot.n_bins`` traces, plus an invisible colorbar carrier trace, as in
+    :class:`FilledMeshArtist`.
+
+    Args:
+        line_indices (list of int): Indices of the line traces (one in 3D, one
+            per bin in 2D).
+        colorbar_idx (int, optional): Index of the colorbar carrier trace (2D
+            only).
+
+    Attributes:
+        line_indices (list of int): Indices of the line traces.
+        colorbar_idx (int or None): Index of the colorbar carrier trace.
+        trace_indices (list of int): The line traces and, if present, the
+            colorbar carrier.
     """
 
     def __init__(self, line_indices, colorbar_idx=None):
@@ -304,6 +349,10 @@ class CurveFieldArtist(PlotlyArtist):
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         vertices, cells, color = cls._evaluate(plot)
         cmap = plot.theme.resolve_cmap(plot.color.cmap)
 
@@ -352,6 +401,10 @@ class CurveFieldArtist(PlotlyArtist):
         return cls(line_indices, colorbar_idx)
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         vertices, cells, color = self._evaluate(plot)
         if plot.dim == 3:
             backend_figure.data[self.figure_idx].line.color = self._segment_colors(

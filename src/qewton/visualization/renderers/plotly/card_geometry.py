@@ -1,20 +1,12 @@
-"""Pure geometry helpers for drawing a GraphPlot's nodes as beveled "cards",
-in the exact visual style of Nick's card-editor prototype (rounded rect body,
-a 3D bevel/depth edge, semicircular port notches, and a type icon) - ported
-1:1 from that prototype's JS into Plotly path-shape strings.
+"""Geometry helpers for drawing GraphPlot nodes as beveled "cards".
 
-Nothing here touches Plotly or qewton's own graph classes - it only turns
-numbers (positions, sizes, port counts) into SVG path "d" strings and point
-lists that `renderers/plotly/graph.py` feeds into `go.layout.Shape` /
-`go.Scatter`. That split mirrors GraphLayout (renderer-agnostic layout) vs.
-NodeLinkArtist (Plotly-specific drawing) one level up.
-
-The bevel shape itself is a real 2D polygon union (front face, a copy offset
-by `depth` along both axes, and small triangular/bridge pieces connecting
-them at the corners and at each port notch's tangent points) - the same
-construction as the original prototype's use of polybooljs, done here with
-shapely. A hand-derived per-case union was tried first in the prototype and
-missed edge cases; reusing a real boolean-geometry library avoids that.
+A card is a rounded rectangle with a 3D bevel (depth) edge and a
+semicircular notch per port. The functions here turn positions, sizes and
+port counts into polygons, SVG path ``d`` strings and point lists; they use
+neither Plotly nor qewton's graph classes.
+:class:`~qewton.visualization.renderers.plotly.graph.NodeLinkArtist` turns
+the results into Plotly shapes and traces. The bevel outline is a polygon
+union computed with ``shapely`` (imported lazily).
 """
 from __future__ import annotations
 
@@ -26,9 +18,7 @@ SQ = 0.70710678  # sin/cos(45 deg) - the 45-degree point on a corner's arc
 
 
 # ---------------------------------------------------------------------------
-# Low-level polygon construction (ported from card-editor.html's
-# arc()/buildFlatPolygon()/buildFlatEdge()/bridgeTriangle()/buildBackPolygon()/
-# buildCreaseLines() - see that file for the original, heavily-commented JS).
+# Polygon construction
 # ---------------------------------------------------------------------------
 
 
@@ -36,16 +26,23 @@ def arc(
     cx: float, cy: float, r: float, a0: float, a1: float, n: int = 16,
     registry: dict | None = None,
 ) -> list[tuple[float, float]]:
-    """Samples `n+1` points of a circular arc from angle a0 to a1 (radians).
+    """Sample ``n + 1`` points of a circular arc.
 
-    When `registry` is given (a plain dict, mutated in place), every sampled
-    point is also tagged with its originating circle's (cx, cy, r) - keyed
-    by the point's own rounded coordinate, the same rounding `_round_poly`
-    applies before the shapely union. `path_from_poly` later looks a point
-    back up in this registry to tell "this point is part of a true circular
-    arc" from "this is a straight/bridge vertex", and collapses a run of
-    consecutive same-circle points into one real SVG `A` command - see its
-    own docstring for why that round-trip survives the union untouched."""
+    Args:
+        cx: x-coordinate of the circle center.
+        cy: y-coordinate of the circle center.
+        r: Radius.
+        a0: Start angle in radians.
+        a1: End angle in radians.
+        n: Number of segments.
+        registry: If given, mutated in place: every sampled point, rounded to 6
+            decimals, is mapped to its circle's ``(cx, cy, r)``, so
+            :func:`path_from_poly` can draw the run as a true arc.
+
+    Returns:
+        list of tuple of float: The sampled ``(x, y)`` points from `a0` to
+            `a1`.
+    """
     pts = [
         (cx + r * math.cos(a0 + (a1 - a0) * i / n), cy + r * math.sin(a0 + (a1 - a0) * i / n))
         for i in range(n + 1)
@@ -59,6 +56,13 @@ def arc(
 
 @dataclass
 class Notch:
+    """A semicircular port notch in a vertical card edge.
+
+    Attributes:
+        cy (float): y-coordinate of the notch center.
+        r (float): Notch radius.
+    """
+
     cy: float
     r: float
 
@@ -86,14 +90,26 @@ def build_flat_polygon(
     left_notches: list[Notch], right_notches: list[Notch], arc_n: int = 16,
     registry: dict | None = None,
 ) -> list[tuple[float, float]]:
-    """The card's own flat silhouette: a rounded rect with a semicircular
-    notch cut into the left edge per input port and the right edge per
-    output port (or, for a loss-ring node, one reserved right-side slot -
-    see `node_out_count_for_layout`).
+    """The card's flat silhouette.
 
-    Pass a (possibly shared) `registry` dict to have every corner/notch arc
-    point tagged with its originating circle, for `path_from_poly` to later
-    render as a true SVG arc instead of straight segments - see `arc()`."""
+    A rounded rectangle with one semicircular notch cut into the left edge
+    per input port and into the right edge per output port.
+
+    Args:
+        x: x-coordinate of the top-left corner.
+        y: y-coordinate of the top-left corner (y grows downward).
+        w: Width.
+        h: Height.
+        r: Corner radius.
+        left_notches: Notches of the left (input) edge.
+        right_notches: Notches of the right (output) edge.
+        arc_n: Number of segments per sampled arc.
+        registry: Optional dict tagging every arc point with its circle, see
+            :func:`arc`.
+
+    Returns:
+        list of tuple of float: The polygon's ``(x, y)`` vertices.
+    """
     x2, y2 = x + w, y + h
     poly: list[tuple[float, float]] = [(x + r, y), (x2 - r, y)]
     poly += arc(x2 - r, y + r, r, -math.pi / 2, 0, arc_n, registry=registry)
@@ -113,10 +129,8 @@ def _bridge_triangle(ax: float, ay: float, depth: float, vertical: bool) -> list
 
 
 def _round_poly(poly: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    # Snaps to 1e-6 before the union - two points meant to coincide (e.g. a
-    # corner's 45-degree crossing, computed twice via independent cos/sin
-    # calls) can differ by ~1e-14 of float noise, which shapely would
-    # otherwise see as a genuine sliver rather than the same point.
+    # Snaps to 1e-6 before the union, so points meant to coincide but
+    # differing by float noise don't become slivers.
     return [(round(px, 6), round(py, 6)) for px, py in poly]
 
 
@@ -124,19 +138,15 @@ def _poly_union_all(polys: list[list[tuple[float, float]]]) -> list[tuple[float,
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
 
-    # buffer(0) is the standard shapely fix for a polygon that's very
-    # slightly self-touching/invalid (e.g. a port notch whose radius leaves
-    # only a hair's breadth of clearance to the corner arc) - it rebuilds
-    # the same shape through GEOS's own validity-repair pass, so a union
-    # that would otherwise raise "TopologyException: side location
-    # conflict" on tightly-packed ports instead just renders them touching.
+    # buffer(0) repairs slightly invalid polygons (e.g. tightly packed
+    # ports touching a corner arc), which would otherwise make the union
+    # raise a TopologyException.
     shapes = [Polygon(_round_poly(p)).buffer(0) for p in polys if len(p) >= 3]
     merged = unary_union(shapes)
     if merged.geom_type == "Polygon":
         return list(merged.exterior.coords)[:-1]
-    # Degenerate parameters could in principle split the union into several
-    # pieces - the card silhouette is whichever one has the most vertices
-    # (bridge triangles are always tiny), same fallback as the original JS.
+    # Degenerate parameters may split the union; the silhouette is the
+    # piece with the most vertices (bridge triangles are tiny).
     largest = max(merged.geoms, key=lambda g: len(g.exterior.coords))
     return list(largest.exterior.coords)[:-1]
 
@@ -145,17 +155,29 @@ def build_back_polygon(
     x: float, y: float, w: float, h: float, r: float,
     left_notches: list[Notch], right_notches: list[Notch], depth: float, arc_n: int = 16,
 ) -> tuple[list[tuple[float, float]], dict]:
-    """The beveled "back" silhouette: the front polygon, a copy shifted by
-    `depth` along both x and y, and small bridge triangles at the two
-    diagonal corners and at each port notch's outer tangent point - unioned
-    into one outline exactly like the front+back+bridges construction in
-    card-editor.html's buildBackPolygon().
+    """The beveled "back" silhouette of a card.
 
-    Returns (polygon, registry) - the registry carries every corner/notch
-    arc's provenance through to the union's own output points (a shifted
-    copy of the front polygon's own registry, re-centered by `depth` to
-    match where those points actually land after the shift), for
-    `path_from_poly` to render true arcs instead of a faceted outline."""
+    The union of the front polygon (:func:`build_flat_polygon`), a copy
+    shifted by `depth` along x and y, and bridge triangles at the top-right
+    and bottom-left corners and at each notch's outer tangent point.
+
+    Args:
+        x: As in :func:`build_flat_polygon`.
+        y: As in :func:`build_flat_polygon`.
+        w: As in :func:`build_flat_polygon`.
+        h: As in :func:`build_flat_polygon`.
+        r: As in :func:`build_flat_polygon`.
+        left_notches: As in :func:`build_flat_polygon`.
+        right_notches: As in :func:`build_flat_polygon`.
+        arc_n: As in :func:`build_flat_polygon`.
+        depth: Bevel offset along both x and y.
+
+    Returns:
+        tuple: ``(polygon, registry)``, where ``polygon`` (list of tuple of
+            float) holds the outline's ``(x, y)`` vertices and ``registry``
+            (dict) is the arc registry (see :func:`arc`) covering the front
+            polygon and its shifted copy, for :func:`path_from_poly`.
+    """
     x2, y2 = x + w, y + h
     front_registry: dict = {}
     front = build_flat_polygon(x, y, w, h, r, left_notches, right_notches, arc_n, registry=front_registry)
@@ -182,21 +204,24 @@ def build_crease_lines(
     x: float, y: float, w: float, h: float, r: float,
     left_notches: list[Notch], right_notches: list[Notch], depth: float,
 ) -> list[tuple[float, float, float, float]]:
-    """The thin diagonal "3D edge" stroke at each output notch's TOP
-    tangent only - the one place nothing else already reads as a visible
-    edge there.
+    """Diagonal bevel edge lines at the top tangent of each output notch.
 
-    An earlier version of this also redrew a line at the 2 bridged corners
-    and each output notch's BOTTOM tangent, following card-editor.html's own
-    reasoning that the union "swallows" those as interior edges needing a
-    redraw - but that reasoning was about polybooljs's union specifically;
-    shapely's own union of the same front/back/bridge pieces (see
-    build_back_polygon) already leaves those as part of the back
-    silhouette's own VISIBLE boundary stroke, so redrawing them here just
-    doubled the line. Only the un-bridged top tangent (no bridge triangle
-    connects it at all - see build_back_polygon) has no boundary stroke of
-    its own there, so it's the one place this is still needed. Deliberately
-    none on the input side either, same as before."""
+    These are the only bevel edges not already part of the back
+    silhouette's outline (:func:`build_back_polygon`).
+
+    Args:
+        x: As in :func:`build_flat_polygon`.
+        y: As in :func:`build_flat_polygon`.
+        w: As in :func:`build_flat_polygon`.
+        h: As in :func:`build_flat_polygon`.
+        r: As in :func:`build_flat_polygon`.
+        left_notches: As in :func:`build_flat_polygon`.
+        right_notches: As in :func:`build_flat_polygon`.
+        depth: Bevel offset along both x and y.
+
+    Returns:
+        list of tuple of float: One ``(x1, y1, x2, y2)`` line per output notch.
+    """
     lines = []
     for nt in right_notches:
         ax, ay = x + w, nt.cy - nt.r
@@ -205,6 +230,16 @@ def build_crease_lines(
 
 
 def darken_hex(hex_color: str, factor: float) -> str:
+    """Scale the RGB channels of a ``#rrggbb`` color.
+
+    Args:
+        hex_color: Color as ``#rrggbb`` (the ``#`` is optional).
+        factor: Multiplier per channel; results are clipped to 0..255.
+
+    Returns:
+        str: The scaled color as ``#rrggbb``, or `hex_color` unchanged if it is
+            not a 6-digit hex color.
+    """
     m = re.match(r"^#?([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$", hex_color)
     if not m:
         return hex_color
@@ -213,11 +248,26 @@ def darken_hex(hex_color: str, factor: float) -> str:
 
 
 def port_layout(n: int, card_h: float, corner_r: float, outer_r: float, min_gap: float, min_margin: float):
-    """n ports, evenly spaced with a minimum gap/margin, any extra height
-    distributed across every gap+margin slot so ports spread out
-    symmetrically instead of staying packed at the minimum. Returns
-    (list of center-y offsets from the card's own top edge, minimum card
-    height this port count needs)."""
+    """Vertical port positions on a card edge.
+
+    Ports are spaced by at least `min_gap`, with at least `min_margin` to
+    the corner arcs; extra height is distributed evenly over all gaps and
+    both margins.
+
+    Args:
+        n: Number of ports.
+        card_h: Card height.
+        corner_r: Corner radius.
+        outer_r: Notch radius.
+        min_gap: Minimum gap between neighboring notches.
+        min_margin: Minimum margin between the outermost notches and the
+            corners.
+
+    Returns:
+        tuple: ``(centers, min_height)``, where ``centers`` (list of float)
+            holds the port center y-offsets from the card's top edge and
+            ``min_height`` (float) is the minimum card height for `n` ports.
+    """
     if n <= 0:
         return [], 2 * corner_r
     usable = card_h - 2 * corner_r
@@ -236,26 +286,16 @@ def port_layout(n: int, card_h: float, corner_r: float, outer_r: float, min_gap:
     return cys, min_height
 
 
-#: Largest single sub-arc (radians) _bezier_arc_segments will approximate
-#: with one cubic bezier - a standard quarter-circle is the usual rule of
-#: thumb for staying visually indistinguishable from a true circle (a full
-#: 180-degree notch is split into two of these, a 90-degree corner stays
-#: one piece).
+#: Largest sub-arc (radians) _bezier_arc_segments approximates with one
+#: cubic bezier.
 _MAX_BEZIER_ARC = math.pi / 2 + 1e-6
 
 
 def _bezier_arc_segments(cx: float, cy: float, r: float, a_start: float, total: float):
-    """Splits a circular arc (center (cx,cy), radius r, from angle a_start
-    sweeping `total` radians, signed) into one cubic-bezier-per-<=90-degree-
-    piece, each as ((c1x,c1y), (c2x,c2y), (ex,ey)) - the "A"-free way to
-    draw a true circular arc as a Plotly path shape, since Plotly's `d`
-    parser only understands M/L/Q/C/Z, never the SVG `A` command (confirmed
-    empirically: an "A ..." token in a shape path silently renders as a
-    straight chord instead of an arc, not an error - the bug behind the
-    first version of this function). A cubic bezier's standard circular-arc
-    approximation (the "kappa" construction) is accurate to a fraction of a
-    percent of the radius for any span up to 90 degrees, i.e. visually
-    exact at any zoom level - genuinely smooth, not a sampled polyline."""
+    """Splits a circular arc (from angle a_start, sweeping signed `total`
+    radians) into cubic beziers of at most 90 degrees each, as
+    ((c1x, c1y), (c2x, c2y), (ex, ey)) per piece. Plotly shape paths do
+    not support the SVG `A` command."""
     n = max(1, math.ceil(abs(total) / _MAX_BEZIER_ARC))
     step = total / n
     kappa = 4.0 / 3.0 * math.tan(step / 4.0)
@@ -273,34 +313,28 @@ def _bezier_arc_segments(cx: float, cy: float, r: float, a_start: float, total: 
 
 
 def path_from_poly(poly: list[tuple[float, float]], registry: dict | None = None, close: bool = True) -> str:
-    """A Plotly `shape(type="path")` "d" string for the card silhouette.
+    """SVG path ``d`` string for a Plotly ``type="path"`` shape.
 
-    Without a `registry`, every vertex becomes a straight `L` segment (used
-    for anything with no arcs, e.g. the crease lines). With one (as
-    returned by `build_flat_polygon`/`build_back_polygon`), a RUN of
-    consecutive points that share the same originating circle - looked up
-    by each point's own rounded coordinate - is collapsed into one or more
-    true cubic-bezier arc segments instead (see `_bezier_arc_segments`), so
-    a corner or port notch stays a real curve under arbitrary zoom rather
-    than the old polyline approximation (sampled arc points joined by
-    straight segments, which looked "pixelig"/faceted once zoomed in - the
-    exact complaint this was built to fix). Only the run's two true
-    endpoints and the circle's own (cx, cy, r) are used to rebuild the
-    curve - the original in-between sample points are discarded entirely,
-    not stitched together, so sampling density no longer limits zoom
-    fidelity at all.
+    Each vertex becomes a straight ``L`` segment, except runs of
+    consecutive vertices that `registry` maps to the same circle: such a
+    run is drawn as true cubic-bezier arc segments between its first and
+    last vertex.
 
-    This lookup survives `_poly_union_all` because the back polygon's front/
-    back/bridge pieces only ever TOUCH each other at single points (shared
-    boundary), never overlap in area - GEOS's union of touching-not-
-    overlapping polygons re-stitches their existing boundary vertices rather
-    than synthesizing new ones, so an output vertex's rounded coordinate
-    still matches one of the input vertices the registry was built from (a
-    `buffer(0)` repair pass changing a coordinate by more than the 1e-6
-    rounding tolerance would be the one way this silently degrades a vertex
-    back to a plain `L` segment instead of a found arc - harmless, since the
-    dense arc_n=20 sampling still makes that segment short enough to look
-    smooth, just not a true bezier arc there)."""
+    Args:
+        poly: Polygon vertices.
+        registry: Arc registry from :func:`arc`, :func:`build_flat_polygon` or
+            :func:`build_back_polygon`; None draws straight segments only.
+        close: Whether to close the path with ``Z``.
+
+    Returns:
+        str: The path string; empty for an empty `poly`.
+
+    Notes:
+        The registry lookup also works on the output of
+        :func:`build_back_polygon`: its pieces only touch, so the union keeps
+        the input vertices. A vertex moved by more than the 1e-6 rounding
+        tolerance falls back to an ``L`` segment.
+    """
     if not poly:
         return ""
     registry = registry or {}
@@ -331,10 +365,8 @@ def path_from_poly(poly: list[tuple[float, float]], registry: dict | None = None
                 total += delta
             for (c1x, c1y), (c2x, c2y), (ex, ey) in _bezier_arc_segments(cx, cy, r, angles[0], total):
                 d += f" C {c1x:.4f},{c1y:.4f} {c2x:.4f},{c2y:.4f} {ex:.4f},{ey:.4f}"
-            # Snap to the run's own exact end point rather than whatever the
-            # bezier math landed on (sub-micron float noise at worst) - the
-            # polygon's recorded endpoint is what the next L segment must
-            # butt up against exactly.
+            # Snap to the run's exact end point, so the next segment starts
+            # there without float noise.
             ex, ey = poly[j - 1]
             d = d.rsplit(" ", 1)[0] + f" {ex:.3f},{ey:.3f}"
             i = j
@@ -347,32 +379,53 @@ def path_from_poly(poly: list[tuple[float, float]], registry: dict | None = None
     return d
 
 
-#: Minimum bezier-handle length for wire_control_points, in GraphLayout's
-#: own data units (COLUMN_GAP=1.4, MIN_WIDTH=1.5 - see plots/graph/
-#: layout.py) - NOT card-editor.html's "40" (a pixel-canvas value, 25-100x
-#: too large at this scale: it would make the handle dominate the whole
-#: curve instead of just rounding it, bowing edges far outside the plot).
+#: Minimum bezier-handle length of a wire, in GraphLayout data units.
 MIN_WIRE_HANDLE = 0.3
 
 
 def wire_control_points(p1: tuple[float, float], p2: tuple[float, float]):
+    """Control points of the cubic bezier wire from `p1` to `p2`.
+
+    Both handles are horizontal, with length 0.4 times the x-distance but
+    at least :data:`MIN_WIRE_HANDLE`.
+
+    Args:
+        p1: Start point.
+        p2: End point.
+
+    Returns:
+        tuple of tuple of float: The two control points ``(c1, c2)``.
+    """
     dx_span = max(MIN_WIRE_HANDLE, abs(p2[0] - p1[0]) * 0.4)
     return (p1[0] + dx_span, p1[1]), (p2[0] - dx_span, p2[1])
 
 
 def wire_path(p1: tuple[float, float], p2: tuple[float, float]) -> str:
-    """A cubic-bezier Plotly path - same horizontal-handle construction as
-    card-editor.html's wirePath(), so edges curve the same way."""
+    """SVG path ``d`` string of the cubic bezier wire from `p1` to `p2`.
+
+    Args:
+        p1: Start point.
+        p2: End point.
+
+    Returns:
+        str: The path string, with control points from
+            :func:`wire_control_points`.
+    """
     (c1x, c1y), (c2x, c2y) = wire_control_points(p1, p2)
     return f"M {p1[0]:.2f} {p1[1]:.2f} C {c1x:.2f} {c1y:.2f}, {c2x:.2f} {c2y:.2f}, {p2[0]:.2f} {p2[1]:.2f}"
 
 
 def sample_bezier(p1: tuple[float, float], p2: tuple[float, float], n: int = 24) -> list[tuple[float, float]]:
-    """Samples the same cubic bezier `wire_path` draws, as plain points -
-    for the interactive go.Scatter edge trace (hover only, now - the wire
-    itself is drawn as a `wire_path` shape with no arrowhead, matching
-    card-editor.html exactly), which needs real (x, y) samples rather than
-    an SVG path string."""
+    """Sample the wire :func:`wire_path` draws as points.
+
+    Args:
+        p1: Start point.
+        p2: End point.
+        n: Number of segments.
+
+    Returns:
+        list of tuple of float: ``n + 1`` points along the curve.
+    """
     (c1x, c1y), (c2x, c2y) = wire_control_points(p1, p2)
     pts = []
     for i in range(n + 1):
@@ -400,13 +453,20 @@ def _point_in_box(pt: tuple[float, float], box: tuple[float, float, float, float
 def edge_label_point(
     p1: tuple[float, float], p2: tuple[float, float], node_boxes: list[tuple[float, float, float, float]],
 ) -> tuple[float, float]:
-    """Picks a point along the same bezier `wire_path` draws, for an edge's
-    dynamic-data-config label to sit at. Prefers the geometric midpoint
-    (t=0.5), but for a long diagonal wire that happens to pass straight
-    through an unrelated third node's body (common once a graph has several
-    nodes), tries a few other points along the same curve until it finds one
-    that doesn't land inside any node's box - the same fallback cascade as
-    card-editor.html's own edgeLabelPoint()."""
+    """Point on the wire from `p1` to `p2` to place its label at.
+
+    Tries the curve parameters 0.5, 0.35, 0.65, 0.22 and 0.78 in this order
+    and returns the first point outside all `node_boxes`, or the midpoint if
+    none is.
+
+    Args:
+        p1: Start point of the wire.
+        p2: End point of the wire.
+        node_boxes: ``(x0, y0, x1, y1)`` boxes to avoid.
+
+    Returns:
+        tuple of float: The label position.
+    """
     for t in (0.5, 0.35, 0.65, 0.22, 0.78):
         pt = _bezier_point(p1, p2, t)
         if not any(_point_in_box(pt, box) for box in node_boxes):
@@ -414,36 +474,37 @@ def edge_label_point(
     return _bezier_point(p1, p2, 0.5)
 
 
-#: Per-character size for the small background box drawn behind a permanent
-#: edge-label annotation (see NodeLinkArtist's edge-label shapes) - smaller
-#: than an early version of this, and now sized along HEIGHT rather than
-#: width: the label text itself is drawn rotated 90 degrees (same reasoning
-#: as a card's own title - see NodeLinkArtist._card_annotations), so a long
-#: dynamic-data-config string like "[x_i, y_i]" needs vertical room, not
-#: horizontal, to stay compact next to a narrow wire.
+#: Height per character of the background box behind an edge label (the
+#: label text is rotated 90 degrees, so the box grows vertically).
 EDGE_LABEL_CHAR_SIZE = 0.05
+#: Vertical padding of the edge-label box.
 EDGE_LABEL_PAD = 0.045
-EDGE_LABEL_THICKNESS = 0.11  # the box's now-fixed WIDTH (the rotated text's own thickness)
+#: Fixed width of the edge-label box.
+EDGE_LABEL_THICKNESS = 0.11
 
 
 def edge_label_box(label: str, cx: float, cy: float) -> tuple[float, float, float, float]:
+    """Background box for a vertically drawn edge label.
+
+    Args:
+        label: The label text; its length sets the box height.
+        cx: x-coordinate of the box center.
+        cy: y-coordinate of the box center.
+
+    Returns:
+        tuple of float: The box as ``(x0, y0, x1, y1)``.
+    """
     half_h = max(0.06, len(label) * EDGE_LABEL_CHAR_SIZE * 0.5) + EDGE_LABEL_PAD
     half_w = EDGE_LABEL_THICKNESS / 2
     return cx - half_w, cy - half_h, cx + half_w, cy + half_h
 
 
 # ---------------------------------------------------------------------------
-# Type icons - the exact "d"/viewBox pairs from card-editor.html's own
-# buildIconDefs(), one per node category. A non-rotating, non-skewing
-# (scale + translate only) remap into the node's own icon box, so curves
-# stay exact - see transform_svg_path().
-#
-# NOT currently drawn: NodeLinkArtist no longer calls ICON_PATHS/
-# transform_svg_path (dropped per Nick's own request - they weren't
-# rendering well yet). Left defined here, unused, rather than deleted, so a
-# future pass can wire them back in once that's worth revisiting.
+# Type icons (currently not drawn by NodeLinkArtist)
 # ---------------------------------------------------------------------------
 
+#: Per node category, an SVG icon as ``(viewbox, path d string)``; placed
+#: into a card with transform_svg_path().
 ICON_PATHS: dict[str, tuple[str, str]] = {
     "datanode": (
         "12.07 8.51 4.28 4.28",
@@ -463,9 +524,8 @@ ICON_PATHS["default"] = ICON_PATHS["graphnode"]
 
 _CMD_RE = re.compile(r"([MLHVCSQTAZmlhvcsqtaz])([^MLHVCSQTAZmlhvcsqtaz]*)")
 _NUM_RE = re.compile(r"[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:[eE][-+]?\d+)?")
-# x/y role of each numeric argument, cycled - only axis-aligned scale +
-# translate is ever applied (never rotation/skew), so a relative command's
-# deltas scale correctly without first resolving them to absolute points.
+# x/y role of each numeric argument, cycled. Only axis-aligned scale and
+# translate are applied, so relative deltas can be scaled directly.
 _XY_ROLES: dict[str, str] = {
     "M": "xy", "L": "xy", "T": "xy",
     "H": "x", "V": "y",
@@ -475,9 +535,22 @@ _XY_ROLES: dict[str, str] = {
 
 
 def transform_svg_path(d: str, viewbox: str, x: float, y: float, w: float, h: float) -> str:
-    """Remaps an SVG path's own coordinates from its `viewbox` ("minx miny
-    vw vh") into the axis-aligned box (x, y, w, h) - used to drop one of the
-    fixed ICON_PATHS into a specific node's icon slot at render time."""
+    """Map an SVG path from its viewbox into an axis-aligned box.
+
+    Supports the commands M, L, T, H, V, C, S, Q and Z (absolute and
+    relative).
+
+    Args:
+        d: SVG path ``d`` string.
+        viewbox: The path's viewbox as ``"minx miny width height"``.
+        x: x-coordinate of the target box's origin.
+        y: y-coordinate of the target box's origin.
+        w: Width of the target box.
+        h: Height of the target box.
+
+    Returns:
+        str: The transformed path string.
+    """
     vx, vy, vw, vh = (float(v) for v in viewbox.split())
     sx, sy = (w / vw if vw else 1.0), (h / vh if vh else 1.0)
     out = []

@@ -173,46 +173,54 @@ def _default_control(controls, variable: Variable, n_defaults: int) -> ControlSp
 def product_view(
     data, data_config: DataConfiguration, controls=None, vector_dim: int | None = None
 ):
-    """Restructures data on product geometries for plotting.
+    """Restructure data on product geometries for plotting.
 
-    Applies to data whose GeometryAxes refer to product meshes (e.g. the
-    vertices of a meshed space-time domain), or to several meshed
-    GeometryAxes (e.g. the output of a ProductSampler). Each factor of
-    these products that one of the `controls` is bound to gets a
-    GeometryAxes of its own, which the control steps through. The other
-    factors are merged into one GeometryAxes, which is drawn.
+    Applies to data whose GeometryAxes refer to product geometries (e.g.
+    the vertices of a meshed space-time domain), or to several discrete
+    GeometryAxes (e.g. the output of a ProductSampler). Each factor that
+    one of the `controls` is bound to gets a GeometryAxes of its own, which
+    the control steps through. The other factors are merged into one
+    GeometryAxes, which is drawn.
 
-    Without a control, all factors are drawn together. If that exceeds 3
-    dimensions - or if a vector with `vector_dim` components is plotted
-    and the drawn factors have more dimensions than it, e.g. a 2D velocity
-    on a space-time domain - the 1-dimensional factors are split off, as
-    long as this choice is unambiguous, and get a default control: built
-    from a ControlSpec class or unbound instance passed as `controls`, a
-    SliderSpec otherwise.
+    Without a control, all factors are drawn together. If that exceeds
+    :data:`MAX_DRAWN_DIM` dimensions, or if a vector with `vector_dim`
+    components is plotted and the drawn factors have more dimensions than
+    it (e.g. a 2D velocity on a space-time domain), the 1-dimensional
+    factors are split off, as long as this choice is unambiguous. They get
+    a default control: built from a ControlSpec class or unbound instance
+    passed as `controls`, a
+    :class:`~qewton.visualization.plots.spec.SliderSpec` otherwise.
 
     Args:
-        data: The values, with one dimension per axis of `data_config`.
-        data_config (DataConfiguration): Describes `data`.
-        controls: The controls passed to the plot (a list, a ControlSpec
-            class or instance, a dict, or None). Only ControlSpec instances
-            bound to a factor's Variable, or to a GeometryAxes holding a
-            single factor, select factors.
-        vector_dim (int | None): Number of components of the plotted
-            vector, or None for a scalar or no vector at all.
+        data (array-like): The values, with one dimension per axis of
+            `data_config`.
+        data_config: Describes `data`.
+        controls (list | type[ControlSpec] | ControlSpec | dict | None): The
+            controls passed to the plot. Only ControlSpec instances bound
+            to a factor's Variable, or to a GeometryAxes holding a single
+            factor, select factors.
+        vector_dim: Number of components of the plotted vector, or None
+            for a scalar or no vector at all.
 
     Returns:
-        tuple: `(data, data_config, controls)` - unchanged if the data has
-            no product structure. `controls` becomes a list if a single
-            ControlSpec instance selects a factor or default controls are
-            added; a ControlSpec class, unbound instance or dict passed as
-            `controls` then no longer resolves other remaining axes, which
-            get a SliderSpec instead.
+        tuple: A ``(data, data_config, controls)`` triple:
+
+        - ``data`` (numpy.ndarray or array-like): The restructured values;
+          unchanged without product structure.
+        - ``data_config`` (DataConfiguration): Describes the restructured
+          values.
+        - ``controls`` (list, ControlSpec class or instance, dict, or
+          None): A list if a single ControlSpec instance selects a factor
+          or default controls are added; then a ControlSpec class, unbound
+          instance or dict passed as `controls` no longer applies to the
+          remaining axes, which get a SliderSpec instead. Unchanged
+          otherwise.
 
     Raises:
-        ValueError: If a control names a factor that has more than one
+        ValueError: If a control names a factor with more than one
             dimension or only a component of a factor, if no factor is
-            left to draw, or if more than 3 dimensions would be drawn and
-            the factors to split off are ambiguous.
+            left to draw, or if the factors to split off by default are
+            ambiguous or too few.
     """
     axes = list(data_config.axes)
     geometry_idx = [i for i, a in enumerate(axes) if isinstance(a, GeometryAxes)]

@@ -1,3 +1,5 @@
+"""Sampler for the Cartesian product of two samplers."""
+
 from qewton.config.devices import Device
 from qewton.graphs.nodes import OutputPort
 from qewton.backends import TensorType
@@ -10,6 +12,29 @@ from qewton.data.dataloaders.sampler.point_sampler import PointSampler
 
 
 class ProductSampler(PointSampler[TensorType]):
+    """Sampler that combines every point of one sampler with every point of
+    another.
+
+    Usually created with ``sampler_a * sampler_b``. The geometry is the
+    product of both geometries. The point output has the geometry axes of
+    `sampler_a` followed by those of `sampler_b`, and one feature axis
+    holding the concatenated coordinates.
+
+    Args:
+        sampler_a: The first factor sampler.
+        sampler_b: The second factor sampler. Must use the same backend and a
+            different variable than `sampler_a`.
+        name: The name of the node.
+
+    Attributes:
+        sampler_a (PointSampler): The first factor sampler.
+        sampler_b (PointSampler): The second factor sampler.
+
+    Notes:
+        Normals are output if one of the factor samplers computes normals; that
+        sampler's normals are broadcast over the other factor.
+    """
+
     def __init__(
         self,
         sampler_a: PointSampler,
@@ -76,16 +101,32 @@ class ProductSampler(PointSampler[TensorType]):
         max_vertex_distance: float | dict[Variable, float] | None = None,
         device: Device | str | None = None,
     ):
+        """Switch this sampler and both factor samplers to mesh mode.
+
+        Args:
+            max_vertex_distance: The mesh resolution, one value or one per
+                geometry variable.
+            device: The device the meshes are built on.
+        """
         super().set_mesh_mode(max_vertex_distance, device)
         self.sampler_a.set_mesh_mode(max_vertex_distance, device)
         self.sampler_b.set_mesh_mode(max_vertex_distance, device)
 
     def unset_mesh_mode(self):
+        """Leave mesh mode in this sampler and both factor samplers."""
         super().unset_mesh_mode()
         self.sampler_a.unset_mesh_mode()
         self.sampler_b.unset_mesh_mode()
 
     def forward(self):
+        """Return the product points (and normals) for one batch.
+
+        In mesh mode, the vertices of both factor meshes are combined.
+
+        Returns:
+            TensorType or tuple of TensorType: The points, or
+                ``(points, normals)`` if normals are computed.
+        """
         # In mesh mode both samplers mesh their own geometry, so each
         # GeometryAxes of the output refers to a meshed SampledGeometry.
         if self.mesh_mode and self._active_discretization is None:
@@ -96,6 +137,13 @@ class ProductSampler(PointSampler[TensorType]):
         return super().forward()
 
     def sample_points(self) -> tuple[TensorType, TensorType | None]:
+        """Sample both factors and combine every pair of points.
+
+        Returns:
+            tuple of TensorType: The points of shape
+                ``(*geometry_shape_a, *geometry_shape_b, dim_a + dim_b)`` and
+                the broadcast normals, or ``None``.
+        """
         points_a, normals_a = self.sampler_a.sample_points()
         points_b, normals_b = self.sampler_b.sample_points()
         return self._combine(points_a, normals_a, points_b, normals_b)
@@ -140,6 +188,11 @@ class ProductSampler(PointSampler[TensorType]):
         return self.backend.math.broadcast_to(normals, new_shape + (n_dim,))
 
     def to(self, device: str | Device):
+        """Move this sampler and both factor samplers to `device`.
+
+        Args:
+            device: The target device.
+        """
         self.sampler_a.to(device=device)
         self.sampler_b.to(device=device)
         super().to(device)

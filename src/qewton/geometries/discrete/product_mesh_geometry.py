@@ -1,3 +1,5 @@
+"""Discrete Cartesian products of meshes and point sets."""
+
 from __future__ import annotations
 from itertools import permutations
 
@@ -18,10 +20,18 @@ def _as_numpy(data, backend) -> np.ndarray:
 
 
 def factor_cells(factor) -> np.ndarray:
-    """The cells of a factor's mesh as an integer array of shape
-    (n_cells, simplex_dim + 1). A mesh without cells (e.g. the two end
-    points of an interval boundary) contributes each vertex as a
-    0-simplex."""
+    """Return the cells of a factor's mesh as an integer array.
+
+    A mesh without cells (e.g. the two end points of an interval boundary)
+    contributes each vertex as a 0-simplex.
+
+    Args:
+        factor (MeshGeometry): A meshed geometry with a ``mesh`` and a
+            ``backend``.
+
+    Returns:
+        np.ndarray: The cells, shape ``(n_cells, simplex_dim + 1)``.
+    """
     cells = _as_numpy(factor.mesh.cells, factor.backend)
     if cells.ndim < 2 or cells.shape[0] == 0:
         return np.arange(len(factor.mesh.vertices)).reshape(-1, 1)
@@ -29,15 +39,10 @@ def factor_cells(factor) -> np.ndarray:
 
 
 def _staircase_paths(simplex_dims: list[int]) -> np.ndarray:
-    """Local vertex indices of every simplex in the staircase triangulation
-    of a product of simplices with the given dimensions.
-
-    Each simplex corresponds to a monotone lattice path from (0, ..., 0) to
-    `simplex_dims`, advancing one factor per step.
-
-    Returns:
-        np.ndarray: Shape (n_paths, sum(simplex_dims) + 1, n_factors).
-    """
+    # Local vertex indices of every simplex in the staircase triangulation
+    # of a product of simplices with the given dimensions. Each simplex is a
+    # monotone lattice path from (0, ..., 0) to `simplex_dims`, advancing one
+    # factor per step. Shape (n_paths, sum(simplex_dims) + 1, n_factors).
     steps = [i for i, d in enumerate(simplex_dims) for _ in range(d)]
     paths = []
     for order in sorted(set(permutations(steps))):
@@ -53,12 +58,22 @@ def _staircase_paths(simplex_dims: list[int]) -> np.ndarray:
 
 
 def product_cells(factors: list) -> np.ndarray:
-    """Simplex cells of the Cartesian product of the factor meshes, with
-    vertices indexed in product order (first factor slowest).
+    """Return the simplex cells of the Cartesian product of factor meshes.
 
-    Every product of factor cells is split by the staircase triangulation.
-    Sorting each factor cell's vertices by their global index keeps the
-    triangulation conforming across neighboring product cells.
+    Vertices are indexed in product order (first factor slowest), matching
+    :func:`product_points`.
+
+    Args:
+        factors: Meshed factor geometries, each with a ``mesh`` and a
+            ``backend``.
+
+    Returns:
+        np.ndarray: The cells, shape ``(n_cells, sum(simplex_dim_i) + 1)``.
+
+    Notes:
+        Every product of factor cells is split by the staircase triangulation.
+        Each factor cell's vertices are sorted by their global index, which
+        keeps the triangulation conforming across neighboring product cells.
     """
     cells = [np.sort(factor_cells(f), axis=1) for f in factors]
     sizes = [len(f.mesh.vertices) for f in factors]
@@ -77,8 +92,16 @@ def product_cells(factors: list) -> np.ndarray:
 
 
 def product_points(factors: list) -> np.ndarray:
-    """Vertices of the Cartesian product of the factor meshes in product
-    order (first factor slowest), shape (prod(n_i), sum(dim_i))."""
+    """Return the vertices of the Cartesian product of factor meshes.
+
+    Args:
+        factors: Meshed factor geometries, each with a ``mesh`` and a
+            ``backend``.
+
+    Returns:
+        np.ndarray: The vertices in product order (first factor slowest), shape
+            ``(prod(n_i), sum(dim_i))``.
+    """
     vertices = [_as_numpy(f.mesh.vertices, f.backend) for f in factors]
     sizes = [len(v) for v in vertices]
     columns = []
@@ -90,26 +113,34 @@ def product_points(factors: list) -> np.ndarray:
 
 
 class ProductMeshGeometry(DiscreteGeometry[TensorType]):
-    """The Cartesian product of meshed geometries, e.g. the discretization
-    of a space-time domain.
+    """Cartesian product of meshed geometries.
 
-    The vertices are all combinations of the factor vertices in product
-    order, with the first factor varying slowest. Reshaping the vertex axis
-    to `factor_shape` therefore gives one axis per factor.
-    The simplex mesh of the full product is built on first access of
-    `mesh`.
+    Used e.g. as the discretization of a space-time domain. The vertices
+    are all combinations of the factor vertices in product order, with the
+    first factor varying slowest, so reshaping the vertex axis to
+    `factor_shape` gives one axis per factor.
 
     Args:
-        factors (list): The meshed factor geometries, each with a `mesh`
-            and a `variable`, e.g. MeshGeometry objects.
-        variable (Variable | None, optional): The variable of the product.
-            Defaults to the composition of the factor variables.
-        discretization_of (Geometry | None, optional): The geometry this
-            mesh is a discretization of. Defaults to None.
-        device (Device | str, optional): Where the vertices and cells are
-            created. Defaults to cpu.
-        backend (type[ComputingBackend[TensorType]], optional):
-            Defaults to DEFAULT_DL_BACKEND.
+        factors: The meshed factor geometries (at least two), each with a
+            ``mesh`` and a ``variable``, e.g.
+            :class:`~qewton.geometries.discrete.mesh_geometry.MeshGeometry`.
+        variable: The variable of the product. Defaults to the composition of
+            the factor variables. Its dimension must equal the summed factor
+            dimensions.
+        discretization_of: The geometry this mesh discretizes.
+        device: The device the vertices and cells are created on.
+        backend: The backend used for computations.
+
+    Raises:
+        ValueError: If fewer than two factors are given.
+
+    Attributes:
+        factors (list): The meshed factor geometries.
+        device (Device or str): The device of the vertices and cells.
+        factor_shape (tuple of int): Number of vertices of each factor.
+        mesh (Mesh): The simplex mesh of the full product, built on first
+            access. Accessing it raises :class:`ValueError` if the product has
+            more than three dimensions.
     """
 
     def __init__(
@@ -142,17 +173,10 @@ class ProductMeshGeometry(DiscreteGeometry[TensorType]):
 
     @property
     def factor_shape(self) -> tuple[int, ...]:
-        """Number of vertices of each factor."""
         return tuple(len(f.mesh.vertices) for f in self.factors)
 
     @property
     def mesh(self) -> Mesh:
-        """The simplex mesh of the full product.
-
-        Raises:
-            ValueError: If the product has more than 3 dimensions, which
-                Mesh does not support.
-        """
         if self._mesh is None:
             if self.dim > 3:
                 raise ValueError(
@@ -170,17 +194,31 @@ class ProductMeshGeometry(DiscreteGeometry[TensorType]):
     def create_mesh(
         self, max_vertex_distance=None, device: Device = cpu
     ) -> ProductMeshGeometry:
+        """Return this geometry, which is already a mesh.
+
+        Args:
+            max_vertex_distance (float or dict or None): Ignored.
+            device: Ignored.
+
+        Returns:
+            ProductMeshGeometry: This geometry.
+        """
         return self
 
     def bounding_box(self):
+        """Return the bounds of the product vertices.
+
+        Returns:
+            TensorType: Tensor of the form ``[axis_1_min, axis_1_max, ...]``.
+        """
         points = _as_numpy(self.discretization_points, self.backend)
         bounds = np.stack([points.min(axis=0), points.max(axis=0)], axis=1)
         return self.backend.build_tensor(bounds.reshape(-1))
 
 
 def _factor_points(factor) -> np.ndarray:
-    """A factor's points with its own structural shape kept, e.g.
-    (n_vertices, dim) for a mesh or (33, 33, dim) for a grid of points."""
+    # A factor's points with its own structural shape kept, e.g.
+    # (n_vertices, dim) for a mesh or (33, 33, dim) for a grid of points.
     mesh = getattr(factor, "mesh", None)
     if mesh is not None:
         return _as_numpy(mesh.vertices, factor.backend)
@@ -193,24 +231,33 @@ def _factor_points(factor) -> np.ndarray:
 
 
 class ProductDiscreteGeometry(DiscreteGeometry[TensorType]):
-    """The Cartesian product of discrete point sets, e.g. reference data
-    known on a grid of space points for each of a few parameter values.
+    """Cartesian product of discrete point sets.
 
-    Unlike ProductMeshGeometry, the factors need no mesh, and each factor
-    keeps its own structural shape: factors of shapes (3,) and (33, 33)
-    give a product of shape (3, 33, 33). The point coordinates are ordered
-    as in `variable`, which may name the factors in a different order than
-    `factors` - e.g. a sampler on `Omega * A_int` evaluated at reference
-    data laid out angle first.
+    Used e.g. for reference data known on a grid of space points for each
+    of a few parameter values. The factors need no mesh, and each factor
+    keeps its own structural shape: factors of shapes ``(3,)`` and
+    ``(33, 33)`` give a product of shape ``(3, 33, 33)``. The point
+    coordinates are ordered as in `variable`, which may name the factors in
+    a different order than `factors`.
 
     Args:
-        factors (list): Discrete geometries, each with a `variable` and
-            either `discretization_points` or a `mesh`.
-        variable (Variable | None, optional): The variable of the product,
-            composed of the factor variables in any order. Defaults to their
-            composition in the order of `factors`.
-        backend (type[ComputingBackend[TensorType]] | None, optional):
-            Defaults to the backend of the first factor.
+        factors: Discrete geometries (at least two), each with a ``variable``
+            and either ``discretization_points`` or a ``mesh``.
+        variable: The variable of the product, composed of the factor variables
+            in any order. Defaults to their composition in the order of
+            `factors`.
+        backend: The backend used for computations. Defaults to the backend of
+            the first factor.
+
+    Raises:
+        ValueError: If fewer than two factors are given, a factor has no
+            points, or `variable` does not consist of exactly the factor
+            variables.
+
+    Attributes:
+        factors (list): The factor geometries.
+        factor_shapes (list of tuple of int): The structural shape of each
+            factor, in the order of `factors`.
     """
 
     def __init__(
@@ -262,5 +309,4 @@ class ProductDiscreteGeometry(DiscreteGeometry[TensorType]):
 
     @property
     def factor_shapes(self) -> list[tuple[int, ...]]:
-        """The structural shape of each factor, in the order of `factors`."""
         return [tuple(_factor_points(f).shape[:-1]) for f in self.factors]

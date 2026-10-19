@@ -1,3 +1,6 @@
+"""Graph template wiring a sampler, models and a physics constraint into
+a PINN training pipeline."""
+
 from typing import Callable
 
 from qewton.algorithms.building_blocks.array_operations import (
@@ -19,17 +22,13 @@ from qewton.graphs import Graph
 
 
 def _variable_segments(leaves: list[Variable], to_vars: list[Variable]) -> list[list[Variable]]:
-    """The coarsest partition of `leaves` such that every `to_v`'s own leaf
-    range, wherever it overlaps `leaves`, aligns exactly with a run of
-    whole segments - so a variable nothing ever asks to subdivide comes
-    back as a single segment (`leaves` itself, unsplit), and only the
-    variables genuinely requested at finer granularity force a cut.
+    """The coarsest partition of `leaves` such that the leaves of every
+    variable in `to_vars` that lie in `leaves` form whole segments.
 
-    A `to_v` doesn't have to be one contiguous run itself (e.g. `X * Z`
-    when the source is `X * Y * Z` - X and Z aren't adjacent) - each
-    maximal contiguous run *within* `to_v`'s own leaf order gets its own
-    cut, so `X * Z` correctly forces `Y` into its own segment too (cut off
-    from both sides) without requiring `X`/`Z` to be adjacent to each other.
+    Without any overlapping `to_vars`, `leaves` is returned as a single
+    segment. A variable whose leaves are not contiguous in `leaves` (e.g.
+    `X * Z` for `X * Y * Z`) cuts around each contiguous run, so `Y` ends
+    up in its own segment.
     """
     index = {leaf.name: i for i, leaf in enumerate(leaves)}
     cuts = {0, len(leaves)}
@@ -51,30 +50,44 @@ def _variable_segments(leaves: list[Variable], to_vars: list[Variable]) -> list[
 
 
 class PINNPipeline(Graph):
-    """Automatically builds the computation graph for a PINN training pipeline
-    based on the provided sampler, models, and constraint. The pipeline handles
-    the necessary splitting and joining of variables, as well as tracking gradients
-    for the computation of derivatives.
+    """Graph connecting a sampler, models and a constraint for PINN training.
 
-    Models (which can also be single Parameters) can not depend on outputs
-    of another model, but are just executed separately.
+    The output variables of `sampler` are split and joined as needed by
+    the models and the constraint, and every sampled variable a model
+    uses passes through a
+    :class:`~qewton.algorithms.building_blocks.derivatives.GradientTracking`
+    node, so the constraint can differentiate the model outputs with
+    respect to it. Constraint inputs are taken from the sampler outputs
+    and the model outputs. Variables are matched by leaf name. A variable
+    is only split where a consumer needs a finer part of it.
+
+    Models (which can also be single parameters) are evaluated
+    independently; a model cannot depend on the output of another model.
 
     Args:
-        sampler (DataNode): The data node that provides the input data for the PINN.
-        models (list[Node]): A list of models that should be trained
-        constraint (Constraint | None, optional): The constraint that describes
-            the physics constrained that should be trained. If none
-            is provided, a residual should be given instead. Defaults to None.
-        residual (Callable | None, optional): The residual function to build
-            a PINNConstraint from, if not constraint is provided.
-            Defaults to None.
-        residual_name (str | None, optional): A name for the constraint.
-            Defaults to None and the name of the residual function.
-        reduction (Callable | None, optional): A function that is coupled
-            to the residual function to build the PINNConstraint. Defaults to None.
-        weight (float, optional): A weight for the constraint. Defaults to 1.0.
-        backend (_type_, optional): In which backend to build this graph in.
-            Defaults to DEFAULT_DL_BACKEND.
+        sampler: The data node providing the input points.
+        models: The models to train.
+        constraint: The physics constraint to train. None (default) builds a
+            :class:`~qewton.constraints.pinn_constraint.PINNConstraint` from
+            `residual`.
+        residual: The residual function of the constraint built when
+            `constraint` is None.
+        residual_name: The name of the built constraint. None (default) uses
+            the name of the residual function.
+        track_residual: Passed to the built constraint.
+        reduction: The reduction of the built constraint.
+        weight (float, optional): The weight of the built constraint. Default
+            is 1.0.
+        backend (type[Backend], optional): The backend of the built constraint.
+            Default is ``DEFAULT_DL_BACKEND``.
+
+    Raises:
+        AssertionError: If neither `constraint` nor `residual` is given.
+        ValueError: If a variable needed by a model or the constraint is not
+            provided by the sampler or the models.
+
+    Attributes:
+        constraint (Constraint): The given or built constraint.
     """
 
     def __init__(
@@ -111,21 +124,17 @@ class PINNPipeline(Graph):
         sampler_out_vars = [p.data_configuration.variables for p in sampler.output_ports]
         sampler_leaf_names = {name for sv in sampler_out_vars for name in sv.leaf_names}
 
-        # Drop whatever leaves the sampler can't provide - pruning, not
-        # flattening, so a constraint variable the sampler fully covers
-        # stays exactly as composed (e.g. an auto-expanded 3D variable
-        # stays whole instead of being split into its components).
+        # Drop the leaves the sampler cannot provide. Pruning keeps a fully
+        # covered constraint variable exactly as composed.
         constrained_in_sampler_out = [
             pruned
             for v in constraint_input_vars
             if (pruned := v.prune(sampler_leaf_names)) is not None
         ]
 
-        # Model inputs the constraint doesn't already claim - also pruned
-        # rather than flattened, and deduplicated by leaf name so two
-        # models sharing an unclaimed variable don't add it twice.
-        # here, still use original data configs since nothing was connected yet
-        # -> nodes were not added to graph yet, so dynamic configs are not available yet
+        # Model inputs not already claimed by the constraint, pruned and
+        # deduplicated by leaf name. Static configs are used since no node
+        # is part of the graph yet.
         only_model_input_vars: list[Variable] = []
         claimed_leaf_names = {
             name for cv in constraint_input_vars for name in cv.leaf_names
@@ -182,6 +191,17 @@ class PINNPipeline(Graph):
             self.connect(p_out, p_in)
 
     def get_variables(self, port, dynamic=False):
+        """Return the variables of the data configuration of `port`.
+
+        Args:
+            port (Port): The port to read.
+            dynamic (bool, optional): Whether to read the configuration of
+                `port` in this graph instead of its static one. Default is
+                False.
+
+        Returns:
+            Variable: The (composed) variable of the configuration.
+        """
         if dynamic:
             return self.dynamic_data_configs[port.node][port].variables
         else:
@@ -190,20 +210,38 @@ class PINNPipeline(Graph):
     def split_and_join(
         self, from_ports, to_vars, use_dynamic_data_configs=False
     ) -> list[OutputPort]:
-        """Routes each port in `from_ports` to exactly the pieces each
-        variable in `to_vars` needs.
+        """Provide one output port per variable in `to_vars` from
+        `from_ports`.
 
-        Splits only where some `to_v` genuinely requires a finer cut than
-        what's already available - a `from_v` nothing ever asks to
-        subdivide is passed straight through, no SplitVariables/
-        ConcatVariables round-trip at all - and joins pieces back together
-        only where a `to_v` spans more than one of them.
+        A port of `from_ports` is only split (with
+        :class:`~qewton.algorithms.building_blocks.array_operations.SplitVariables`)
+        where some variable of `to_vars` needs a finer part of it;
+        otherwise it is used directly. Pieces are joined (with
+        :class:`~qewton.algorithms.building_blocks.array_operations.ConcatVariables`)
+        only where a variable of `to_vars` spans more than one of them. The
+        created nodes are connected in this graph.
+
+        Args:
+            from_ports (list[OutputPort]): The ports providing the data.
+            to_vars (list[Variable]): The variables to provide, matched to
+                `from_ports` by leaf name.
+            use_dynamic_data_configs (bool, optional): Whether to read the
+                variables of `from_ports` from their configurations in this
+                graph instead of the static ones. Default is False.
+
+        Returns:
+            list[OutputPort]: For each variable in `to_vars`, the port
+                providing it.
+
+        Raises:
+            ValueError: If a variable of `to_vars` needs a leaf not provided by
+                `from_ports`.
         """
         from_vars = [
             self.get_variables(p, dynamic=use_dynamic_data_configs) for p in from_ports
         ]
 
-        # leaf name -> (port carrying it, the whole Variable piece that port outputs)
+        # leaf name -> (port carrying it, the whole variable that port outputs)
         leaf_source: dict[str, tuple] = {}
         for from_p, from_v in zip(from_ports, from_vars):
             leaves = from_v.leaves

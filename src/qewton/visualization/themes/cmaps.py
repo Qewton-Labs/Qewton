@@ -1,18 +1,22 @@
-"""qewton's own colormaps, as typed objects - `qewton.viz.cmaps`.
+"""Qewton's colormaps as typed objects.
 
-Two kinds, both usable as `ColorSpec(cmap=...)` or as a Theme's cmap field:
+Available as ``qewton.viz.cmaps``. Two kinds can be passed as
+``ColorSpec(cmap=...)``:
 
-- Roles - `sequential`, `diverging`, `cyclic`: "whichever colormap of this
-  kind the current Theme uses". Resolved only at draw time against the
-  Figure's theme (`Theme.resolve_cmap()`), so switching LIGHT_THEME to
-  DARK_THEME also switches every plot that asked for a role.
-- Concrete colormaps - `meadow`, `dusk`, `redblue`, ... and the
-  single-hue `reds`, `blues`, ...: one fixed colorscale from palette.py,
-  independent of the theme.
+- Roles - `sequential`, `diverging`, `cyclic`: the colormap of this kind
+  that the current Theme uses. They are resolved at draw time against the
+  Figure's theme
+  (:meth:`~qewton.visualization.themes.base.Theme.resolve_cmap`), so
+  switching the theme switches every plot that uses a role.
+- Concrete colormaps - `meadow`, `dusk`, `redblue`, `orangeviolet_paper`,
+  `phase`, `spectrum` and the single-hue `reds`, `oranges`, `yellows`,
+  `greens`, `blues`, `violets`, `browns`: one fixed colorscale from
+  :mod:`~qewton.visualization.themes.palette`, independent of the theme.
+  Only these can be a Theme's ``*_cmap`` field.
 
-A plain string is never interpreted by qewton - it is passed through as
-the renderer's own colormap name (e.g. Plotly's "Viridis"), as is an
-explicit renderer-native colorscale list.
+A plain string or a colorscale list is not interpreted by Qewton; it is
+passed through to the renderer as its own colormap (e.g. Plotly's
+``"Viridis"``).
 """
 
 from __future__ import annotations
@@ -31,34 +35,63 @@ from qewton.visualization.themes.palette import (
 
 
 class Colormap:
-    """Base class for qewton's own colormap types."""
+    """Base class for Qewton's colormap types.
+
+    Notes:
+        Has no behavior of its own. Subclasses define what the colormap
+        resolves to in
+        :meth:`~qewton.visualization.themes.base.Theme.resolve_cmap`,
+        which handles :class:`ColormapRole` and :class:`QewtonColormap`
+        only.
+    """
 
 
 @dataclass(frozen=True)
 class ColormapRole(Colormap):
-    """A kind of colormap (sequential/diverging/cyclic), resolved to the
-    current Theme's `<name>_cmap` field at draw time."""
+    """A kind of colormap, resolved against the Theme at draw time.
+
+    Args:
+        name: ``"sequential"``, ``"diverging"`` or ``"cyclic"``; the role
+            resolves to the Theme field ``<name>_cmap``.
+    """
 
     name: str
 
     def __repr__(self) -> str:
+        """Return ``cmaps.<name>``, the role's module attribute."""
         return f"cmaps.{self.name}"
 
 
 @dataclass(frozen=True)
 class QewtonColormap(Colormap):
-    """One concrete colorscale - (position, "#rrggbb") stops from 0 to 1.
-    Stored as tuples so instances stay immutable and can be shared as a
-    Theme field default."""
+    """One concrete, immutable colorscale.
+
+    Args:
+        name: Name of the colormap.
+        colorscale: ``(position, "#rrggbb")`` stops with positions from 0
+            to 1.
+    """
 
     name: str
     colorscale: tuple[tuple[float, str], ...]
 
     @classmethod
     def from_stops(cls, name: str, stops) -> "QewtonColormap":
+        """Create a colormap from a list of stops.
+
+        Args:
+            name: Name of the colormap.
+            stops (Iterable[tuple[float, str]]): ``(position, color)``
+                pairs, e.g. ``[position, "#rrggbb"]`` lists as produced in
+                :mod:`~qewton.visualization.themes.palette`.
+
+        Returns:
+            The colormap with the stops converted to tuples.
+        """
         return cls(name, tuple((float(pos), color) for pos, color in stops))
 
     def __repr__(self) -> str:
+        """Return ``cmaps.<name>``, the colormap's module attribute."""
         return f"cmaps.{self.name}"
 
 

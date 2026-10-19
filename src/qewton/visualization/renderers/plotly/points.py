@@ -1,3 +1,5 @@
+"""Plotly artists for point clouds."""
+
 import numpy as np
 from plotly import graph_objects as go
 
@@ -12,9 +14,8 @@ from qewton.visualization.renderers.plotly.common import (
 
 
 def _point_cloud_name(plot) -> str | None:
-    """The legend entry for a point cloud trace - the colored quantity's
-    own math_name when there is one, else the geometry's own coordinate
-    Variable, math-wrapped to match axis titles."""
+    """Legend name: the color's math_name, else the geometry's variable
+    name in math mode."""
     if plot.color is not None:
         return plot.color.math_name
     geometry = plot.drawn_geometry_axes.geometry
@@ -22,11 +23,25 @@ def _point_cloud_name(plot) -> str | None:
 
 
 class PointCloud2DArtist(PlotlyArtist):
-    """Points at arbitrary (x, y) positions from a geometry's own
-    discretization_points, colored by a scalar field - the geometry-
-    positioned counterpart to ScatterArtist (which draws named x/y roles
-    instead of a geometry's own coordinates). A 1D point cloud is drawn the
-    same way, baselined at y=0."""
+    """Draws a 1D or 2D point cloud plot.
+
+    Used for :class:`~qewton.visualization.plots.data.points.PointCloudPlot`.
+    Points sit at the geometry's own positions, colored by the color field
+    or, without one, by the theme's cycled palette color. 1D points are
+    drawn at y = 0. Axis titles come from the geometry's coordinate
+    variable.
+
+    Args:
+        idx (int): Index of the scatter trace.
+        row (int, optional): Facet grid row, used to place the colorbar on
+            update.
+        col (int, optional): Facet grid column, used to place the colorbar
+            on update.
+
+    Attributes:
+        row (int or None): Facet grid row.
+        col (int or None): Facet grid column.
+    """
 
     def __init__(self, idx, row=None, col=None):
         super().__init__(idx)
@@ -34,6 +49,10 @@ class PointCloud2DArtist(PlotlyArtist):
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         trace = cls._trace(plot, plot.evaluate(), backend_figure, row, col)
         backend_figure.add_trace(trace, row=row, col=col)
         geometry = plot.drawn_geometry_axes.geometry
@@ -69,6 +88,10 @@ class PointCloud2DArtist(PlotlyArtist):
         )
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         new = self._trace(plot, plot.evaluate(), backend_figure, self.row, self.col)
         trace = backend_figure.data[self.figure_idx]
         trace.x, trace.y = new.x, new.y
@@ -76,7 +99,22 @@ class PointCloud2DArtist(PlotlyArtist):
 
 
 class PointCloud3DArtist(PlotlyArtist):
-    """3D counterpart to PointCloud2DArtist, via go.Scatter3d."""
+    """Draws a 3D point cloud plot as ``go.Scatter3d``.
+
+    Used for :class:`~qewton.visualization.plots.data.points.PointCloudPlot`.
+    Same coloring and axis titles as :class:`PointCloud2DArtist`.
+
+    Args:
+        idx (int): Index of the scatter trace.
+        row (int, optional): Facet grid row, used to place the colorbar on
+            update.
+        col (int, optional): Facet grid column, used to place the colorbar
+            on update.
+
+    Attributes:
+        row (int or None): Facet grid row.
+        col (int or None): Facet grid column.
+    """
 
     def __init__(self, idx, row=None, col=None):
         super().__init__(idx)
@@ -84,6 +122,10 @@ class PointCloud3DArtist(PlotlyArtist):
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         trace = cls._trace(plot, plot.evaluate(), backend_figure, row, col)
         backend_figure.add_trace(trace, row=row, col=col)
         geometry = plot.drawn_geometry_axes.geometry
@@ -117,6 +159,10 @@ class PointCloud3DArtist(PlotlyArtist):
         )
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         new = self._trace(plot, plot.evaluate(), backend_figure, self.row, self.col)
         trace = backend_figure.data[self.figure_idx]
         trace.x, trace.y, trace.z = new.x, new.y, new.z

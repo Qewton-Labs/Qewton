@@ -1,3 +1,5 @@
+"""Shared Plotly artist base class and trace/colorbar helpers."""
+
 import itertools
 
 from plotly import graph_objects as go
@@ -48,13 +50,10 @@ _SEAM_WIDTH = 0.5
 def _triangle_fill_trace(
     vertices: np.ndarray, cells: np.ndarray, color: str, opacity: float = 1.0
 ) -> go.Scatter:
-    """Fills a 2D triangulation as one trace. Each triangle is a
-    None-separated segment, which Plotly fills independently - so holes and
-    disconnected components need no special handling, and an empty `cells`
-    yields a valid, empty trace rather than an error.
-
-    Each triangle is also outlined thinly in its fill color: anti-aliasing
-    otherwise leaves a visible seam between neighboring triangles."""
+    """Fills a 2D triangulation as one trace, one None-separated segment
+    per triangle (filled independently, so holes need no special handling;
+    empty `cells` gives an empty trace). Each triangle is outlined thinly
+    in its fill color to hide anti-aliasing seams."""
     xs, ys = [], []
     for tri in cells:
         pts = vertices[tri]
@@ -80,8 +79,7 @@ def _edge_trace_2d(
     width: float = 1.5,
     opacity: float = 1.0,
 ) -> go.Scatter:
-    """Draws unordered 2D edges. Works for boundary_faces directly - line
-    segments need no traversal order, unlike filled polygons."""
+    """Draws unordered 2D edges (e.g. boundary faces) as one line trace."""
     xs, ys = [], []
     for a, b in edges:
         xs.extend([vertices[a, 0], vertices[b, 0], None])
@@ -98,8 +96,28 @@ def _edge_trace_2d(
 
 
 class PlotlyArtist(Artist):
-    """Base class for a Plotly Artist, tracking which trace in
-    `backend_figure.data` it owns."""
+    """Base class for Plotly artists.
+
+    Args:
+        idx (int): Index of the artist's (first) trace in
+            ``backend_figure.data``.
+
+    Attributes:
+        figure_idx (int): Index of the artist's (first) trace in
+            ``backend_figure.data``.
+        trace_indices (list of int): Every trace in ``backend_figure.data`` the
+            artist owns and refreshes in :meth:`update`, i.e. what
+            :meth:`~qewton.visualization.renderers.plotly.PlotlyRenderer.animate`,
+            :meth:`~qewton.visualization.renderers.plotly.PlotlyRenderer.apply_slider`
+            and
+            :meth:`~qewton.visualization.renderers.plotly.PlotlyRenderer.apply_selector`
+            capture. ``[figure_idx]`` by default.
+
+    Notes:
+        Subclasses must implement ``create()`` and ``update()`` (see
+        :class:`~qewton.visualization.renderers.base.Artist`). Subclasses that
+        own more than one trace must override ``trace_indices``.
+    """
 
     def __init__(self, idx) -> None:
         super().__init__()
@@ -107,23 +125,14 @@ class PlotlyArtist(Artist):
 
     @property
     def trace_indices(self) -> list[int]:
-        """Every trace in `backend_figure.data` this artist owns and
-        refreshes in update() - what a static frame/dropdown snapshot
-        (PlotlyRenderer.animate()/apply_selector()) must capture. Artists
-        drawing more than one trace override this."""
         return [self.figure_idx]
 
 
 def _mask_nan_color_as_gaps(x, y, z, color):
-    """Propagates NaN in `color` into the position arrays too.
+    """Propagates NaN in `color` into the position arrays.
 
-    go.Surface only cuts an actual hole in the rendered mesh where the
-    POSITION (x/y/z) is NaN - NaN in surfacecolor alone, with the geometry
-    still fully defined, just leaves that patch oddly/flatly colored instead
-    of removing it. Plots that decouple position from color (EmbeddedGridPlot:
-    x/y/z come from the geometry, color from a separately-interpolated field
-    that can be NaN outside the mesh) need this; plots where color already
-    doubles as z (SurfaceArtist) don't - z is NaN there for free.
+    go.Surface only leaves a hole where x/y/z is NaN; NaN in surfacecolor
+    alone is still drawn.
     """
     if color is None:
         return x, y, z
@@ -136,31 +145,19 @@ def _mask_nan_color_as_gaps(x, y, z, color):
 
 
 def _spatial_variable(geometry):
-    """The Variable naming a geometry's x/y/z axes, for artists that draw a
-    geometry's own positions and so have no AxisSpec of their own to title
-    from (mesh/geometry/vector/embedded-grid plots) - see
-    axis_names_from_variable() in plots/base.py.
+    """The Variable naming a geometry's x/y/z axes, for axis titles.
 
-    The SOURCE mesh's variable when this geometry is a resampling grid built
-    from one (PlaneSliceGeometry/VolumeGridGeometry set `mesh_geometry`
-    precisely so this is recoverable) - their own `variable` names the grid's
-    parametrization (e.g. "u"/"v"/"height_level"), not the space it was
-    resampled into, which would mislabel the axes. Otherwise the geometry's
-    own variable directly - correct for a MeshGeometry (no indirection
-    needed, its variable already is the ambient space), and for a hand-built
-    parametric grid, whatever the caller named its own axes.
+    For a resampling grid with a `mesh_geometry` (PlaneSliceGeometry,
+    VolumeGridGeometry), the source mesh's variable, since the grid's own
+    variable names its parametrization; otherwise the geometry's own.
     """
     source = getattr(geometry, "mesh_geometry", None)
     return source.variable if source is not None else geometry.variable
 
 
 def _backend_to_numpy(tensor) -> np.ndarray:
-    """Converts via the tensor's own ComputingBackend where one is
-    recognized (torch/tensorflow/...), so this stays correct for whichever
-    backend produced the data instead of duck-typing detach()/cpu(). Plain
-    numpy arrays and anything else unrecognized (python lists, scalars) fall
-    back to np.asarray directly - resolve_backend only knows about tensor
-    types wrapped by an actual ComputingBackend."""
+    """Converts via the tensor's ComputingBackend; anything without one
+    (numpy arrays, lists, scalars) goes through np.asarray."""
     try:
         backend = resolve_backend(tensor)
     except ValueError:
@@ -169,33 +166,23 @@ def _backend_to_numpy(tensor) -> np.ndarray:
 
 
 def _detach_to_numpy(tensor) -> np.ndarray:
-    """Like _to_numpy, but preserves dtype - for cell/index arrays, which
-    must stay integer (used for indexing elsewhere, e.g. _mesh_edges), so
-    _to_numpy's float cast isn't an option. Handing Plotly a raw torch
-    tensor directly (skipping this) triggers the same numpy>=2.0 /
-    __array__ DeprecationWarning _to_numpy works around, just for `i`/`j`/`k`
-    cell indices instead of vertex coordinates."""
+    """Like _to_numpy, but keeps the dtype - for integer cell/index
+    arrays."""
     return _backend_to_numpy(tensor)
 
 
 def _to_numpy(tensor) -> np.ndarray:
-    """Plotly ultimately needs plain arrays anyway, so this is a safe place
-    to detach from whichever backend (numpy/torch/...) produced the data.
+    """A float copy of `tensor` as a plain numpy array.
 
-    np.array(tensor, copy=True) triggers a numpy>=2.0 DeprecationWarning for
-    a torch tensor specifically - torch's __array__ doesn't yet implement
-    numpy's copy-keyword protocol, so numpy warns and falls back. Splitting
-    into np.asarray() (the actual conversion) + .astype(copy=True) (the
-    actual copy) sidesteps that entirely, with the same result.
+    Converts and copies in two steps: np.array(tensor, copy=True) warns for
+    torch tensors under numpy>=2.0.
     """
     return _backend_to_numpy(tensor).astype(float, copy=True)
 
 
 def _subplot_x_domain(backend_figure, row, col) -> tuple[float, float] | None:
-    """(x0, x1) of one grid cell, in paper-fraction coordinates - Plotly's
-    own resolved domain, read back rather than recomputed (make_subplots()
-    already accounted for spacing, subplot titles, ...). None if that cell
-    doesn't exist."""
+    """(x0, x1) of one grid cell in paper coordinates, as resolved by
+    make_subplots(); None if the cell doesn't exist."""
     try:
         subplot = backend_figure.get_subplot(row, col)
     except (ValueError, KeyError):
@@ -207,22 +194,11 @@ def _subplot_x_domain(backend_figure, row, col) -> tuple[float, float] | None:
 
 
 def _colorbar_position(backend_figure, row, col) -> dict | None:
-    """A colorbar position/size confined to the gap right of this trace's
-    own subplot cell, sized to reliably fit there - None outside a
-    faceted/multi-panel grid, where the caller's own default position is
-    already fine as-is.
+    """Colorbar position and size in the gap right of a grid cell.
 
-    `x` is the midpoint of the actual gap between this cell and the next
-    one in the same row, not a fixed offset guessing where that gap is -
-    a fixed offset plus Plotly's default colorbar width (30px) can exceed
-    a tight gap and spill onto the next cell entirely, which is what "the
-    colorbar sits on top of the next plot" was: `thickness` is also
-    pinned to a narrow, known pixel width for the same reason - relying on
-    Plotly's default leaves the actual rendered width (and thus whether it
-    fits) up to the figure's overall pixel size, not this cell's own
-    fraction of it. The last column has no next cell to center within, so
-    it falls back to a small fixed margin past its own right edge - the
-    same case a single, ungridded panel is in.
+    Centered between this cell and the next one in the row (or just right
+    of the last column), as tall as the cell, with a fixed 14 px thickness
+    so it fits the gap. None without a row/col or a matching cell.
     """
     if row is None or col is None:
         return None
@@ -248,25 +224,15 @@ def _apply_scale(
     col=None,
     title: str | None = None,
 ) -> dict:
-    """cmin/cmax/showscale kwargs for a trace, given a plot's ColorSpec.scale.
+    """cmin/cmax/showscale/colorbar kwargs for a trace, given a plot's
+    ColorSpec.scale.
 
-    Without a shared Scale (scale is None), the backend infers its own range
-    per trace and always shows its colorbar. With one, cmin/cmax come from
-    the range trained across every plot referencing it, and only the first
-    trace to claim it shows a colorbar - see Scale.claim_colorbar().
-    min_key/max_key differ per Plotly trace type (go.Heatmap uses zmin/zmax,
-    go.Surface and go.Mesh3d use cmin/cmax).
-
-    backend_figure/row/col (all optional - a caller drawing into a facet/
-    panel grid has them on hand already) place the colorbar within that
-    cell instead of Plotly's own figure-wide default position, which
-    several visible colorbars would otherwise collide at.
-
-    title (optional - typically plot.color.math_name) labels what the
-    colorbar encodes, the same way update_xaxes/update_yaxes label what an
-    axis encodes. Plotly's default `side="top"` reads naturally next to a
-    vertical colorbar without widening it the way a rotated side="right"
-    title would.
+    Without a shared Scale, Plotly infers the range and the colorbar is
+    always shown. With one, the range is the Scale's trained range and only
+    the first trace to claim it shows a colorbar (Scale.claim_colorbar()),
+    placed next to Scale.colorbar_cell. min_key/max_key are the trace
+    type's range keys (zmin/zmax for go.Heatmap). backend_figure/row/col
+    place the colorbar next to its grid cell; `title` labels it.
     """
     if scale is None:
         kwargs = {"showscale": True}
@@ -278,10 +244,8 @@ def _apply_scale(
         if rng is not None:
             kwargs[min_key], kwargs[max_key] = rng
     if show:
-        # A shared Scale's colorbar goes after every panel referencing it
-        # (Figure._assign_colorbar_cells() already resolved that to one
-        # cell), not just this trace's own - it's one colorbar for the
-        # whole group, so it belongs at the group's own right edge.
+        # A shared Scale's single colorbar goes to the cell resolved by
+        # Figure._assign_colorbar_cells().
         target_row, target_col = row, col
         if scale is not None and scale.colorbar_cell is not None:
             target_row, target_col = scale.colorbar_cell
@@ -301,12 +265,9 @@ def _apply_scale(
 
 
 def _bin_values(values, n_bins, scale):
-    """(bin_idx, bin_centers, vmin, vmax) for drawing a continuous field
-    as `n_bins` flat-colored traces - Plotly's 2D primitives (and go.Cone)
-    take one color per trace only, so per-element coloring means one trace
-    per value bin. vmin/vmax come from the shared Scale's trained range
-    when one is set, else the values themselves, matching _apply_scale's
-    own convention."""
+    """(bin_idx, bin_centers, vmin, vmax) for drawing `values` as `n_bins`
+    flat-colored traces. vmin/vmax are the shared Scale's range when set,
+    else the values' own range."""
     if scale is not None and scale.range is not None:
         vmin, vmax = scale.range
     elif len(values) > 0:
@@ -330,12 +291,9 @@ def _bin_colors(cmap, centers, vmin, vmax) -> list[str]:
 def _colorbar_carrier_trace(
     cmap, vmin, vmax, scale, backend_figure=None, row=None, col=None, three_d=False
 ):
-    """An invisible single-point trace whose only purpose is showing a
-    continuous colorbar for an artist's discretely-binned traces (see
-    _bin_values) - _apply_scale's cmin/cmax (when a shared Scale set them)
-    are overridden by the actual bin range, since a single dummy point
-    gives Plotly nothing to infer a range from on its own. `three_d` makes
-    it a go.Scatter3d, for artists drawing into a `scene`."""
+    """Invisible single-point trace that shows the continuous colorbar for
+    binned traces, with cmin/cmax set to the bin range. `three_d` makes it
+    a go.Scatter3d for a `scene`."""
     marker = {
         "colorscale": cmap, "color": [vmin],
         **_apply_scale(scale, backend_figure=backend_figure, row=row, col=col),
@@ -353,11 +311,7 @@ def _colorbar_carrier_trace(
 
 
 def _cycled_color(plot) -> str:
-    """The theme's palette color for `plot`'s own position among every plot
-    in its Figure - used by artists whose family has no other data-driven
-    coloring (a fixed line, a set of bars, ...), so multiple such plots
-    overlaid in one Figure read as visually distinct traces instead of a
-    fixed, unthemed color repeated for each. Falls back to the first
-    palette color if `plot` was never added to a Figure (color_index is
-    only ever set by Figure.add_plot())."""
+    """The theme palette color for `plot`'s color_index (set by
+    Figure.add_plot()), or the first palette color without one. Used by
+    artists without data-driven coloring."""
     return plot.theme.get_color(plot.color_index if plot.color_index is not None else 0)

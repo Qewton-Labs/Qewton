@@ -1,3 +1,6 @@
+"""Specs that map plot roles onto data, plus shared color scales and
+controls."""
+
 import numpy as np
 
 from qewton.config.axes import Axes, EllipsisAxes, EllipsisDim, FeatureAxes, GeometryAxes
@@ -37,19 +40,20 @@ def _targets_axes(control, axes: Axes, data_config: DataConfiguration) -> bool:
 def drawn_geometry_axes(
     data_config: DataConfiguration, controls: list | None = None
 ) -> GeometryAxes | list[GeometryAxes] | None:
-    """The GeometryAxes of `data_config` that a plot draws: all GeometryAxes
-    except those a control steps through, e.g. the time axis of space-time
-    data with a TimeSpec on it.
+    """Return the GeometryAxes of `data_config` that a plot draws.
+
+    These are all :class:`~qewton.config.axes.GeometryAxes` except those a
+    control steps through, e.g. the time axis of space-time data with a
+    :class:`TimeSpec` on it.
 
     Args:
-        data_config (DataConfiguration): The configuration of the data.
-        controls (list | None, optional): The plot's ControlSpecs.
-            Defaults to None.
+        data_config: The configuration of the data.
+        controls: The plot's control specs.
 
     Returns:
-        GeometryAxes | list[GeometryAxes] | None: The single drawn
-            GeometryAxes, a list if there are several, None if there is none
-            - the same convention as DataConfiguration.geometry_axes.
+        GeometryAxes or list of GeometryAxes or None: The single drawn
+            GeometryAxes, a list if there are several, None if there is none -
+            the same convention as ``DataConfiguration.geometry_axes``.
     """
     drawn = [
         axes
@@ -63,22 +67,40 @@ def drawn_geometry_axes(
 
 
 class PlotSpec:
-    """Base class declaring how a Plot maps one role (x, y, color, ...) onto
-    a Variable/Axes (for a DataPlot) or a column name (for a TablePlot)."""
+    """Base class declaring how a plot maps one role onto its input.
+
+    A role (x, y, color, vector, a control, ...) is mapped onto a
+    :class:`~qewton.config.variables.Variable` or
+    :class:`~qewton.config.axes.Axes` for a
+    :class:`~qewton.visualization.plots.data.base.DataPlot`, or onto a
+    column name for a
+    :class:`~qewton.visualization.plots.table.base.TablePlot`.
+
+    Args:
+        n_dimensions: Number of dimensions the role covers.
+        variable_or_axes: The Variable, Axes or column name filling the role,
+            or a :class:`SelectorSpec` choosing between several candidates.
+            None if it is resolved later, e.g. for a control built before its
+            axis is known.
+
+    Attributes:
+        n_dimensions (int): Number of dimensions the role covers.
+        variable_or_axes (Variable or Axes or str or None): The Variable, Axes
+            or column name filling the role. A :class:`SelectorSpec` given at
+            construction is unwrapped to its currently selected candidate.
+            Settable.
+        embedded_selector_spec (SelectorSpec or None): The SelectorSpec given
+            as `variable_or_axes`, or None.
+        name (str): Name of the named Variable (also the single coordinate
+            Variable of a GeometryAxes), else ``str(variable_or_axes)``.
+        math_name (str): The Variable's TeX math-mode name, used for axis and
+            colorbar titles; the plain `name` for a spec that names no Variable
+            (an Axes or a column name).
+    """
 
     def __init__(
         self, n_dimensions: int, variable_or_axes: Variable | Axes | str | None
     ) -> None:
-        # `variable_or_axes` is a plain str column key for TablePlot, a
-        # Variable/Axes for every DataPlot family - or a SelectorSpec
-        # (defined at the bottom of this module), transparently unwrapped to
-        # its currently selected candidate by the property below. Every
-        # consumer (get_variable_slice, this class's own `name`, artists,
-        # ...) already just reads `.variable_or_axes` as if it were a plain
-        # Variable, so none of them need to know SelectorSpec exists.
-        # None (a ControlSpec built as `controls=FixedSpec(init_state=3)`,
-        # its axis not known yet) is filled in later via the setter below -
-        # see auto_plot()'s _resolve_control().
         self.n_dimensions = n_dimensions
         self._variable_or_axes = variable_or_axes
 
@@ -94,10 +116,6 @@ class PlotSpec:
 
     @property
     def embedded_selector_spec(self) -> "SelectorSpec | None":
-        """The SelectorSpec this spec's `variable_or_axes` was given, or
-        None for a plain Variable/Axes/str - used by Plot.selector_specs to
-        discover SelectorSpecs for widget-building, since they're never
-        listed in a Plot's own `controls=`."""
         return (
             self._variable_or_axes
             if isinstance(self._variable_or_axes, SelectorSpec)
@@ -106,11 +124,8 @@ class PlotSpec:
 
     @property
     def _named_variable(self) -> "Variable | None":
-        """The Variable this spec's `variable_or_axes` ultimately names,
-        even when it's a GeometryAxes rather than a Variable directly - the
-        geometry's own coordinate Variable, if it has exactly one. None for
-        a GeometryAxes with more than one coordinate component.
-        """
+        """The Variable `variable_or_axes` names: itself, or the coordinate
+        Variable of a GeometryAxes with exactly one component. Else None."""
         variable_or_axes = self.variable_or_axes
         if isinstance(variable_or_axes, Variable):
             return variable_or_axes
@@ -129,21 +144,32 @@ class PlotSpec:
 
     @property
     def math_name(self) -> str:
-        """`.name`, wrapped for TeX math-mode rendering via Variable.
-        math_name when it names an actual Variable - axis/colorbar titles
-        use this so plotted quantities render as math symbols rather than
-        plain text. Falls back to the plain `.name` for a non-Variable spec
-        (a plain Axes or TablePlot column key) - including a SelectorSpec
-        currently on a plain-string candidate, which `_named_variable`
-        already isn't a Variable for; SelectorSpec doesn't synthesize
-        Variables around its string candidates, so this needs no special
-        case for them.
-        """
         variable = self._named_variable
         return variable.math_name if variable is not None else self.name
 
     @staticmethod
     def get_slice(variable_or_axes, data_config: DataConfiguration):
+        """Locate a Variable or Axes in the dimensions of `data_config`.
+
+        Searches from the front of ``data_config.axes`` first and, if that
+        fails (e.g. because of an ellipsis), from the back.
+
+        Args:
+            variable_or_axes (Variable or Axes): The Variable or Axes to
+                locate.
+            data_config: The configuration of the data.
+
+        Returns:
+            tuple: ``(axis_slc, entry_slc)``, where
+
+            - ``axis_slc`` (int or slice) is the data dimension(s) it
+              occupies. Negative when found from the back.
+            - ``entry_slc`` (slice or None) is the entries within that
+              dimension for a Variable of a FeatureAxes, else None.
+
+        Raises:
+            ValueError: If `variable_or_axes` is not part of `data_config`.
+        """
         try:
             axis_slc, entry_slc = PlotSpec._find_axis_idx(
                 variable_or_axes, data_config.axes
@@ -166,11 +192,19 @@ class PlotSpec:
 
     @staticmethod
     def as_single_dim(axis_slc: int | slice) -> int:
-        """Normalizes a get_slice() axis result to a plain int dimension
-        index, when it unambiguously names one dimension. A length-1 slice
-        does - e.g. one child variable of a multi-dim GeometryAxes resolves
-        this way, the same mechanism HeatmapPlot's x/y and control resolution
-        (Plot._resolve_controls) already rely on. Raises otherwise."""
+        """Normalize an axis result of :meth:`get_slice` to one dimension.
+
+        Args:
+            axis_slc: An int, or a slice covering exactly one dimension (e.g.
+                one child Variable of a multi-dimensional GeometryAxes).
+
+        Returns:
+            int: The dimension index.
+
+        Raises:
+            AssertionError: If `axis_slc` is a slice covering more than one
+                dimension.
+        """
         if isinstance(axis_slc, slice):
             length = axis_slc.stop - axis_slc.start
             assert length == 1, "Multiple axes do not work with a single control."
@@ -209,12 +243,9 @@ class PlotSpec:
                         continue
                     if geometry_variable.dim == len(i_axis.shape):
                         axis_slc = geometry_variable.get_slice(variable_or_axis)
-                        # Variable.get_slice(self) returns slice(None) (the
-                        # "whole thing" convention for array indexing, e.g.
-                        # data[..., :]) when `variable_or_axis` is the
-                        # geometry's own root variable, not a decomposed
-                        # child - substitute the numeric bounds it implies
-                        # here, since counter + None below would TypeError.
+                        # Variable.get_slice() returns slice(None) for the
+                        # geometry's own root variable; substitute numeric
+                        # bounds so they can be offset by `counter`.
                         start = axis_slc.start if axis_slc.start is not None else 0
                         stop = (
                             axis_slc.stop
@@ -235,9 +266,16 @@ class PlotSpec:
 
 
 class AxisSpec(PlotSpec):
-    """Declares a single structural domain axis (e.g. a LinePlot's `x`/`y`).
-    `variable_or_axes` may also be a SelectorSpec, to switch which Variable
-    fills this role."""
+    """Declares a single structural axis role (e.g. a line plot's `x`).
+
+    Args:
+        variable_or_axes: The Variable or Axes filling the role, or a
+            :class:`SelectorSpec` to switch between several Variables.
+        log_scale: Whether the axis is drawn logarithmically.
+
+    Attributes:
+        log_scale (bool): Whether the axis is drawn logarithmically.
+    """
 
     def __init__(
         self, variable_or_axes: "Variable | Axes | SelectorSpec", log_scale: bool = False
@@ -247,27 +285,32 @@ class AxisSpec(PlotSpec):
 
 
 class VectorSpec(PlotSpec):
-    """Declares a 2D or 3D vector-valued role (e.g. a QuiverPlot's arrows),
-    with the display parameters that control how it's drawn.
+    """Declares a 2D or 3D vector-valued role (e.g. a quiver plot's arrows).
 
-    How the arrows are colored is a separate role - the plot's own `color`
-    (a ColorSpec), which defaults to the vector magnitude.
+    How the arrows are colored is a separate role, the plot's own `color`
+    (a :class:`ColorSpec`), which defaults to the vector magnitude.
 
     Args:
-        variable_or_axes: The 2D or 3D Variable/Axes the vector components
-            come from - or a SelectorSpec, to switch between several
-            same-dim candidates.
-        scale: Multiplier applied to every vector's length. None (default)
-            autoscales: the longest vector in the whole data is drawn about
-            as long as the typical spacing between drawn arrows, so arrows
-            (and 3D cones, whose width grows with their length) don't
-            overlap. Pass a number for an absolute factor instead, e.g. to
-            keep lengths comparable between separate plots.
-        normalize: If True, normalizes each vector to unit length before
-            applying `scale`.
-        subsample: Draws every `subsample`-th vector only, decimated after
-            `normalize`/`scale` are applied - a display decision about which
-            arrows to draw, not a change to what the field itself is.
+        variable_or_axes (Variable or Axes or SelectorSpec): The 2D or 3D
+            Variable or Axes the vector components come from, or a
+            :class:`SelectorSpec` switching between candidates of equal
+            dimension.
+        scale (float, optional): Multiplier applied to every vector's length.
+            None autoscales: the longest vector in the whole data is drawn
+            about as long as the typical spacing between drawn arrows.
+        normalize (bool, optional): If True, normalizes each vector to unit
+            length before applying `scale`.
+        subsample (int, optional): Draw only every `subsample`-th vector.
+            Applied after `normalize` and `scale`. Must be at least 1.
+
+    Raises:
+        AssertionError: If the dimension is not 2 or 3, or `subsample` is below
+            1.
+
+    Attributes:
+        scale (float or None): Length multiplier, or None for autoscaling.
+        normalize (bool): Whether vectors are normalized to unit length.
+        subsample (int): Draw every `subsample`-th vector only.
     """
 
     def __init__(
@@ -289,10 +332,26 @@ class VectorSpec(PlotSpec):
 class Scale:
     """Shared value range for one or more ColorSpecs.
 
-    Plots that reference the same Scale instance train it together, so e.g.
-    prediction/reference/difference heatmaps side by side get one common
-    cmin/cmax instead of each auto-scaling independently - without a shared
-    range, differently-scaled heatmaps look identical, which is misleading.
+    All plots whose :class:`ColorSpec` references the same Scale instance
+    train it together during ``Figure.draw()`` and are drawn with one
+    common color range and a single colorbar.
+
+    Args:
+        vmin: Explicit lower bound. Takes precedence over the observed one.
+        vmax: Explicit upper bound. Takes precedence over the observed one.
+        symmetric: If True, the range is centered on zero.
+
+    Attributes:
+        vmin (float or None): Explicit lower bound.
+        vmax (float or None): Explicit upper bound.
+        symmetric (bool): Whether the range is centered on zero.
+        colorbar_cell (tuple of int or None): ``(row, col)`` (1-indexed) of the
+            rightmost grid cell among all plots referencing this Scale, where
+            its colorbar is placed. Set once per draw by the Figure; None
+            outside a grid or before that.
+        range (tuple of float or None): Merged ``(lo, hi)``, explicit bounds
+            taking precedence over observed values and made symmetric if
+            requested. None if neither bound is known.
     """
 
     def __init__(
@@ -301,24 +360,21 @@ class Scale:
         vmax: float | None = None,
         symmetric: bool = False,
     ) -> None:
-        self.vmin = vmin  # explicit bounds always win over observed ones
+        self.vmin = vmin
         self.vmax = vmax
-        self.symmetric = symmetric  # centre the range on zero (error plots)
+        self.symmetric = symmetric
         self._observed_min: float | None = None
         self._observed_max: float | None = None
         self._colorbar_claimed = False
-        #: (row, col) of the rightmost grid cell among every plot
-        #: referencing this Scale, 1-indexed - None outside a grid, or
-        #: before Figure.draw() has computed it this cycle. Set once per
-        #: draw() (see Figure._assign_colorbar_cells()), read by whichever
-        #: renderer draws the one trace that ends up showing this Scale's
-        #: colorbar, so it's placed after every panel sharing the scale,
-        #: not just the first (claiming) one.
         self.colorbar_cell: tuple[int, int] | None = None
 
     def observe(self, values) -> None:
-        """Widens the observed range to cover `values`. Called in pass 1 of
-        Figure.draw() for every plot whose ColorSpec references this scale."""
+        """Widen the observed range to cover `values`, ignoring NaN.
+
+        Args:
+            values (array_like): Color values of one plot. Empty input is
+                ignored.
+        """
         values = np.asarray(values)
         if values.size == 0:
             return
@@ -332,8 +388,6 @@ class Scale:
 
     @property
     def range(self) -> tuple[float, float] | None:
-        """Merged (lo, hi), preferring explicit vmin/vmax over observed
-        values. None if neither explicit bounds nor any observation exist."""
         lo = self.vmin if self.vmin is not None else self._observed_min
         hi = self.vmax if self.vmax is not None else self._observed_max
         if lo is None or hi is None:
@@ -344,17 +398,23 @@ class Scale:
         return lo, hi
 
     def claim_colorbar(self) -> bool:
-        """First artist to call this each draw() cycle gets True; the rest
-        get False, so only one colorbar is shown per shared scale."""
+        """Claim this Scale's colorbar for the calling artist.
+
+        Returns:
+            bool: True for the first call since the last :meth:`reset`, False
+                afterwards, so only one colorbar is shown per Scale.
+        """
         if self._colorbar_claimed:
             return False
         self._colorbar_claimed = True
         return True
 
     def reset(self) -> None:
-        """Clears the observed range, colorbar claim, and colorbar cell.
-        Must run before every draw(), or the colorbar disappears on the
-        second render."""
+        """Clear the observed range, colorbar claim, and colorbar cell.
+
+        Must run before every draw, otherwise the colorbar is already
+        claimed and missing on the next render.
+        """
         self._observed_min = None
         self._observed_max = None
         self._colorbar_claimed = False
@@ -362,9 +422,26 @@ class Scale:
 
 
 class ColorSpec(PlotSpec):
-    """Declares which Variable/Axes (DataPlot) or column (TablePlot) colors
-    a plot, with an optional colormap and shared Scale. `variable_or_axes`
-    may also be a SelectorSpec, to switch which Variable colors the plot."""
+    """Declares what colors a plot, with an optional colormap and Scale.
+
+    Args:
+        variable_or_axes: The Variable or Axes (data plots) or column name
+            (table plots) whose values color the plot, or a
+            :class:`SelectorSpec` to switch between several.
+        cmap (ColormapRole or QewtonColormap or str or list, optional): A
+            qewton colormap role (e.g. ``cmaps.diverging``, resolved against
+            the Figure's theme at draw time), a concrete qewton colormap (e.g.
+            ``cmaps.meadow``), or a renderer-native colormap passed through
+            as-is. None uses the theme's sequential colormap. See
+            :meth:`~qewton.visualization.themes.base.Theme.resolve_cmap`.
+        scale: Shared value range; all specs with the same :class:`Scale` get
+            one common range.
+
+    Attributes:
+        cmap (ColormapRole or QewtonColormap or str or list or None): The
+            colormap.
+        scale (Scale or None): The shared value range.
+    """
 
     def __init__(
         self,
@@ -373,30 +450,45 @@ class ColorSpec(PlotSpec):
         scale: Scale | None = None,
     ) -> None:
         super().__init__(n_dimensions=1, variable_or_axes=variable_or_axes)
-        # A qewton colormap (a role like cmaps.diverging, resolved against
-        # the Figure's theme at draw time, or a concrete one like
-        # cmaps.meadow), or a renderer-native colormap name/list passed
-        # through as-is. None uses the theme's sequential colormap. See
-        # Theme.resolve_cmap().
         self.cmap = cmap
-        self.scale = scale  # if set, shared with every other spec using the same Scale
+        self.scale = scale
 
 
 class ControlSpec(PlotSpec):
-    """Base class for a spec that reduces or partitions a plot's data by a
-    dimension's current state (SliderSpec, FixedSpec, FacetSpec, TimeSpec)."""
+    """Base class for a spec that reduces or partitions a plot's data by the
+    current state of one dimension.
+
+    Args:
+        init_state (object, optional): Initial state, usually an index along
+            the dimension.
+        n_dimensions: Number of dimensions the control covers.
+        variable_or_axes (Variable or Axes or str or SelectorSpec, optional):
+            The dimension (or table column) the control acts on. None if it is
+            resolved later, e.g. by
+            :func:`~qewton.visualization.auto.auto_plot`.
+
+    Attributes:
+        state (object): The current state. Settable.
+        coordinates (list of float or None): Physical coordinate of each state
+            (e.g. the time of each time step), indexed by state; None if the
+            dimension has none.
+
+    Notes:
+        The owning plot calls :meth:`resolve` with the selectable states of the
+        dimension. Subclasses override :meth:`resolve` to fill in their
+        defaults; the base implementation does nothing. Subclasses may override
+        the `state` property, e.g. to forbid or validate changes.
+
+    See Also:
+        :class:`SliderSpec`, :class:`FixedSpec`, :class:`FacetSpec`,
+        :class:`TimeSpec`, :class:`SelectorSpec`
+    """
 
     def __init__(
         self, init_state=None, n_dimensions: int = 1, variable_or_axes=None
     ) -> None:
-        # variable_or_axes defaults to None so a ControlSpec can be built
-        # before its axis is known (`controls=FixedSpec(init_state=3)`) and
-        # resolved later against whichever axis actually needs one - see
-        # auto_plot()'s _resolve_control().
         super().__init__(n_dimensions=n_dimensions, variable_or_axes=variable_or_axes)
         self._state = init_state
-        #: Physical coordinate of each state (e.g. the time of each time
-        #: step), indexed by state - None if the dimension has none.
         self.coordinates: list[float] | None = None
 
     @property
@@ -408,40 +500,73 @@ class ControlSpec(PlotSpec):
         self._state = value
 
     def resolve(self, values):
-        """Fills in whatever was left None - bounds, facet values, initial
-        state - from `values`, the list of selectable states for this
-        control's dimension. Explicit values set by the user are never
-        overwritten. `values` is computed by the owning Plot (a DataPlot
-        passes `range(data.shape[dim])`, a TablePlot passes the column's
-        sorted unique values), so the same ControlSpec subclasses work with
-        every input family."""
+        """Fill in settings left None from the selectable states.
+
+        Explicitly set values are never overwritten. The base
+        implementation does nothing.
+
+        Args:
+            values (iterable): The selectable states of the control's
+                dimension, computed by the owning plot: ``range(size)`` for a
+                data plot, the sorted unique column values for a table plot.
+        """
 
     def set_coordinates(self, coordinates) -> None:
-        """Sets the physical coordinate of each state, e.g. the time of each
-        time step, unless coordinates were already set. Called by the
-        owning Plot when the control's dimension has coordinates."""
+        """Set the physical coordinate of each state, unless already set.
+
+        Args:
+            coordinates (array_like or None): One coordinate per state, e.g.
+                the time of each time step. None is ignored.
+        """
         if self.coordinates is None and coordinates is not None:
             self.coordinates = [float(c) for c in coordinates]
 
     def coordinate(self, state) -> float | None:
-        """The physical coordinate of `state`, or None if unknown."""
+        """Return the physical coordinate of `state`, or None if unknown."""
         if self.coordinates is None:
             return None
         return self.coordinates[state]
 
     def label(self, state) -> str:
-        """Display text for `state`: its coordinate if known, else the
-        state itself."""
+        """Return the display text for `state`.
+
+        Returns:
+            str: The coordinate of `state` (4 significant digits) if known,
+                else ``str(state)``.
+        """
         coordinate = self.coordinate(state)
         return str(state) if coordinate is None else f"{coordinate:.4g}"
 
     def state_at(self, coordinate: float):
-        """The state whose coordinate is closest to `coordinate`."""
+        """Return the state whose coordinate is closest to `coordinate`.
+
+        Requires `coordinates` to be set.
+        """
         return int(np.argmin(np.abs(np.asarray(self.coordinates) - coordinate)))
 
 
 class SliderSpec(ControlSpec):
-    """An interactive slider over one dimension's states."""
+    """An interactive slider over one dimension's states.
+
+    Args:
+        variable_or_axes (Variable or Axes or str, optional): The dimension (or
+            table column) the slider acts on.
+        init_state (int, optional): Initial state. Defaults to `minimum`.
+        minimum (int, optional): Lower slider bound. Defaults to the smallest
+            selectable state.
+        maximum (int, optional): Upper slider bound. Defaults to the largest
+            selectable state.
+        step (int, optional): Slider step.
+        marks (optional): Slider marks passed to the interactive widget.
+
+    Attributes:
+        minimum (int or None): Lower slider bound, filled in by
+            :meth:`resolve`.
+        maximum (int or None): Upper slider bound, filled in by
+            :meth:`resolve`.
+        step (int): Slider step.
+        marks (object): Slider marks.
+    """
 
     def __init__(
         self,
@@ -459,6 +584,8 @@ class SliderSpec(ControlSpec):
         self.marks = marks
 
     def resolve(self, values):
+        """Fill in missing bounds from `values` and the state from
+        `minimum`."""
         if self.minimum is None or self.maximum is None:
             values = list(values)
             self.minimum = self.minimum if self.minimum is not None else min(values)
@@ -468,7 +595,17 @@ class SliderSpec(ControlSpec):
 
 
 class FixedSpec(ControlSpec):
-    """Selects one fixed index of a dimension - never changes state."""
+    """Selects one fixed index of a dimension.
+
+    Takes the parameters of :class:`ControlSpec`; `init_state` is the fixed
+    index.
+
+    Raises:
+        ValueError: When `state` is set.
+
+    Attributes:
+        state (object): The fixed index.
+    """
 
     @property
     def state(self):
@@ -480,8 +617,26 @@ class FixedSpec(ControlSpec):
 
 
 class FacetSpec(ControlSpec):
-    """Splits a dimension into a grid of side-by-side subplot panels, one
-    per value, instead of an interactive control.
+    """Splits a dimension into a grid of subplot panels, one per value.
+
+    Args:
+        variable_or_axes (Variable or Axes or str, optional): The dimension (or
+            table column) to facet over.
+        values (list, optional): States to draw a panel for. Defaults to every
+            selectable state.
+        orientation: ``"row"`` or ``"col"``: whether panels are laid out as
+            rows or columns.
+        labels: Panel titles, one per value.
+
+    Raises:
+        AssertionError: If `orientation` is invalid, or (in :meth:`resolve`)
+            the number of `labels` does not match the number of `values`.
+
+    Attributes:
+        orientation (str): ``"row"`` or ``"col"``.
+        values (list or None): States drawn as panels, filled in by
+            :meth:`resolve`.
+        labels (list of str or None): Panel titles.
     """
 
     def __init__(
@@ -498,6 +653,7 @@ class FacetSpec(ControlSpec):
         self.labels = labels
 
     def resolve(self, values):
+        """Fill in missing `values` and check `labels` against them."""
         if self.values is None:
             self.values = list(values)
         if self.labels is not None:
@@ -510,31 +666,32 @@ class FacetSpec(ControlSpec):
 
 
 class SelectorSpec(ControlSpec):
-    """A categorical, single-select control letting the user swap which of
-    several candidates currently feeds another spec's role - pass one
-    anywhere a Variable is expected, e.g. `ColorSpec(SelectorSpec(
-    [temperature, pressure]))`. Rendered as one dropdown (DashApplication)
-    or one button menu (PlotlyRenderer.apply_selector) per instance, always
-    picking exactly one candidate at a time - not a whole-axis control that
-    reduces/partitions data the way SliderSpec/FacetSpec/TimeSpec do.
-    `PlotSpec.variable_or_axes` transparently unwraps it to whichever
-    candidate is currently selected, so every existing consumer
-    (get_variable_slice, axis/colorbar titles, artists, ...) keeps working
-    unchanged - selecting a candidate is exactly the same "pick a slice of
-    the FeatureAxes" operation a fixed Variable already describes, just
-    made to react to `state` instead of staying fixed.
+    """A single-select control choosing which candidate fills another
+    spec's role.
 
-    Unlike SliderSpec/FacetSpec/TimeSpec, this is never passed via a Plot's
-    own `controls=` - it isn't a whole-axis control for apply_controls() to
-    reduce, so it never appears in Plot.controls the way those do.
+    Passed in place of a Variable to another spec, e.g.
+    ``ColorSpec(SelectorSpec([temperature, pressure]))``, never via a
+    plot's `controls`. :attr:`PlotSpec.variable_or_axes` unwraps it to the
+    selected candidate. Rendered as one dropdown (Dash) or one button menu
+    (Plotly) per instance.
 
-    All `candidates` must share the same dim, so the role they feed stays
-    valid (same required shape) regardless of which is selected. Candidates
-    are kept exactly as given - a plain string stays a plain string, never
-    synthesized into a Variable - so a TablePlot column key like "loss"
-    never looks like a math quantity to PlotSpec.math_name; see
-    candidate_name()/candidate_dim() below for how dim/name are read from
-    whichever kind of candidate this instance actually has.
+    Args:
+        candidates: At least two Variables or column names of equal dimension.
+            Kept as given; strings are not turned into Variables.
+        init_index: Index of the initially selected candidate.
+
+    Raises:
+        AssertionError: If there are fewer than two candidates, their
+            dimensions differ, or `state` is set to something that is not a
+            candidate.
+
+    Attributes:
+        candidates (list of Variable or list of str): The candidates.
+        dim (int): Common dimension of the candidates.
+        name (str): The candidate names joined by ``" / "``, used as widget
+            label.
+        state (Variable or str): The selected candidate. Can be set to a
+            candidate or to its index.
     """
 
     def __init__(self, candidates: list[Variable] | list[str], init_index: int = 0):
@@ -550,18 +707,14 @@ class SelectorSpec(ControlSpec):
 
     @staticmethod
     def candidate_dim(candidate: "Variable | str") -> int:
-        """A candidate's dim - `.dim` for a real Variable, 1 for a plain
-        string (it names one scalar column, the same as `Variable(name,
-        dim=1)` would)."""
+        """Return a candidate's dimension: ``.dim`` for a Variable, 1 for a
+        column name."""
         return candidate.dim if isinstance(candidate, Variable) else 1
 
     @staticmethod
     def candidate_name(candidate: "Variable | str") -> str:
-        """A candidate's display name - `.name` for a real Variable, or the
-        string itself, which already is its own name. The one place this
-        distinction is handled, so callers building a widget/button label
-        per candidate (DashApplication.create_dropdown, PlotlyRenderer.
-        apply_selector) don't each need their own isinstance check."""
+        """Return a candidate's display name: ``.name`` for a Variable, the
+        string itself for a column name."""
         return candidate.name if isinstance(candidate, Variable) else candidate
 
     @property
@@ -570,10 +723,6 @@ class SelectorSpec(ControlSpec):
 
     @property
     def name(self):
-        # PlotSpec.name derives from self.variable_or_axes, which is None
-        # here (this spec doesn't itself wrap a Variable - its candidates
-        # do) - override with something a widget can actually label itself
-        # with.
         return " / ".join(self.candidate_name(c) for c in self.candidates)
 
     @property
@@ -591,13 +740,25 @@ class SelectorSpec(ControlSpec):
 
 
 class TimeSpec(ControlSpec):
-    """Declares that a dimension/column advances over animation frames,
-    rather than being an interactive widget (SliderSpec) or a grid of panels
-    (FacetSpec).
+    """Declares that a dimension or column advances over animation frames.
 
     A renderer that materializes frames up front (e.g. Plotly) builds one
     frame per value in `values`, plus play/pause controls and a frame
-    slider. Unlike SliderSpec, this does not get an interactive Dash widget.
+    slider. There is no interactive Dash widget for it.
+
+    Args:
+        variable_or_axes (Variable or Axes or str): The dimension (or table
+            column) to animate over.
+        values (list, optional): States to show as frames. Defaults to every
+            selectable state.
+        duration (int, optional): Average display time per frame in
+            milliseconds.
+
+    Attributes:
+        values (list or None): States shown as frames, filled in by
+            :meth:`resolve`.
+        duration (int): Average display time per frame in milliseconds; see
+            :meth:`frame_weights`.
     """
 
     def __init__(self, variable_or_axes, values=None, duration=500):
@@ -605,22 +766,25 @@ class TimeSpec(ControlSpec):
             n_dimensions=1, variable_or_axes=variable_or_axes, init_state=None
         )
         self.values = values
-        #: Average ms per frame while the Play button runs - see frame_weights().
         self.duration = duration
 
     def resolve(self, values):
+        """Fill in missing `values` and set the state to the first one."""
         if self.values is None:
             self.values = list(values)
         if self._state is None:
             self._state = self.values[0]
 
     def frame_weights(self) -> list[float]:
-        """Relative display time of each frame in `values`, with mean 1.
+        """Return the relative display time of each frame, with mean 1.
 
-        With coordinates (e.g. physical time), each frame is shown in
-        proportion to the time until the next frame, so non-uniform time
-        steps play back in physical time; the last frame gets the mean step.
-        Without coordinates, every frame is shown equally long.
+        With `coordinates` (e.g. physical time), each frame is shown in
+        proportion to the time until the next frame; the last frame gets
+        the mean step. Without coordinates, or if all coordinates are
+        equal, every frame is shown equally long.
+
+        Returns:
+            list of float: One weight per entry of `values`.
         """
         n = len(self.values)
         if self.coordinates is None or n < 2:
