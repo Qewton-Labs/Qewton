@@ -383,13 +383,14 @@ class TestExplicitPlotType:
         plot = auto_plot(data, config, plot_type=BarPlot, x=sample_axis, y=Y)
         assert isinstance(plot, BarPlot)
 
-    def test_multiple_geometry_axes_raise_before_reaching_plot_type_none(self):
-        # Point clouds: several meshed GeometryAxes form a product instead.
+    def test_an_undrawable_product_of_geometry_axes_raises(self):
+        # Several GeometryAxes form a product - here 2D x 2D, which has no
+        # 1-dimensional factor to step through and can't be drawn in 3D.
         config = DataConfiguration(
             GeometryAxes(PointCloud(Variable("a", 2), np.random.rand(3, 2))),
             GeometryAxes(PointCloud(Variable("b", 2), np.random.rand(4, 2))),
         )
-        with pytest.raises(ValueError, match="multiple GeometryAxes"):
+        with pytest.raises(ValueError, match="can not be drawn"):
             auto_plot(np.zeros((1,)), config)
 
 
@@ -416,6 +417,14 @@ class TestPointCloudDispatch:
         config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(V3))
         plot = auto_plot(data, config)
         assert isinstance(plot, QuiverPlot)
+
+    def test_two_component_vector_on_2d_points_becomes_a_quiver_plot(self):
+        V2 = Variable("v", 2)
+        geometry = PointCloud(Variable("x", 2), np.random.rand(5, 2))
+        config = DataConfiguration(GeometryAxes(geometry), FeatureAxes(V2))
+        plot = auto_plot(np.random.rand(5, 2), config)
+        assert isinstance(plot, QuiverPlot)
+        assert plot.evaluate().vectors.shape == (5, 2)
 
     def test_wrong_dim_quantity_raises_a_clear_error(self):
         V2 = Variable("v", 2)

@@ -133,6 +133,22 @@ def auto_plot(
     return plot
 
 
+def _product_hint(geometry) -> str:
+    """A hint for point sets whose coordinates combine several variables,
+    e.g. (x, alpha) - most likely a product domain passed as one flat point
+    cloud, which can't be split into its factors."""
+    variable = getattr(geometry, "variable", None)
+    if variable is None or variable.is_leaf or len(variable.children) < 2:
+        return ""
+    names = [child.name for child in variable.children]
+    return (
+        f" If these points are a product domain of {names}, pass one "
+        "GeometryAxes per factor, e.g. DataConfiguration(GeometryAxes("
+        "A_int.discretize(alphas)), GeometryAxes(Omega.discretize(x_grid)), "
+        "FeatureAxes(u)), so a factor can get a slider."
+    )
+
+
 def _vector_dim(data_config: DataConfiguration, plot_type, kwargs) -> int | None:
     """Number of components of the vector the plot will draw, or None for a
     scalar - lets product_view() split time-like factors off a product
@@ -508,12 +524,16 @@ def _auto_geometry_plot(
             return PointCloudPlot(
                 data, data_config, color=ColorSpec(quantity, scale=scale), **kwargs
             )
-        if quantity.dim == 3:
+        # QuiverPlot draws 2D and 3D point sets alike - the vector just has
+        # to have one component per coordinate.
+        coord_dim = geometry.discretization_points.shape[-1]
+        if quantity.dim == coord_dim:
             return QuiverPlot(data, data_config, vector=VectorSpec(quantity), **kwargs)
         raise ValueError(
             f"{quantity.name} has dim={quantity.dim} - expected dim=1 for a "
-            "PointCloudPlot or dim=3 for a QuiverPlot. Construct one "
-            "explicitly if this is intentional."
+            f"PointCloudPlot or dim={coord_dim} for a QuiverPlot on these "
+            f"{coord_dim}D points. Construct one explicitly if this is "
+            f"intentional.{_product_hint(geometry)}"
         )
 
     raise ValueError(

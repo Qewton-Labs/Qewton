@@ -176,3 +176,91 @@ class ProductMeshGeometry(DiscreteGeometry[TensorType]):
         points = _as_numpy(self.discretization_points, self.backend)
         bounds = np.stack([points.min(axis=0), points.max(axis=0)], axis=1)
         return self.backend.build_tensor(bounds.reshape(-1))
+
+
+def _factor_points(factor) -> np.ndarray:
+    """A factor's points with its own structural shape kept, e.g.
+    (n_vertices, dim) for a mesh or (33, 33, dim) for a grid of points."""
+    mesh = getattr(factor, "mesh", None)
+    if mesh is not None:
+        return _as_numpy(mesh.vertices, factor.backend)
+    if factor.discretization_points is None:
+        raise ValueError(
+            f"Factor {factor.variable.name} has neither a mesh nor "
+            "discretization points."
+        )
+    return _as_numpy(factor.discretization_points, factor.backend)
+
+
+class ProductDiscreteGeometry(DiscreteGeometry[TensorType]):
+    """The Cartesian product of discrete point sets, e.g. reference data
+    known on a grid of space points for each of a few parameter values.
+
+    Unlike ProductMeshGeometry, the factors need no mesh, and each factor
+    keeps its own structural shape: factors of shapes (3,) and (33, 33)
+    give a product of shape (3, 33, 33). The point coordinates are ordered
+    as in `variable`, which may name the factors in a different order than
+    `factors` - e.g. a sampler on `Omega * A_int` evaluated at reference
+    data laid out angle first.
+
+    Args:
+        factors (list): Discrete geometries, each with a `variable` and
+            either `discretization_points` or a `mesh`.
+        variable (Variable | None, optional): The variable of the product,
+            composed of the factor variables in any order. Defaults to their
+            composition in the order of `factors`.
+        backend (type[ComputingBackend[TensorType]] | None, optional):
+            Defaults to the backend of the first factor.
+    """
+
+    def __init__(
+        self,
+        factors: list,
+        variable: Variable | None = None,
+        backend: type[ComputingBackend[TensorType]] | None = None,
+    ):
+        if len(factors) < 2:
+            raise ValueError("A product needs at least two factors.")
+        backend = backend or factors[0].backend
+        if variable is None:
+            variable = Variable.compose([f.variable for f in factors])
+        if variable.dim != sum(f.variable.dim for f in factors):
+            raise ValueError(
+                f"{variable.name} has dim={variable.dim}, but the factors "
+                f"{[f.variable.name for f in factors]} sum up to "
+                f"{sum(f.variable.dim for f in factors)} dimensions."
+            )
+
+        factor_points = [_factor_points(f) for f in factors]
+        factor_shapes = [p.shape[:-1] for p in factor_points]
+        shape = tuple(n for s in factor_shapes for n in s)
+        points = np.empty((*shape, variable.dim), dtype=factor_points[0].dtype)
+        offset = 0
+        for f, p, s in zip(factors, factor_points, factor_shapes):
+            try:
+                columns = variable.get_slice(f.variable)
+            except KeyError as e:
+                raise ValueError(
+                    f"Factor {f.variable.name} is not part of {variable.name}."
+                ) from e
+            # Broadcast the factor's own axes into its place in the product.
+            index = (None,) * offset + (slice(None),) * len(s)
+            index += (None,) * (len(shape) - offset - len(s)) + (slice(None),)
+            points[..., columns] = np.broadcast_to(
+                p[index], (*shape, p.shape[-1])
+            )
+            offset += len(s)
+
+        super().__init__(
+            shape=shape,
+            variable=variable,
+            dim=variable.dim,
+            discretization_points=backend.build_tensor(points),
+            backend=backend,
+        )
+        self.factors = list(factors)
+
+    @property
+    def factor_shapes(self) -> list[tuple[int, ...]]:
+        """The structural shape of each factor, in the order of `factors`."""
+        return [tuple(_factor_points(f).shape[:-1]) for f in self.factors]

@@ -7,9 +7,13 @@ import numpy as np
 from qewton.config.axes import EllipsisAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
+from qewton.geometries.base import DiscreteGeometry
 from qewton.geometries.discrete.mesh import Mesh
 from qewton.geometries.discrete.mesh_geometry import MeshGeometry
-from qewton.geometries.discrete.product_mesh_geometry import ProductMeshGeometry
+from qewton.geometries.discrete.product_mesh_geometry import (
+    ProductDiscreteGeometry,
+    ProductMeshGeometry,
+)
 from qewton.visualization.plots.spec import ControlSpec, SliderSpec
 
 #: Highest dimension a drawn geometry can have.
@@ -23,21 +27,43 @@ def _as_numpy(data, backend) -> np.ndarray:
 
 
 def _factors_of(geometry_axes: GeometryAxes) -> list | None:
-    """The meshed factor geometries behind a GeometryAxes: the factors of a
-    product mesh, the geometry itself if it has a mesh, otherwise None."""
-    if len(geometry_axes.shape) != 1:
-        return None
+    """The factor geometries behind a GeometryAxes: the factors of a
+    product (meshed or a product of point sets), else the geometry itself
+    if it has a mesh or discrete points, otherwise None."""
     geometry = geometry_axes.geometry
     factors = getattr(geometry, "factors", None)
     if factors is not None:
         return factors
-    if getattr(geometry, "mesh", None) is not None:
+    if getattr(geometry, "mesh", None) is not None and len(geometry_axes.shape) == 1:
+        return [geometry]
+    if getattr(geometry, "discretization_points", None) is not None:
         return [geometry]
     return None
 
 
-def _rebuild_factor(factor) -> MeshGeometry:
-    """A cpu copy of a factor's mesh as a standalone MeshGeometry."""
+def _is_meshed(factor) -> bool:
+    return getattr(factor, "mesh", None) is not None
+
+
+def _factor_shape(factor) -> tuple[int, ...]:
+    """The data dimensions a factor spans: one per mesh vertex for a meshed
+    factor, else its own structural shape, e.g. (33, 33) for a grid."""
+    if _is_meshed(factor):
+        return (len(factor.mesh.vertices),)
+    return tuple(factor.shape)
+
+
+def _rebuild_factor(factor):
+    """A cpu copy of a factor - a standalone MeshGeometry for a meshed
+    factor, a DiscreteGeometry with the same points otherwise."""
+    if not _is_meshed(factor):
+        return DiscreteGeometry(
+            shape=tuple(factor.shape),
+            variable=factor.variable,
+            dim=factor.variable.dim,
+            discretization_points=_as_numpy(factor.discretization_points, factor.backend),
+            backend=factor.backend,
+        )
     vertices = _as_numpy(factor.mesh.vertices, factor.backend)
     cells = _as_numpy(factor.mesh.cells, factor.backend)
     if cells.ndim < 2 or cells.shape[0] == 0:
@@ -223,14 +249,18 @@ def product_view(
     if sum(len(a.shape) for a in axes) != data.ndim:
         return data, data_config, controls
 
-    # Expand every geometry dimension into one dimension per factor.
+    # Expand every geometry axis into the dimensions of its factors - one
+    # per meshed factor, a factor's own structural shape otherwise.
     expanded_shape, positions, factor_positions = [], [], []
     for i, axis in enumerate(axes):
         start = len(expanded_shape)
         if i in geometry_idx:
-            sizes = [len(f.mesh.vertices) for f in factors_per_axes[geometry_idx.index(i)]]
-            factor_positions.extend(range(start, start + len(sizes)))
-            expanded_shape.extend(sizes)
+            for f in factors_per_axes[geometry_idx.index(i)]:
+                shape = _factor_shape(f)
+                factor_positions.append(
+                    list(range(len(expanded_shape), len(expanded_shape) + len(shape)))
+                )
+                expanded_shape.extend(shape)
         else:
             n_dims = len(axis.shape)
             offset = sum(len(a.shape) for a in axes[:i])
@@ -243,29 +273,36 @@ def product_view(
     rest = [i for i in range(len(axes)) if i > geometry_idx[0] and i not in geometry_idx]
     perm = (
         [p for i in lead for p in positions[i]]
-        + [factor_positions[i] for i in split_order]
-        + [factor_positions[i] for i in drawn]
+        + [p for i in split_order for p in factor_positions[i]]
+        + [p for i in drawn for p in factor_positions[i]]
         + [p for i in rest for p in positions[i]]
     )
     data = data.transpose(perm)
-    n_lead = sum(len(positions[i]) for i in lead) + len(split_order)
-    drawn_size = int(np.prod(data.shape[n_lead : n_lead + len(drawn)]))
-    data = data.reshape(
-        data.shape[:n_lead] + (drawn_size,) + data.shape[n_lead + len(drawn) :]
+    n_lead = sum(len(positions[i]) for i in lead) + sum(
+        len(factor_positions[i]) for i in split_order
     )
+    n_drawn = sum(len(factor_positions[i]) for i in drawn)
 
     rebuilt = {i: _rebuild_factor(factors[i]) for i in range(len(factors))}
     factor_axes = [
         split[i] if split[i] is not None else GeometryAxes(rebuilt[i])
         for i in split_order
     ]
-    drawn_geometry = (
-        rebuilt[drawn[0]]
-        if len(drawn) == 1
-        else ProductMeshGeometry(
-            [rebuilt[i] for i in drawn], backend=rebuilt[drawn[0]].backend
+    backend = rebuilt[drawn[0]].backend
+    if len(drawn) == 1:
+        drawn_geometry = rebuilt[drawn[0]]
+    elif all(_is_meshed(rebuilt[i]) for i in drawn):
+        drawn_geometry = ProductMeshGeometry([rebuilt[i] for i in drawn], backend=backend)
+    else:
+        drawn_geometry = ProductDiscreteGeometry(
+            [rebuilt[i] for i in drawn], backend=backend
         )
-    )
+    if isinstance(drawn_geometry, ProductMeshGeometry):
+        # A product mesh numbers its vertices along one axis.
+        drawn_size = int(np.prod(data.shape[n_lead : n_lead + n_drawn]))
+        data = data.reshape(
+            data.shape[:n_lead] + (drawn_size,) + data.shape[n_lead + n_drawn :]
+        )
     new_config = DataConfiguration(
         *[axes[i] for i in lead],
         *factor_axes,

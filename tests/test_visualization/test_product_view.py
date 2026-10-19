@@ -265,3 +265,33 @@ class TestVectorOnProduct:
         data, config, _ = self._velocity_on(_square() * _time())
         plot = auto_plot(data, config, controls=TimeSpec)
         assert [type(c) for c in plot.controls] == [TimeSpec]
+
+
+class TestPointSetFactors:
+    """Factors without a mesh - e.g. reference data on a grid of space
+    points for each of a few times - are split and drawn the same way."""
+
+    @staticmethod
+    def _data():
+        times = _time().discretize(np.array([[0.0], [1.0], [2.0]]))
+        g1, g2 = np.meshgrid(np.linspace(0, 1, 4), np.linspace(0, 1, 5), indexing="ij")
+        space = _square().discretize(np.stack([g1, g2], axis=-1))
+        data = np.arange(3 * 4 * 5, dtype=float).reshape(3, 4, 5, 1)
+        config = DataConfiguration(GeometryAxes(times), GeometryAxes(space), FeatureAxes(U))
+        return data, config, space
+
+    def test_a_control_steps_through_its_factor_and_the_rest_keeps_its_shape(self):
+        data, config, space = self._data()
+        new_data, new_config, _ = product_view(data, config, [TimeSpec(T)])
+        time_axes, drawn_axes, _ = new_config.axes
+        assert time_axes.geometry.variable == T
+        assert drawn_axes.geometry.variable == X
+        assert new_data.shape == (3, 4, 5, 1)
+        assert np.array_equal(new_data, data)
+
+    def test_the_factor_order_of_the_data_does_not_matter(self):
+        data, config, space = self._data()
+        times_axes, space_axes, feature_axes = config.axes
+        swapped = DataConfiguration(space_axes, times_axes, feature_axes)
+        new_data, _, _ = product_view(data.transpose(1, 2, 0, 3), swapped, [TimeSpec(T)])
+        assert np.array_equal(new_data, data)

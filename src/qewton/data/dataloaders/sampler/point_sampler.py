@@ -200,7 +200,11 @@ class PointSampler(DataNode[TensorType]):
                     "sampler's domain - evaluating the model there would "
                     "extrapolate, making the resulting error plot look "
                     "dramatic for the wrong reason. Restrict the reference "
-                    'to the sampler\'s domain, or use on="mesh" instead.'
+                    "to the sampler's domain, and check that its coordinates "
+                    f"are ordered like {own_variable.name}. For a product "
+                    "domain (e.g. space x parameter), pass the reference with "
+                    "one GeometryAxes per factor instead - their order is "
+                    "then free."
                 )
 
     def set_mesh_mode(
@@ -304,6 +308,10 @@ class PointSampler(DataNode[TensorType]):
             points = self.backend.to(
                 self.backend.build_tensor(geometry.discretization_points), self._device
             )
+            # A structured reference (e.g. a grid, or a product of point sets)
+            # is evaluated as a flat batch of points like any other sample -
+            # Graph.visualize() restores the structure on the result.
+            points = points.reshape(-1, points.shape[-1])
 
             # for plotting: store the current points and cells
             self._store_discretization(geometry, points)

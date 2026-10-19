@@ -1071,6 +1071,31 @@ class Graph(Serializable):
         return Overlay(plots[0]) if len(plots) == 1 else Row(*plots)
 
     @staticmethod
+    def _product_reference_geometry(geometry_axes: list, samplers) -> "Geometry":
+        """The points to evaluate the model at for reference data given with
+        one GeometryAxes per factor of a product domain: all combinations of
+        the factors' points, with the coordinates in the order of the
+        samplers' own domain variable - so the reference may list its
+        factors in any order, e.g. angle first for a sampler on space x
+        angle."""
+        from qewton.geometries.discrete.product_mesh_geometry import (
+            ProductDiscreteGeometry,
+        )
+
+        factors = [axes.geometry for axes in geometry_axes]
+        variable = samplers[0].geometry.variable if samplers else None
+        try:
+            return ProductDiscreteGeometry(factors, variable=variable)
+        except ValueError as e:
+            names = [f.variable.name for f in factors]
+            domain = variable.name if variable is not None else "the sampler's domain"
+            raise ValueError(
+                f"reference_config has one GeometryAxes per factor {names}, but "
+                f"they do not make up {domain}: {e} Build each factor from the "
+                "same Variable instance as the sampler's domain."
+            ) from e
+
+    @staticmethod
     def _reference_to_numpy(reference, port: Port) -> np.ndarray:
         """Reference values as a numpy array - also from a backend tensor on
         any device (e.g. a CUDA tensor), which np.asarray can't convert."""
@@ -1187,9 +1212,15 @@ class Graph(Serializable):
             ref_geometry_axes = ref_config.geometry_axes
             if ref_geometry_axes is None:
                 raise ValueError("reference_config has no GeometryAxes.")
+            samplers = self._samplers_on_path_to((port,))
             if isinstance(ref_geometry_axes, list):
-                ref_geometry_axes = ref_geometry_axes[0]
-            ref_geometry = ref_geometry_axes.geometry
+                # One GeometryAxes per factor of a product domain, e.g. the
+                # parameter values and a grid of space points.
+                ref_geometry = self._product_reference_geometry(
+                    ref_geometry_axes, samplers
+                )
+            else:
+                ref_geometry = ref_geometry_axes.geometry
 
             ref_variable = (
                 ref_config.feature_axes.variables if ref_config.feature_axes else None
@@ -1201,7 +1232,6 @@ class Graph(Serializable):
                 for node in nodes_to_run:
                     node.to(device)
 
-            samplers = self._samplers_on_path_to((port,))
             with active_discretization_mode(samplers, ref_geometry):
                 self._run_nodes_needed_for((port,), mode=mode)
 
@@ -1220,6 +1250,11 @@ class Graph(Serializable):
                     prediction_config or port.get_data_configuration(self),
                     combined_variable,
                 )
+            # The samplers evaluated ref_geometry's points as one flat batch -
+            # give the prediction the reference's structure back.
+            structure = tuple(ref_geometry.shape)
+            if pred_data.ndim == 2 and pred_data.shape[0] == int(np.prod(structure)):
+                pred_data = pred_data.reshape(*structure, pred_data.shape[-1])
             # auto_plot() dispatches on a DataConfiguration's structural
             # type (e.g. GridGeometry vs. a plain DiscreteGeometry) -
             # port.get_data_configuration(self) still reflects the
