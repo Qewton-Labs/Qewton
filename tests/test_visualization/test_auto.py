@@ -383,11 +383,11 @@ class TestExplicitPlotType:
         plot = auto_plot(data, config, plot_type=BarPlot, x=sample_axis, y=Y)
         assert isinstance(plot, BarPlot)
 
-    def test_multiple_geometry_axes_raise_before_reaching_plot_type_none(
-        self, small_mesh_geometry, cylinder_mesh_geometry
-    ):
+    def test_multiple_geometry_axes_raise_before_reaching_plot_type_none(self):
+        # Point clouds: several meshed GeometryAxes form a product instead.
         config = DataConfiguration(
-            GeometryAxes(small_mesh_geometry), GeometryAxes(cylinder_mesh_geometry)
+            GeometryAxes(PointCloud(Variable("a", 2), np.random.rand(3, 2))),
+            GeometryAxes(PointCloud(Variable("b", 2), np.random.rand(4, 2))),
         )
         with pytest.raises(ValueError, match="multiple GeometryAxes"):
             auto_plot(np.zeros((1,)), config)
@@ -625,3 +625,93 @@ class TestContinuousGeometryRaises:
         config = DataConfiguration(GeometryAxes(circle), FeatureAxes(U))
         with pytest.raises(ValueError, match="no known discretization"):
             auto_plot(data, config)
+
+
+class TestUnusedControlsRaise:
+    """Parts of controls= that no axis takes a control for raise instead of
+    being silently ignored."""
+
+    @staticmethod
+    def _stepped_mesh_data(small_mesh_geometry):
+        U = Variable("u", 1)
+        step_axis = BatchAxes(3)
+        n = small_mesh_geometry.mesh.vertices.shape[0]
+        config = DataConfiguration(
+            step_axis, GeometryAxes(small_mesh_geometry), FeatureAxes(U)
+        )
+        return np.zeros((3, n, 1)), config, step_axis
+
+    def test_a_dict_key_for_a_used_axis_is_fine(self, small_mesh_geometry):
+        data, config, step_axis = self._stepped_mesh_data(small_mesh_geometry)
+        plot = auto_plot(data, config, controls={step_axis: FixedSpec})
+        assert [type(c) for c in plot.controls] == [FixedSpec]
+
+    def test_a_dict_key_that_is_no_axis_raises(self, small_mesh_geometry):
+        data, config, step_axis = self._stepped_mesh_data(small_mesh_geometry)
+        T = Variable("t", 1)
+        with pytest.raises(ValueError, match=r"controls=\[TimeSpec\(T\)\]"):
+            auto_plot(data, config, controls={step_axis: SliderSpec, T: SliderSpec})
+
+    def test_a_variable_key_on_space_time_data_raises(self):
+        from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
+        from qewton.visualization.plots.spec import TimeSpec
+
+        T, X, U = Variable("t", 1), Variable("x", 2), Variable("u", 1)
+        mesh = (Interval(T, 0.0, 1.0) * Rectangle(X, [0.0, 0.0], 1.0, 1.0)).create_mesh(0.5)
+        data = np.zeros((len(mesh.discretization_points), 1))
+        config = DataConfiguration(GeometryAxes(mesh), FeatureAxes(U))
+        with pytest.raises(ValueError, match="would be ignored"):
+            auto_plot(data, config, controls={T: TimeSpec(T)})
+
+    def test_an_unused_single_instance_raises(self, small_mesh_geometry):
+        U = Variable("u", 1)
+        n = small_mesh_geometry.mesh.vertices.shape[0]
+        config = DataConfiguration(GeometryAxes(small_mesh_geometry), FeatureAxes(U))
+        with pytest.raises(ValueError, match="not used"):
+            auto_plot(np.zeros((n, 1)), config, controls=FixedSpec(init_state=0))
+
+    def test_an_unused_class_is_fine(self, small_mesh_geometry):
+        U = Variable("u", 1)
+        n = small_mesh_geometry.mesh.vertices.shape[0]
+        config = DataConfiguration(GeometryAxes(small_mesh_geometry), FeatureAxes(U))
+        plot = auto_plot(np.zeros((n, 1)), config, controls=FixedSpec)
+        assert plot.controls == []
+
+    def test_explicit_plot_type_needs_a_list(self, small_mesh_geometry):
+        data, config, step_axis = self._stepped_mesh_data(small_mesh_geometry)
+        with pytest.raises(ValueError, match="has to be a list"):
+            auto_plot(
+                data, config, plot_type=MeshFieldPlot,
+                color=Variable("u", 1), controls={step_axis: FixedSpec},
+            )
+
+
+class TestScaleArgument:
+    def test_is_used_for_the_created_color_spec(self, small_mesh_geometry):
+        from qewton.visualization.plots.spec import Scale
+
+        U = Variable("u", 1)
+        n = small_mesh_geometry.mesh.vertices.shape[0]
+        config = DataConfiguration(GeometryAxes(small_mesh_geometry), FeatureAxes(U))
+        scale = Scale(vmin=0.0, vmax=1.0)
+        plot = auto_plot(np.zeros((n, 1)), config, scale=scale)
+        assert plot.color.scale is scale
+
+    def test_raises_for_a_plot_without_color(self):
+        from qewton.visualization.plots.spec import Scale
+
+        Y = Variable("y", 1)
+        config = DataConfiguration(BatchAxes(5), FeatureAxes(Y))
+        with pytest.raises(ValueError, match="no color"):
+            auto_plot(np.zeros((5, 1)), config, scale=Scale())
+
+    def test_raises_with_an_explicit_plot_type(self, small_mesh_geometry):
+        from qewton.visualization.plots.spec import Scale
+
+        U = Variable("u", 1)
+        n = small_mesh_geometry.mesh.vertices.shape[0]
+        config = DataConfiguration(GeometryAxes(small_mesh_geometry), FeatureAxes(U))
+        with pytest.raises(ValueError, match="ColorSpec"):
+            auto_plot(
+                np.zeros((n, 1)), config, plot_type=MeshFieldPlot, color=U, scale=Scale()
+            )

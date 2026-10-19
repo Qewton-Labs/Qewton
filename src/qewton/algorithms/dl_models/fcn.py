@@ -2,7 +2,7 @@ from typing import Annotated, Generic
 
 from qewton.algorithms.building_blocks.math import Power, Add
 from qewton.algorithms.building_blocks.linear import Linear, Quadratic
-from qewton.algorithms.building_blocks.activation_functions import ReLU
+from qewton.algorithms.building_blocks.activation_functions import ReLU, Tanh
 from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
@@ -193,7 +193,7 @@ class FCN(FFN[TensorType]):
         bias (bool | HyperParameter, optional): If a bias should be included.
             Defaults to True.
         activation (type[Node] | HyperParameter, optional): The activation
-            function in each layer. Defaults to ReLU.
+            function in each layer. Defaults to Tanh.
         name (str, optional): Name of the model. Defaults to "fcn".
         backend (type[Backend[TensorType]], optional): What backend this
             model should use for the computations. Defaults to DEFAULT_DL_BACKEND.
@@ -206,7 +206,7 @@ class FCN(FFN[TensorType]):
         out_neurons: int | HyperParameter | Variable,
         n_hidden_layers: int | HyperParameter,
         bias: bool | HyperParameter = True,
-        activation: type[Node[TensorType]] | HyperParameter = ReLU,
+        activation: type[Node[TensorType]] | HyperParameter = Tanh,
         name: str = "fcn",
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ):

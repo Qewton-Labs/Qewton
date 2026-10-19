@@ -1,8 +1,13 @@
 from dash import Dash, html, dcc
 from dash.dependencies import Input, Output
+import numpy as np
 
 from qewton.visualization.applications.base import RenderApplication
 from qewton.visualization.plots.spec import PlotSpec, SliderSpec, SelectorSpec
+
+
+#: How many marks of a slider over coordinates are labeled.
+_N_LABELED_MARKS = 10
 
 
 def _selector_id(index: int) -> str:
@@ -130,14 +135,45 @@ class DashApplication(RenderApplication):
         two panels' own same-sized batch axis) stringify identically -
         component ids that collided this way, in the past, left Dash
         tracking one shared value for what looked like several independent
-        sliders."""
+        sliders.
+
+        With coordinates (e.g. the physical time of each time step), the
+        slider runs over the coordinates, so non-uniform steps are spaced
+        physically, and snaps to the states' coordinates. About
+        `_N_LABELED_MARKS` of them are labeled, unless `marks` is set."""
+        id = id if id is not None else sliderspec.name
+        if sliderspec.coordinates is None:
+            return dcc.Slider(
+                id=id,
+                min=sliderspec.minimum,
+                max=sliderspec.maximum,
+                step=sliderspec.step,
+                value=sliderspec.state,
+                marks=sliderspec.marks,
+            )
+        states = list(
+            range(sliderspec.minimum, sliderspec.maximum + 1, sliderspec.step)
+        )
+        marks = sliderspec.marks
+        if marks is None:
+            labeled = set(
+                np.linspace(0, len(states) - 1, min(len(states), _N_LABELED_MARKS))
+                .round()
+                .astype(int)
+            )
+            marks = {
+                sliderspec.coordinate(state): (
+                    sliderspec.label(state) if i in labeled else ""
+                )
+                for i, state in enumerate(states)
+            }
         return dcc.Slider(
-            id=id if id is not None else sliderspec.name,
-            min=sliderspec.minimum,
-            max=sliderspec.maximum,
-            step=sliderspec.step,
-            value=sliderspec.state,
-            marks=sliderspec.marks,
+            id=id,
+            min=sliderspec.coordinate(states[0]),
+            max=sliderspec.coordinate(states[-1]),
+            step=None,
+            value=sliderspec.coordinate(sliderspec.state),
+            marks=marks,
         )
 
     @staticmethod
@@ -177,5 +213,7 @@ class DashApplication(RenderApplication):
         )
         def update(*values):
             for control, value in zip(controls, values):
+                if getattr(control, "coordinates", None) is not None:
+                    value = control.state_at(value)
                 control.state = value
             return figure.draw()

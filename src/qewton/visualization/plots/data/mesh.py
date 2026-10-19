@@ -24,15 +24,15 @@ class MeshPlot(DataPlot):
         data,
         data_config: DataConfiguration,
         controls: list[ControlSpec] | None = None,
-        show_edges: bool = True,
+        show_edges: bool = False,
         **kwargs,
     ):
         super().__init__(data, data_config, controls=controls, **kwargs)
 
-        geom_axes = data_config.geometry_axes
+        geom_axes = self.drawn_geometry_axes
         assert isinstance(
             geom_axes, GeometryAxes
-        ), "Currently only DataConfigurations with a single GeometryAxes are supported."
+        ), "Exactly one GeometryAxes without a control is supported."
         if geom_axes is None or getattr(geom_axes.geometry, "mesh", None) is None:
             raise ValueError(
                 f"{type(self).__name__} requires a GeometryAxes whose geometry "
@@ -46,6 +46,12 @@ class MeshPlot(DataPlot):
                 f"got a {self.dim}D mesh."
             )
         self.show_edges = show_edges
+
+    @property
+    def cell_dim(self) -> int:
+        """Dimension of the mesh cells: 1 for line segments (e.g. a boundary
+        curve), 2 for triangles, 3 for tetrahedra."""
+        return self.mesh.cells.shape[1] - 1
 
     @property
     def n_vertices(self) -> int:
@@ -82,7 +88,9 @@ class MeshPlot(DataPlot):
 class MeshFieldPlot(MeshPlot):
     """Scalar field colored on a mesh - the unstructured counterpart to HeatmapPlot.
 
-    Works in 2D (colored triangulation) and 3D (colored surface of a body).
+    Works in 2D (colored triangulation) and 3D (colored surface of a body),
+    and on curves made of line segments in 2D or 3D (e.g. the boundary of a
+    domain), which are drawn as colored lines.
     """
 
     def __init__(
@@ -91,7 +99,7 @@ class MeshFieldPlot(MeshPlot):
         data_config: DataConfiguration,
         color: ColorSpec | Variable,
         controls: list[ControlSpec] | None = None,
-        show_edges: bool = True,
+        show_edges: bool = False,
         n_bins: int = 64,
         **kwargs,
     ):
@@ -100,9 +108,8 @@ class MeshFieldPlot(MeshPlot):
         )
         self.color = color if isinstance(color, ColorSpec) else ColorSpec(color)
         self.require_scalar(self.color, "color")
-        #: Value bins FilledMeshArtist splits the 2D triangulation into, one
-        #: flat-filled trace each - unused in 3D (SurfaceMeshArtist draws a
-        #: real per-vertex-interpolated surface, no binning needed there).
+        #: Value bins for renderers that can only draw one color per
+        #: trace, e.g. Plotly's 2D triangulations and 2D curves.
         self.n_bins = n_bins
 
     @property
@@ -119,6 +126,8 @@ class MeshFieldPlot(MeshPlot):
         return MeshResult(vertices=vertices, cells=self.render_cells(), color=color)
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
+        if self.cell_dim == 1:
+            return renderer.CurveFieldArtist.create(backend_figure, self, row=row, col=col)
         return (
             renderer.FilledMeshArtist.create(backend_figure, self, row=row, col=col)
             if self.dim == 2
@@ -142,7 +151,7 @@ class MeshSurfacePlot(MeshPlot):
         z: AxisSpec | Variable,
         color: ColorSpec | Variable | None = None,
         controls: list[ControlSpec] | None = None,
-        show_edges: bool = True,
+        show_edges: bool = False,
         **kwargs,
     ):
         super().__init__(

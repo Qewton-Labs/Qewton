@@ -84,7 +84,7 @@ class _BinnedArrowArtist(PlotlyArtist):
                 col=col,
             )
 
-        geometry = plot.data_config.geometry_axes.geometry
+        geometry = plot.drawn_geometry_axes.geometry
         cls._set_axis_titles(backend_figure, _spatial_variable(geometry), row, col)
         return cls(arrow_indices, colorbar_idx, row, col)
 

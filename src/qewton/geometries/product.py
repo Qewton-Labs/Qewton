@@ -1,4 +1,5 @@
-from qewton.geometries.base import BoundaryGeometry, Geometry
+from qewton.geometries.base import BoundaryGeometry, Geometry, vertex_distance_for
+from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
 from qewton.backends.base import TensorType
 
@@ -20,6 +21,50 @@ class ProductGeometry(Geometry[TensorType]):
         self.geometry_a = geometry_a
         self.geometry_b = geometry_b
 
+    @property
+    def factors(self) -> list[Geometry]:
+        """The non-product geometries this product is built from, in order.
+        Nested products are flattened."""
+        factors = []
+        for geometry in (self.geometry_a, self.geometry_b):
+            if isinstance(geometry, ProductGeometry):
+                factors.extend(geometry.factors)
+            else:
+                factors.append(geometry)
+        return factors
+
+    def create_mesh(
+        self,
+        max_vertex_distance: float | dict[Variable, float] | None = None,
+        device: Device = cpu,
+    ):
+        """Meshes every factor and combines them into a ProductMeshGeometry.
+
+        Args:
+            max_vertex_distance (float | dict[Variable, float] | None, optional):
+                How fine each factor mesh should be. A dict sets it per factor
+                variable; factors missing from it use None. Defaults to None.
+            device (Device, optional): Where the mesh is created.
+                Defaults to cpu.
+        """
+        from qewton.geometries.discrete.product_mesh_geometry import (
+            ProductMeshGeometry,
+        )
+
+        factor_meshes = [
+            factor.create_mesh(
+                vertex_distance_for(max_vertex_distance, factor.variable), device
+            )
+            for factor in self.factors
+        ]
+        return ProductMeshGeometry(
+            factor_meshes,
+            variable=self.variable,
+            discretization_of=self,
+            device=device,
+            backend=self.backend,
+        )
+
     def create_boundary(self) -> BoundaryGeometry:
         raise NotImplementedError(
             "Can not build the boundary directly, instead build a product from the"
@@ -40,7 +85,7 @@ class ProductGeometry(Geometry[TensorType]):
         )
 
     def bounding_box(self):
-        self.backend.math.concatenate(
+        return self.backend.math.concatenate(
             [self.geometry_a.bounding_box(), self.geometry_b.bounding_box()]
         )
 

@@ -148,14 +148,14 @@ class TestVisualizeDevice:
         regardless of the sampler's actual device - an explicit device=
         must reach mesh-mode's point generation too, not just move nodes."""
         graph, sampler, model = connected_graph
-        original_visualization_mesh = sampler.sampled_geometry.visualization_mesh
+        original_visualization_geometry = sampler.sampled_geometry.visualization_geometry
         captured = {}
 
         def spy(max_vertex_distance, device=None):
             captured["device"] = device
-            return original_visualization_mesh(max_vertex_distance, device)
+            return original_visualization_geometry(max_vertex_distance, device)
 
-        sampler.sampled_geometry.visualization_mesh = spy
+        sampler.sampled_geometry.visualization_geometry = spy
         graph.visualize(model.output_ports[0], device="cpu")
         assert captured["device"] == "cpu"
 
@@ -761,3 +761,235 @@ class TestVisualizeWithVariablesNarrowing:
         assert plot.color.embedded_selector_spec is not None
         candidate_names = {v.name for v in plot.color.embedded_selector_spec.candidates}
         assert candidate_names == {"temperature", "pressure"}
+
+
+def _space_time_graph(sampler, T, X):
+    U = Variable("u", 1)
+    model = FCN(in_neurons=T * X, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+    graph = Graph()
+    graph.connect(sampler, model)
+    graph.setup()
+    return graph, model
+
+
+class TestVisualizeProductGeometry:
+    """Samplers on a space-time domain, plotted over space with time as a
+    control."""
+
+    @pytest.fixture
+    def domains(self):
+        from qewton.geometries.continuous.domains_1d.interval import Interval
+
+        T, X = Variable("t", 1), Variable("x", 2)
+        return T, X, Interval(T, 0.0, 2.0), Rectangle(X, [0.0, 0.0], 1.0, 1.0)
+
+    def _check_frames(self, plot, model, T):
+        """Every frame holds the model's values at that time."""
+        import torch
+
+        factor_axes, geometry_axes, _ = plot.data_config.axes
+        times = np.asarray(factor_axes.geometry.mesh.vertices)
+        space = np.asarray(geometry_axes.geometry.mesh.vertices)
+        assert plot.data.shape == (len(times), len(space), 1)
+        for i, t in enumerate(times):
+            points = np.hstack([np.full((len(space), 1), t), space]).astype(np.float32)
+            expected = model(torch.as_tensor(points)).detach().numpy()
+            assert np.allclose(plot.data[i], expected, atol=1e-5)
+
+    def test_product_geometry_sampler_with_time_control(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization.plots.spec import TimeSpec
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        layout = graph.visualize(
+            model.output_ports[0],
+            controls=[TimeSpec(T)],
+            max_vertex_distance={T: 0.5, X: 0.25},
+        )
+        plot = layout.plots[0]
+        assert isinstance(plot, MeshFieldPlot)
+        assert plot.data.shape == (5, 25, 1)
+        self._check_frames(plot, model, T)
+        Figure(layout).draw()
+
+    def test_product_geometry_sampler_without_control_draws_3d(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        plot = graph.visualize(model.output_ports[0], max_vertex_distance=0.5).plots[0]
+        assert isinstance(plot, MeshFieldPlot)
+        assert plot.dim == 3
+
+    def test_product_sampler_with_time_control(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization.plots.spec import TimeSpec
+
+        T, X, time, square = domains
+        sampler = RandomUniformSampler(time, 5) * RandomUniformSampler(square, 7)
+        graph, model = _space_time_graph(sampler, T, X)
+        layout = graph.visualize(
+            model.output_ports[0],
+            controls=[TimeSpec(T)],
+            max_vertex_distance={T: 0.5, X: 0.25},
+        )
+        self._check_frames(layout.plots[0], model, T)
+        assert sampler.mesh_mode is False
+        assert sampler.sampler_a.mesh_mode is False
+
+    def test_callable_reference_shares_the_time_control(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization.plots.spec import TimeSpec
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        control = TimeSpec(T)
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=lambda points: points[:, :1],
+            controls=[control],
+            max_vertex_distance=0.5,
+        )
+        plots = layout.plots
+        assert len(plots) == 3
+        for plot in plots:
+            assert plot.controls == [control]
+        reference = next(p for p in plots if "Reference" in (p.label, p.title))
+        times = np.asarray(reference.data_config.axes[0].geometry.mesh.vertices)
+        assert np.allclose(reference.data[:, :, 0], times)
+        Figure(layout).draw()
+
+
+    def test_boundary_alone_and_over_time(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization.plots.spec import TimeSpec
+
+        T, X, time, square = domains
+        U = Variable("u", 1)
+        model = FCN(in_neurons=X, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(RandomUniformSampler(square.boundary, 10), model)
+        graph.setup()
+        Figure(graph.visualize(model.output_ports[0], max_vertex_distance=0.25)).draw()
+
+        graph, model = _space_time_graph(
+            RandomUniformSampler(time * square.boundary, 10), T, X
+        )
+        layout = graph.visualize(
+            model.output_ports[0], controls=[TimeSpec(T)], max_vertex_distance=0.5
+        )
+        backend_figure = Figure(layout).draw()
+        labels = [step.label for step in backend_figure.layout.sliders[0].steps]
+        assert labels == ["0", "0.5", "1", "1.5", "2"]
+        assert all(
+            len(frame.traces) == len(backend_figure.data) for frame in backend_figure.frames
+        )
+
+    def test_scale_fixes_the_color_range_of_the_animation(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization.plots.spec import Scale, TimeSpec
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        scale = Scale(vmin=-2.0, vmax=2.0)
+        layout = graph.visualize(
+            model.output_ports[0], controls=[TimeSpec(T)], scale=scale,
+            max_vertex_distance=0.5,
+        )
+        assert layout.plots[0].color.scale is scale
+        backend_figure = Figure(layout).draw()
+        ranges = {
+            (f.data[-1]["marker"]["cmin"], f.data[-1]["marker"]["cmax"])
+            for f in backend_figure.frames
+        }
+        assert ranges == {(-2.0, 2.0)}
+
+    def test_scale_is_shared_by_reference_and_prediction(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization.plots.spec import Scale, TimeSpec
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        scale = Scale(vmin=0.0, vmax=2.0)
+        layout = graph.visualize(
+            model.output_ports[0], reference=lambda points: points[:, :1],
+            controls=[TimeSpec(T)], scale=scale, max_vertex_distance=0.5,
+        )
+        scales = [plot.color.scale for plot in layout.plots]
+        assert scales[0] is scale and scales[1] is scale
+        assert scales[2] is not scale  # the error panel keeps its own
+
+    @staticmethod
+    def _space_time_reference(T, U, square):
+        from qewton.geometries.discrete.mesh import Mesh
+        from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+
+        times = np.array([0.0, 0.1, 0.5, 2.0])
+        time_mesh = MeshGeometry(
+            T, Mesh(vertices=times[:, None], cells=[[0, 1], [1, 2], [2, 3]])
+        )
+        reference_geometry = (time_mesh * square.create_mesh(0.5)).create_mesh()
+        points = np.asarray(reference_geometry.discretization_points)
+        config = DataConfiguration(GeometryAxes(reference_geometry), FeatureAxes(U))
+        return points[:, :1] + points[:, 1:2], config
+
+    @pytest.mark.parametrize("device", ["cpu", "cuda"])
+    def test_data_reference_as_a_tensor_on_the_models_device(self, domains, device):
+        import torch
+
+        from qewton.config.devices import cpu, cuda
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization.plots.spec import TimeSpec
+
+        if device == "cuda" and not torch.cuda.is_available():
+            pytest.skip("needs a GPU")
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        for node in graph.nodes:
+            node.to(cuda(0) if device == "cuda" else cpu)
+        U = model.output_ports[0].get_data_configuration(graph).feature_axes.variables
+        reference, config = self._space_time_reference(T, U, square)
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=torch.as_tensor(reference, device=device),
+            reference_config=config,
+            controls=[TimeSpec(T)],
+        )
+        reference_plot, prediction_plot, _ = layout.plots
+        # time slowest in the product order, so the frames flatten back to the input
+        assert np.allclose(reference_plot.data.reshape(-1, 1), reference)
+        for node in graph.nodes:
+            node.to(cpu)
+        self._check_frames(prediction_plot, model, T)
+
+    def test_data_reference_on_a_space_time_mesh(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.geometries.discrete.mesh import Mesh
+        from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+        from qewton.visualization.plots.spec import TimeSpec
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        U = model.output_ports[0].get_data_configuration(graph).feature_axes.variables
+        times = np.array([0.0, 0.1, 0.5, 2.0])
+        time_mesh = MeshGeometry(
+            T, Mesh(vertices=times[:, None], cells=[[0, 1], [1, 2], [2, 3]])
+        )
+        reference_geometry = (time_mesh * square.create_mesh(0.5)).create_mesh()
+        points = np.asarray(reference_geometry.discretization_points)
+        reference = points[:, :1] + points[:, 1:2]  # t + x_1
+        config = DataConfiguration(GeometryAxes(reference_geometry), FeatureAxes(U))
+        layout = graph.visualize(
+            model.output_ports[0], reference=reference, reference_config=config,
+            controls=[TimeSpec(T)],
+        )
+        reference_plot, prediction_plot, error_plot = layout.plots
+        self._check_frames(prediction_plot, model, T)
+        space = np.asarray(reference_plot.data_config.axes[1].geometry.mesh.vertices)
+        for k, t in enumerate(times):
+            assert np.allclose(reference_plot.data[k, :, 0], t + space[:, 0])
+        assert np.allclose(error_plot.data, prediction_plot.data - reference_plot.data)
+        backend_figure = Figure(layout).draw()
+        labels = [step.label for step in backend_figure.layout.sliders[0].steps]
+        assert labels == ["0", "0.1", "0.5", "2"]

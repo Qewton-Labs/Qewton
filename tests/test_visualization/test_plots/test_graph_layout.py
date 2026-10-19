@@ -29,10 +29,10 @@ class TestGraphLayoutCompute:
         result = GraphLayout.compute(simple_graph, depth=1)
         assert len(result.clusters) == 1
         assert not any("(in)" in n.label or "(out)" in n.label for n in result.nodes)
-        # inner FCN chain: linear, ReLU, linear, ReLU, linear
+        # inner FCN chain: linear, Tanh, linear, Tanh, linear
         inner_labels = [n.label for n in result.nodes if n.label != "Source" and n.label != "Loss"]
         assert inner_labels.count("linear") == 3
-        assert inner_labels.count("ReLU") == 2
+        assert inner_labels.count("Tanh") == 2
 
     @pytest.mark.parametrize("depth", [0, 1, 2, 3])
     def test_no_node_boxes_overlap_at_any_depth(self, simple_graph, depth):

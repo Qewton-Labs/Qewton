@@ -53,7 +53,11 @@ from qewton.visualization.renderers.plotly.grid import (
     ParametricSurfaceArtist,
     SurfaceArtist,
 )
-from qewton.visualization.renderers.plotly.mesh import FilledMeshArtist, SurfaceMeshArtist
+from qewton.visualization.renderers.plotly.mesh import (
+    CurveFieldArtist,
+    FilledMeshArtist,
+    SurfaceMeshArtist,
+)
 from qewton.visualization.renderers.plotly.points import (
     PointCloud2DArtist,
     PointCloud3DArtist,
@@ -81,6 +85,7 @@ class PlotlyRenderer(Renderer):
     ParametricSurfaceArtist = ParametricSurfaceArtist
     SurfaceMeshArtist = SurfaceMeshArtist
     FilledMeshArtist = FilledMeshArtist
+    CurveFieldArtist = CurveFieldArtist
     GeometryArtist = GeometryArtist
     GeometryArtist2D = GeometryArtist2D
     LineArtist = LineArtist
@@ -255,6 +260,16 @@ class PlotlyRenderer(Renderer):
             )  # leave the live traces at the initial state
 
         backend_figure.frames = frames
+        # Plotly indexes a per-frame duration list by position in the
+        # played sequence, which "fromcurrent" shortens - so non-uniform
+        # frame durations always play from the first frame.
+        weights = spec.frame_weights()
+        uniform = all(w == weights[0] for w in weights)
+        play_frame = (
+            dict(duration=spec.duration, redraw=True)
+            if uniform
+            else [dict(duration=spec.duration * w, redraw=True) for w in weights]
+        )
         backend_figure.update_layout(
             updatemenus=[
                 dict(
@@ -267,8 +282,8 @@ class PlotlyRenderer(Renderer):
                             args=[
                                 None,
                                 dict(
-                                    frame=dict(duration=spec.duration, redraw=True),
-                                    fromcurrent=True,
+                                    frame=play_frame,
+                                    fromcurrent=uniform,
                                     transition=dict(duration=0),
                                 ),
                             ],
@@ -289,6 +304,7 @@ class PlotlyRenderer(Renderer):
             ],
             sliders=[
                 dict(
+                    currentvalue=dict(prefix=f"{spec.name} = "),
                     steps=[
                         dict(
                             method="animate",
@@ -299,10 +315,10 @@ class PlotlyRenderer(Renderer):
                                     frame=dict(duration=0, redraw=True),
                                 ),
                             ],
-                            label=str(value),
+                            label=spec.label(value),
                         )
                         for value in spec.values
-                    ]
+                    ],
                 )
             ],
         )
@@ -384,7 +400,7 @@ class PlotlyRenderer(Renderer):
         states = list(range(spec.minimum, spec.maximum + 1, spec.step))
         captured = PlotlyRenderer._capture_states(backend_figure, affected, spec, states)
         steps = [
-            dict(label=str(state), method="update", args=args)
+            dict(label=spec.label(state), method="update", args=args)
             for state, args in zip(states, captured)
         ]
         active = states.index(spec.state) if spec.state in states else 0
@@ -399,7 +415,7 @@ class PlotlyRenderer(Renderer):
                     name=f"slider_{id(spec)}",
                     active=active,
                     steps=steps,
-                    currentvalue=dict(prefix=f"{spec.name}: "),
+                    currentvalue=dict(prefix=f"{spec.name} = "),
                     y=-0.15 * len(existing),
                     yanchor="top",
                 )
@@ -566,7 +582,7 @@ class PlotlyRenderer(Renderer):
         backend_figure.write_html(path, include_mathjax="cdn", config=config)
 
     @staticmethod
-    def save_gif(backend_figure, path, fps=10):
+    def save_gif(backend_figure, path, fps=10, frame_weights=None):
         """Rasterizes each animation frame to a PNG (via Plotly's optional
         'kaleido' static-image backend) and assembles them into a looping
         GIF (via Pillow). Both are imported lazily, right here, rather than
@@ -618,7 +634,10 @@ class PlotlyRenderer(Renderer):
             path,
             save_all=True,
             append_images=images[1:],
-            duration=int(1000 / fps),
+            duration=[
+                int(1000 / fps * w)
+                for w in (frame_weights or [1.0] * len(images))
+            ],
             loop=0,
         )
 
