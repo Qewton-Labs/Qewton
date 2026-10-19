@@ -22,7 +22,6 @@ from .plots.result import (
     CurveResult,
     PathResult,
     ScatterResult,
-    Column,
     TableResult,
     PortLayout,
     NodeLayout,
@@ -57,6 +56,6 @@ from .layout import Layout, Overlay, Row, Column
 from .auto import auto_plot
 from .renderers.base import Artist, Renderer
 from .applications import RenderApplication, DashApplication
-from .themes import Theme, DEFAULT_THEME, LIGHT_THEME, DARK_THEME
+from .themes import Theme, DEFAULT_THEME, LIGHT_THEME, DARK_THEME, cmaps
 from .figure import Figure
 from .nodes import PlotNode

@@ -1,6 +1,17 @@
+"""The Figure, which arranges Plots in a panel grid and draws them."""
+
+import warnings
+
 from qewton.visualization.layout import Layout, Overlay, Row, normalize
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.spec import AxisSpec, ControlSpec, FacetSpec, Scale, TimeSpec
+from qewton.visualization.plots.spec import (
+    AxisSpec,
+    ControlSpec,
+    FacetSpec,
+    Scale,
+    SliderSpec,
+    TimeSpec,
+)
 from qewton.visualization.renderers.base import Artist, Renderer
 from qewton.visualization.themes.base import Theme
 from qewton.visualization.renderers import DEFAULT_RENDERER
@@ -8,19 +19,42 @@ from qewton.visualization.themes import DEFAULT_THEME
 
 
 class Figure:
-    """Draws one or more Plots into a single backend figure. Plots are
-    arranged in a grid of panels (see qewton.visualization.layout: Overlay,
-    Row, Column), each panel further split into a facet grid when any of
-    its plots declares a FacetSpec, and animated when any plot declares a
-    TimeSpec.
+    """Draws one or more Plots into a single backend figure.
+
+    Plots are arranged in a grid of panels (see
+    :class:`~qewton.visualization.layout.Overlay`,
+    :class:`~qewton.visualization.layout.Row` and
+    :class:`~qewton.visualization.layout.Column`). A panel is split into a
+    facet grid when one of its plots declares a
+    :class:`~qewton.visualization.plots.spec.FacetSpec`, and the figure is
+    animated when a plot declares a
+    :class:`~qewton.visualization.plots.spec.TimeSpec`.
 
     Args:
         plots: A single Plot, a Layout (Overlay/Row/Column, arbitrarily
-            nested), a list of Plots (equivalent to Row(*plots)), or None
-            to add plots later via `add_plot()`.
-        renderer: The Renderer backend used to draw and export the figure.
-        theme: The Theme applied to every plot that doesn't set its own.
-        title: Optional figure title.
+            nested), a list of Plots (equivalent to ``Row(*plots)``), or
+            None to add plots later via :meth:`add_plot`.
+        renderer: The renderer used to draw and export the figure.
+        theme: The theme applied to every plot of this figure.
+        title (str, optional): Figure title.
+
+    Attributes:
+        renderer (Renderer): The renderer used to draw and export the
+            figure.
+        theme (Theme): The theme applied to every plot of this figure.
+        title (str | None): Figure title.
+        panels (list[list[Overlay]]): The panel grid, row by row.
+        plots (list[Plot]): Every plot of this figure, in the order they
+            were added.
+        controls (list[ControlSpec]): The distinct controls of all plots,
+            except FacetSpecs.
+        selector_specs (list[SelectorSpec]): The distinct SelectorSpecs
+            embedded in all plots.
+        artists (dict): The Artist per plot and facet cell, keyed by plot,
+            then by ``(row_index, col_index)``; ``(None, None)`` without
+            facets.
+        backend_figure (object): The renderer's figure object, e.g. a
+            Plotly figure.
     """
 
     def __init__(
@@ -53,35 +87,32 @@ class Figure:
         self.backend_figure = renderer.setup(self)
 
     def add_plot(self, plot: Plot):
-        """Adds `plot` to this Figure as a new panel (a new row of the
-        panel grid, one cell wide), applying the Figure's theme unless the
-        plot already has its own, assigning it a color_index (its position
-        among every plot in this Figure, in add order), and registering
-        its controls and any SelectorSpecs it embeds."""
+        """Add `plot` as a new panel in a new row of the panel grid.
+
+        The plot gets this figure's theme and a ``color_index`` (its
+        position among all plots of the figure), and its controls and
+        SelectorSpecs are registered.
+
+        Args:
+            plot: The plot to add.
+        """
         self.panels.append([Overlay(plot)])
         self._register_plot(plot)
         self._sync_backend_figure()
 
     def _sync_backend_figure(self):
-        """Rebuilds backend_figure and drops every cached Artist.
+        """Rebuild backend_figure and drop every cached Artist.
 
-        backend_figure is a Plotly object that bakes in a structural
-        decision - plain canvas vs. a make_subplots() grid of a specific
-        shape and per-cell type (2D/3D) - at the moment it's built (see
-        PlotlyRenderer.setup()). add_plot()/remove_plot()/replace_plot()
-        can each change grid_shape() or a cell's embedding_dim after the
-        fact, so every one of them must rebuild rather than mutate the
-        existing backend_figure in place. Cached artists are tied to
-        positions in the old backend_figure, so they're dropped too - the
-        next draw() recreates them against the new one.
+        The backend figure fixes the grid shape and cell types when built,
+        so it is rebuilt whenever the panel grid changes; the next draw()
+        recreates the artists.
         """
         self.backend_figure = self.renderer.setup(self)
         self.artists = {}
 
     def _register_plot(self, plot: Plot):
-        """Applies this Figure's theme and collects `plot`'s controls and
-        SelectorSpecs - the bookkeeping shared by add_plot() and the
-        Layout-driven registration in __init__()."""
+        """Apply this Figure's theme and collect `plot`'s controls and
+        SelectorSpecs."""
         plot.theme = self.theme
         plot.color_index = len(self.plots)
         self.plots.append(plot)
@@ -94,10 +125,7 @@ class Figure:
                 self.selector_specs.append(spec)
 
     def _rebuild_controls_and_selector_specs(self):
-        """Recomputes self.controls/self.selector_specs from self.plots -
-        called after remove_plot()/replace_plot(), since either can orphan
-        a control or SelectorSpec only the removed/replaced plot
-        referenced."""
+        """Recompute self.controls/self.selector_specs from self.plots."""
         self.controls = []
         self.selector_specs = []
         for plot in self.plots:
@@ -110,13 +138,13 @@ class Figure:
                     self.selector_specs.append(spec)
 
     def remove_plot(self, plot: Plot):
-        """Removes `plot` from wherever it is in this Figure's panel grid.
+        """Remove `plot` from this figure's panel grid.
 
         Args:
-            plot (Plot): The plot to remove.
+            plot: The plot to remove.
 
         Raises:
-            ValueError: If `plot` is not part of this Figure.
+            ValueError: If `plot` is not part of this figure.
         """
         for row in self.panels:
             for overlay in row:
@@ -128,16 +156,17 @@ class Figure:
         raise ValueError(f"{plot} is not part of this Figure.")
 
     def replace_plot(self, old: Plot, new: Plot):
-        """Replaces `old` with `new` in the same panel position, keeping
-        `old`'s color_index.
+        """Replace `old` with `new` in the same panel position.
+
+        `new` gets this figure's theme and keeps `old`'s ``color_index``.
 
         Args:
-            old (Plot): The plot currently in this Figure to replace.
-            new (Plot): The plot to put in its place.
+            old: The plot of this figure to replace.
+            new: The plot to put in its place.
 
         Raises:
-            ValueError: If `old` is not part of this Figure, or if `new`
-                does not share `old`'s Overlay's embedding_dim.
+            ValueError: If `old` is not part of this figure, or if `new`
+                does not share the ``embedding_dim`` of `old`'s Overlay.
         """
         for row in self.panels:
             for overlay in row:
@@ -153,6 +182,18 @@ class Figure:
 
     @staticmethod
     def facet_specs(plot: Plot) -> dict[str, FacetSpec]:
+        """Collect the FacetSpecs of `plot` by orientation.
+
+        Args:
+            plot: The plot whose controls are searched.
+
+        Returns:
+            The FacetSpec per orientation (``"row"`` and/or ``"col"``).
+
+        Raises:
+            AssertionError: If `plot` has more than one FacetSpec for one
+                orientation.
+        """
         specs = [s for s in plot.controls if isinstance(s, FacetSpec)]
         by_orientation = {s.orientation: s for s in specs}
         assert len(by_orientation) == len(
@@ -161,9 +202,8 @@ class Figure:
         return by_orientation
 
     def _facet_extent(self) -> tuple[int, int]:
-        """(facet_rows, facet_cols): the largest facet grid any single plot
-        in this Figure declares. Every panel's block is sized to this,
-        uniformly (panels and facets multiply)."""
+        """(facet_rows, facet_cols): the largest facet grid of any plot.
+        Every panel's block of cells has this size."""
         facet_rows, facet_cols = 1, 1
         for plot in self.plots:
             facets = self.facet_specs(plot)
@@ -174,24 +214,35 @@ class Figure:
         return facet_rows, facet_cols
 
     def grid_shape(self) -> tuple[int, int]:
-        """(n_rows, n_cols) the whole Figure needs: panel_rows * facet_rows,
-        panel_cols * facet_cols. A plot with no FacetSpec on an orientation
-        draws into just the first row/col of its own block, not every one
-        (matches Plot.create_artist's row=None/col=None meaning "cell 1"),
-        and a panel with no FacetSpec at all still gets a full-size block -
-        it just uses that block's first cell."""
+        """Compute the size of the figure's cell grid.
+
+        Every panel gets a block of the largest facet grid of any plot. A
+        plot without a FacetSpec on an orientation draws into the first
+        row or column of its block only.
+
+        Returns:
+            ``(n_rows, n_cols)``: panel rows times facet rows, panel
+            columns times facet columns.
+        """
         facet_rows, facet_cols = self._facet_extent()
         panel_rows = len(self.panels) if self.panels else 1
         panel_cols = max((len(row) for row in self.panels), default=1)
         return panel_rows * facet_rows, panel_cols * facet_cols
 
     def cell_titles(self, n_rows: int, n_cols: int) -> list[str]:
-        """Row-major subplot title per grid cell (Plotly's make_subplots(
-        subplot_titles=...) order): each panel's own plot title(s) (every
-        distinct, non-None Plot.title in that cell's Overlay), with its
-        facet's label appended when both are present. Only set on the
-        cells the panel's plots actually draw into (its first cell alone,
-        for a panel with no FacetSpec sharing a block with a faceted one) - "" everywhere else.
+        """Compute the subplot title of every grid cell.
+
+        A cell's title joins the distinct, non-None titles of its panel's
+        plots, followed by the facet labels of that cell if any. Cells no
+        plot draws into get ``""``.
+
+        Args:
+            n_rows: Number of grid rows, as returned by :meth:`grid_shape`.
+            n_cols: Number of grid columns, as returned by
+                :meth:`grid_shape`.
+
+        Returns:
+            One title per cell, in row-major order.
         """
         titles = [["" for _ in range(n_cols)] for _ in range(n_rows)]
         facet_rows, facet_cols = self._facet_extent()
@@ -240,15 +291,22 @@ class Figure:
         return [title for row in titles for title in row]
 
     def cell_y_titles(self, n_rows: int, n_cols: int) -> list[str | None]:
-        """Row-major y-axis title override per grid cell: the shared
-        math_name of every plot in that cell's panel that names its y-axis
-        via an AxisSpec (LinePlot/BarPlot, ScatterPlot, StructuredGridPlot/
-        HeatmapPlot/ImagePlot/SurfacePlot - anything with a `.y: AxisSpec`,
-        each renderer titles its y-axis from `plot.y.math_name` the same
-        way), when they all agree on it; "" when they don't, rather than
-        one of several different quantities misleadingly labeling a shared
-        axis; None when the panel has none of these (leave the axis title
-        as whatever its own artist(s) set)."""
+        """Compute the y-axis title override of every grid cell.
+
+        Considers the plots of the cell's panel whose ``y`` is an
+        :class:`~qewton.visualization.plots.spec.AxisSpec`.
+
+        Args:
+            n_rows: Number of grid rows, as returned by :meth:`grid_shape`.
+            n_cols: Number of grid columns, as returned by
+                :meth:`grid_shape`.
+
+        Returns:
+            One entry per cell, in row-major order: the shared
+            ``y.math_name`` if all these plots agree on it, ``""`` if they
+            differ, and None if the panel has no such plot (the artists'
+            own titles are kept).
+        """
         titles: list[str | None] = [None] * (n_rows * n_cols)
         facet_rows, facet_cols = self._facet_extent()
         for panel_row, row in enumerate(self.panels):
@@ -269,12 +327,17 @@ class Figure:
         return titles
 
     def cell_dimensions(self, n_rows: int, n_cols: int) -> list[list[int]]:
-        """Embedding dimension (2 or 3) per grid cell, inferred from
-        whichever plot(s) draw into each cell - renderer-agnostic; translating
-        this into a specific backend's subplot-type vocabulary (Plotly's
-        "xy"/"scene", or whatever an eventual second renderer uses) is that
-        renderer's job, not Figure's. Cells no plot reaches keep dimension 2,
-        the harmless default."""
+        """Compute the embedding dimension of every grid cell.
+
+        Args:
+            n_rows: Number of grid rows, as returned by :meth:`grid_shape`.
+            n_cols: Number of grid columns, as returned by
+                :meth:`grid_shape`.
+
+        Returns:
+            The ``embedding_dim`` (2 or 3) of the plots drawing into each
+            cell, row by row; 2 for cells no plot draws into.
+        """
         dims = [[2] * n_cols for _ in range(n_rows)]
         facet_rows, facet_cols = self._facet_extent()
         for panel_row, row in enumerate(self.panels):
@@ -297,17 +360,21 @@ class Figure:
         return dims
 
     def cell_spans(self, n_rows: int, n_cols: int) -> list[list[tuple[int, int] | None]]:
-        """(rowspan, colspan) per grid cell for a backend's subplot-grid
-        vocabulary (Plotly's make_subplots(specs=...) rowspan/colspan) -
-        (1, 1) everywhere, except a panel that has no FacetSpec on an
-        orientation while sharing a block sized by a sibling panel's
-        FacetSpec on that same orientation: its cell
-        spans the block's full extent on that orientation, rather than
-        sitting narrow in the block's first cell, and every other cell it
-        absorbs is None (a backend's "no subplot here, spanned by a
-        neighbor" marker). Scoped to that one case - the unrelated
-        padded-but-unspanned cells from Row/Column nesting are left
-        alone, each still its own (1, 1) cell."""
+        """Compute the row and column span of every grid cell.
+
+        A panel without a FacetSpec on an orientation, in a figure whose
+        blocks are faceted on that orientation, spans its whole block on
+        that orientation. All other cells span ``(1, 1)``.
+
+        Args:
+            n_rows: Number of grid rows, as returned by :meth:`grid_shape`.
+            n_cols: Number of grid columns, as returned by
+                :meth:`grid_shape`.
+
+        Returns:
+            ``(rowspan, colspan)`` per cell, row by row; None for a cell
+            covered by a spanning neighbor.
+        """
         spans: list[list[tuple[int, int] | None]] = [
             [(1, 1) for _ in range(n_cols)] for _ in range(n_rows)
         ]
@@ -346,10 +413,8 @@ class Figure:
         return spans
 
     def _animation_spec(self) -> TimeSpec | None:
-        """The one TimeSpec in use across the whole Figure, or None. Unlike
-        FacetSpec (one per orientation, per plot), animation frames are
-        figure-wide - Plotly plays one shared frame sequence, so at most one
-        distinct TimeSpec across every plot is supported."""
+        """The one TimeSpec of the whole Figure, or None. Animation frames
+        are figure-wide, so at most one TimeSpec is supported."""
         specs = [s for s in self.controls if isinstance(s, TimeSpec)]
         assert len(specs) <= 1, "At most one TimeSpec per Figure is supported."
         return specs[0] if specs else None
@@ -364,8 +429,7 @@ class Figure:
         return seen
 
     def _plot_cells(self, plot: Plot) -> list[tuple[int, int]]:
-        """Every (row, col) grid cell (1-indexed) `plot` draws into - its
-        panel's own block, widened by its own FacetSpec(s) if it has any."""
+        """Every 1-indexed (row, col) grid cell `plot` draws into."""
         facet_rows, facet_cols = self._facet_extent()
         for panel_row, row in enumerate(self.panels):
             for panel_col, overlay in enumerate(row):
@@ -383,12 +447,9 @@ class Figure:
         return []
 
     def _assign_colorbar_cells(self) -> None:
-        """Sets each in-use Scale's `colorbar_cell` to the rightmost grid
-        cell among every plot referencing it, so a Scale shared across
-        several panels (e.g. Reference/Prediction sharing one range - see
-        graph.visualize()'s share_scale) gets one colorbar placed after all
-        of them, not wedged beside whichever panel happened to claim it
-        first. A no-op outside a grid (nothing to place "after")."""
+        """Set each in-use Scale's `colorbar_cell` to the rightmost grid
+        cell of the plots using it, so a shared Scale gets one colorbar
+        after all of them. No-op for a single-cell figure."""
         if self.grid_shape() == (1, 1):
             return
         for scale in self._scales_in_use():
@@ -402,9 +463,17 @@ class Figure:
                 scale.colorbar_cell = max(cells, key=lambda cell: cell[1])
 
     def draw(self):
-        # Pass 1: reset and train shared scales before anything is drawn -
-        # otherwise the colorbar claim from a previous draw() lingers and the
-        # second render loses its colorbar.
+        """Draw every plot into the backend figure.
+
+        Shared color scales are trained on all plots first, then each plot
+        is drawn into its cells, and with a TimeSpec the animation frames
+        are added. Artists from an earlier call are updated, not recreated.
+
+        Returns:
+            object: The renderer's figure object (:attr:`backend_figure`).
+        """
+        # Pass 1: reset and train shared scales before anything is drawn, so
+        # no colorbar claim from a previous draw() remains.
         for scale in self._scales_in_use():
             scale.reset()
         for plot in self.plots:
@@ -413,12 +482,9 @@ class Figure:
                 plot.color.scale.observe(values)
         self._assign_colorbar_cells()
 
-        # Pass 2: draw with the now-trained scales. Plotly (and presumably
-        # any renderer with a comparable subplot mechanism) requires row/col
-        # together or not at all - self.backend_figure is a subplot grid the
-        # moment ANY plot facets on either orientation, or there is more
-        # than one panel, so every plot's non-faceted orientation must
-        # default to cell 1 of its own block, not None, once that's true.
+        # Pass 2: draw with the trained scales. In a grid, Plotly requires
+        # row and col together, so a non-faceted orientation uses cell 1 of
+        # the plot's block instead of None.
         is_grid = self.grid_shape() != (1, 1)
         facet_rows, facet_cols = self._facet_extent()
         for panel_row, row in enumerate(self.panels):
@@ -427,20 +493,13 @@ class Figure:
                 for plot in overlay.plots:
                     self._draw_plot(plot, is_grid, block_offset)
 
-        # Reconcile y-axis titles across each panel, now that every plot's
-        # own artist has had a chance to set one - a single artist can't
-        # tell whether a sibling in the same Overlay names a different
-        # quantity, so this runs once, after all of them (see
-        # cell_y_titles()).
+        # Reconcile y-axis titles per panel after all artists set theirs: a
+        # single artist can't see its Overlay siblings (see cell_y_titles()).
         n_rows, n_cols = self.grid_shape()
         self.renderer.reconcile_y_axis_titles(self, self.backend_figure, n_rows, n_cols)
 
-        # Pass 3 (only with a TimeSpec present): materialize one frame per
-        # animated state on top of the now-drawn figure. Frames/play-pause UI
-        # are backend vocabulary (Plotly specifically wants them up front,
-        # unlike the on-demand create()/update() cycle everything else uses),
-        # so building them is the renderer's job, not Figure's - the same
-        # split as Renderer.setup() owning subplot-grid construction.
+        # Pass 3 (only with a TimeSpec): the renderer adds one frame per
+        # animated state on top of the drawn figure.
         spec = self._animation_spec()
         if spec is not None:
             self.renderer.animate(self, self.backend_figure, spec)
@@ -450,12 +509,9 @@ class Figure:
     def _draw_plot(
         self, plot: Plot, is_grid: bool, block_offset: tuple[int, int] = (0, 0)
     ):
-        """Draws one plot into every grid cell its FacetSpec(s) call for,
-        offset by `block_offset` (this plot's panel's top-left corner) -
-        exactly one cell, at block_offset, if it has none. The renderer
-        sets `spec.state` per cell and calls plot.evaluate() again through
-        create_artist()/update() - the same cycle a Dash slider callback
-        triggers - so Plot itself needs no facet awareness."""
+        """Draw one plot into every grid cell of its FacetSpec(s), offset by
+        `block_offset` (its panel's top-left cell). Each FacetSpec's state is
+        set per cell and restored afterwards."""
         facets = self.facet_specs(plot)
         row_spec = facets.get("row")
         col_spec = facets.get("col")
@@ -499,34 +555,69 @@ class Figure:
                 col_spec.state = original_col_state
 
     def _apply_selectors(self):
-        """Static-export counterpart to DashApplication's dropdown widget -
-        only called by show()/save_html()/save_png()/save_svg(), not draw()
-        itself, since a Dash app already handles SelectorSpec server-side
-        and would otherwise get a redundant, non-functional copy baked into
-        its figure too."""
+        """Bake every SelectorSpec into the backend figure as a dropdown.
+        Called by show()/save_html() only, not by draw(), since
+        DashApplication provides its own dropdowns."""
         for spec in self.selector_specs:
             self.renderer.apply_selector(self, self.backend_figure, spec)
 
+    def _apply_sliders(self):
+        """Bake a single SliderSpec into the backend figure (see
+        Renderer.apply_slider()). With several SliderSpecs, only the initial
+        state is shown and a warning is issued. Called by show()/save_html()
+        only, like _apply_selectors().
+        """
+        sliders = [c for c in self.controls if isinstance(c, SliderSpec)]
+        if len(sliders) == 1:
+            self.renderer.apply_slider(self, self.backend_figure, sliders[0])
+        elif len(sliders) > 1:
+            warnings.warn(
+                f"Figure has {len(sliders)} SliderSpecs "
+                f"({', '.join(s.name for s in sliders)}) - show()/save_html() "
+                "can only bake a single slider into a static figure, so only "
+                "the initial state is shown. Use DashApplication for "
+                "interactive sliders.",
+                stacklevel=3,
+            )
+
     def show(self):
-        """Draws the figure and displays it (e.g. opening a browser tab)."""
+        """Draw the figure and display it, e.g. in a browser tab.
+
+        One SliderSpec and all SelectorSpecs are baked into the figure as
+        static widgets; with several SliderSpecs, only their initial state
+        is shown and a warning is issued.
+        """
         self.draw()
         self._apply_selectors()
+        self._apply_sliders()
         self.renderer.show(self.backend_figure)
 
     def save_html(self, path):
-        """Draws the figure and writes it to `path` as an interactive HTML file."""
+        """Draw the figure and write it to an interactive HTML file.
+
+        Widgets are baked in as for :meth:`show`.
+
+        Args:
+            path (str | os.PathLike): The output file.
+        """
         self.draw()
         self._apply_selectors()
+        self._apply_sliders()
         self.renderer.save_html(self.backend_figure, path)
 
     def save_gif(self, path, fps=10):
-        """Draws the figure and writes it to `path` as an animated GIF.
+        """Draw the figure and write its animation to an animated GIF.
 
-        Only meaningful with a TimeSpec control somewhere in the Figure -
-        `draw()` must populate `backend_figure.frames`, which is then
-        rasterized frame by frame and assembled into the GIF. `fps` applies
-        to equally spaced frames; with non-uniform time steps, each frame is
-        shown in proportion to its time step (TimeSpec.frame_weights()).
+        Requires a TimeSpec in the figure: each animation frame is
+        rasterized and becomes one GIF frame.
+
+        Args:
+            path (str | os.PathLike): The output file.
+            fps (float): Frame rate for equally spaced time steps. With
+                non-uniform time steps, each frame is shown in proportion to
+                its time step (see
+                :meth:`~qewton.visualization.plots.spec.TimeSpec.frame_weights`).
+                Defaults to 10.
         """
         self.draw()
         spec = self._animation_spec()
@@ -538,11 +629,21 @@ class Figure:
         )
 
     def save_png(self, path, **kwargs):
-        """Draws the figure and writes its current state to `path` as a PNG."""
+        """Draw the figure and write its current state to a PNG file.
+
+        Args:
+            path (str | os.PathLike): The output file.
+            **kwargs: Forwarded to the renderer's ``save_image``.
+        """
         self.draw()
         self.renderer.save_image(self.backend_figure, path, format="png", **kwargs)
 
     def save_svg(self, path, **kwargs):
-        """Draws the figure and writes its current state to `path` as an SVG."""
+        """Draw the figure and write its current state to an SVG file.
+
+        Args:
+            path (str | os.PathLike): The output file.
+            **kwargs: Forwarded to the renderer's ``save_image``.
+        """
         self.draw()
         self.renderer.save_image(self.backend_figure, path, format="svg", **kwargs)

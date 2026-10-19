@@ -993,3 +993,81 @@ class TestVisualizeProductGeometry:
         backend_figure = Figure(layout).draw()
         labels = [step.label for step in backend_figure.layout.sliders[0].steps]
         assert labels == ["0", "0.1", "0.5", "2"]
+
+
+class TestVisualizeReferenceOnProductDomain:
+    """Reference data on a product domain (space x parameter) is given with
+    one GeometryAxes per factor; the model is evaluated at all combinations
+    and the parameter gets a slider."""
+
+    @staticmethod
+    def _setup():
+        from qewton.geometries.continuous.domains_1d.interval import Interval
+
+        X, A, U = Variable("x", 2), Variable("alpha", 1), Variable("u", 2)
+        domain = Rectangle(X, [0.0, 0.0], 1.0, 1.0) * Interval(A, 0.0, 1.0)
+        sampler = GridSampler(domain, 50)
+        model = FCN(in_neurons=domain.variable, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(sampler, model)
+        graph.setup()
+
+        alphas = np.array([[0.2], [0.5], [0.9]], dtype=np.float32)
+        g1, g2 = np.meshgrid(np.linspace(0, 1, 4), np.linspace(0, 1, 5), indexing="ij")
+        x_grid = np.stack([g1, g2], axis=-1).astype(np.float32)  # (4, 5, 2)
+        a_axes = GeometryAxes(Interval(A, 0.0, 1.0).discretize(alphas))
+        x_axes = GeometryAxes(Rectangle(X, [0.0, 0.0], 1.0, 1.0).discretize(x_grid))
+        return graph, model, U, a_axes, x_axes, alphas, x_grid
+
+    @staticmethod
+    def _model_at(model, alphas, x_grid) -> np.ndarray:
+        """The model's own values at every (alpha, x), as (n_alpha, 4, 5, 2) -
+        its input is ordered like the domain variable, (x, alpha)."""
+        import torch
+
+        x = np.broadcast_to(x_grid, (len(alphas), *x_grid.shape))
+        a = np.broadcast_to(alphas[:, None, None, :], (*x.shape[:-1], 1))
+        points = torch.tensor(np.concatenate([x, a], axis=-1).reshape(-1, 3))
+        with torch.no_grad():
+            return model(points).numpy().reshape(len(alphas), 4, 5, 2)
+
+    @pytest.mark.parametrize("alpha_first", [True, False])
+    def test_prediction_matches_the_model_at_every_combination(self, alpha_first):
+        graph, model, U, a_axes, x_axes, alphas, x_grid = self._setup()
+        reference = np.random.rand(3, 4, 5, 2).astype(np.float32)
+        axes = [a_axes, x_axes] if alpha_first else [x_axes, a_axes]
+        data = reference if alpha_first else reference.transpose(1, 2, 0, 3)
+        config = DataConfiguration(*axes, FeatureAxes(U))
+
+        layout = graph.visualize(model.output_ports[0], reference=data, reference_config=config)
+        ref_plot, pred_plot, error_plot = layout.plots
+        # Each panel steps through alpha, laid out alpha first.
+        for plot in layout.plots:
+            assert [c.name for c in plot.controls] == ["alpha"]
+        expected = self._model_at(model, alphas, x_grid)
+        assert np.allclose(np.asarray(pred_plot.data), expected, atol=1e-5)
+        assert np.allclose(np.asarray(ref_plot.data), reference)
+        assert np.allclose(
+            np.asarray(error_plot.data), expected - reference, atol=1e-5
+        )
+        Figure(layout).draw()
+
+    def test_a_flat_product_point_cloud_explains_how_to_pass_factors(self):
+        """The same points as one flat (x, alpha) point cloud can't be split
+        into its factors - the error says how to pass them instead."""
+        from qewton.geometries.discrete.product_mesh_geometry import (
+            ProductDiscreteGeometry,
+        )
+
+        graph, model, U, a_axes, x_axes, alphas, x_grid = self._setup()
+        flat = ProductDiscreteGeometry([x_axes.geometry, a_axes.geometry])
+        points = np.asarray(flat.discretization_points).reshape(-1, 3)
+        config = DataConfiguration(
+            GeometryAxes(PointCloud(flat.variable, points)), FeatureAxes(U)
+        )
+        with pytest.raises(ValueError, match="one GeometryAxes per factor"):
+            graph.visualize(
+                model.output_ports[0],
+                reference=np.zeros((len(points), 2), dtype=np.float32),
+                reference_config=config,
+            )

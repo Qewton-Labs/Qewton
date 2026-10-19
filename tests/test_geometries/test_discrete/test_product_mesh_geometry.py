@@ -6,7 +6,10 @@ import pytest
 from qewton.config.variables import Variable
 from qewton.geometries.continuous.domains_1d.interval import Interval
 from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
-from qewton.geometries.discrete.product_mesh_geometry import ProductMeshGeometry
+from qewton.geometries.discrete.product_mesh_geometry import (
+    ProductDiscreteGeometry,
+    ProductMeshGeometry,
+)
 
 
 T, M, K = Variable("t", 1), Variable("m", 1), Variable("k", 1)
@@ -117,3 +120,45 @@ class TestBoundingBox:
     def test_product_mesh_uses_its_points(self):
         box = np.asarray((_time() * _square()).create_mesh(0.5).bounding_box())
         assert np.allclose(box, [0.0, 2.0, 0.0, 1.0, 0.0, 1.0])
+
+
+class TestProductDiscreteGeometry:
+    """The product of discrete point sets, e.g. reference data given on a
+    grid of space points for each of a few parameter values."""
+
+    @staticmethod
+    def _factors():
+        times = _time().discretize(np.array([[0.0], [1.0], [2.0]]))
+        g1, g2 = np.meshgrid(np.linspace(0, 1, 4), np.linspace(0, 1, 5), indexing="ij")
+        space = _square().discretize(np.stack([g1, g2], axis=-1))  # shape (4, 5)
+        return times, space
+
+    def test_keeps_each_factors_structure(self):
+        times, space = self._factors()
+        product = ProductDiscreteGeometry([times, space])
+        assert tuple(product.shape) == (3, 4, 5)
+        assert np.asarray(product.discretization_points).shape == (3, 4, 5, 3)
+
+    @pytest.mark.parametrize("variable_order", ["factors", "reversed"])
+    def test_every_point_combines_the_factors_coordinates(self, variable_order):
+        times, space = self._factors()
+        variable = T * X if variable_order == "factors" else X * T
+        product = ProductDiscreteGeometry([times, space], variable=variable)
+        points = np.asarray(product.discretization_points)
+        t_cols, x_cols = variable.get_slice(T), variable.get_slice(X)
+        t_points = np.asarray(times.discretization_points)
+        x_points = np.asarray(space.discretization_points)
+        for i, j, k in [(0, 0, 0), (1, 2, 3), (2, 3, 4)]:
+            assert np.allclose(points[i, j, k, t_cols], t_points[i])
+            assert np.allclose(points[i, j, k, x_cols], x_points[j, k])
+
+    def test_points_lie_in_the_product_domain(self):
+        times, space = self._factors()
+        domain = _square() * _time()
+        product = ProductDiscreteGeometry([times, space], variable=domain.variable)
+        assert np.all(np.asarray(domain.contains(product.discretization_points)))
+
+    def test_a_factor_outside_the_variable_raises(self):
+        times, space = self._factors()
+        with pytest.raises(ValueError):
+            ProductDiscreteGeometry([times, space], variable=X * M)

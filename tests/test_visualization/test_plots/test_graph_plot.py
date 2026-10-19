@@ -1,6 +1,10 @@
+import pytest
+
 from qewton.visualization.figure import Figure
 from qewton.visualization.layout import Overlay
 from qewton.visualization.plots.graph import GraphPlot
+from qewton.visualization.plots.graph.layout import GraphLayout
+from qewton.visualization.renderers.plotly.graph import NodeLinkArtist
 from qewton.visualization.themes import DARK_THEME, LIGHT_THEME
 
 
@@ -38,21 +42,25 @@ class TestGraphPlot:
         fig.draw()
         assert len(backend_figure.data) == 6
 
-    def test_node_fill_color_reflects_category(self, simple_graph):
-        backend_figure = Figure(GraphPlot(simple_graph, depth=0), theme=LIGHT_THEME).draw()
-        node_shapes = [s for s in backend_figure.layout.shapes if s.fillcolor != "rgba(0,0,0,0)"]
-        colors = {s.fillcolor for s in node_shapes}
-        # fcn (graphnode) and Source/Loss (default) must differ
-        assert LIGHT_THEME.node_color_by_type["graphnode"] in colors
-        assert LIGHT_THEME.node_color_default in colors
+    @pytest.mark.parametrize("theme", [LIGHT_THEME, DARK_THEME])
+    def test_node_categories_are_visually_distinct(self, theme):
+        """Constraint, data and model cards must be told apart at a glance -
+        whatever the theme's actual colors are."""
+        fills = {
+            category: NodeLinkArtist._node_colors(category, theme)[0]
+            for category in ("constraint", "datanode", "graphnode")
+        }
+        assert len(set(fills.values())) == 3
 
-    def test_ports_fill_with_the_theme_background_not_a_fixed_white(self, simple_graph):
-        light = Figure(GraphPlot(simple_graph), theme=LIGHT_THEME).draw()
-        dark = Figure(GraphPlot(simple_graph), theme=DARK_THEME).draw()
-        port_trace_light = light.data[1]
-        port_trace_dark = dark.data[1]
-        assert port_trace_light.marker.color == LIGHT_THEME.background_color
-        assert port_trace_dark.marker.color == DARK_THEME.background_color
+    @pytest.mark.parametrize("depth", [0, 1])
+    def test_every_port_is_hoverable_with_its_name_and_direction(self, simple_graph, depth):
+        layout = GraphLayout.compute(simple_graph, depth=depth)
+        backend_figure = Figure(GraphPlot(simple_graph, depth=depth)).draw()
+        port_trace = backend_figure.data[1]
+        assert len(port_trace.x) == len(layout.ports) > 0
+        assert all(
+            text.endswith("(in)") or text.endswith("(out)") for text in port_trace.hovertext
+        )
 
     def test_hover_text_includes_kind(self, simple_graph):
         backend_figure = Figure(GraphPlot(simple_graph, depth=0)).draw()

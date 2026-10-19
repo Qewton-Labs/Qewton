@@ -1,3 +1,5 @@
+"""Trainer that trains models defined as graphs."""
+
 import warnings
 
 from qewton.optim.trainer.base_trainer import Trainer
@@ -15,28 +17,53 @@ from qewton.data.dataloaders.base import DataNode
 
 
 class GraphBasedTrainer(Trainer):
-    """A trainer that runs graphs to train a model.
+    """Trainer that evaluates graphs to train the models inside them.
+
+    The trainer collects the constraints of all graphs. Each graph
+    containing a training objective is evaluated in the training phase.
+    Other constraints are assigned to training and/or validation according
+    to their ``evaluated_in_mode`` and the phases for which the graph's data
+    nodes provide data. Constraints with the same name are renamed
+    (``"PDE"``, ``"PDE_2"``, ...) in the order of `training_objectives`,
+    then of creation, since losses are recorded by constraint name.
 
     Args:
-        optimization_phases (OptimizationPhase | list[OptimizationPhase]):
-            One or more optimization phases defining the training workflow.
-        graphs (list[Graph]): A list of graphs, containing all graphs that should
-            be considered by this trainer. Will automatically detect what kind
-            of conditions are present in each graph and only evaluate the
-            graph accordingly (e.g. a graph with only validation constraints
-            is only used in the validation phase).
-        training_objectives (list[Constraint]): The objectives that should be used
-            to compute the loss in training.
-        callbacks (Callback | list[Callback] | None, optional): Additional
-            callbacks that should be applied. Defaults to None.
-        validation_interval (int, optional): The interval for validation.
-            Defaults to 100.
-        device (str | Device): Target device string for training, e.g. "cpu" or "cuda".
-        save_path (str): Directory or file path where training results are stored.
-        progress_bar (ProgressBarCallback | None, optional): Optional progress bar
-            callback instance. If omitted, a default ProgressBarCallback is added.
-        enable_logging (bool): Whether training logs should be recorded.
-        log_interval (int): Interval in iterations for logging output.
+        optimization_phases: One or more optimization phases defining the
+            training workflow.
+        graphs: All graphs considered by this trainer.
+        training_objectives: The constraints whose losses are optimized. Their
+            ``evaluated_in_mode`` must be ``TRAIN`` or ``ALWAYS``.
+        callbacks: Additional callbacks.
+        validation_interval: The number of iterations between validation
+            evaluations.
+        device: The device to train on, e.g. ``"cpu"`` or ``"cuda"``.
+        save_path: Directory or file path where training results are stored.
+        progress_bar: The progress bar callback. If ``None``, a default
+            :class:`~qewton.optim.trainer.callbacks.progressbar_callback.ProgressBarCallback`
+            is used.
+        enable_logging (bool, optional): Whether training logs are recorded.
+            Defaults to ``True``.
+        log_interval (int, optional): The number of iterations between log
+            outputs. Defaults to 100.
+
+    Raises:
+        AssertionError: If a training objective is not evaluated in the
+            training phase.
+        ValueError: If a graph has constraints for a phase in which its data
+            nodes provide no data.
+
+    Attributes:
+        graphs (list of Graph): All graphs of this trainer.
+        all_nodes (set of Node): All nodes of all graphs.
+        training_objectives (list of Constraint): The optimized constraints.
+        training_constraints (set of Constraint): The constraints evaluated in
+            the training phase.
+        validation_constraints (set of Constraint): The constraints evaluated
+            in the validation phase.
+        train_graphs (set of Graph): The graphs evaluated in the training
+            phase.
+        validation_graphs (set of Graph): The graphs evaluated in the
+            validation phase.
     """
 
     def __init__(
@@ -56,6 +83,8 @@ class GraphBasedTrainer(Trainer):
             callbacks = []
         if isinstance(callbacks, Callback):
             callbacks = [callbacks]
+        # Duplicate names are made unique by _make_constraint_names_unique()
+        # below, once all constraints are known.
         for train_obj in training_objectives:
             assert train_obj.evaluated_in_mode in [
                 EvaluationPhase.TRAIN,
@@ -189,10 +218,9 @@ class GraphBasedTrainer(Trainer):
                 self.validation_graphs.add(graph)
 
     def _make_constraint_names_unique(self):
-        """Losses are recorded and looked up by constraint name, so distinct
-        constraints sharing a name would overwrite each other's loss. Such
-        constraints are renamed by appending an index ("PDE", "PDE_2", ...),
-        in the order of `training_objectives`, then of creation."""
+        # Renames constraints sharing a name by appending an index ("PDE",
+        # "PDE_2", ...), in the order of `training_objectives`, then of
+        # creation (node_id).
         in_graphs = sorted(
             (n for graph in self.graphs for n in graph.nodes if isinstance(n, Constraint)),
             key=lambda n: n.node_id,
@@ -230,6 +258,15 @@ class GraphBasedTrainer(Trainer):
         return graph_set
 
     def check_tuning_constraints_exist(self, constraints: list[Constraint]):
+        """Check that the constraints are evaluated by this trainer.
+
+        Args:
+            constraints: The constraints to check.
+
+        Raises:
+            AssertionError: If a constraint is neither a training nor a
+                validation constraint.
+        """
         for c in constraints:
             assert (
                 c in self.validation_constraints or c in self.training_constraints
@@ -237,6 +274,12 @@ class GraphBasedTrainer(Trainer):
                   of this trainer."
 
     def collect_graph_hyperparameters(self) -> set[HyperParameter]:
+        """Collect the hyperparameters of all nodes.
+
+        Returns:
+            set of HyperParameter: The hyperparameters of all nodes of all
+                graphs.
+        """
         hyperparameter_set = set[HyperParameter]()
         for node in self.all_nodes:
             node_params = node.hyperparameters
@@ -245,6 +288,14 @@ class GraphBasedTrainer(Trainer):
         return hyperparameter_set
 
     def on_training_start(self):
+        """Prepare the graphs for training.
+
+        Sets up all graphs, moves all nodes to the training device and
+        registers the trainable parameters of all nodes.
+
+        Raises:
+            ValueError: If no node has trainable parameters.
+        """
         # setup all graphs and then move all nodes to the correct device:
         for graph in self.graphs:
             graph.setup()
@@ -265,8 +316,9 @@ class GraphBasedTrainer(Trainer):
         return super().on_training_start()
 
     def populate_state_dict(self):
-        """Collect all relevant loss and metric names into the state dict, to
-        know at the start of training which values are to be expected."""
+        """Register the loss names of all training and validation
+        constraints in the train state, so the expected values are known
+        at the start of training."""
         constraints_list = [self.training_constraints, self.validation_constraints]
         evaluation_phases = [
             EvaluationPhase.TRAIN,

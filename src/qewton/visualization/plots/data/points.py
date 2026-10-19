@@ -1,3 +1,5 @@
+"""Data plot of unstructured point clouds."""
+
 import numpy as np
 
 from qewton.config.axes import GeometryAxes
@@ -10,17 +12,35 @@ from qewton.backends import resolve_backend
 
 
 class PointCloudPlot(DataPlot):
-    """Arbitrary, unstructured points in space (1D, 2D or 3D), optionally
-    colored by a scalar field - the point-cloud counterpart to
-    MeshFieldPlot (which additionally needs cell connectivity) and
-    EmbeddedGridPlot (which additionally needs a grid shape). Positions
-    come from `geometry.discretization_points` (or `geometry.mesh.vertices`
-    if unset), with no assumption about how they're arranged - the fallback
-    `auto_plot` reaches for once a DiscreteGeometry has neither a mesh nor
-    a grid shape (e.g. a plain SampledGeometry outside mesh mode), or when
-    there's no separate quantity to color by at all (the geometry's own
-    points, e.g. a PointSampler's own output). A 1D point cloud draws on a
-    plain 2D x/y axes, baselined at y=0.
+    """Unstructured points in space (1D, 2D or 3D), optionally colored by a
+    scalar field.
+
+    Positions are the drawn geometry's ``discretization_points``, or its
+    ``mesh.vertices`` if those are unset, with no assumption about their
+    arrangement. A 1D point cloud is drawn on plain 2D axes at y=0.
+    Evaluates to a
+    :class:`~qewton.visualization.plots.result.PointCloudResult`.
+
+    Args:
+        data (array_like): The data to plot.
+        data_config: Configuration describing `data`; must have exactly one
+            drawn GeometryAxes.
+        color: The scalar field coloring the points, or None.
+        controls: Control specs reducing `data`.
+        **kwargs: Further arguments of
+            :class:`~qewton.visualization.plots.data.base.DataPlot`.
+
+    Raises:
+        AssertionError: If there is not exactly one drawn GeometryAxes.
+        ValueError: If the geometry has no points with 1, 2 or 3 components,
+            `color` is not scalar, or (on :meth:`evaluate`) the number of color
+            values does not match the number of points.
+
+    Attributes:
+        color (ColorSpec or None): The color role.
+        coordinate_dim (int): Number of coordinate components of the points (1,
+            2 or 3).
+        embedding_dim (int): 3 for 3D points, else 2.
     """
 
     def __init__(
@@ -63,10 +83,6 @@ class PointCloudPlot(DataPlot):
 
     @property
     def coordinate_dim(self) -> int:
-        """The geometry's own number of coordinate components (1, 2, or 3) -
-        distinct from `embedding_dim`, which is the chart's own
-        dimensionality (a 1D point cloud still draws on a plain 2D chart,
-        baselined at y=0)."""
         points = self._resolve_points(self.drawn_geometry_axes.geometry)
         return points.shape[-1]
 
@@ -75,6 +91,12 @@ class PointCloudPlot(DataPlot):
         return 3 if self.coordinate_dim == 3 else 2
 
     def evaluate(self):
+        """Evaluate positions and colors in the current control state.
+
+        Returns:
+            PointCloudResult: Point positions and one color value per point (or
+                None).
+        """
         data, index_map, slice_map = self.apply_controls()
 
         geometry = self.drawn_geometry_axes.geometry
@@ -100,6 +122,8 @@ class PointCloudPlot(DataPlot):
         return PointCloudResult(positions=positions, color=color)
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
+        """Create the renderer's 2D or 3D point-cloud artist for this
+        plot."""
         return (
             renderer.PointCloud3DArtist.create(backend_figure, self, row=row, col=col)
             if self.embedding_dim == 3

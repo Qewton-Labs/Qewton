@@ -1,3 +1,5 @@
+"""Physics-informed constraint defined by a residual function."""
+
 import inspect
 
 from qewton.algorithms.building_blocks.norms import MSN
@@ -22,33 +24,51 @@ from qewton.constraints.base import Constraint
 
 
 class PINNConstraint(Constraint, GraphNode):
-    """Represents a physics informed constraint, which is defined by a
-    residual function. The residual function takes the necessary data as input
-    and computes the residual of the PDE, which is then reduced to a
-    single value by a reduction function, e.g. the mean squared error of
-    the residual.
+    """Physics-informed constraint defined by a residual function.
 
-    The residual function should use variables as a type annotation for its
-    arguments, which will be used to automatically construct the input
-    ports of this constraint and to feed the correct data into the residual
-    function. E.g.
+    The residual function computes the residual of the PDE from its inputs;
+    a reduction function then reduces it to a single value, by default the
+    mean squared norm. Both are wrapped as nodes in the internal graph of
+    this :class:`~qewton.graphs.control_nodes.graph_node.GraphNode`.
+
+    The arguments of the residual function are annotated with variables.
+    Each annotated argument becomes an input port named after the argument,
+    expecting data with that variable as feature axis::
 
         def residual(x: Variable("x"), u: Variable("u")):
             return u.gradient(x) - f(x)
 
     Args:
-        residual (Callable): The residual function, which computes the
-            residual of the physics conditions.
-        reduction (_type_, optional): A custom reduction function.
-            Defaults to None and the MSE.
-        name (str | None, optional): The name of the constraint, under which
-            its loss is recorded. Defaults to None and the name of the
-            residual function, or "PINNConstraint" for a lambda or a Node.
+        residual (callable or Node): The residual function, or a node computing
+            the residual. Must have a single output.
+        reduction (callable or Node, optional): Reduces the residual to a
+            single value. Must have a single input and a single output.
+            Defaults to :class:`~qewton.algorithms.building_blocks.norms.MSN`.
+        name: The name under which the loss is recorded. Defaults to the name
+            of the residual function, or ``"PINNConstraint"`` for a lambda or a
+            node.
+        weight: A weight the loss is multiplied with.
+        activation_condition: Maps the training iteration to an additional
+            weight factor. If ``None``, the constraint is always active.
+        track_residual: If ``True``, the residual function is traced into a
+            graph
+            (:class:`~qewton.graphs.control_nodes.graph_node.FromFunctionNode`);
+            otherwise it is called directly as an opaque function
+            (:class:`~qewton.graphs.control_nodes.wrapper_node.FunctionWrappingNode`).
+            Ignored if `residual` is a node.
+        objective: Whether the constraint is minimized or maximized.
+        evaluated_in_mode: The evaluation phase in which the constraint is
+            evaluated.
+        backend: The backend used for computations.
 
     Raises:
-        AssertionError: If the residual function does not return a single value.
-        AssertionError: If the reduction function does not take a single input.
-        AssertionError: If the reduction function does not return a single value.
+        AssertionError: If the residual has more than one output, or the
+            reduction does not have exactly one input and one output.
+
+    Attributes:
+        residual_node (Node): The node computing the residual.
+        reduction_node (Node): The node reducing the residual to the loss.
+        track_residual (bool): Whether the residual function is traced.
     """
 
     def __init__(

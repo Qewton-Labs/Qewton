@@ -1,3 +1,5 @@
+"""Plotly artists for plots on structured grids."""
+
 from plotly import graph_objects as go
 import numpy as np
 
@@ -11,10 +13,17 @@ from qewton.visualization.renderers.plotly.common import (
 
 
 class ImageArtist(PlotlyArtist):
-    """Draws an ImagePlot as a raster image."""
+    """Draws an image plot as a raster image.
+
+    Used for :class:`~qewton.visualization.plots.data.grid.ImagePlot`.
+    """
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         image = plot.evaluate().values
         trace = go.Image(z=image)
 
@@ -36,20 +45,32 @@ class ImageArtist(PlotlyArtist):
         return cls(len(backend_figure.data) - 1)
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         image = plot.evaluate().values
         backend_figure.data[self.figure_idx].z = image
 
 
 class HeatmapArtist(PlotlyArtist):
-    """Draws a HeatmapPlot as a flat, colored grid."""
+    """Draws a heatmap plot as a ``go.Heatmap``.
+
+    Used for :class:`~qewton.visualization.plots.data.grid.HeatmapPlot`. The
+    plot's color field, if present, replaces the values as heatmap data.
+    """
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         result = plot.evaluate()
         data, color = result.values, result.color
         c = plot.color
 
-        cmap = c.cmap if c is not None and c.cmap is not None else plot.theme.default_cmap
+        cmap = plot.theme.resolve_cmap(c.cmap if c is not None else None)
         if color is not None:
             data = color
 
@@ -81,6 +102,10 @@ class HeatmapArtist(PlotlyArtist):
         return cls(len(backend_figure.data) - 1)
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         result = plot.evaluate()
         data, color = result.values, result.color
         if color is not None:
@@ -92,12 +117,19 @@ class HeatmapArtist(PlotlyArtist):
 
 
 class ParametricHeatmapArtist(PlotlyArtist):
-    """Draws a HeatmapPlot as a flat, colored grid at explicit 2D coordinates."""
+    """Draws a heatmap at explicit 2D coordinates.
+
+    Used for :class:`~qewton.visualization.plots.table.heatmap.TableHeatMap`.
+    """
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         result = plot.evaluate()
-        cmap = plot.color.cmap or plot.theme.default_cmap
+        cmap = plot.theme.resolve_cmap(plot.color.cmap)
         scale_kwargs = _apply_scale(
             plot.color.scale, backend_figure=backend_figure, row=row, col=col
         )
@@ -130,6 +162,10 @@ class ParametricHeatmapArtist(PlotlyArtist):
         return cls(idx)
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         result = plot.evaluate()
         trace = backend_figure.data[self.figure_idx]
         trace.x, trace.y, trace.z = result.x, result.y, result.z[..., 0]
@@ -138,14 +174,20 @@ class ParametricHeatmapArtist(PlotlyArtist):
 
 
 class SurfaceArtist(PlotlyArtist):
-    """Draws a SurfacePlot as a 3D height field over an index grid."""
+    """Draws a surface plot as a 3D height field.
+
+    Used for :class:`~qewton.visualization.plots.data.grid.SurfacePlot`. The
+    values are the height over an index grid; the color field, if present,
+    sets the surface color.
+    """
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
-        cmap = plot.theme.default_cmap
-        if plot.color is not None:
-            if plot.color.cmap is not None:
-                cmap = plot.color.cmap
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
+        cmap = plot.theme.resolve_cmap(plot.color.cmap if plot.color is not None else None)
 
         result = plot.evaluate()
         data, color = result.values, result.color
@@ -160,12 +202,8 @@ class SurfaceArtist(PlotlyArtist):
         )
         backend_figure.add_trace(trace, row=row, col=col)
 
-        # SurfaceArtist draws into a `scene` subplot (go.Surface), which has
-        # no top-level xaxis/yaxis of its own - update_xaxes/update_yaxes
-        # would silently target the wrong (nonexistent, for this cell)
-        # cartesian axes, so x/y/z titles all go through update_scenes
-        # together, not split across two different calls the way a 2D
-        # HeatmapArtist can get away with.
+        # go.Surface lives in a `scene`, whose axes are set via
+        # update_scenes, not update_xaxes/update_yaxes.
         scene_axes = dict(
             xaxis=dict(
                 title=plot.x.math_name, type="log" if plot.x.log_scale else "linear"
@@ -183,6 +221,10 @@ class SurfaceArtist(PlotlyArtist):
         return cls(len(backend_figure.data) - 1)
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         result = plot.evaluate()
         data, color = result.values, result.color
         trace = backend_figure.data[self.figure_idx]
@@ -193,18 +235,23 @@ class SurfaceArtist(PlotlyArtist):
 
 
 class ParametricSurfaceArtist(PlotlyArtist):
-    """Structured grid drawn at explicit 3D coordinates.
+    """Draws a structured grid at explicit 3D coordinates.
 
-    go.Surface takes x/y/z as full 2D arrays, not just a height field over an
-    index grid - an arbitrary embedded parametric surface. surfacecolor
-    decouples the field from the geometry, unlike SurfaceArtist where z
-    carries both.
+    Used for :class:`~qewton.visualization.plots.data.grid.EmbeddedGridPlot`.
+    The grid is a ``go.Surface`` with x/y/z from the geometry and the color
+    field as surface color; points with NaN color are left out as holes.
+    The scene axes span the full geometry, not only the drawn slice, so the
+    view stays fixed while a control moves the slice.
     """
 
     @classmethod
     def create(cls, backend_figure, plot, row=None, col=None):
+        """Draw `plot` into `backend_figure`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
+        """
         result = plot.evaluate()
-        cmap = plot.color.cmap or plot.theme.default_cmap
+        cmap = plot.theme.resolve_cmap(plot.color.cmap)
         scale_kwargs = _apply_scale(
             plot.color.scale, backend_figure=backend_figure, row=row, col=col
         )
@@ -230,6 +277,10 @@ class ParametricSurfaceArtist(PlotlyArtist):
         return cls(idx)
 
     def update(self, backend_figure, plot, row=None, col=None):
+        """Refresh this artist's traces from `plot`.
+
+        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
+        """
         result = plot.evaluate()
         trace = backend_figure.data[self.figure_idx]
         x, y, z = _mask_nan_color_as_gaps(result.x, result.y, result.z, result.color)
@@ -240,17 +291,8 @@ class ParametricSurfaceArtist(PlotlyArtist):
 
     @staticmethod
     def _scene_axis_kwargs(plot) -> dict:
-        """Explicit scene axis ranges from the FULL (unreduced) geometry
-        extent, not just the currently drawn slice, plus a title per axis
-        derived from the geometry's own coordinate Variable (EmbeddedGridPlot
-        has no x=/y=/z= AxisSpec of its own to name them from - positions
-        come straight from the geometry, see axis_names_from_variable()).
-
-        Without the range part, Plotly auto-scales the scene to fit whichever
-        slice is currently on screen - so as a slider moves the slice, the
-        camera silently reframes around it every redraw and the view looks
-        static even though the actual position moved.
-        """
+        """Scene axis ranges from the full geometry extent and titles from
+        the geometry's coordinate Variable."""
         geometry = plot.drawn_geometry_axes.geometry
         points = geometry.discretization_points
         names = axis_names_from_variable(_spatial_variable(geometry), 3)

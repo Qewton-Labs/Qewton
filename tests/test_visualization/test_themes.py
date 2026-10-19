@@ -8,17 +8,18 @@ from qewton.visualization.figure import Figure
 from qewton.visualization.plots.data.mesh import MeshFieldPlot
 from qewton.visualization.plots.data.samples import ScatterPlot
 from qewton.visualization.plots.spec import ColorSpec, FacetSpec
-from qewton.visualization.themes import DARK_THEME, DEFAULT_THEME, LIGHT_THEME, Theme
+from qewton.visualization.themes import DARK_THEME, DEFAULT_THEME, LIGHT_THEME, Theme, cmaps
 from qewton.visualization.themes.base import Theme as ThemeClass
 
 
 class TestThemeDataclass:
-    def test_default_cmap_is_a_real_overridable_field(self):
-        """Regression: default_cmap used to have no type annotation, so it
-        wasn't part of the dataclass at all - Theme(default_cmap=...) would
-        raise TypeError."""
-        custom = Theme(default_cmap="cividis")
-        assert custom.default_cmap == "cividis"
+    def test_cmap_role_fields_are_real_overridable_fields(self):
+        """Regression: the cmap field used to have no type annotation, so it
+        wasn't part of the dataclass at all - Theme(...=...) would raise
+        TypeError."""
+        custom = Theme(sequential_cmap="cividis", diverging_cmap=cmaps.reds)
+        assert custom.sequential_cmap == "cividis"
+        assert custom.diverging_cmap is cmaps.reds
 
     def test_light_and_dark_are_distinct_presets(self):
         assert LIGHT_THEME.background_color != DARK_THEME.background_color
@@ -44,7 +45,7 @@ class TestThemeDataclass:
         theme = Theme()
         for field in (
             "geometry_color", "vector_color", "line_color", "grid_color",
-            "node_color_by_type", "node_color_default", "cluster_outline_color",
+            "node_color_by_type", "node_color_default",
         ):
             assert hasattr(theme, field)
 
@@ -264,3 +265,40 @@ class TestColorCycling:
         backend_figure = Figure([plot_a, plot_b], theme=theme).draw()
         assert backend_figure.data[0].marker.color == theme.get_color(0)
         assert backend_figure.data[1].marker.color == theme.get_color(1)
+
+
+class TestResolveCmap:
+    def test_none_is_the_sequential_role(self):
+        assert LIGHT_THEME.resolve_cmap(None) == LIGHT_THEME.resolve_cmap(cmaps.sequential)
+        assert LIGHT_THEME.resolve_cmap(None) == [list(s) for s in cmaps.meadow.colorscale]
+
+    def test_roles_follow_the_theme(self):
+        assert DARK_THEME.resolve_cmap(cmaps.sequential) == DARK_THEME.resolve_cmap(cmaps.dusk)
+        assert LIGHT_THEME.resolve_cmap(cmaps.diverging) == LIGHT_THEME.resolve_cmap(cmaps.redblue)
+        assert DARK_THEME.resolve_cmap(cmaps.diverging) == DARK_THEME.resolve_cmap(
+            cmaps.orangeviolet_paper
+        )
+
+    def test_concrete_colormaps_ignore_the_theme(self):
+        assert LIGHT_THEME.resolve_cmap(cmaps.blues) == DARK_THEME.resolve_cmap(cmaps.blues)
+
+    def test_strings_pass_through_to_the_renderer(self):
+        assert DARK_THEME.resolve_cmap("Viridis") == "Viridis"
+
+    def test_a_role_as_a_theme_field_is_rejected(self):
+        with pytest.raises(ValueError, match="concrete"):
+            Theme(diverging_cmap=cmaps.sequential).resolve_cmap(cmaps.diverging)
+
+    def test_a_drawn_plot_uses_its_figures_theme_for_a_role(self, circle_mesh_geometry):
+        U = Variable("u", 1)
+        n = len(np.asarray(circle_mesh_geometry.mesh.vertices))
+        config = DataConfiguration(GeometryAxes(circle_mesh_geometry), FeatureAxes(U))
+        plot = MeshFieldPlot(
+            np.random.randn(n, 1), config, color=ColorSpec(U, cmap=cmaps.diverging)
+        )
+        backend_figure = Figure(plot, theme=DARK_THEME).draw()
+        colorbar = backend_figure.data[-1].marker.colorscale
+        expected = DARK_THEME.resolve_cmap(cmaps.orangeviolet_paper)
+        assert [list(stop) for stop in colorbar] == [
+            [pos, color] for pos, color in expected
+        ]
