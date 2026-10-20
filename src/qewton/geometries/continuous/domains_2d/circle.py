@@ -40,10 +40,10 @@ class Circle(ContinuousGeometry[TensorType]):
     def create_mesh(
         self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshGeometry:
-        self.center = self.backend.to(self.center, device=device)
         vertices, triangles = self.triangulate_circle(
             max_vertex_distance, self.radius, self.backend, device=device
         )
+        vertices = vertices + self._on(self.center, device)
 
         return MeshGeometry(
             variable=self.variable,
@@ -108,39 +108,41 @@ class Circle(ContinuousGeometry[TensorType]):
         vertices = backend.build_tensor(vertices, device=device)
         return vertices, triangles
 
+    def _move_data(self, device: Device | str) -> None:
+        self.center = self.backend.to(self.center, device=device)
+
     def contains(self, points):
+        center = self._on(self.center, self._device_of(points))
         points = self.backend.build_tensor(points)
-        self.set_center_device(points)
-        norm = self.backend.linalg.norm(points - self.center, order=2, axis=1).reshape(
+        norm = self.backend.linalg.norm(points - center, order=2, axis=1).reshape(
             -1, 1
         )
         return norm <= self.radius
 
-    def set_center_device(self, points):
-        p_device = points.device if hasattr(points, "device") else cpu
-        self.center = self.backend.to(self.center, p_device)
 
     def bounding_box(self):
         bounds = []
         for i in range(2):
             bounds.append(self.center[i] - self.radius)  # type: ignore
             bounds.append(self.center[i] + self.radius)  # type: ignore
-        return self.backend.build_tensor(bounds)
+        return self._bounds(bounds)
 
     def sample_random_uniform(self, n_points: int, device: Device | str = cpu):
+        center = self._on(self.center, device)
         rand_radius = self.backend.random.uniform((n_points, 1), device=device)
         r = self.radius * self.backend.math.sqrt(rand_radius)
         phi = 2 * math.pi * self.backend.random.uniform((n_points, 1), device=device)
         x_coord = r * self.backend.math.cos(phi)
         y_coord = r * self.backend.math.sin(phi)
         points = self.backend.math.concatenate([x_coord, y_coord], axis=-1)
-        points += self.backend.to(self.center[None, :], device)  # type: ignore
+        points += self.backend.to(center[None, :], device)  # type: ignore
         return points
 
     def sample_grid(self, n_points: int, device: Device | str = cpu):
+        center = self._on(self.center, device)
         grid = self._equidistant_points_in_circle(n_points, device=device)
         points = self.radius * grid
-        points += self.backend.to(self.center[None, :], device)  # type: ignore
+        points += self.backend.to(center[None, :], device)  # type: ignore
         return points
 
     def _equidistant_points_in_circle(self, n_points: int, device: Device | str = cpu):
@@ -171,10 +173,10 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
         self.geometry: Circle = geometry  # type: ignore
 
     def contains(self, points):
+        center = self._on(self.geometry.center, self._device_of(points))
         points = self.backend.build_tensor(points)
-        self.geometry.set_center_device(points=points)
         norm = self.backend.linalg.norm(
-            points - self.geometry.center, order=2, axis=1
+            points - center, order=2, axis=1
         ).reshape(-1, 1)
         return self.backend.math.isclose(
             norm, self.backend.build_tensor(self.geometry.radius, dtype=norm.dtype)
@@ -183,6 +185,7 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
     def sample_random_uniform(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
+        center = self._on(self.geometry.center, device)
         phi = (
             2
             * math.pi
@@ -191,7 +194,7 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
         x_coord = self.geometry.radius * self.backend.math.cos(phi)
         y_coord = self.geometry.radius * self.backend.math.sin(phi)
         points = self.backend.math.concatenate([x_coord, y_coord], axis=-1)
-        points += self.backend.to(self.geometry.center[None, :], device)
+        points += self.backend.to(center[None, :], device)
         if include_normals:
             normals = self.normal(points, device=device)
             return points, normals
@@ -200,6 +203,7 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
     def sample_grid(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
+        center = self._on(self.geometry.center, device)
         phi = self.backend.math.linspace(0, 2 * math.pi, n_points + 1, device=device)[
             :-1
         ].reshape(-1, 1)
@@ -210,14 +214,15 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
             ],
             axis=-1,
         )
-        points += self.backend.to(self.geometry.center[None, :], device)
+        points += self.backend.to(center[None, :], device)
         if include_normals:
             normals = self.normal(points, device=device)
             return points, normals
         return points
 
     def normal(self, points, device: Device | str = cpu):
-        normal = points - self.backend.to(self.geometry.center[None, :], device)
+        center = self._on(self.geometry.center, self._device_of(points))
+        normal = points - self.backend.to(center[None, :], device)
         return (normal / self.geometry.radius).reshape(-1, 2)
 
     def _get_volume(self):

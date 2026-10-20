@@ -1090,7 +1090,8 @@ class Graph(Serializable):
         # Move right before plotting, not before running - the sampler(s)
         # and model can stay on the set device
         for sampler in samplers:
-            sampler.sampled_geometry.to_numpy()
+            for sampled_geometry in sampler.sampled_geometries:
+                sampled_geometry.to_numpy()
 
         combined_variable = Variable.compose(variables) if variables else None
         controls_kwarg = {} if controls is None else {"controls": controls}
@@ -1216,7 +1217,8 @@ class Graph(Serializable):
                 self._run_nodes_needed_for((port,), mode=mode)
 
             for sampler in samplers:
-                sampler.sampled_geometry.to_numpy()
+                for sampled_geometry in sampler.sampled_geometries:
+                    sampled_geometry.to_numpy()
 
             pred_data = port.node.backend.to_numpy(port.value)
             geometry_axes = pred_config.geometry_axes
@@ -1285,7 +1287,8 @@ class Graph(Serializable):
                 self._run_nodes_needed_for((port,), mode=mode)
 
             for sampler in samplers:
-                sampler.sampled_geometry.to_numpy()
+                for sampled_geometry in sampler.sampled_geometries:
+                    sampled_geometry.to_numpy()
 
             pred_data = port.node.backend.to_numpy(port.value)
             if combined_variable is not None:

@@ -168,7 +168,7 @@ class ProductMeshGeometry(DiscreteGeometry[TensorType]):
         )
         self.factors = list(factors)
         self.discretization_of = discretization_of
-        self.device = device
+        self._device = device
         self._mesh: Mesh | None = None
 
     @property
@@ -213,7 +213,7 @@ class ProductMeshGeometry(DiscreteGeometry[TensorType]):
         """
         points = _as_numpy(self.discretization_points, self.backend)
         bounds = np.stack([points.min(axis=0), points.max(axis=0)], axis=1)
-        return self.backend.build_tensor(bounds.reshape(-1))
+        return self._bounds(bounds.reshape(-1))
 
 
 def _factor_points(factor) -> np.ndarray:

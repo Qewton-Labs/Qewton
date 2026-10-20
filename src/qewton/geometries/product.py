@@ -40,6 +40,9 @@ class ProductGeometry(Geometry[TensorType]):
         self.geometry_a = geometry_a
         self.geometry_b = geometry_b
 
+    def _related_geometries(self) -> list:
+        return [self.geometry_a, self.geometry_b, *super()._related_geometries()]
+
     @property
     def factors(self) -> list[Geometry]:
         factors = []

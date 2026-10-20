@@ -3,10 +3,7 @@
 from qewton.geometries.discrete.mesh import Mesh
 
 from qewton.backends import TensorType
-from qewton.config.devices import Device
-from qewton.config.variables import Variable
-from qewton.geometries.base import DiscreteGeometry, Geometry, vertex_distance_for
-from qewton.geometries.product import ProductGeometry
+from qewton.geometries.base import DiscreteGeometry, Geometry
 
 
 class SampledGeometry(DiscreteGeometry[TensorType]):
@@ -15,15 +12,15 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
     Samplers use it to reference their generated points in data
     configurations. It holds the points (and optionally cells) of the
     current sampling step, set by the owning sampler through
-    :meth:`set_current_discretization`, and a reference to the source
-    geometry, e.g. for plotting.
+    :meth:`set_current_discretization`. Meshing the source geometry for
+    plotting is done by the sampler, which owns that geometry.
 
     Args:
-        geometry: The geometry the points are sampled from.
+        geometry: The geometry the points are sampled from; its variable and
+            backend are taken over.
         n_points: The number of sampled points.
 
     Attributes:
-        source_geometry (Geometry): The geometry the points are sampled from.
         discretization_points (TensorType or None): The current points.
         factors (list or None): The meshed factor geometries if the current
             points are the vertices of a product mesh (first factor varying
@@ -39,15 +36,11 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
     """
 
     def __init__(self, geometry: Geometry, n_points: int):
-
-        self.source_geometry = geometry
-
         self._current_points = None
         self._current_cells = None
         self._current_factors: list | None = None
         self._current_product = None
         self._is_numpy = False
-        self._mesh_cache: dict[tuple, Geometry] = {}
 
         super().__init__(
             shape=(n_points,), variable=geometry.variable, backend=geometry.backend
@@ -108,60 +101,3 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         if self._current_cells is None:
             return None
         return Mesh(self._current_points, self._current_cells, backend=self.backend)  # type: ignore
-
-    def visualization_mesh(
-        self,
-        max_vertex_distance: float | dict | None = None,
-        device: Device | str | None = None,
-    ) -> Mesh:
-        """Return the mesh of the source geometry for visualization.
-
-        Args:
-            max_vertex_distance: The mesh resolution, see
-                :meth:`visualization_geometry`.
-            device: The device of the mesh, see :meth:`visualization_geometry`.
-
-        Returns:
-            Mesh: The mesh of :meth:`visualization_geometry`.
-        """
-        return self.visualization_geometry(max_vertex_distance, device).mesh
-
-    def visualization_geometry(
-        self,
-        max_vertex_distance: float | dict[Variable, float] | None = None,
-        device: Device | str | None = None,
-    ) -> Geometry:
-        """Return the meshed source geometry for visualization.
-
-        The mesh is built once per distinct ``(max_vertex_distance,
-        device)`` pair and cached.
-
-        Args:
-            max_vertex_distance: The maximum vertex distance of the mesh. A
-                dict gives one value per geometry variable: a
-                :class:`~qewton.geometries.product.ProductGeometry` receives it
-                as-is to mesh each factor, any other geometry uses the entry of
-                its own variable.
-            device: The device of the mesh. ``None`` uses the default device of
-                :meth:`~qewton.geometries.base.Geometry.create_mesh`.
-
-        Returns:
-            Geometry: The meshed source geometry.
-        """
-        cache_key = (
-            frozenset(max_vertex_distance.items())
-            if isinstance(max_vertex_distance, dict)
-            else max_vertex_distance,
-            device,
-        )
-        if cache_key not in self._mesh_cache:
-            if not isinstance(self.source_geometry, ProductGeometry):
-                max_vertex_distance = vertex_distance_for(
-                    max_vertex_distance, self.source_geometry.variable
-                )
-            self._mesh_cache[cache_key] = (
-                self.source_geometry.create_mesh(max_vertex_distance, device)
-                if device is not None
-                else self.source_geometry.create_mesh(max_vertex_distance)
-            )
-        return self._mesh_cache[cache_key]
