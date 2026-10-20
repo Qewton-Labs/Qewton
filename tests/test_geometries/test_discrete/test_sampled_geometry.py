@@ -78,26 +78,6 @@ class TestToNumpy:
         assert isinstance(sampled.discretization_points, torch.Tensor)
 
 
-class TestVisualizationMeshDeviceCaching:
-    def test_different_device_arguments_get_separate_cache_entries(self):
-        """Even though both resolve to the same actual device here (no GPU
-        in this environment), device is part of the cache key - a call with
-        an explicit device must never silently reuse a mesh built for a
-        different (or unspecified) one."""
-        sampled = SampledGeometry(_source_geometry(), n_points=4)
-        sampled.visualization_mesh(None, None)
-        sampled.visualization_mesh(None, "cpu")
-        assert len(sampled._mesh_cache) == 2
-        assert (None, None) in sampled._mesh_cache
-        assert (None, "cpu") in sampled._mesh_cache
-
-    def test_repeated_calls_with_the_same_key_reuse_the_cached_mesh(self):
-        sampled = SampledGeometry(_source_geometry(), n_points=4)
-        first = sampled.visualization_mesh(None, "cpu")
-        second = sampled.visualization_mesh(None, "cpu")
-        assert first is second
-
-
 class TestDeepcopyIdentity:
     def test_deepcopy_returns_the_same_object(self):
         """SampledGeometry represents live, sampler-owned state (mutated by

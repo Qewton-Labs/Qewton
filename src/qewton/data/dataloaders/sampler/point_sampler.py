@@ -10,7 +10,8 @@ import numpy as np
 
 from qewton.config.devices import Device
 from qewton.data.dataloaders.base import DataNode
-from qewton.geometries.base import Geometry, BoundaryGeometry
+from qewton.geometries.base import Geometry, BoundaryGeometry, vertex_distance_for
+from qewton.geometries.product import ProductGeometry
 from qewton.geometries.discrete.sampled_geometry import SampledGeometry
 from qewton.geometries.discrete.product_mesh_geometry import ProductMeshGeometry
 from qewton.graphs.nodes import NodeState, OutputPort
@@ -157,6 +158,7 @@ class PointSampler(DataNode[TensorType]):
         super().__init__(batch_size=n_points, name=name, state=state, backend=backend)
         self.backend: type[ComputingBackend[TensorType]] = backend
         self.sampled_geometry = SampledGeometry(self.geometry, n_points)
+        self._mesh_cache: dict[tuple, Geometry] = {}
 
         # clear automatically build ports:
         self._output_ports = []
@@ -227,6 +229,11 @@ class PointSampler(DataNode[TensorType]):
 
         points = geometry.discretization_points
         if points is not None:
+            # Checked where the domain lives, so a large domain (e.g. a mesh)
+            # is not copied to the points' device.
+            points = self.backend.to(
+                self.backend.build_tensor(points), self.geometry.device
+            ).reshape(-1, points.shape[-1])
             inside = self.backend.to_numpy(self.geometry.contains(points))
             if not np.all(inside):
                 raise ValueError(
@@ -241,6 +248,46 @@ class PointSampler(DataNode[TensorType]):
                     "then free."
                 )
 
+    def visualization_geometry(
+        self,
+        max_vertex_distance: float | dict[Variable, float] | None = None,
+        device: Device | str | None = None,
+    ) -> Geometry:
+        """Return this sampler's geometry meshed for visualization.
+
+        The mesh is built once per distinct ``(max_vertex_distance, device)``
+        pair and cached.
+
+        Args:
+            max_vertex_distance: The maximum vertex distance of the mesh. A
+                dict gives one value per geometry variable: a
+                :class:`~qewton.geometries.product.ProductGeometry` receives it
+                as-is to mesh each factor, any other geometry uses the entry of
+                its own variable.
+            device: The device of the mesh. ``None`` uses the default device of
+                :meth:`~qewton.geometries.base.Geometry.create_mesh`.
+
+        Returns:
+            Geometry: The meshed geometry.
+        """
+        cache_key = (
+            frozenset(max_vertex_distance.items())
+            if isinstance(max_vertex_distance, dict)
+            else max_vertex_distance,
+            device,
+        )
+        if cache_key not in self._mesh_cache:
+            if not isinstance(self.geometry, ProductGeometry):
+                max_vertex_distance = vertex_distance_for(
+                    max_vertex_distance, self.geometry.variable
+                )
+            self._mesh_cache[cache_key] = (
+                self.geometry.create_mesh(max_vertex_distance, device)
+                if device is not None
+                else self.geometry.create_mesh(max_vertex_distance)
+            )
+        return self._mesh_cache[cache_key]
+
     def set_mesh_mode(
         self,
         max_vertex_distance: float | dict[Variable, float] | None = None,
@@ -250,7 +297,7 @@ class PointSampler(DataNode[TensorType]):
 
         In mesh mode, the forward pass outputs the vertices of a mesh of
         the geometry (see
-        :meth:`~qewton.geometries.discrete.sampled_geometry.SampledGeometry.visualization_geometry`)
+        :meth:`visualization_geometry`)
         and stores the cells in `sampled_geometry`.
 
         Args:
@@ -355,7 +402,8 @@ class PointSampler(DataNode[TensorType]):
             TensorType or tuple of TensorType: The points, or
                 ``(points, normals)`` if `compute_normals` is set. Points of
                 `active_discretization` are flattened to shape
-                ``(n_points, dim)`` and moved to the sampler's device.
+                ``(n_points, dim)`` and moved to the sampler's device; mesh
+                mode points are on the device set by `set_mesh_mode`.
 
         Raises:
             NotImplementedError: If normals are requested together with
@@ -382,7 +430,7 @@ class PointSampler(DataNode[TensorType]):
             return points
 
         if self.mesh_mode:
-            geometry = self.sampled_geometry.visualization_geometry(
+            geometry = self.visualization_geometry(
                 self.current_mesh_max_vertex_distance, self.current_mesh_device
             )
             points = (
@@ -390,6 +438,9 @@ class PointSampler(DataNode[TensorType]):
                 if isinstance(geometry, ProductMeshGeometry)
                 else geometry.mesh.vertices
             )
+            # An already discrete source (e.g. a loaded MeshGeometry) keeps
+            # its data where it is; only the points handed on are moved.
+            points = self.backend.to(points, self.current_mesh_device)
 
             # for plotting: store the current points and cells
             self._store_discretization(geometry, points)
@@ -437,13 +488,20 @@ class PointSampler(DataNode[TensorType]):
             points, mesh.cells if mesh is not None else None
         )
 
+    @property
+    def sampled_geometries(self) -> list[SampledGeometry]:
+        """Every SampledGeometry this sampler updates, e.g. to convert all of
+        them for plotting."""
+        return [self.sampled_geometry]
+
     def to(self, device: str | Device):
-        """Move the node and its cached points to `device`.
+        """Move the node, its geometry and its cached points to `device`.
 
         Args:
             device: The target device.
         """
         super().to(device)
+        self.geometry.to(device)
         # Not gated on created_cache: subclasses (e.g. GridSampler) may fill
         # point_cache/normal_cache without cache().
         if self.point_cache is not None:

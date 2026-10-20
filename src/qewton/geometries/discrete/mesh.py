@@ -298,12 +298,18 @@ class Mesh(Serializable, Generic[TensorType]):
         boundary_indices = self.backend.math.unique(boundary_indices)
         boundary_vertices = self.vertices[boundary_indices]
 
-        # Map faces to new vertex ordering:
-        inverse_map = self.backend.math.full(
-            self.vertices.shape[0], -1, dtype=self.backend.dtypes[Int32]
+        # Map faces to new vertex ordering, on the device of the mesh data:
+        inverse_map = self.backend.move_to_same_device(
+            self.backend.math.full(
+                self.vertices.shape[0], -1, dtype=self.backend.dtypes[Int32]
+            ),
+            self.vertices,
         )
-        inverse_map[boundary_indices] = self.backend.math.arange(
-            len(boundary_indices), dtype=self.backend.dtypes[Int32]
+        inverse_map[boundary_indices] = self.backend.move_to_same_device(
+            self.backend.math.arange(
+                len(boundary_indices), dtype=self.backend.dtypes[Int32]
+            ),
+            self.vertices,
         )
         remapped_faces = inverse_map[self.boundary_faces]
 
@@ -391,10 +397,17 @@ class Mesh(Serializable, Generic[TensorType]):
             replace=(n_points > self.vertex_count),
             device=device,
         )
-        self.vertices = self.backend.to(self.vertices, device=device)
-        return self.vertices[idx], idx
+        return self.backend.to(self.vertices, device=device)[idx], idx
 
-    def move_to_device(self, device: Device | str = cpu) -> None:
+    def to(self, device: Device | str = cpu) -> Mesh:
+        """Move all data of this mesh to `device`.
+
+        Args:
+            device (Device | str, optional): The target device. Defaults to cpu.
+
+        Returns:
+            Mesh: This mesh.
+        """
         self.vertices = self.backend.to(self.vertices, device=device)
         self.cells = self.backend.to(self.cells, device=device)
         if self.cell_markers is not None:
@@ -409,40 +422,41 @@ class Mesh(Serializable, Generic[TensorType]):
             self.cell_probability_weights = self.backend.to(
                 self.cell_probability_weights, device=device
             )
-        if len(self.boundary_normals) > 0:
-            self.boundary_normals = self.backend.to(self.boundary_normals, device=device)
-        if len(self.boundary_normals_at_vertex) > 0:
-            self.boundary_normals_at_vertex = self.backend.to(
-                self.boundary_normals_at_vertex, device=device
-            )
+        self.boundary_normals = self.backend.to(self.boundary_normals, device=device)
+        self.boundary_normals_at_vertex = self.backend.to(
+            self.boundary_normals_at_vertex, device=device
+        )
+        if getattr(self, "boundary_faces", None) is not None:
+            self.boundary_faces = self.backend.to(self.boundary_faces, device=device)
         if self.parent_cell_mapping is not None:
             self.parent_cell_mapping = self.backend.to(
                 self.parent_cell_mapping, device=device
             )
+        return self
 
     def sample_grid_from_vertices(
         self, n_points: int, device: Device | str = cpu
     ) -> tuple[TensorType, TensorType]:
-        self.vertices = self.backend.to(self.vertices, device=device)
+        vertices = self.backend.to(self.vertices, device=device)
         # TODO: Could be done distance based
         if n_points <= self.vertex_count:
             idx = self.backend.random.permutation(self.vertex_count, device=device)[
                 :n_points
             ]
-            return self.vertices[idx], idx
+            return vertices[idx], idx
         # Else, more points wanted then exist in the mesh itself
         vertex_count = self.vertex_count
 
         reps = n_points // vertex_count
         rem = n_points % vertex_count
 
-        base = self.backend.math.tile(self.vertices, (reps, 1))
+        base = self.backend.math.tile(vertices, (reps, 1))
         base_idx = self.backend.math.tile(
             self.backend.math.arange(vertex_count, device=device), (reps,)
         )
 
         extra_idx = self.backend.random.permutation(vertex_count, device=device)[:rem]
-        extra = self.vertices[extra_idx]
+        extra = vertices[extra_idx]
 
         return self.backend.math.vstack([base, extra]), self.backend.math.concatenate(
             [base_idx, extra_idx]
@@ -458,11 +472,11 @@ class Mesh(Serializable, Generic[TensorType]):
             device=device,
         )
 
-        self.vertices = self.backend.to(self.vertices, device=device)
-        self.cells = self.backend.to(self.cells, device=device)
+        vertices = self.backend.to(self.vertices, device=device)
+        cells = self.backend.to(self.cells, device=device)
 
-        simplices = self.cells[chosen_cells]
-        verts = self.vertices[simplices]
+        simplices = cells[chosen_cells]
+        verts = vertices[simplices]
 
         # (Dirichlet sampling via exponential function)
         w = self.backend.random.exponential(shape=verts.shape[:2], device=device)

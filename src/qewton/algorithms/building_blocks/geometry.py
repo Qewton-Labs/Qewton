@@ -83,6 +83,15 @@ class MeshInterpolationNode(Node[TensorType]):
             )
         ]
 
+    def to(self, device):
+        """Move the source mesh and the target geometry to `device`.
+
+        Args:
+            device (Device | str): The target device.
+        """
+        self.mesh_geometry.to(device)
+        self.target_geometry.to(device)
+
     def forward(self, field):
         dim = self.mesh_geometry.variable.dim
         points = self.backend.math.reshape(

@@ -9,6 +9,7 @@ from qewton.config.variables import Variable
 
 
 from qewton.data.dataloaders.sampler.point_sampler import PointSampler
+from qewton.geometries.discrete.sampled_geometry import SampledGeometry
 
 
 class ProductSampler(PointSampler[TensorType]):
@@ -186,6 +187,15 @@ class ProductSampler(PointSampler[TensorType]):
         n_dim = self.backend.math.shape(normals)[-1]
         normals = self._add_dims(normals, times, idx)
         return self.backend.math.broadcast_to(normals, new_shape + (n_dim,))
+
+    @property
+    def sampled_geometries(self) -> list[SampledGeometry]:
+        """This sampler's SampledGeometry and those of both factor samplers."""
+        return [
+            self.sampled_geometry,
+            *self.sampler_a.sampled_geometries,
+            *self.sampler_b.sampled_geometries,
+        ]
 
     def to(self, device: str | Device):
         """Move this sampler and both factor samplers to `device`.

@@ -43,7 +43,7 @@ class PointCloud(DiscreteGeometry[TensorType]):
         )
         self.discretization_of = discretization_of
 
-    def _move_points(self, device: Device | str):
+    def _move_data(self, device: Device | str) -> None:
         self.discretization_points = self.backend.to(
             self.discretization_points, device=device
         )
@@ -64,19 +64,18 @@ class PointCloud(DiscreteGeometry[TensorType]):
             point_count,
             shape=n_points,
             replace=(n_points > point_count),
-            device=device,
+            device=self.device,
         )
-        self._move_points(device=device)
-        return self.discretization_points[idx]
+        return self._transfer(self.discretization_points[idx], device)
 
     def sample_grid_from_discretization(
         self, n_points: int, device: Device | str = cpu
     ) -> TensorType:
-        self._move_points(device=device)
+        target_device, device = device, self.device
         # TODO: Could be done distance based
         point_count = len(self.discretization_points)
         if n_points <= point_count:
-            return self.discretization_points[:n_points]
+            return self._transfer(self.discretization_points[:n_points], target_device)
 
         reps = n_points // point_count
         rem = n_points % point_count
@@ -86,7 +85,7 @@ class PointCloud(DiscreteGeometry[TensorType]):
         extra_idx = self.backend.random.permutation(point_count, device=device)[:rem]
         extra = self.discretization_points[extra_idx]
 
-        return self.backend.math.vstack([base, extra])
+        return self._transfer(self.backend.math.vstack([base, extra]), target_device)
 
     def sample_random_uniform(
         self, n_points: int, device: Device | str = cpu
@@ -99,10 +98,11 @@ class PointCloud(DiscreteGeometry[TensorType]):
         return self.sample_grid_from_discretization(n_points=n_points, device=device)
 
     def contains(self, points):
-        self._move_points(device=points.device if hasattr(points, "device") else cpu)
+        points_device = self._device_of(points)
+        points = self._transfer(points, self.device)
         point_check = self.backend.math.zeros(
-            (len(points), 1), dtype=self.backend.dtypes[Bool]
+            (len(points), 1), dtype=self.backend.dtypes[Bool], device=self.device
         )
         for i, p in enumerate(points):
             point_check[i] = p in self.discretization_points
-        return point_check
+        return self._transfer(point_check, points_device, warn=False)

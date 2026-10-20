@@ -148,14 +148,14 @@ class TestVisualizeDevice:
         regardless of the sampler's actual device - an explicit device=
         must reach mesh-mode's point generation too, not just move nodes."""
         graph, sampler, model = connected_graph
-        original_visualization_geometry = sampler.sampled_geometry.visualization_geometry
+        original_visualization_geometry = sampler.visualization_geometry
         captured = {}
 
         def spy(max_vertex_distance, device=None):
             captured["device"] = device
             return original_visualization_geometry(max_vertex_distance, device)
 
-        sampler.sampled_geometry.visualization_geometry = spy
+        sampler.visualization_geometry = spy
         graph.visualize(model.output_ports[0], device="cpu")
         assert captured["device"] == "cpu"
 

@@ -70,10 +70,11 @@ class GridGeometry(DiscreteGeometry[TensorType]):
 
         self.cell_volumes: TensorType | None = None
 
-    def _move_data(self, device: Device | str):
+    def _move_data(self, device: Device | str) -> None:
         self.discretization_points = self.backend.to(
             self.discretization_points, device=device
         )
+        self.point_filter = self.backend.to(self.point_filter, device=device)
         if self.cell_volumes is not None:
             self.cell_volumes = self.backend.to(self.cell_volumes, device=device)
 
@@ -139,12 +140,12 @@ class GridGeometry(DiscreteGeometry[TensorType]):
             max_val = self.backend.math.max(self.discretization_points[..., i])
             bounding_box.append(min_val)
             bounding_box.append(max_val)
-        return self.backend.build_tensor(bounding_box)
+        return self._bounds(bounding_box)
 
     def sample_random_uniform_from_discretization(
         self, n_points: int, device: Device | str = cpu
     ) -> TensorType:
-        self._move_data(device=device)
+        target_device, device = device, self.device
         points = self.discretization_points.reshape(
             -1, self.discretization_points.shape[-1]
         )
@@ -152,7 +153,7 @@ class GridGeometry(DiscreteGeometry[TensorType]):
         valid_points = points[valid]
         valid_idx = self.backend.math.arange(0, len(valid_points), device=device)
         idx = self.backend.random.choice(valid_idx, shape=(n_points, 1), device=device)
-        return valid_points[idx]
+        return self._transfer(valid_points[idx], target_device)
 
     def sample_random_uniform(
         self, n_points: int, device: Device | str = cpu
@@ -165,14 +166,14 @@ class GridGeometry(DiscreteGeometry[TensorType]):
     def sample_grid_from_discretization(
         self, n_points: int, device: Device | str = cpu
     ) -> TensorType:
-        self._move_data(device=device)
+        target_device, device = device, self.device
         # TODO: Could be done distance based
         points = self.discretization_points.reshape(
             -1, self.discretization_points.shape[-1]
         )
         point_count = len(points)
         if n_points <= point_count:
-            return points[:n_points]
+            return self._transfer(points[:n_points], target_device)
 
         reps = n_points // point_count
         rem = n_points % point_count
@@ -182,16 +183,17 @@ class GridGeometry(DiscreteGeometry[TensorType]):
         extra_idx = self.backend.random.permutation(point_count, device=device)[:rem]
         extra = points[extra_idx]
 
-        return self.backend.math.vstack([base, extra])
+        return self._transfer(self.backend.math.vstack([base, extra]), target_device)
 
     def contains(self, points):
-        self._move_data(device=points.device if hasattr(points, "device") else cpu)
+        points_device = self._device_of(points)
+        points = self._transfer(points, self.device)
         point_check = self.backend.math.zeros(
-            (len(points), 1), dtype=self.backend.dtypes[Bool]
+            (len(points), 1), dtype=self.backend.dtypes[Bool], device=self.device
         )
         for i, p in enumerate(points):
             point_check[i] = p in self.discretization_points
-        return point_check
+        return self._transfer(point_check, points_device, warn=False)
 
     def create_boundary(self):
         raise NotImplementedError("Boundary of a point grid currently not implemented.")
