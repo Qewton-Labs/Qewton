@@ -1097,3 +1097,44 @@ class TestVisualizeReferenceOnProductDomain:
                 reference=np.zeros((len(points), 2), dtype=np.float32),
                 reference_config=config,
             )
+
+
+class TestVisualizeWithDataLoaderReference:
+    """Operator learning: the model output is compared with the true output
+    of its data loader, i.e. two ports with matching but separate axes."""
+
+    def test_works_without_a_prediction_config(self):
+        import torch
+
+        from qewton.algorithms.dl_models.deeponet.deeponet_fcn import FCNDeepONet
+        from qewton.data import DataLoader, GridDataSet
+        from qewton.visualization.plots.spec import SliderSpec
+
+        F, X, U = Variable("f", 1), Variable("x", 1), Variable("u", 1)
+        x = torch.linspace(0, 1, 10)[None, :, None].repeat(6, 1, 1)
+        f, u = torch.rand(6, 10, 1), torch.rand(6, 10, 1)
+        dataset = GridDataSet(
+            data=[f, x, u], feature_variables=[F, X, U], geometry_variable=X, point_grid=x[0]
+        )
+        loader = DataLoader(data_set=dataset, batch_size=6, splitting_ratio=(1.0, 0.0, 0.0))
+        model = FCNDeepONet(
+            trunk_input=X, branch_input=F, output=U, trunk_hidden_neurons=4,
+            branch_hidden_neurons=4, trunk_hidden_layers=1, branch_hidden_layers=1,
+            intermediate_neurons=4,
+        )
+        graph = Graph()
+        with graph.tracker(0):
+            f_out, x_out, _ = loader()
+            model(f_out, x_out)
+        graph.setup()
+
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=loader.get_output_port(U),
+            mode=EvaluationPhase.TRAIN,
+        )
+        plots = layout.plots
+        assert len(plots) == 3
+        sliders = {id(c) for p in plots for c in p.controls if isinstance(c, SliderSpec)}
+        assert len(sliders) == 1  # one slider over the samples, shared by all panels
+        Figure(layout).draw()
