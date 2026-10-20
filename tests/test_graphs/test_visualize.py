@@ -994,6 +994,32 @@ class TestVisualizeProductGeometry:
         labels = [step.label for step in backend_figure.layout.sliders[0].steps]
         assert labels == ["0", "0.1", "0.5", "2"]
 
+    def test_reference_with_an_explicit_plot_type_and_time_control(self, domains):
+        """A surface over space, animated in time, next to a reference: the
+        time factor must be split off for every panel."""
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization.plots.data.mesh import MeshSurfacePlot
+        from qewton.visualization.plots.spec import TimeSpec
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        U = model.output_ports[0].get_data_configuration(graph).feature_axes.variables
+        control = TimeSpec(T)
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=lambda points: points[:, :1],
+            plot_type=MeshSurfacePlot,
+            z=U,
+            controls=[control],
+            max_vertex_distance=0.5,
+        )
+        assert [type(p) for p in layout.plots] == [MeshSurfacePlot] * 3
+        for plot in layout.plots:
+            assert plot.controls == [control]
+            assert plot.dim == 2
+        backend_figure = Figure(layout).draw()
+        assert len(backend_figure.frames) == 5
+
 
 class TestVisualizeReferenceOnProductDomain:
     """Reference data on a product domain (space x parameter) is given with

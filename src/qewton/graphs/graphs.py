@@ -1330,8 +1330,13 @@ class Graph(Serializable):
 
         # A curve-like family uses "label" (an Overlay legend entry) to
         # distinguish panels; every other family uses "title" (a Row panel
-        # heading) - probe once with auto_plot() to find out which.
-        probe = auto_plot(ref_data, ref_config, plot_type, **plot_kwargs)
+        # heading) - probe once with auto_plot() to find out which. The probe
+        # gets the same controls as the panels, since they decide e.g. which
+        # factor of a space-time domain is drawn.
+        probe_kwargs = dict(plot_kwargs)
+        if controls is not None:
+            probe_kwargs["controls"] = controls
+        probe = auto_plot(ref_data, ref_config, plot_type, **probe_kwargs)
         is_curve = is_curve_like(probe)
         name_kwarg = "label" if is_curve else "title"
 
