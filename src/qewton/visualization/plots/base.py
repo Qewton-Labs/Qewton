@@ -1,3 +1,5 @@
+"""Base class :class:`Plot` shared by every plot family."""
+
 import itertools
 
 import numpy as np
@@ -12,25 +14,23 @@ from qewton.visualization.plots.spec import (
 
 
 def axis_names_from_variable(variable, n: int) -> list[str]:
-    """Derives per-axis labels from a geometry's coordinate Variable.
+    """Derive per-axis labels from a geometry's coordinate Variable.
 
     Used by plot families whose positions come directly from a geometry
-    (mesh, geometry, vector, embedded-grid plots) rather than an explicit
-    AxisSpec, so there's no separate "x="/"y=" name for the user to supply.
-    A composed Variable such as ``Variable("x", 1) * Variable("y", 1) *
-    Variable("z", 1)`` yields ``["x", "y", "z"]``; a plain ``Variable("x",
-    dim=3)`` is auto-named ``["x_1", "x_2", "x_3"]``.
+    (mesh, geometry, vector, embedded-grid plots) rather than from an
+    :class:`~qewton.visualization.plots.spec.AxisSpec`.
 
-    Falls back to generic labels (``axis_1``, ``axis_2``, ...) if `variable`
-    is None or doesn't decompose into exactly `n` leaves. Never raises - a
-    wrong or missing axis label is cosmetic, not worth failing a render
-    over.
+    Args:
+        variable (Variable or None): The geometry's coordinate
+            :class:`~qewton.config.variables.Variable`.
+        n: Number of axes to label.
 
-    A leaf's label is `leaf.math_name` (TeX math-mode, e.g. ``"x"`` ->
-    ``"$x$"``) - it's a real Variable, so it renders as math the same way
-    PlotSpec.math_name renders any other Variable-backed title. The generic
-    fallback isn't a Variable at all and stays plain text, matching
-    PlotSpec.math_name's same rule for a non-Variable spec.
+    Returns:
+        list of str: One label per axis. If `variable` decomposes into exactly
+            `n` leaves, each label is the leaf's ``math_name`` (TeX math mode,
+            e.g. ``Variable("x", 1) * Variable("y", 1)`` gives ``["$x$",
+            "$y$"]``). Otherwise the plain-text fallback ``["axis_1", ...,
+            "axis_n"]``. Never raises.
     """
     if variable is not None:
         leaves = variable.leaves
@@ -42,14 +42,53 @@ def axis_names_from_variable(variable, n: int) -> list[str]:
 class Plot:
     """Base class for anything that can be evaluated and drawn.
 
-    A Plot doesn't necessarily carry a DataConfiguration - four input
-    families derive from it, each describing a different kind of input:
-    DataPlot (data + DataConfiguration, ``plots/data/``), TablePlot (named
-    columns, ``plots/table/``), GeometryPlot (a Geometry, ``plots/geometry/``)
-    and GraphPlot (a computation Graph, ``plots/graph/``). Everything below
-    `evaluate()` - specs, Scale, controls, Figure, artists, and the result-
-    object contract - is shared across all four; only `evaluate()` and
-    `apply_controls()` differ per family.
+    Four input families derive from it:
+    :class:`~qewton.visualization.plots.data.base.DataPlot` (data plus a
+    DataConfiguration),
+    :class:`~qewton.visualization.plots.table.base.TablePlot` (named
+    columns), :class:`~qewton.visualization.plots.geometry.GeometryPlot` (a
+    Geometry) and :class:`~qewton.visualization.plots.graph.GraphPlot` (a
+    computation Graph). Specs, Scale, controls, Figure, artists and the
+    result-object contract are shared by all of them.
+
+    Args:
+        title (str, optional): Panel heading, shown as subplot annotation or
+            figure title.
+        label (str, optional): Legend entry text. None falls back to the
+            family's default, e.g. the name of the plotted variable.
+        theme (Theme, optional): Theme used to draw this plot. If None, the
+            Figure's theme is assigned when the plot is added.
+        controls: Control specs (slider, fixed, facet, time) that reduce or
+            partition this plot's data.
+
+    Attributes:
+        controls (list of ControlSpec): The control specs passed as `controls`.
+        color_index (int or None): Position of this plot among all plots of its
+            Figure, in add order; set by ``Figure.add_plot()``, None before.
+            Artists without data-driven coloring use it with
+            ``theme.get_color(index)`` so overlaid traces get distinct colors.
+        theme (Theme or None): Theme of this plot. Setting it only has an
+            effect while it is None.
+        title (str or None): Panel heading.
+        label (str or None): Legend entry text, distinct from `title`.
+        embedding_dim (int or None): Number of spatial dimensions the plot
+            draws into: 2 (default), 3, or None for non-spatial plots without
+            cartesian axes (e.g. ParallelCoordinatesPlot, GraphPlot). Used by a
+            faceted Figure to choose each cell's subplot type.
+        selector_specs (list of SelectorSpec): Every
+            :class:`~qewton.visualization.plots.spec.SelectorSpec` embedded in
+            one of this plot's
+            :class:`~qewton.visualization.plots.spec.PlotSpec` attributes,
+            found by scanning the instance attributes. Selector specs are never
+            listed in `controls`.
+
+    Notes:
+        Subclasses must implement :meth:`evaluate` and :meth:`create_artist`.
+        They may override `embedding_dim` and, if they support controls,
+        provide an ``apply_controls()`` that reduces their input to the current
+        control states. A plot with a ``color`` attribute (a
+        :class:`~qewton.visualization.plots.spec.ColorSpec`) whose result has a
+        ``color`` field gets :meth:`color_values` for free.
     """
 
     def __init__(
@@ -63,12 +102,6 @@ class Plot:
         self._label = label
         self._theme = theme
         self.controls = controls or []
-        #: This plot's position among every plot added to its Figure, in
-        #: add order - set once by Figure.add_plot(). None until then (or
-        #: for a plot never added to a Figure). Artists for families with
-        #: no other data-driven coloring (LineArtist, ScatterArtist without
-        #: a ColorSpec, ...) use it via `theme.get_color(index)` so multiple
-        #: overlaid traces get visually distinct colors.
         self.color_index: int | None = None
 
     @property
@@ -86,50 +119,44 @@ class Plot:
 
     @property
     def label(self):
-        """This plot's legend entry text, or None to fall back to whichever
-        variable it plots (each family's own default, e.g. LinePlot/BarPlot
-        fall back to `y.name`).
-
-        Distinct from `title` (a panel/subplot heading, shown as a subplot
-        annotation or the whole-figure title - see Figure.cell_titles()):
-        conflating the two meant one plot's title could leak into another's
-        legend entry, or vice versa, in any Figure overlaying more than one
-        plot.
-        """
         return self._label
 
     @property
     def embedding_dim(self) -> int | None:
-        """How many spatial dimensions this plot draws into: 2, 3, or None.
-
-        A faceted Figure needs this to size each grid cell's subplot; the
-        translation into a specific renderer's vocabulary (e.g. Plotly's
-        `"xy"`/`"scene"` subplot types) happens in the renderer, not here.
-        Defaults to 2; plots that always draw into 3D space override it.
-        None means non-spatial - no cartesian axes at all (e.g.
-        ParallelCoordinatesPlot, GraphPlot), laid out by the renderer in a
-        slot with no x/y semantics. Unused for a non-faceted (1x1) Figure.
-        """
         return 2
 
     def evaluate(self):
+        """Evaluate the plot in its current control state.
+
+        Returns:
+            object: A renderer-agnostic result dataclass from
+                :mod:`qewton.visualization.plots.result`, e.g.
+                :class:`~qewton.visualization.plots.result.GridResult`.
+        """
         raise NotImplementedError
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
-        """Creates the renderer-specific Artist that draws this plot into
-        `backend_figure`, evaluating it in its current control state."""
+        """Create the renderer-specific artist that draws this plot.
+
+        Args:
+            backend_figure (object): The renderer's figure object to draw into.
+            renderer (Renderer): The
+                :class:`~qewton.visualization.renderers.base.Renderer` whose
+                artist class is used.
+            row (int, optional): Facet grid row (1-indexed), or None for a
+                non-faceted figure.
+            col (int, optional): Facet grid column (1-indexed), or None for a
+                non-faceted figure.
+
+        Returns:
+            Artist: The new
+                :class:`~qewton.visualization.renderers.base.Artist`, already
+                drawn from the plot's current control state.
+        """
         raise NotImplementedError
 
     @property
     def selector_specs(self) -> list[SelectorSpec]:
-        """Every SelectorSpec embedded in one of this plot's own PlotSpec
-        attributes (color, vector, x, y, ...), found generically by scanning
-        for PlotSpec-typed attributes rather than needing per-role
-        registration. Unlike `self.controls` (SliderSpec/FixedSpec/...,
-        passed explicitly via the `controls=` constructor argument), a
-        SelectorSpec is discovered this way because it is never itself a
-        whole-axis control - it only ever appears wrapped inside another
-        spec's `variable_or_axes`."""
         found = []
         for value in vars(self).values():
             if isinstance(value, PlotSpec):
@@ -139,19 +166,19 @@ class Plot:
         return found
 
     def color_values(self):
-        """Values used to train this plot's shared color Scale, or None.
+        """Collect the values that train this plot's shared color Scale.
 
-        Returns None both when the plot has no ColorSpec and when its
-        ColorSpec has no Scale attached, letting `Figure.draw()` skip the
-        extra `evaluate()` call in the common case. Works generically across
-        plot families because every `evaluate()` returns a result dataclass
-        with a `.color` field.
+        With SliderSpec or TimeSpec controls, the plot is evaluated in every
+        combination of their states and the values are concatenated; the
+        original states are restored afterwards. Other controls keep their
+        current state.
 
-        For a plot with SliderSpec or TimeSpec controls, values are
-        collected across every slider state and animation frame rather than
-        only the state current when this runs, so the color range stays
-        fixed while scrubbing or playing instead of jumping around.
-        FixedSpec controls are left alone since they never change state.
+        Returns:
+            numpy.ndarray or None: The color values (flattened when collected
+                over several states), or None if the plot has no ``color``
+                spec, the spec has no
+                :class:`~qewton.visualization.plots.spec.Scale`, or the result
+                has no color values.
         """
         spec = getattr(self, "color", None)
         if spec is None or spec.scale is None:

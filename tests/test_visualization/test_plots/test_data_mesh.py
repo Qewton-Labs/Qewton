@@ -231,6 +231,20 @@ class TestMeshVectorPlot:
         b2 = Figure(MeshVectorPlot(vec2, cfg2, vector=VectorSpec(V2))).draw()
         assert b2.data[0].type == "scatter"
 
+    def test_colors_by_a_vertex_scalar(self, cylinder_mesh_geometry):
+        V3, P = Variable("v", 3), Variable("p", 1)
+        vertices = np.asarray(cylinder_mesh_geometry.mesh.vertices)
+        vec = np.stack([-vertices[:, 1], vertices[:, 0], np.zeros(len(vertices))], axis=1)
+        data = np.concatenate([vec, vertices[:, 2:3]], axis=1)
+        config = DataConfiguration(GeometryAxes(cylinder_mesh_geometry), FeatureAxes(V3 * P))
+
+        by_magnitude = MeshVectorPlot(data, config, vector=VectorSpec(V3)).evaluate()
+        assert np.allclose(by_magnitude.color, np.linalg.norm(vec, axis=1))
+
+        plot = MeshVectorPlot(data, config, vector=VectorSpec(V3), color=ColorSpec(P))
+        assert np.allclose(plot.evaluate().color, vertices[:, 2])
+        backend_figure = Figure(plot).draw()
+        assert sum(t.type == "cone" for t in backend_figure.data) == plot.n_bins
 
 class TestCurveField:
     """MeshFieldPlot on meshes of line segments, e.g. a domain boundary."""

@@ -15,7 +15,13 @@ from qewton.visualization.plots.data.grid import (
     SurfacePlot,
 )
 from qewton.visualization.plots.result import GridResult, ParametricGridResult
-from qewton.visualization.plots.spec import AxisSpec, ColorSpec, FixedSpec, VectorSpec
+from qewton.visualization.plots.spec import (
+    AxisSpec,
+    ColorSpec,
+    FixedSpec,
+    Scale,
+    VectorSpec,
+)
 
 
 def _heatmap_setup():
@@ -202,3 +208,180 @@ class TestQuiverPlot2D:
         data = np.random.rand(4, 5, 2)
         backend_figure = Figure(QuiverPlot(data, config, vector=VectorSpec(V2))).draw()
         assert backend_figure.data[0].type == "scatter"
+
+
+class TestQuiverPlotColor:
+    """Arrows are colored by vector magnitude by default, by any other
+    scalar via `color`, or flat with color=False."""
+
+    @staticmethod
+    def _setup():
+        from qewton.geometries.discrete.index_grid_geometry import IndexGridGeometry
+
+        i, j = Variable("i", 1), Variable("j", 1)
+        grid = IndexGridGeometry(i * j, shape=(4, 5))
+        V2, P = Variable("v", 2), Variable("p", 1)
+        config = DataConfiguration(GeometryAxes(grid), FeatureAxes(V2 * P))
+        data = np.random.rand(4, 5, 3)
+        return data, config, V2, P
+
+    def test_colors_by_raw_magnitude_by_default(self):
+        data, config, V2, _ = self._setup()
+        plot = QuiverPlot(data, config, vector=VectorSpec(V2, normalize=True, scale=0.1))
+        result = plot.evaluate()
+        assert plot.colors_by_magnitude
+        # magnitude of the field itself, not of the normalized/scaled arrows
+        expected = np.linalg.norm(data[..., :2].reshape(-1, 2), axis=1)
+        assert np.allclose(result.color, expected)
+
+    def test_colors_by_another_scalar(self):
+        data, config, V2, P = self._setup()
+        plot = QuiverPlot(data, config, vector=VectorSpec(V2), color=P)
+        assert not plot.colors_by_magnitude
+        assert np.allclose(plot.evaluate().color, data[..., 2].reshape(-1))
+
+    def test_color_follows_subsample(self):
+        data, config, V2, P = self._setup()
+        result = QuiverPlot(
+            data, config, vector=VectorSpec(V2, subsample=3), color=P
+        ).evaluate()
+        assert np.allclose(result.color, data[..., 2].reshape(-1)[::3])
+
+    def test_rejects_a_vector_color_other_than_the_arrows_own(self):
+        data, config, V2, _ = self._setup()
+        W2 = Variable("w", 2)
+        with pytest.raises(ValueError, match="must be scalar"):
+            QuiverPlot(data, config, vector=VectorSpec(V2), color=W2)
+
+    def test_color_false_draws_flat_arrows_without_colorbar(self):
+        data, config, V2, _ = self._setup()
+        plot = QuiverPlot(data, config, vector=VectorSpec(V2), color=False)
+        assert plot.evaluate().color is None
+        backend_figure = Figure(plot).draw()
+        assert len(backend_figure.data) == 1
+        assert backend_figure.data[0].line.color == plot.theme.vector_color
+
+    def test_draws_one_trace_per_bin_plus_colorbar(self):
+        data, config, V2, P = self._setup()
+        plot = QuiverPlot(data, config, vector=VectorSpec(V2), color=P, n_bins=8)
+        backend_figure = Figure(plot).draw()
+        assert len(backend_figure.data) == 9
+        n_arrows = sum(len(t.x) // 3 for t in backend_figure.data[:8])
+        assert n_arrows == 20
+        assert backend_figure.data[8].marker.showscale
+
+    def test_shared_scale_sets_the_colorbar_range(self):
+        data, config, V2, P = self._setup()
+        scale = Scale(vmin=-1.0, vmax=2.0)
+        plot = QuiverPlot(
+            data, config, vector=VectorSpec(V2), color=ColorSpec(P, scale=scale)
+        )
+        backend_figure = Figure(plot).draw()
+        carrier = backend_figure.data[-1].marker
+        assert (carrier.cmin, carrier.cmax) == (-1.0, 2.0)
+
+    def test_3d_grid_colors_cones_by_another_scalar(self, cylinder_mesh_geometry):
+        V3, P = Variable("v", 3), Variable("p", 1)
+        i, j, k = Variable("i", 1), Variable("j", 1), Variable("k", 1)
+        grid = VolumeGridGeometry(cylinder_mesh_geometry, i * j * k, resolution=(3, 3, 3))
+        config = DataConfiguration(GeometryAxes(grid), FeatureAxes(V3 * P))
+        data = np.random.rand(3, 3, 3, 4)
+        plot = QuiverPlot(data, config, vector=VectorSpec(V3), color=P, n_bins=4)
+        backend_figure = Figure(plot).draw()
+        cones = [t for t in backend_figure.data if t.type == "cone"]
+        assert len(cones) == 4
+        assert sum(len(c.x) for c in cones) == 27
+
+    def test_animation_frames_and_dropdowns_cover_every_bin_trace(self):
+        """animate()/apply_selector() must snapshot all of an artist's
+        traces, not just its first one - otherwise only one color bin of
+        the arrows would move between frames/dropdown choices."""
+        from qewton.visualization.plots.spec import SelectorSpec, TimeSpec
+
+        data, config, V2, P = self._setup()
+        data = np.stack([data, 2 * data])  # extra leading axis to animate over
+        frames_axis = BatchAxes(2)
+        config = DataConfiguration(frames_axis, *config.axes)
+        plot = QuiverPlot(
+            data, config, vector=VectorSpec(V2), color=P, n_bins=4,
+            controls=[TimeSpec(frames_axis, values=[0, 1])],
+        )
+        backend_figure = Figure(plot).draw()
+        assert all(len(frame.data) == 5 for frame in backend_figure.frames)
+
+        W2 = Variable("w", 2)
+        data, config, _, _ = self._setup()
+        config = DataConfiguration(GeometryAxes(config.geometry_axes.geometry), FeatureAxes(V2 * W2))
+        data = np.random.rand(4, 5, 4)
+        plot = QuiverPlot(data, config, vector=VectorSpec(SelectorSpec([V2, W2])), n_bins=4)
+        figure = Figure(plot)
+        figure.draw()
+        figure._apply_selectors()
+        buttons = figure.backend_figure.layout.updatemenus[0].buttons
+        assert all(len(button.args[2]) == 5 for button in buttons)
+
+    def test_static_slider_on_a_3d_grid(self, cylinder_mesh_geometry):
+        """Regression: baking a slider/dropdown for 3D (scene) traces used to
+        crash in _axis_layout_updates, since go.Cone has no xaxis/yaxis."""
+        from qewton.visualization.plots.spec import SliderSpec
+
+        V3 = Variable("v", 3)
+        i, j, k = Variable("i", 1), Variable("j", 1), Variable("k", 1)
+        grid = VolumeGridGeometry(cylinder_mesh_geometry, i * j * k, resolution=(3, 3, 3))
+        config = DataConfiguration(GeometryAxes(grid), FeatureAxes(V3))
+        data = np.random.rand(3, 3, 3, 3)
+        plot = QuiverPlot(
+            data, config, vector=VectorSpec(V3), controls=[SliderSpec(i)], n_bins=4
+        )
+        figure = Figure(plot)
+        figure.draw()
+        figure._apply_sliders()
+        steps = figure.backend_figure.layout.sliders[0].steps
+        assert len(steps) == 3
+        assert len(steps[0].args[2]) == 5  # 4 bins + colorbar carrier
+
+
+class TestQuiverPlotAutoScale:
+    """VectorSpec(scale=None), the default, sizes the longest arrow to a
+    fraction of the typical spacing between drawn arrows."""
+
+    @staticmethod
+    def _plot(data, **vector_kwargs):
+        from qewton.geometries.discrete.index_grid_geometry import IndexGridGeometry
+
+        i, j = Variable("i", 1), Variable("j", 1)
+        grid = IndexGridGeometry(i * j, shape=(4, 5))  # unit spacing
+        V2 = Variable("v", 2)
+        config = DataConfiguration(GeometryAxes(grid), FeatureAxes(V2))
+        return QuiverPlot(data, config, vector=VectorSpec(V2, **vector_kwargs))
+
+    def test_longest_arrow_fills_a_fraction_of_the_spacing(self):
+        data = np.random.rand(4, 5, 2) * 50.0
+        plot = self._plot(data)
+        lengths = np.linalg.norm(plot.evaluate().vectors, axis=1)
+        assert np.isclose(lengths.max(), plot.auto_scale_fill * 1.0)
+
+    def test_an_explicit_scale_stays_absolute(self):
+        data = np.random.rand(4, 5, 2)
+        result = self._plot(data, scale=2.0).evaluate()
+        assert np.allclose(result.vectors, 2.0 * data.reshape(-1, 2))
+
+    def test_reference_length_is_the_whole_datas_not_the_current_slice(self):
+        """A slider state with small vectors must draw short arrows, not
+        rescale them up to the same length as a state with large ones."""
+        from qewton.geometries.discrete.index_grid_geometry import IndexGridGeometry
+        from qewton.visualization.plots.spec import SliderSpec
+
+        i, j = Variable("i", 1), Variable("j", 1)
+        grid = IndexGridGeometry(i * j, shape=(4, 5))
+        V2 = Variable("v", 2)
+        step_axis = BatchAxes(2)
+        config = DataConfiguration(step_axis, GeometryAxes(grid), FeatureAxes(V2))
+        data = np.ones((2, 4, 5, 2))
+        data[1] *= 10.0
+        slider = SliderSpec(step_axis)
+        plot = QuiverPlot(data, config, vector=VectorSpec(V2), controls=[slider])
+        small = np.linalg.norm(plot.evaluate().vectors, axis=1).max()
+        slider.state = 1
+        large = np.linalg.norm(plot.evaluate().vectors, axis=1).max()
+        assert np.isclose(large / small, 10.0)

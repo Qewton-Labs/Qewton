@@ -1,3 +1,6 @@
+"""Base classes for geometries: :class:`Geometry`, :class:`DiscreteGeometry`
+and :class:`BoundaryGeometry`."""
+
 from __future__ import annotations
 from types import EllipsisType
 from typing import Any, Generic
@@ -13,15 +16,16 @@ from qewton.backends import DEFAULT_DL_BACKEND
 def vertex_distance_for(
     max_vertex_distance: float | dict[Variable, float] | None, variable: Variable
 ) -> float | None:
-    """The maximum vertex distance that applies to the geometry of `variable`.
+    """Return the maximum vertex distance that applies to `variable`.
 
     Args:
-        max_vertex_distance (float | dict[Variable, float] | None): One value
-            for every geometry, or one per geometry variable.
-        variable (Variable): The variable of the geometry being meshed.
+        max_vertex_distance: One value for every geometry, or one value per
+            geometry variable.
+        variable: The variable of the geometry being meshed.
 
     Returns:
-        float | None: The value for `variable`, None if a dict has no entry.
+        float or None: The value for `variable`; ``None`` if a dict has no
+            entry for it.
     """
     if isinstance(max_vertex_distance, dict):
         return max_vertex_distance.get(variable)
@@ -29,19 +33,38 @@ def vertex_distance_for(
 
 
 class Geometry(Serializable, Generic[TensorType]):
-    """Represents a geometric shape for sampling points, computing normal
-    vectors, plotting, etc.
+    """Geometric domain used for sampling points, meshing and plotting.
 
     Args:
-        variable (Variable | None, optional): The variable that belongs to this
-                geometry. Defaults to None.
-        dim (int | None, optional): The dimension of the geometry.
-            Defaults to None.
-        shape (tuple[int  |  None, ...] | EllipsisType, optional): A discrete
-            shape. Defaults to ....
-        backend (type[ComputingBackend[TensorType]], optional): What backend the node
-            should use for computations, etc. Defaults to the deep learning
-            backend (DEFAULT_DL_BACKEND).
+        variable: The variable that belongs to this geometry. If ``None``, an
+            empty placeholder :class:`~qewton.config.variables.Variable` is
+            used.
+        dim: The dimension of the geometry. Must match ``variable.dim`` if both
+            are given.
+        shape: The discrete shape of the geometry. Entries may be ``None`` and
+            ``...`` means the shape is unknown.
+        backend: The backend used for computations.
+
+    Attributes:
+        variable (Variable): The variable that belongs to this geometry.
+        dim (int or None): The dimension, taken from `variable` if it is not
+            empty, otherwise the `dim` passed at construction or set by
+            unification.
+        shape (tuple of (int or None) or EllipsisType): The discrete shape of
+            the geometry.
+        backend (type[ComputingBackend]): The backend used for computations.
+        markers (dict): Named subdomains of this geometry.
+        boundary (BoundaryGeometry): The boundary of this geometry. Created by
+            :meth:`create_boundary` on first access and cached in
+            ``boundary_object``.
+
+    Notes:
+        Subclasses should implement :meth:`create_boundary`,
+        :meth:`sample_random_uniform`, :meth:`sample_grid`, :meth:`contains`,
+        :meth:`bounding_box` and ``_get_volume`` where these operations make
+        sense; the base implementations raise :class:`NotImplementedError`.
+        They may override :meth:`create_mesh`, :meth:`is_discretization_of` and
+        :meth:`apply_unified`.
     """
 
     def __init__(
@@ -63,16 +86,20 @@ class Geometry(Serializable, Generic[TensorType]):
 
     @property
     def boundary(self) -> BoundaryGeometry:
-        """Returns the boundary of this geometry as a new Geometry object.
-
-        Returns:
-            BoundaryGeometry: The boundary of this geometry.
-        """
         if self.boundary_object is None:
             self.boundary_object = self.create_boundary()
         return self.boundary_object
 
     def create_boundary(self) -> BoundaryGeometry:
+        """Create the boundary of this geometry.
+
+        Returns:
+            BoundaryGeometry: A new boundary geometry.
+
+        Raises:
+            NotImplementedError: If the geometry has no boundary
+                implementation.
+        """
         raise NotImplementedError()
 
     @property
@@ -80,15 +107,23 @@ class Geometry(Serializable, Generic[TensorType]):
         return self.variable.dim if not self.variable.is_empty else self._dim
 
     def unify_with(self, other: Geometry) -> Geometry:
-        """
-        Unifies this `Geometry` object with another `Geometry` object.
+        """Unify this geometry with `other`.
 
-        Placeholder values may appear for `variable` and `shape`.
-        If one geometry is more concrete than the other, the concrete
-        representation is returned when the two are compatible.
+        Placeholder values may appear for `variable`, `dim` and `shape`. If
+        one geometry is a discretization of the other, the discretization is
+        returned. Otherwise the placeholders are filled from the other
+        geometry and the more specific of the two objects (the instance of
+        the subclass) is refined in place and returned.
 
-        When possible, the more specific object is refined in-place rather
-        than creating a new base `Geometry` instance.
+        Args:
+            other: The geometry to unify with.
+
+        Returns:
+            Geometry: The unified geometry, either `self` or `other`.
+
+        Raises:
+            DataConfigMismatchError: If dimensions, variables or shapes are
+                incompatible.
         """
         if other is self or other == self:
             return self
@@ -173,6 +208,16 @@ class Geometry(Serializable, Generic[TensorType]):
         unified_dim: int | None,
         unified_shape: tuple[int | None, ...] | EllipsisType,
     ) -> None:
+        """Fill this geometry's placeholders with unified values in place.
+
+        The variable and dimension are only set if they are still empty; the
+        shape is replaced if it differs from `unified_shape`.
+
+        Args:
+            unified_variable: The unified variable.
+            unified_dim: The unified dimension.
+            unified_shape: The unified shape.
+        """
         if not unified_variable.is_empty and self.variable.is_empty:
             self.variable = unified_variable
         if unified_dim is not None and self._dim is None:
@@ -194,23 +239,26 @@ class Geometry(Serializable, Generic[TensorType]):
         discretization_points: Any | None = None,
         discretization_shape: tuple[int, ...] | None = None,
     ) -> DiscreteGeometry:
-        """Discretizes this geometry into a `DiscreteGeometry` object.
-        The discretization can be defined by providing either the
-        discretization points or the shape of the discretization.
+        """Discretize this geometry into a :class:`DiscreteGeometry`.
+
+        The discretization is defined by the discretization points, the
+        discretization shape, or both (then they must be consistent).
 
         Args:
-            discretization_points (Any | None, optional): The points for the
-                discrete geometry. Defaults to None.
-            discretization_shape (tuple[int, ...] | None, optional): The shape of
-                discretization. Defaults to None.
-
-        Raises:
-            ValueError: If both or neither of discretization_points and
-                discretization_shape are provided, or if the provided information
-                is inconsistent.
+            discretization_points: The points of the discrete geometry, with
+                the dimension in the last axis.
+            discretization_shape: The shape of the discretization, without the
+                dimension axis.
 
         Returns:
-            DiscreteGeometry: The discretized geometry as a DiscreteGeometry object.
+            DiscreteGeometry: The discretized geometry. Its
+                ``discretization_of`` is set to this geometry.
+
+        Raises:
+            ValueError: If neither `discretization_points` nor
+                `discretization_shape` is given.
+            AssertionError: If the given points, shape, dimension or this
+                geometry's shape are inconsistent.
         """
         if discretization_points is not None:
             shape = discretization_points.shape[:-1]
@@ -245,32 +293,44 @@ class Geometry(Serializable, Generic[TensorType]):
     def is_discretization_of(
         self, other_geometry: Geometry  # pylint: disable=unused-argument
     ) -> bool:
-        """Check if this geometry is a discretization of the provided one.
+        """Check whether this geometry is a discretization of another one.
 
         Args:
-            other_geometry (Geometry, optional): The geometry to compare to.
-                Defaults to unused-argument.
+            other_geometry: The geometry to compare to.
 
         Returns:
-            bool: If this geometry is a discretization of the provided one.
+            bool: Whether this geometry discretizes `other_geometry`. Always
+                ``False`` for a continuous geometry.
         """
         return False
 
     def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
-        """Meshes this geometry into a `MeshGeometry` object. The meshing can be
-        controlled by providing a maximum vertex distance, which determines the
-        fineness of the mesh.
+        """Mesh this geometry into a mesh geometry.
 
         Args:
-            max_vertex_distance (float | None, optional): How fine the mesh
-                should be. Defaults to None.
+            max_vertex_distance: The maximum distance between mesh vertices,
+                which controls how fine the mesh is.
+            device: The device the mesh is created on.
+
+        Returns:
+            DiscreteGeometry: The meshed geometry.
 
         Raises:
-            NotImplementedError: By default meshing is not provided.
+            NotImplementedError: If the geometry does not support meshing.
         """
         raise NotImplementedError()
 
     def set_marker(self, marker, marker_description):
+        """Mark a subdomain of this geometry.
+
+        Args:
+            marker (hashable): The name of the marker.
+            marker_description (Any): The description of the marked subdomain.
+
+        Raises:
+            NotImplementedError: Always, since general geometries can not be
+                marked.
+        """
         # TODO!!!
         raise NotImplementedError(
             "General geometries can not be marked, use "
@@ -278,6 +338,17 @@ class Geometry(Serializable, Generic[TensorType]):
         )
 
     def get_marker(self, marker):
+        """Return the subdomain stored under `marker`.
+
+        Args:
+            marker (hashable): The name of the marker.
+
+        Returns:
+            Any: The stored marker entry.
+
+        Raises:
+            KeyError: If no marker with this name exists.
+        """
         # TODO!!!
         if marker in self.markers:
             return self.markers[marker]
@@ -286,94 +357,88 @@ class Geometry(Serializable, Generic[TensorType]):
     def sample_random_uniform(
         self, n_points: int, device: Device | str = cpu
     ) -> TensorType:
-        """Samples random uniform points inside this domain.
+        """Sample uniformly distributed random points inside the geometry.
 
         Args:
-            n_points (int): The number of points that should be sampled.
-            device (Device): The device to sample on.
+            n_points: The number of points to sample.
+            device: The device to sample on.
 
         Returns:
-            array: An array of shape (n_points, dim) containing the sampled points.
+            TensorType: The sampled points, shape ``(n_points, dim)``.
         """
         raise NotImplementedError()
 
     def sample_grid(self, n_points: int, device: Device | str = cpu) -> TensorType:
-        """Samples grid points inside this domain.
+        """Sample grid points inside the geometry.
 
         Args:
-            n_points (int): The number of points that should be sampled.
-            device (Device): The device to sample on.
+            n_points: The number of points to sample.
+            device: The device to sample on.
 
         Returns:
-            array: An array of shape (n_points, dim) containing the sampled points.
+            TensorType: The sampled points, shape ``(n_points, dim)``.
         """
         raise NotImplementedError()
 
     def __and__(self, other):
-        """Returns the intersection of two domains"""
+        """Return the intersection of two geometries."""
         raise NotImplementedError()
 
     def __add__(self, other):
-        """Returns the union of two domains"""
+        """Return the union of two geometries."""
         return NotImplementedError()
 
     def __or__(self, other):
-        """Returns the union of two domains"""
+        """Return the union of two geometries."""
         raise self + other
 
     def __sub__(self, other):
-        """Returns the difference of two domains"""
+        """Return the difference of two geometries."""
         raise NotImplementedError()
 
     def __mul__(self, other):
-        """Creates the Cartesian product of two domains."""
+        """Return the Cartesian product of two geometries.
+
+        Returns:
+            ProductGeometry: The product of this geometry and `other`, see
+                :class:`~qewton.geometries.product.ProductGeometry`.
+        """
         from .product import ProductGeometry
 
         return ProductGeometry(self, other)
 
     def contains(self, points):
-        """Checks for every point in points if it lays inside the domain.
+        """Check for every point whether it lies inside the geometry.
 
-        Parameters
-        ----------
-        points : np.Array
-            The points that should be checked.
+        Args:
+            points (TensorType): The points to check, shape
+                ``(n_points, dim)``.
 
-        Returns
-        -------
-        np.Array
-            A boolean array of the shape (len(points), 1) where every entry contains
-            true if the point was inside or false if not.
+        Returns:
+            TensorType: Boolean tensor of shape ``(n_points, 1)``, ``True``
+                where the point lies inside.
         """
         raise NotImplementedError()
 
     def bounding_box(self):
-        """Computes the bounds of the domain.
+        """Compute the axis-aligned bounds of the geometry.
 
-        Returns
-        -------
-        array :
-            A np.array with the length of 2*self.dim.
-            It has the form [axis_1_min, axis_1_max, axis_2_min, axis_2_max, ...],
-            where min and max are the minimum and maximum value that the domain
-            reaches in each dimension.
+        Returns:
+            TensorType: Tensor of length ``2 * dim`` of the form
+                ``[axis_1_min, axis_1_max, axis_2_min, axis_2_max, ...]``.
         """
         raise NotImplementedError()
 
     def set_volume(self, volume: float):
-        """Set the volume of the given domain.
+        """Set the volume of the geometry by hand.
 
-        Parameters
-        ----------
-        volume : number
-            The volume of the domain. Can be a function if the volume changes
-            depending on other variables.
+        Args:
+            volume: The volume of the geometry. :meth:`volume` returns this
+                value instead of computing one.
 
-        Notes
-        -----
-        For all basic domains the volume (and surface) are implemented.
-        But if the given domain has a complex the volume can only be approximated.
-        Therefore one can set here a exact expression for the volume, if known.
+        Notes:
+            Use this for geometries whose volume can otherwise only be
+            approximated, if the exact value is known.
         """
         self._user_volume = volume
 
@@ -381,12 +446,11 @@ class Geometry(Serializable, Generic[TensorType]):
         raise NotImplementedError()
 
     def volume(self):
-        """Computes the volume of the current domain.
+        """Return the volume of the geometry.
 
-        Returns
-        -------
-        volume: float
-            Returns the volume of the domain.
+        Returns:
+            float: The volume set by :meth:`set_volume`, if any, otherwise the
+                computed volume.
         """
         if self._user_volume is None:
             return self._get_volume()
@@ -394,21 +458,27 @@ class Geometry(Serializable, Generic[TensorType]):
 
 
 class DiscreteGeometry(Geometry[TensorType]):
-    """A discrete geometry represents a geometry that includes a number of
-    discretized points and concrete discretization shape.
+    """Geometry with a concrete discretization shape and optional points.
 
     Args:
-        shape (tuple[int, ...]): The shape of the discretization, e.g. the
-            number of points in each dimension. Used for predicting the shape
-            of a GeometryAxes.
-        variable (Variable | None, optional): The variable connected to this
-            geometry. Defaults to None.
-        dim (int | None, optional): The dimension of this geometry. Defaults to None.
-        discretization_points (TensorType | None, optional): Discrete points that
-            make up this geometry. Defaults to None.
-        backend (type[ComputingBackend[TensorType]], optional): What backend the node
-            should use for computations, etc. Defaults to the deep learning
-            backend (DEFAULT_DL_BACKEND).
+        shape: The shape of the discretization, e.g. the number of points per
+            axis.
+        variable: The variable connected to this geometry.
+        dim: The dimension of this geometry.
+        discretization_points: The discrete points that make up this geometry,
+            with the dimension in the last axis.
+        backend: The backend used for computations.
+
+    Attributes:
+        discretization_of (Geometry or None): The geometry this one
+            discretizes, if known.
+        discretization_points (TensorType or None): The discrete points of this
+            geometry.
+
+    Notes:
+        Subclasses may implement
+        :meth:`sample_random_uniform_from_discretization` and
+        :meth:`sample_grid_from_discretization`.
     """
 
     def __init__(
@@ -424,6 +494,18 @@ class DiscreteGeometry(Geometry[TensorType]):
         self.discretization_points = discretization_points
 
     def bounding_box(self):
+        """Compute the axis-aligned bounds of the geometry.
+
+        Uses the discretization points if present, otherwise the bounding
+        box of ``discretization_of``.
+
+        Returns:
+            TensorType: Tensor of the form ``[axis_1_min, axis_1_max, ...]``.
+
+        Raises:
+            NotImplementedError: If neither points nor a source geometry are
+                available.
+        """
         if self.discretization_points is not None:
             self.discretization_points = self.backend.build_tensor(
                 self.discretization_points
@@ -442,6 +524,15 @@ class DiscreteGeometry(Geometry[TensorType]):
         )
 
     def is_discretization_of(self, other_geometry: Geometry) -> bool:
+        """Check whether this geometry is a discretization of another one.
+
+        Args:
+            other_geometry: The geometry to compare to.
+
+        Returns:
+            bool: ``True`` if `other_geometry` equals ``discretization_of`` or
+                is this geometry itself.
+        """
         if self.discretization_of == other_geometry:
             return True
         if self is other_geometry:
@@ -451,45 +542,51 @@ class DiscreteGeometry(Geometry[TensorType]):
     def sample_random_uniform_from_discretization(
         self, n_points: int, device: Device | str = cpu
     ) -> TensorType:
-        """Samples random points from the discretization_points saved
-        in this geometry.
+        """Sample random points from the discretization points.
 
         Args:
-            n_points (int): How many points should be sampled from the
-                discretization. If n_points is larger than the number of
-                discretization points, duplicates will be returned.
-            device (Device): The device to sample on.
+            n_points: The number of points to sample. If larger than the number
+                of discretization points, duplicates are returned.
+            device: The device to sample on.
 
         Returns:
-            array: An array of shape (n_points, dim) containing the sampled points.
+            TensorType: The sampled points, shape ``(n_points, dim)``.
         """
         raise NotImplementedError()
 
     def sample_grid_from_discretization(
         self, n_points: int, device: Device | str = cpu
     ) -> TensorType:
-        """Samples points from the discretization_points, the n_points
-        will be equally distributed over the number of all points, such
-        that every point is returned the same amount.
+        """Sample points evenly from the discretization points.
+
+        Every discretization point is returned equally often.
 
         Args:
-            n_points (int): How many points should be sampled from the
-                discretization. If n_points is larger than the number of
-                discretization points, duplicates will be returned.
-            device (Device): The device to sample on.
+            n_points: The number of points to sample. If larger than the number
+                of discretization points, duplicates are returned.
+            device: The device to sample on.
 
         Returns:
-            Any: An array of shape (n_points, dim) containing the sampled points.
+            TensorType: The sampled points, shape ``(n_points, dim)``.
         """
         raise NotImplementedError()
 
 
 class BoundaryGeometry(Geometry[TensorType]):
-    """The parent class for all built-in boundaries. Can be used just like
-    any other Geometry.
+    """Base class for the boundary of a geometry.
+
+    Can be used like any other :class:`Geometry`.
 
     Args:
-        geometry (Geometry): The geometry for which this is the boundary of.
+        geometry (Geometry): The geometry whose boundary this is. Its variable,
+            dimension and backend are taken over.
+
+    Attributes:
+        geometry (Geometry): The geometry whose boundary this is.
+
+    Notes:
+        Subclasses should implement :meth:`normal`, :meth:`sample_grid` and
+        :meth:`sample_random_uniform`, including the `include_normals` option.
     """
 
     def __init__(self, geometry):
@@ -502,22 +599,31 @@ class BoundaryGeometry(Geometry[TensorType]):
         self.geometry = geometry
 
     def bounding_box(self):
+        """Return the bounding box of the underlying geometry.
+
+        Returns:
+            TensorType: Tensor of the form ``[axis_1_min, axis_1_max, ...]``.
+        """
         return self.geometry.bounding_box()
 
     def create_boundary(self) -> BoundaryGeometry:
+        """Raise, since a boundary has no boundary.
+
+        Raises:
+            NotImplementedError: Always.
+        """
         raise NotImplementedError("Boundary of a boundary geometry is not defined.")
 
     def normal(self, points, device: Device | str = cpu) -> TensorType:
-        """Computes the normal vector at each point in points.
+        """Compute the outward normal vector at each point.
 
         Args:
-            points (array): An array of shape (n_points, dim) containing the points
-                at which the normal vector should be computed.
-            device (Device): The device to sample on.
+            points (TensorType): The boundary points, shape
+                ``(n_points, dim)``.
+            device: The device to compute on.
 
         Returns:
-            array: An array of shape (n_points, dim) containing the normal vectors
-                at the given points.
+            TensorType: The normal vectors, shape ``(n_points, dim)``.
         """
         raise NotImplementedError()
 
@@ -527,17 +633,17 @@ class BoundaryGeometry(Geometry[TensorType]):
         device: Device | str = cpu,
         include_normals: bool = False,  # pylint: disable=unused-argument
     ) -> TensorType | tuple[TensorType, TensorType]:
-        """Samples a grid along the boundary.
+        """Sample grid points on the boundary.
 
         Args:
-            n_points (int): The number of points.
-            device (Device): The device to sample on.
-            include_normals (bool, optional): Wether also the normal vectors at
-                each point should be returned. Defaults to False.
+            n_points: The number of points to sample.
+            device: The device to sample on.
+            include_normals: Whether to also return the normal vectors at the
+                points.
 
         Returns:
-            TensorType | tuple(TensorType, TensorType): The points and normal
-                vectors at the points if include_normals is True, otherwise None.
+            TensorType or tuple of TensorType: The points, or
+                ``(points, normals)`` if `include_normals` is ``True``.
         """
         return super().sample_grid(n_points)
 
@@ -547,17 +653,17 @@ class BoundaryGeometry(Geometry[TensorType]):
         device: Device | str = cpu,
         include_normals: bool = False,  # pylint: disable=unused-argument
     ) -> TensorType | tuple[TensorType, TensorType]:
-        """Samples random uniform points along the boundary.
+        """Sample uniformly distributed random points on the boundary.
 
         Args:
-            n_points (int): The number of points.
-            device (Device): The device to sample on.
-            include_normals (bool, optional): Wether also the normal vectors at
-                each point should be returned. Defaults to False.
+            n_points: The number of points to sample.
+            device: The device to sample on.
+            include_normals: Whether to also return the normal vectors at the
+                points.
 
         Returns:
-            TensorType | tuple(TensorType, TensorType): The points and normal
-                vectors at the points if include_normals is True, otherwise None.
+            TensorType or tuple of TensorType: The points, or
+                ``(points, normals)`` if `include_normals` is ``True``.
         """
         return super().sample_random_uniform(n_points)
 

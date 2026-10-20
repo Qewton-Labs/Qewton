@@ -1,3 +1,10 @@
+"""Renderer-agnostic result dataclasses returned by ``Plot.evaluate()``.
+
+Results of colorable plots have a ``color`` field, which
+:meth:`~qewton.visualization.plots.base.Plot.color_values` reads to train a
+shared :class:`~qewton.visualization.plots.spec.Scale`.
+"""
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -5,9 +12,19 @@ import numpy as np
 
 @dataclass
 class GridResult:
-    """Result of a StructuredGridPlot family evaluate() (Heatmap/Surface/
-    Image). Positions are implicit indices, not explicit coordinates -
-    axis titles come from the plot's own AxisSpec instead."""
+    """Result of a structured-grid plot (heatmap, surface, image).
+
+    Positions are implicit grid indices; axis titles come from the plot's
+    :class:`~qewton.visualization.plots.spec.AxisSpec`.
+
+    Args:
+        values: Grid values with the y dimension first and the x dimension
+            second.
+        color: Color values in the same orientation, or None.
+
+    See Also:
+        :class:`~qewton.visualization.plots.data.grid.StructuredGridPlot`
+    """
 
     values: np.ndarray
     color: np.ndarray | None = None
@@ -15,13 +32,21 @@ class GridResult:
 
 @dataclass
 class ParametricGridResult:
-    """Result of EmbeddedGridPlot.evaluate() - a structured grid drawn at
-    explicit 3D positions (from a geometry's `discretization_points`), not
-    implicit indices. A separate type from GridResult rather than the same
-    one with optional x/y/z: EmbeddedGridPlot has no x/y AxisSpec role at
-    all (only `color`), so those fields would be permanently unused dead
-    weight from GridResult's side of the split - a genuinely different
-    positioning model, not just sometimes-missing data.
+    """Result of a structured grid drawn at explicit coordinates.
+
+    Args:
+        values: Grid values.
+        x: X coordinates of the grid. For an embedded grid, the x component of
+            the 3D position of each grid point.
+        y: Y coordinates of the grid. For an embedded grid, the y component of
+            the 3D position of each grid point.
+        z: Z coordinates of the grid. For an embedded grid, the z component of
+            the 3D position of each grid point.
+        color: Color values, or None.
+
+    See Also:
+        :class:`~qewton.visualization.plots.data.grid.EmbeddedGridPlot`,
+        :class:`~qewton.visualization.plots.table.heatmap.TableHeatMap`
     """
 
     values: np.ndarray
@@ -33,8 +58,16 @@ class ParametricGridResult:
 
 @dataclass
 class PointCloudResult:
-    """Result of PointCloudPlot.evaluate() - one color value per point, at
-    arbitrary positions (2D or 3D) with no structure or connectivity."""
+    """Result of an unstructured point cloud plot.
+
+    Args:
+        positions: Point positions, shape ``(n_points, n_components)`` with 1,
+            2 or 3 components.
+        color: One color value per point, or None.
+
+    See Also:
+        :class:`~qewton.visualization.plots.data.points.PointCloudPlot`
+    """
 
     positions: np.ndarray
     color: np.ndarray | None = None
@@ -42,7 +75,17 @@ class PointCloudResult:
 
 @dataclass
 class MeshResult:
-    """Result of a MeshPlot family evaluate(), and of GeometryPlot."""
+    """Result of a mesh plot or a geometry plot.
+
+    Args:
+        vertices: Vertex positions, shape ``(n_vertices, dim)``.
+        cells: Cells to draw, as indices into `vertices`.
+        color: One color value per vertex, or None.
+
+    See Also:
+        :class:`~qewton.visualization.plots.data.mesh.MeshPlot`,
+        :class:`~qewton.visualization.plots.geometry.GeometryPlot`
+    """
 
     vertices: np.ndarray
     cells: np.ndarray
@@ -51,18 +94,37 @@ class MeshResult:
 
 @dataclass
 class VectorResult:
-    """Result of MeshVectorPlot.evaluate()."""
+    """Result of an arrow-field plot.
+
+    Args:
+        positions: Arrow base positions, shape ``(n_arrows, dim)``.
+        vectors: Arrow vectors after normalization and scaling, same shape.
+        magnitude: Magnitude of each raw vector, before normalization and
+            scaling.
+        color: One color value per arrow (the magnitude by default), or None
+            for flat, uncolored arrows.
+
+    See Also:
+        :class:`~qewton.visualization.plots.data.grid.QuiverPlot`,
+        :class:`~qewton.visualization.plots.data.mesh.MeshVectorPlot`
+    """
 
     positions: np.ndarray
     vectors: np.ndarray
     magnitude: np.ndarray
+    color: np.ndarray | None = None
 
 
 @dataclass
 class CurveResult:
-    """Result of LinePlot.evaluate() - one curve's x/y values.
+    """Result of a line plot: one curve's x and y values.
 
-    x currently falls back to plain sample indices.
+    Args:
+        x: Curve x values.
+        y: Curve y values.
+
+    See Also:
+        :class:`~qewton.visualization.plots.data.curve.LinePlot`
     """
 
     x: np.ndarray
@@ -71,20 +133,31 @@ class CurveResult:
 
 @dataclass
 class PathResult:
-    """Result of PathPlot.evaluate() - an ordered sequence of positions in
-    space (2D or 3D), e.g. a trajectory or streamline."""
+    """Result of a path plot: an ordered sequence of positions in space.
+
+    Args:
+        positions: Ordered positions, shape ``(n_points, dim)`` with dim 2 or
+            3.
+
+    See Also:
+        :class:`~qewton.visualization.plots.data.curve.PathPlot`
+    """
 
     positions: np.ndarray
 
 
 @dataclass
 class ScatterResult:
-    """Result of ScatterPlot.evaluate() - one point per sample.
+    """Result of a scatter plot: one point per sample.
 
-    Its own dataclass rather than reusing CurveResult: x and y here are both
-    value roles over an implicit samples axis (no structural domain like
-    LinePlot.x), and color needs its own field for Scale/color_values() to
-    find generically, same reasoning as GridResult/MeshResult.
+    Args:
+        x: X value of each sample.
+        y: Y value of each sample.
+        color: One color value per sample, or None.
+
+    See Also:
+        :class:`~qewton.visualization.plots.data.samples.ScatterPlot`,
+        :class:`~qewton.visualization.plots.table.scatter_table.TableScatter`
     """
 
     x: np.ndarray
@@ -94,12 +167,16 @@ class ScatterResult:
 
 @dataclass
 class Column:
-    """One table column, as normalized by TablePlot.__init__.
+    """One table column, as normalized by a table plot.
 
-    `labels` is set for categorical columns, whose `values` are integer
-    codes; artists turn labels into axis ticks (Plotly: tickvals/ticktext).
-    Coding happens once, in TablePlot, so categories survive into the plot
-    instead of being flattened by the caller.
+    Args:
+        values: Column values; integer codes for a categorical column.
+        labels: Category labels indexed by code, set only for categorical
+            columns. Artists turn them into axis ticks.
+        log_scale: Whether a numeric column is drawn on a logarithmic axis.
+
+    See Also:
+        :class:`~qewton.visualization.plots.table.base.TablePlot`
     """
 
     values: np.ndarray
@@ -107,15 +184,30 @@ class Column:
     log_scale: bool = False  # for numeric columns, not categorical ones
 
     def __getitem__(self, mask) -> "Column":
-        return Column(values=self.values[mask], labels=self.labels)
+        """Return a new Column with the rows selected by `mask`.
+
+        `labels` and `log_scale` are kept.
+        """
+        return Column(
+            values=self.values[mask], labels=self.labels, log_scale=self.log_scale
+        )
 
     def __len__(self) -> int:
+        """Return the number of rows."""
         return len(self.values)
 
 
 @dataclass
 class TableResult:
-    """Result of a TablePlot family evaluate(), e.g. ParallelCoordinatesPlot."""
+    """Result of a table plot, e.g. a parallel coordinates plot.
+
+    Args:
+        columns: The control-reduced columns by name.
+        color: One color value per row, or None.
+
+    See Also:
+        :class:`~qewton.visualization.plots.table.base.TablePlot`
+    """
 
     columns: dict[str, Column]
     color: np.ndarray | None = None
@@ -123,19 +215,22 @@ class TableResult:
 
 @dataclass
 class PortLayout:
-    """One port's anchor point - on its node's box edge for a leaf node, or
-    directly on the cluster boundary for a composite's own ports (which
-    have no box of their own, just a position on the rectangle
-    GraphLayoutResult.clusters already draws). Input ports anchor on the
-    left, output ports on the right (GraphPlot always draws left to right).
+    """One port's anchor point in a graph layout.
 
-    `show_label` is a structural signal, not a rendering choice: a leaf
-    node with only one port doesn't need its name disambiguated (the box
-    alone says what it is), but a composite's boundary ports have no box at
-    all to lean on, so they always carry a label. `is_input` tells the
-    artist which side a label should extend away from (a cluster-boundary
-    port has no owning NodeLayout to infer that from, unlike a leaf node's
-    own input_ports/output_ports list)."""
+    A leaf node's port sits on its node box's edge; an expanded composite's
+    own port sits directly on its :class:`ClusterBox` boundary. Input ports
+    are on the left, output ports on the right.
+
+    Args:
+        name: Port name.
+        x: Anchor x position.
+        y: Anchor y position.
+        is_input: Whether this is an input port; tells the artist on which side
+            the label is placed.
+        show_label: Whether the port name is drawn. False for ports of a leaf
+            node with only one port; always True for a composite's boundary
+            ports.
+    """
 
     name: str
     x: float
@@ -146,9 +241,24 @@ class PortLayout:
 
 @dataclass
 class NodeLayout:
-    """One drawn box - always a real Node. A composite's own ports, when
-    expanded, live directly on its ClusterBox's boundary instead (see
-    PortLayout) - there is no box for them, so no NodeLayout either."""
+    """One drawn node box in a graph layout.
+
+    Used for leaf nodes and collapsed composites; an expanded composite is
+    drawn as a :class:`ClusterBox` instead.
+
+    Args:
+        label: Node title.
+        kind: Class name of the node, shown in hover text.
+        category: Coloring bucket used by the theme: ``"constraint"``,
+            ``"datanode"``, ``"graphnode"`` or ``"default"``.
+        x: Center x of the box.
+        y: Center y of the box.
+        width: Width of the box.
+        height: Height of the box.
+        input_ports: The node's ports on its left edge.
+        output_ports: The node's ports on its right edge.
+        hover: Extra hover text.
+    """
 
     label: str
     kind: str  # type(node).__name__ - shown in hover text
@@ -164,18 +274,64 @@ class NodeLayout:
 
 @dataclass
 class ClusterBox:
-    """The outline drawn around an expanded composite node's contents."""
+    """The card drawn around an expanded composite node's contents.
+
+    Sized to contain the inner nodes and edges, with the composite's own
+    ports on its left and right boundary and its title in a corner.
+
+    Args:
+        label: Cluster title.
+        category: Coloring bucket, the same value the node would have as a
+            collapsed :class:`NodeLayout`.
+        x0: X coordinate of the first corner of the rectangle.
+        y0: Y coordinate of the first corner of the rectangle.
+        x1: X coordinate of the opposite corner of the rectangle.
+        y1: Y coordinate of the opposite corner of the rectangle.
+        input_ports: The composite's own ports on the left boundary.
+        output_ports: The composite's own ports on the right boundary.
+
+    Attributes:
+        x (float): Center x of the rectangle.
+        y (float): Center y of the rectangle.
+        width (float): Width of the rectangle.
+        height (float): Height of the rectangle.
+    """
 
     label: str
+    category: str
     x0: float
     y0: float
     x1: float
     y1: float
+    input_ports: list[PortLayout]
+    output_ports: list[PortLayout]
+
+    @property
+    def x(self) -> float:
+        return (self.x0 + self.x1) / 2
+
+    @property
+    def y(self) -> float:
+        return (self.y0 + self.y1) / 2
+
+    @property
+    def width(self) -> float:
+        return self.x1 - self.x0
+
+    @property
+    def height(self) -> float:
+        return self.y1 - self.y0
 
 
 @dataclass
 class EdgeLayout:
-    """One drawn edge between two ports, as a polyline."""
+    """One drawn edge between two ports, as a polyline.
+
+    Args:
+        points: Polyline points from the source port to the target port.
+        label: Edge label (the source port's data configuration axes), or
+            empty.
+    """
 
     points: list[tuple[float, float]]
     label: str = ""
@@ -183,24 +339,22 @@ class EdgeLayout:
 
 @dataclass
 class GraphLayoutResult:
-    """Result of GraphLayout.compute() - the layout counterpart to
-    `evaluate()` for GraphPlot: renderer-agnostic node/edge/cluster
-    geometry, with no drawing decisions made yet.
+    """Renderer-agnostic layout of a graph, the result of a
+    :class:`~qewton.visualization.plots.graph.GraphPlot`.
 
-    Flat lists, not a nested tree: an expanded composite's inner nodes/edges
-    are already positioned in the outer frame by `GraphLayout.compute()`, so
-    the artist never needs to recurse - `clusters` holds only the outline
-    rectangles drawn around expanded composites' contents, not a container
-    of their nodes.
+    All entries are already positioned in one global frame, including the
+    contents of expanded composites, so the lists are flat. Node colors
+    come from ``category`` via the theme.
 
-    `ports` lists every port - both those already reachable via
-    `nodes[i].input_ports/output_ports` (a leaf node's own) and a
-    composite's own boundary ports, which have no owning NodeLayout once
-    expanded (they live on a ClusterBox's edge instead).
+    Args:
+        nodes: Every drawn node box.
+        ports: Every port, both those of leaf nodes and the boundary ports of
+            expanded composites.
+        edges: Every drawn edge.
+        clusters: The outline of every expanded composite.
 
-    Has no `color` field, unlike every other `*Result`: GraphPlot has no
-    ColorSpec at all - node color comes from `kind` via the theme at draw
-    time, not from `evaluate()`.
+    See Also:
+        :meth:`~qewton.visualization.plots.graph.layout.GraphLayout.compute`
     """
 
     nodes: list[NodeLayout]

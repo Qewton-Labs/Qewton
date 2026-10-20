@@ -219,3 +219,79 @@ class TestAutoPlot:
         assert plot.drawn_geometry_axes.geometry.variable == X
         [(control, dim)] = plot._resolve_controls()
         assert plot.data_config.axes[dim].geometry.variable == T
+
+
+class TestVectorOnProduct:
+    """A vector with fewer components than the product has dimensions,
+    e.g. a 2D velocity on space x time, gets its 1D factors split off."""
+
+    @staticmethod
+    def _velocity_on(geometry):
+        V = Variable("v", 2)
+        mesh = geometry.create_mesh(0.5)
+        points = _points(mesh)
+        config = DataConfiguration(GeometryAxes(mesh), FeatureAxes(V))
+        return points[:, :2] * 1.0, config, V
+
+    def test_time_is_split_off_for_a_2d_vector(self):
+        data, config = self._velocity_on(_square() * _time())[:2]
+        data, config, controls = product_view(data, config, None, vector_dim=2)
+        assert [c.variable_or_axes for c in controls] == [T]
+        assert isinstance(controls[0], SliderSpec)
+        assert config.axes[1].geometry.variable == X
+
+    def test_a_matching_vector_leaves_the_product_whole(self):
+        data, config = self._velocity_on(_square() * _time())[:2]
+        _, new_config, controls = product_view(data, config, None, vector_dim=3)
+        assert new_config is config and controls is None
+
+    def test_ambiguous_factors_raise(self):
+        S = Variable("s", 1)
+        geometry = _time() * Interval(M, 0.0, 1.0) * Interval(S, 0.0, 1.0)
+        data, config = self._velocity_on(geometry)[:2]
+        # three 1D factors, but only one has to go for a 2D vector
+        with pytest.raises(ValueError, match="Pass a control"):
+            product_view(data, config, None, vector_dim=2)
+
+    def test_auto_plot_draws_a_mesh_vector_plot_with_a_time_slider(self):
+        from qewton.visualization.plots.data.mesh import MeshVectorPlot
+
+        data, config, _ = self._velocity_on(_square() * _time())
+        plot = auto_plot(data, config)
+        assert isinstance(plot, MeshVectorPlot)
+        assert [(type(c), c.variable_or_axes) for c in plot.controls] == [(SliderSpec, T)]
+
+    def test_auto_plot_uses_a_control_class_for_the_split_factor(self):
+        data, config, _ = self._velocity_on(_square() * _time())
+        plot = auto_plot(data, config, controls=TimeSpec)
+        assert [type(c) for c in plot.controls] == [TimeSpec]
+
+
+class TestPointSetFactors:
+    """Factors without a mesh - e.g. reference data on a grid of space
+    points for each of a few times - are split and drawn the same way."""
+
+    @staticmethod
+    def _data():
+        times = _time().discretize(np.array([[0.0], [1.0], [2.0]]))
+        g1, g2 = np.meshgrid(np.linspace(0, 1, 4), np.linspace(0, 1, 5), indexing="ij")
+        space = _square().discretize(np.stack([g1, g2], axis=-1))
+        data = np.arange(3 * 4 * 5, dtype=float).reshape(3, 4, 5, 1)
+        config = DataConfiguration(GeometryAxes(times), GeometryAxes(space), FeatureAxes(U))
+        return data, config, space
+
+    def test_a_control_steps_through_its_factor_and_the_rest_keeps_its_shape(self):
+        data, config, space = self._data()
+        new_data, new_config, _ = product_view(data, config, [TimeSpec(T)])
+        time_axes, drawn_axes, _ = new_config.axes
+        assert time_axes.geometry.variable == T
+        assert drawn_axes.geometry.variable == X
+        assert new_data.shape == (3, 4, 5, 1)
+        assert np.array_equal(new_data, data)
+
+    def test_the_factor_order_of_the_data_does_not_matter(self):
+        data, config, space = self._data()
+        times_axes, space_axes, feature_axes = config.axes
+        swapped = DataConfiguration(space_axes, times_axes, feature_axes)
+        new_data, _, _ = product_view(data.transpose(1, 2, 0, 3), swapped, [TimeSpec(T)])
+        assert np.array_equal(new_data, data)

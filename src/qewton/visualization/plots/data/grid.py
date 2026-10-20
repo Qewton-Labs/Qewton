@@ -1,22 +1,54 @@
+"""Data plots on structured grids: heatmaps, surfaces, images, embedded
+grids and quiver plots."""
+
 import numpy as np
 
 from qewton.config.axes import Axes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.visualization.plots.data.base import DataPlot
+from qewton.visualization.plots.data.base import DataPlot, VectorFieldPlotMixin
 from qewton.visualization.plots.result import (
     GridResult,
     ParametricGridResult,
-    VectorResult,
 )
 from qewton.visualization.plots.spec import AxisSpec, ColorSpec, ControlSpec, VectorSpec
 
 
 class StructuredGridPlot(DataPlot):
-    """Base class for plots over a regular (x, y) meshgrid - heatmaps,
-    surfaces, images. `x`/`y` each select one structural dimension of
-    `data`; an optional `z`/`color` supplies the values drawn at each grid
-    point."""
+    """Base class for plots over a regular (x, y) grid of data dimensions.
+
+    Positions are implicit grid indices. Evaluates to a
+    :class:`~qewton.visualization.plots.result.GridResult` with the y
+    dimension first and the x dimension second.
+
+    Args:
+        data (array_like): The data to plot.
+        data_config: Configuration describing `data`.
+        x: The data dimension spanning the grid's x axis; must refer to
+            exactly one full dimension, different from `y`.
+        y: The data dimension spanning the grid's y axis; must refer to
+            exactly one full dimension, different from `x`.
+        z: The values drawn at each grid point (e.g. surface height). If None,
+            the whole control-reduced data is used.
+        color: The values coloring each grid point, or None.
+        controls: Control specs reducing `data`.
+        **kwargs: Further arguments of
+            :class:`~qewton.visualization.plots.data.base.DataPlot`.
+
+    Raises:
+        ValueError: On :meth:`evaluate`, if `x` and `y` refer to the same
+            dimension or to a channel slice instead of a dimension.
+
+    Attributes:
+        x (AxisSpec): The grid's x axis.
+        y (AxisSpec): The grid's y axis.
+        z (AxisSpec or None): The value role.
+        color (ColorSpec or None): The color role.
+
+    Notes:
+        Subclasses must implement
+        :meth:`~qewton.visualization.plots.base.Plot.create_artist`.
+    """
 
     def __init__(
         self,
@@ -48,6 +80,12 @@ class StructuredGridPlot(DataPlot):
         )
 
     def evaluate(self):
+        """Evaluate the grid in the current control state.
+
+        Returns:
+            GridResult: Values (and color) with the y dimension first and the x
+                dimension second.
+        """
         data, index_map, slice_map = self.apply_controls()
 
         # 1) X/Y structured - resolve to original self.data, then map to the
@@ -88,7 +126,15 @@ class StructuredGridPlot(DataPlot):
 
 
 class ImagePlot(StructuredGridPlot):
-    """A 2D array drawn as an image, with `x`/`y` as pixel rows/columns."""
+    """A 2D array drawn as an image, with `x`/`y` as pixel columns/rows.
+
+    Args:
+        data (array_like): The data to plot.
+        data_config: Configuration describing `data`.
+        x: The data dimension spanning the image's x axis.
+        y: The data dimension spanning the image's y axis.
+        controls: Control specs reducing `data`.
+    """
 
     def __init__(
         self,
@@ -101,23 +147,40 @@ class ImagePlot(StructuredGridPlot):
         super().__init__(data, data_config, x, y, controls=controls)
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
+        """Create the renderer's ``ImageArtist`` for this plot."""
         return renderer.ImageArtist.create(backend_figure, self, row=row, col=col)
 
 
 class SurfacePlot(StructuredGridPlot):
-    """A 2D array drawn as a 3D surface, height given by `z` (or the data
-    itself if `z` is omitted) and optionally colored by `color`."""
+    """A 2D array drawn as a 3D surface.
+
+    The height is given by `z` (or the data itself if `z` is omitted); the
+    surface is optionally colored by `color`. Takes the parameters of
+    :class:`StructuredGridPlot`.
+    """
 
     @property
     def embedding_dim(self) -> int:
         return 3
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
+        """Create the renderer's ``SurfaceArtist`` for this plot."""
         return renderer.SurfaceArtist.create(backend_figure, self, row=row, col=col)
 
 
 class HeatmapPlot(StructuredGridPlot):
-    """A 2D array drawn as a flat, colored grid (a heatmap)."""
+    """A 2D array drawn as a flat, colored grid.
+
+    Args:
+        data (array_like): The data to plot.
+        data_config: Configuration describing `data`.
+        x: The data dimension spanning the grid's x axis.
+        y: The data dimension spanning the grid's y axis.
+        color: The values coloring each cell. If None, the data itself is used.
+        controls: Control specs reducing `data`.
+        **kwargs: Further arguments of
+            :class:`~qewton.visualization.plots.data.base.DataPlot`.
+    """
 
     def __init__(
         self,
@@ -134,27 +197,39 @@ class HeatmapPlot(StructuredGridPlot):
         )
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
+        """Create the renderer's ``HeatmapArtist`` for this plot."""
         return renderer.HeatmapArtist.create(backend_figure, self, row=row, col=col)
 
 
 class EmbeddedGridPlot(DataPlot):
     """A structured grid embedded in 3D space, colored by a scalar field.
 
-    Unlike HeatmapPlot, coordinates are not axis indices but explicit 3D
-    points from `geometry.discretization_points`, so the grid is drawn at
-    its true position and orientation in space - any parametric surface
-    grid (e.g. a sphere parametrization or a curved shell), static or
-    control-dependent.
+    Positions are the explicit 3D points of the drawn geometry's
+    ``discretization_points``, so any parametric surface grid (e.g. a
+    sphere parametrization or a curved shell) is drawn at its true
+    position. The geometry may have more than two dimensions if controls
+    reduce it to two; color data and coordinates are reduced the same way.
+    Evaluates to a
+    :class:`~qewton.visualization.plots.result.ParametricGridResult`.
 
-    The geometry may have more than two dimensions: controls reduce it, so a
-    `(k, N1, N2)` stack of slices with a SliderSpec/FixedSpec on the first
-    dimension leaves an `(N1, N2)` surface to draw. Both the color data and
-    the geometry's own coordinates are reduced the same way, so the drawn
-    position moves correctly with control state instead of staying fixed
-    while only the color changes.
+    Args:
+        data (array_like): The data to plot.
+        data_config: Configuration describing `data`; must have exactly one
+            drawn GeometryAxes.
+        color: The scalar field coloring the surface.
+        controls: Control specs reducing `data`.
+        **kwargs: Further arguments of
+            :class:`~qewton.visualization.plots.data.base.DataPlot`.
 
-    Positions come entirely from the geometry, so `color` is the only spec -
-    there is no x/y role for the user to assign, unlike StructuredGridPlot.
+    Raises:
+        AssertionError: If there is not exactly one drawn GeometryAxes.
+        ValueError: If the geometry has no 3-component
+            ``discretization_points``, two grid dimensions do not remain after
+            controls, `color` is not scalar, or (on :meth:`evaluate`) the color
+            data does not match the grid shape.
+
+    Attributes:
+        color (ColorSpec): The color role.
     """
 
     def __init__(
@@ -180,8 +255,6 @@ class EmbeddedGridPlot(DataPlot):
                 "should use HeatmapPlot instead."
             )
 
-        # Controls and geometry shape are both known here, so validate the
-        # reduced dimensionality now rather than deferring to evaluate().
         n_reduced = self._count_controls_on_geometry_dims()
         remaining = len(geometry.shape) - n_reduced
         if remaining != 2:
@@ -200,6 +273,12 @@ class EmbeddedGridPlot(DataPlot):
         return 3
 
     def evaluate(self):
+        """Evaluate color and positions in the current control state.
+
+        Returns:
+            ParametricGridResult: Grid values and 3D coordinates, each of shape
+                ``(N1, N2)``.
+        """
         data, index_map, slice_map = self.apply_controls()
         slc = self.data_config.get_variable_slice(self.color.variable_or_axes)
         values = np.asarray(data[slice_map(slc)])
@@ -226,26 +305,46 @@ class EmbeddedGridPlot(DataPlot):
         )
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
+        """Create the renderer's ``ParametricSurfaceArtist`` for this plot."""
         return renderer.ParametricSurfaceArtist.create(
             backend_figure, self, row=row, col=col
         )
 
 
-class QuiverPlot(DataPlot):
-    """A vector field on a structured grid, drawn as arrows - the grid
-    counterpart to MeshVectorPlot (mesh vertices) and EmbeddedGridPlot
-    (scalar color on a grid). Draws any structured grid whose coordinates
-    are explicit 2D or 3D points, e.g. a mesh field resampled onto a
-    VolumeGridGeometry via a MeshInterpolationNode.
+class QuiverPlot(VectorFieldPlotMixin, DataPlot):
+    """A vector field on a structured grid, drawn as arrows.
 
-    Positions come from `geometry.discretization_points`, reduced by the
-    same mechanism EmbeddedGridPlot uses, so a control on an extra grid
-    dimension moves the drawn arrow positions correctly, not just the
-    vectors.
+    Positions are the explicit 2D or 3D points of the drawn geometry's
+    ``discretization_points``, reduced by controls like the data (as in
+    :class:`EmbeddedGridPlot`). Color handling, NaN dropping and
+    autoscaling follow
+    :class:`~qewton.visualization.plots.data.base.VectorFieldPlotMixin`.
+    Evaluates to a
+    :class:`~qewton.visualization.plots.result.VectorResult`.
 
-    Grid points a MeshInterpolationNode's `point_filter` excluded (outside
-    the source mesh) come back NaN in every vector component - those points
-    are dropped entirely rather than drawn as degenerate zero-length arrows.
+    Args:
+        data (array_like): The data to plot.
+        data_config: Configuration describing `data`.
+        vector: The vector field; its number of components must equal the
+            number of coordinate components of the grid.
+        color: None to color by magnitude, a scalar ColorSpec or Variable to
+            color by that field, or False for uncolored arrows.
+        controls: Control specs reducing `data`.
+        n_bins: Number of distinct colors the arrows are drawn in.
+        **kwargs: Further arguments of
+            :class:`~qewton.visualization.plots.data.base.DataPlot`.
+
+    Raises:
+        ValueError: If the geometry has no 2- or 3-component
+            ``discretization_points``, or the vector's component count does not
+            match.
+
+    Attributes:
+        vector (VectorSpec): The vector role.
+        color (ColorSpec or None): The color role, None for uncolored arrows.
+        n_bins (int): Number of distinct arrow colors.
+        embedding_dim (int): 2 or 3, the number of coordinate components of the
+            grid.
     """
 
     def __init__(
@@ -253,7 +352,9 @@ class QuiverPlot(DataPlot):
         data,
         data_config: DataConfiguration,
         vector: VectorSpec | Variable,
+        color: ColorSpec | Variable | bool | None = None,
         controls: list[ControlSpec] | None = None,
+        n_bins: int = 32,
         **kwargs,
     ):
         super().__init__(data, data_config, controls=controls, **kwargs)
@@ -275,49 +376,28 @@ class QuiverPlot(DataPlot):
                 f"needs exactly {self._coord_dim} (the grid is embedded in "
                 f"{self._coord_dim}D space)."
             )
+        self._init_vector_color(color)
+        self.n_bins = n_bins
 
     @property
     def embedding_dim(self) -> int:
         return self._coord_dim
 
     def evaluate(self):
-        data, index_map, slice_map = self.apply_controls()
-        slc = self.data_config.get_variable_slice(self.vector.variable_or_axes)
-        vectors = np.asarray(data[slice_map(slc)]).reshape(-1, self._coord_dim)
+        """Evaluate the arrows in the current control state.
 
+        Returns:
+            VectorResult: Arrow positions, vectors, magnitudes and colors.
+        """
+        data, index_map, slice_map = self.apply_controls()
         geometry = self.drawn_geometry_axes.geometry
         points = self.reduce_coordinates(
             geometry.discretization_points, self._geometry_dims()
         ).reshape(-1, self._coord_dim)
-        if len(points) != len(vectors):
-            raise ValueError(
-                f"{self.vector.name} yields {len(vectors)} vectors but the grid "
-                f"has {len(points)} points. Unresolved batch dimensions? Add a "
-                "SliderSpec or FixedSpec for them."
-            )
-
-        magnitude = np.linalg.norm(vectors, axis=1)
-        if self.vector.normalize:
-            safe = np.where(magnitude > 0, magnitude, 1.0)[:, None]
-            vectors = vectors / safe
-        vectors = vectors * self.vector.scale
-
-        step = self.vector.subsample
-        if step > 1:
-            points, vectors, magnitude = (
-                points[::step],
-                vectors[::step],
-                magnitude[::step],
-            )
-
-        # Points a MeshInterpolationNode's point_filter excluded come back NaN
-        # in every component - drop them rather than draw zero-length arrows.
-        valid = ~np.isnan(vectors).any(axis=1)
-        points, vectors, magnitude = points[valid], vectors[valid], magnitude[valid]
-
-        return VectorResult(positions=points, vectors=vectors, magnitude=magnitude)
+        return self._evaluate_arrows(data, slice_map, points)
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
+        """Create the renderer's 2D or 3D arrow-field artist for this plot."""
         return (
             renderer.ArrowField2DArtist.create(backend_figure, self, row=row, col=col)
             if self._coord_dim == 2

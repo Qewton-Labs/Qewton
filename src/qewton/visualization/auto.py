@@ -1,3 +1,5 @@
+"""Automatic selection of a Plot type and its roles from the data axes."""
+
 from qewton.config.axes import Axes, EllipsisAxes, FeatureAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
@@ -24,72 +26,92 @@ from qewton.visualization.plots.spec import (
 def auto_plot(
     data, data_config: DataConfiguration, plot_type: type[Plot] | None = None, **kwargs
 ) -> Plot:
-    """Builds a Plot for `data`, choosing a sensible type and its required
-    roles (x/y/color/vector) from `data_config`'s axes alone.
+    """Build a Plot for `data`, choosing its type and roles from the axes.
 
     Data on a product geometry (e.g. a meshed space-time domain, or the
-    output of a ProductSampler) is first restructured by product_view(),
-    with or without `plot_type`: each factor whose Variable a control in
-    `controls=` is bound to, e.g. `[TimeSpec(T)]`, becomes an axis of its
-    own, and the remaining factors are drawn as one geometry. If those
-    would exceed 3 dimensions, the 1-dimensional factors get a default
-    control instead, as long as that choice is unambiguous.
+    output of a ProductSampler) is first restructured by
+    :func:`~qewton.visualization.product_view.product_view`, with or
+    without `plot_type`.
 
-    With `plot_type=None` (default):
-        - A GeometryAxes wrapping a MeshGeometry, plus a scalar (dim=1)
-          FeatureAxes variable, becomes a MeshFieldPlot colored by it; a
-          vector one (dim matching the mesh's own dimension) becomes a
-          MeshVectorPlot.
-        - A GeometryAxes wrapping a GridGeometry (a parametric grid) is
-          dispatched on its discretization_points' own coordinate count
-          (coord_dim), not on how many structural grid axes it has: 2
-          (index coordinates only) becomes a HeatmapPlot for a scalar
-          variable or a 2-component QuiverPlot for a vector; 3 (embedded in
-          3D space) becomes an EmbeddedGridPlot or a 3-component QuiverPlot.
-          More than two structural grid axes get a default SliderSpec each
-          on every axis but the last two, which stay as the drawn grid;
-          exactly one axis becomes a LinePlot instead.
-        - No GeometryAxes, plus a FeatureAxes whose Variable has exactly
-          one scalar leaf, becomes a LinePlot - the first remaining axis is
-          its domain (`x`).
-        - No GeometryAxes, plus a FeatureAxes whose Variable has exactly
-          two scalar leaves, becomes a ScatterPlot (one leaf per x/y); any
-          remaining axes are left alone, since ScatterPlot already flattens
-          them into its implicit samples axis.
-        - Any axis besides the ones just described - an extra batch/step
-          axis alongside a GeometryAxes, or beyond a LinePlot's domain -
-          gets a default SliderSpec, unless a control for it was already
-          passed in `controls=`. Without one, the constructed Plot would
-          fail at evaluate() time asking for exactly this.
-        - Anything else raises ValueError with a specific explanation,
-          rather than guessing - including cases with an equally valid but
-          differently-drawn alternative (BarPlot instead of LinePlot,
-          PathPlot instead of ScatterPlot, MeshSurfacePlot instead of
-          MeshFieldPlot for a scalar on a 2D mesh), and a FeatureAxes
-          bundling multiple distinct named variables (e.g. temperature
-          *and* pressure, not one variable's auto-expanded components):
-          those need an explicit `plot_type` and role.
+    With ``plot_type=None``, the plot type is selected as follows:
 
-    With an explicit `plot_type`, this is a plain pass-through -
-    `plot_type(data, data_config, **kwargs)` - no auto-selection happens,
-    and `**kwargs` must supply that type's required roles directly, exactly
-    as if it were constructed directly - `controls=` then has to be a list.
+    - Field data on a meshed GeometryAxes becomes a
+      :class:`~qewton.visualization.plots.data.mesh.MeshFieldPlot` for a
+      scalar Variable, or a
+      :class:`~qewton.visualization.plots.data.mesh.MeshVectorPlot` for a
+      vector with one component per mesh dimension. A 1D mesh gives a
+      :class:`~qewton.visualization.plots.data.curve.LinePlot`.
+    - Field data on a
+      :class:`~qewton.geometries.discrete.grid_geometry.GridGeometry` is
+      dispatched on the coordinate count of its ``discretization_points``:
+      2 gives a :class:`~qewton.visualization.plots.data.grid.HeatmapPlot`
+      (scalar) or a 2-component
+      :class:`~qewton.visualization.plots.data.grid.QuiverPlot`; 3 gives
+      an :class:`~qewton.visualization.plots.data.grid.EmbeddedGridPlot`
+      (scalar) or a 3-component QuiverPlot. Grid axes beyond the last two
+      get a default control each; a grid with one axis gives a LinePlot.
+    - Field data on any other discrete point set becomes a
+      :class:`~qewton.visualization.plots.data.points.PointCloudPlot`
+      (scalar) or a QuiverPlot (one component per coordinate); 1D points
+      give a LinePlot. If the plotted Variable is the geometry's own
+      coordinate Variable, the points themselves are drawn as an uncolored
+      PointCloudPlot.
+    - Without a GeometryAxes, a FeatureAxes with one scalar leaf becomes a
+      LinePlot over the first remaining axis; two scalar leaves or two
+      distinct scalar Variables become a
+      :class:`~qewton.visualization.plots.data.samples.ScatterPlot`; three
+      or more distinct scalar Variables become a LinePlot with a
+      :class:`~qewton.visualization.plots.spec.SelectorSpec` on `y`.
+    - With a GeometryAxes, several distinct Variables of one dimension in
+      the FeatureAxes are offered through a SelectorSpec.
+    - Every remaining axis gets a default control (a
+      :class:`~qewton.visualization.plots.spec.SliderSpec` unless
+      ``controls`` names another), except for a ScatterPlot, which
+      flattens them into its samples.
+    - Anything else raises ``ValueError`` instead of guessing.
 
-    `scale=` (a Scale) sets the color range of the ColorSpec auto_plot
-    creates, e.g. `Scale(vmin=0.0, vmax=1.0)` for one fixed colorbar over
-    every slider state and animation frame.
+    With an explicit `plot_type`, this calls
+    ``plot_type(data, data_config, **kwargs)`` without any selection, so
+    `kwargs` must supply that type's required roles.
+
+    Args:
+        data (array-like): The values, with one dimension per axis of
+            `data_config`.
+        data_config: Describes the axes of `data`. Plot type and roles are
+            inferred from it.
+        plot_type: The Plot class to construct, or None to select one
+            automatically.
+        **kwargs: Forwarded to the Plot constructor. Two keys are handled
+            here:
+
+            - ``controls``: A list of resolved ControlSpec instances, a
+              ControlSpec class or unbound instance to use for every axis
+              left over for a control, or a ``{axis: control}`` dict. A
+              ControlSpec bound to a factor's Variable, e.g.
+              ``[TimeSpec(T)]``, splits that factor off a product
+              geometry. With an explicit `plot_type`, it must be a list.
+            - ``scale``: A
+              :class:`~qewton.visualization.plots.spec.Scale` for the
+              ColorSpec created here, e.g. ``Scale(vmin=0.0, vmax=1.0)``
+              for one fixed color range over every control state. Not
+              allowed with an explicit `plot_type`.
+
+    Returns:
+        The constructed plot.
 
     Raises:
-        ValueError: If part of `controls=` would be ignored: a dict key, or
-            a single ControlSpec instance, that no axis of the data takes a
-            control for - or, with an explicit `plot_type`, `controls=`
-            given as anything but a list. Also if `scale=` is given but the
-            chosen plot has no color, or together with an explicit
-            `plot_type`.
+        ValueError: If no plot type can be selected unambiguously; if part
+            of ``controls`` would be ignored (a dict key or single
+            ControlSpec instance no axis takes a control for); if
+            ``controls`` is not a list with an explicit `plot_type`; or if
+            ``scale`` is given with an explicit `plot_type` or for a plot
+            without color.
     """
     scale = kwargs.pop("scale", None)
     requested_controls = kwargs.get("controls")
-    data, data_config, controls = product_view(data, data_config, requested_controls)
+    data, data_config, controls = product_view(
+        data, data_config, requested_controls, _vector_dim(data_config, plot_type, kwargs)
+    )
     if controls is not None:
         kwargs["controls"] = controls
 
@@ -129,11 +151,41 @@ def auto_plot(
     return plot
 
 
+def _product_hint(geometry) -> str:
+    """A hint for point sets whose coordinates combine several variables,
+    e.g. (x, alpha) - most likely a product domain passed as one flat point
+    cloud, which can't be split into its factors."""
+    variable = getattr(geometry, "variable", None)
+    if variable is None or variable.is_leaf or len(variable.children) < 2:
+        return ""
+    names = [child.name for child in variable.children]
+    return (
+        f" If these points are a product domain of {names}, pass one "
+        "GeometryAxes per factor, e.g. DataConfiguration(GeometryAxes("
+        "A_int.discretize(alphas)), GeometryAxes(Omega.discretize(x_grid)), "
+        "FeatureAxes(u)), so a factor can get a slider."
+    )
+
+
+def _vector_dim(data_config: DataConfiguration, plot_type, kwargs) -> int | None:
+    """Number of components of the vector the plot will draw, or None for a
+    scalar. Taken from `vector=` with an explicit `plot_type`, else from a
+    single auto-expanded multi-component FeatureAxes Variable."""
+    if plot_type is not None:
+        vector = kwargs.get("vector")
+        dim = getattr(vector, "n_dimensions", None) or getattr(vector, "dim", None)
+        return dim if dim in (2, 3) else None
+    feature_axes = data_config.feature_axes
+    variable = feature_axes.variables if feature_axes is not None else None
+    if variable is None or variable.dim not in (2, 3) or variable.name is None:
+        return None
+    return variable.dim if _is_auto_expanded(variable) else None
+
+
 def _check_controls_used(controls, plot: Plot) -> None:
-    """Raises if a dict entry or a single ControlSpec instance passed as
-    `controls=` did not end up as one of `plot`'s controls, instead of
-    silently ignoring it. A ControlSpec class only names the type for
-    whatever axes are left over, so it is never unused."""
+    """Raise if a dict entry or a single ControlSpec instance passed as
+    `controls=` did not end up as one of `plot`'s controls. A ControlSpec
+    class only names the type for leftover axes, so it is never unused."""
 
     def bound_to(control, key) -> bool:
         target = control.variable_or_axes
@@ -161,13 +213,20 @@ def _check_controls_used(controls, plot: Plot) -> None:
 
 
 def is_curve_like(plot: Plot) -> bool:
-    """Whether `plot` draws on one shared 2D x/y axes the way a LinePlot/
-    PathPlot does, so several of them compose safely in one Overlay.
+    """Check whether `plot` draws domain against value on shared 2D axes.
 
-    A PointCloudPlot qualifies only for a 1D domain (drawn on a plain 2D
-    x/y=0 axes) - a 2D/3D point cloud's axes are spatial coordinates, not
-    domain-vs-value, and don't share meaning with a curve's axes; mesh/grid
-    field plots are excluded for the same reason.
+    Such plots can be combined in one
+    :class:`~qewton.visualization.layout.Overlay`.
+
+    Args:
+        plot: The plot to check.
+
+    Returns:
+        True for a
+        :class:`~qewton.visualization.plots.data.curve.LinePlot`, a
+        :class:`~qewton.visualization.plots.data.curve.PathPlot`, and a
+        :class:`~qewton.visualization.plots.data.points.PointCloudPlot`
+        over a 1D domain; False otherwise.
     """
     if isinstance(plot, (LinePlot, PathPlot)):
         return True
@@ -195,11 +254,9 @@ def _require_named_variable(
 
 
 def _is_auto_expanded(variable: Variable) -> bool:
-    """True for a Variable's own multi-component expansion (e.g. dim=3 ->
-    children named x_1/x_2/x_3) - one physical quantity, safe to bundle as
-    a single color/vector role. False once a child's name breaks that
-    pattern, meaning the children are genuinely distinct variables composed
-    together (e.g. TEMPERATURE * PRESSURE), not components of one."""
+    """True for a leaf or a Variable's own multi-component expansion (e.g.
+    dim=3 -> children named x_1/x_2/x_3), False for distinct variables
+    composed together (e.g. TEMPERATURE * PRESSURE)."""
     if variable.is_leaf:
         return True
     return all(
@@ -208,9 +265,8 @@ def _is_auto_expanded(variable: Variable) -> bool:
 
 
 def _distinct_quantities(variable: Variable) -> list[Variable]:
-    """Splits `variable` at the seams between genuinely different
-    variables, leaving each auto-expanded multi-component quantity intact.
-    A plain scalar or auto-expanded vector returns just itself."""
+    """Split `variable` into its distinct quantities, keeping each
+    auto-expanded multi-component quantity intact."""
     if _is_auto_expanded(variable):
         return [variable]
     quantities = []
@@ -222,10 +278,8 @@ def _distinct_quantities(variable: Variable) -> list[Variable]:
 def _auto_quantity(
     data_config: DataConfiguration, variable: Variable
 ) -> "Variable | SelectorSpec":
-    """The single quantity to plot, or - when the FeatureAxes bundles
-    several distinct ones - a SelectorSpec letting the user switch between
-    them, as long as they all share one dim (so the same Plot role stays
-    valid regardless of which is selected)."""
+    """The single quantity to plot, or a SelectorSpec over several distinct
+    quantities if they all share one dim (so one Plot role fits each)."""
     quantities = _distinct_quantities(variable)
     if len(quantities) == 1:
         return quantities[0]
@@ -242,8 +296,7 @@ def _auto_quantity(
 
 
 def _other_axes(data_config: DataConfiguration, *consumed: Axes | None) -> list[Axes]:
-    """Every axis in `data_config` besides the ones already spoken for
-    (geometry, feature) and any EllipsisAxes wildcard."""
+    """Every axis in `data_config` except `consumed` and EllipsisAxes."""
     return [
         axes
         for axes in data_config.axes
@@ -252,20 +305,14 @@ def _other_axes(data_config: DataConfiguration, *consumed: Axes | None) -> list[
 
 
 def _resolve_control(spec, axis: Axes):
-    """Resolves one control - a ControlSpec subclass or instance - for
-    `axis`.
+    """Resolve one control - a ControlSpec class or instance - for `axis`.
 
-    A class is instantiated with the axis filled in. An instance gets its
-    still-unset `variable_or_axes` filled in and is then reused as-is (by
-    identity) - the mechanism that lets one instance, passed to several
-    auto_plot() calls, end up shared across them (one widget, moving them
-    together), the same way a shared Scale or SelectorSpec already works.
+    A class is instantiated for the axis. An instance gets its unset
+    `variable_or_axes` filled in and is returned as-is, so one instance
+    passed to several auto_plot() calls is shared between their plots.
     """
     if isinstance(spec, type):
-        # By keyword, not position: FixedSpec inherits ControlSpec.__init__
-        # verbatim (init_state first), unlike SliderSpec/FacetSpec (both put
-        # variable_or_axes first) - the keyword is the only thing every
-        # ControlSpec subclass's signature agrees on.
+        # By keyword: ControlSpec subclasses differ in positional order.
         return spec(variable_or_axes=axis)
     if spec.variable_or_axes is None:
         spec.variable_or_axes = axis
@@ -281,18 +328,12 @@ def _resolve_control(spec, axis: Axes):
 def _default_sliders(
     axes: list[Axes], existing_controls: list, controls=SliderSpec
 ) -> list[ControlSpec]:
-    """One resolved control per axis not already covered by a caller-
-    supplied control.
+    """One resolved control per axis not covered by `existing_controls`.
 
-    `controls` (default SliderSpec) is a ControlSpec class or instance
-    applied to every uncovered axis, or a `{axis: class-or-instance}` dict
-    for several unresolved axes at once. A bare (non-dict) instance only
-    makes sense for exactly one uncovered axis - it can't simultaneously
-    represent several.
-
-    Bounds/initial state left unresolved (None) are filled in from the data
-    by DataPlot.__init__, same as any explicitly-constructed ControlSpec
-    with unspecified bounds.
+    `controls` is a ControlSpec class or instance applied to every
+    uncovered axis (an instance only for exactly one), or an
+    `{axis: class-or-instance}` dict. Unset bounds and initial states are
+    filled in from the data by DataPlot.
     """
     covered = {c.variable_or_axes for c in existing_controls}
     uncovered = [axis for axis in axes if axis not in covered]
@@ -316,10 +357,8 @@ def _default_sliders(
 
 
 def _split_controls_default(kwargs: dict):
-    """Pulls a class/instance/dict `controls=` (what to use for surplus
-    axes) out of `kwargs`, leaving a plain list (or nothing) to forward to
-    the Plot constructor as-is. A list means the caller already fully
-    resolved their own controls."""
+    """Split a class/instance/dict `controls=` (the default for leftover
+    axes) off `kwargs`; a list stays in `kwargs` and is forwarded as-is."""
     controls = kwargs.get("controls")
     if controls is None or isinstance(controls, list):
         return SliderSpec, kwargs
@@ -351,11 +390,9 @@ def _auto_geometry_plot(
         kwargs, _other_axes(data_config, *all_geometry_axes, feature_axes), default_control
     )
 
-    # The plotted quantity IS this geometry's own coordinate Variable (e.g.
-    # a PointSampler's own output, or an operator-learning model's
-    # coordinate input) - there's no separate quantity to color/height by,
-    # so show the points themselves instead of dispatching on `quantity` as
-    # if it were one.
+    # The plotted quantity is this geometry's own coordinate Variable (e.g.
+    # a PointSampler's output): there is nothing to color by, so show the
+    # points themselves.
     if geometry.variable is not None and quantity == geometry.variable:
         if quantity.dim in (1, 2, 3):
             return PointCloudPlot(data, data_config, color=None, **kwargs)
@@ -366,18 +403,12 @@ def _auto_geometry_plot(
             "is intentional."
         )
 
-    # Checked structurally (`.mesh` populated), not by isinstance(MeshGeometry)
-    # - a SampledGeometry only has a mesh once mesh-mode sampling gave it real
-    # cell connectivity, so this correctly falls through to the point-cloud
-    # branch below outside of that, without auto_plot needing to know
-    # SampledGeometry exists at all.
+    # Checked structurally (`.mesh` populated), not by isinstance: a
+    # SampledGeometry only has a mesh after mesh-mode sampling, and falls
+    # through to the point-cloud branch below otherwise.
     if getattr(geometry, "mesh", None) is not None:
-        # A 1D "mesh" (points connected in a line, e.g. a sampled Interval)
-        # isn't a drawable 2D/3D surface at all - MeshFieldPlot/
-        # MeshVectorPlot explicitly reject it. It's a LinePlot: value vs.
-        # position along the domain, x=geometry_axes itself (LinePlot reads
-        # real coordinates from a 1D geometry's own discretization_points -
-        # see LinePlot._geometry_x_values()).
+        # A 1D mesh (e.g. a sampled Interval) is drawn as a LinePlot over
+        # the geometry's own coordinates (LinePlot._geometry_x_values()).
         if geometry.dim == 1:
             if quantity.dim == 1:
                 return LinePlot(data, data_config, x=geometry_axes, y=quantity, **kwargs)
@@ -402,16 +433,13 @@ def _auto_geometry_plot(
         )
 
     if isinstance(geometry, GridGeometry):
-        # Dispatch on coord_dim (discretization_points' own component count),
-        # not on how many structural grid axes there are - a 2-axis
-        # index-coordinate grid and a 2-axis grid embedded in 3D space need
-        # different Plot families regardless of both having grid_dims==2.
+        # Dispatch on coord_dim (discretization_points' component count),
+        # not on the number of structural grid axes: a 2-axis grid can be
+        # flat or embedded in 3D space.
         leaves = geometry.variable.leaves
         if len(leaves) > 2:
-            # Surplus structural axes beyond the last two get a default
-            # SliderSpec each, the same mechanism _other_axes/
-            # _with_extra_controls already applies to non-geometry axes -
-            # the last two leaves stay as the drawn grid.
+            # Every grid axis but the last two gets a default control; the
+            # last two are drawn.
             kwargs = _with_extra_controls(kwargs, leaves[:-2], default_control)
             leaves = leaves[-2:]
         grid_dims = len(leaves)
@@ -463,18 +491,14 @@ def _auto_geometry_plot(
             "or 3. Construct a Plot explicitly."
         )
 
-    # Any other DiscreteGeometry still has discretization_points (just no
-    # mesh/grid structure to them) - e.g. a SampledGeometry outside mesh
-    # mode. QuiverPlot itself has no GridGeometry-specific requirement (only
-    # 3D discretization_points), so it's reused as-is for the vector case.
+    # Any other DiscreteGeometry with discretization_points but no mesh or
+    # grid structure, e.g. a SampledGeometry outside mesh mode.
     if (
         isinstance(geometry, DiscreteGeometry)
         and geometry.discretization_points is not None
     ):
-        # 1D points (e.g. a PointCloud along a line) aren't drawable by
-        # PointCloudPlot (2D/3D only) - a LinePlot, same as the 1D-mesh
-        # case above, reading real coordinates via
-        # LinePlot._geometry_x_values().
+        # PointCloudPlot draws 2D/3D points only; 1D points become a
+        # LinePlot, as for a 1D mesh.
         if geometry.discretization_points.shape[-1] == 1:
             if quantity.dim == 1:
                 return LinePlot(data, data_config, x=geometry_axes, y=quantity, **kwargs)
@@ -487,12 +511,15 @@ def _auto_geometry_plot(
             return PointCloudPlot(
                 data, data_config, color=ColorSpec(quantity, scale=scale), **kwargs
             )
-        if quantity.dim == 3:
+        # QuiverPlot needs one vector component per coordinate.
+        coord_dim = geometry.discretization_points.shape[-1]
+        if quantity.dim == coord_dim:
             return QuiverPlot(data, data_config, vector=VectorSpec(quantity), **kwargs)
         raise ValueError(
             f"{quantity.name} has dim={quantity.dim} - expected dim=1 for a "
-            "PointCloudPlot or dim=3 for a QuiverPlot. Construct one "
-            "explicitly if this is intentional."
+            f"PointCloudPlot or dim={coord_dim} for a QuiverPlot on these "
+            f"{coord_dim}D points. Construct one explicitly if this is "
+            f"intentional.{_product_hint(geometry)}"
         )
 
     raise ValueError(
@@ -504,10 +531,9 @@ def _auto_geometry_plot(
 
 
 def _auto_flat_plot(data, data_config: DataConfiguration, **kwargs) -> Plot:
-    """Unlike the geometry branch, two distinct scalar quantities are not
-    ambiguous here - x/y is exactly what a ScatterPlot needs them for, so
-    this (unlike _auto_geometry_plot) only reaches for a SelectorSpec once
-    ScatterPlot's 2-quantity case no longer applies (3+ distinct scalars)."""
+    """Plot selection without a drawn GeometryAxes. Two distinct scalar
+    quantities give a ScatterPlot; a SelectorSpec is only used for three or
+    more."""
     feature_axes = data_config.feature_axes
     variable = _require_named_variable(data_config, feature_axes)
     quantities = _distinct_quantities(variable)
@@ -530,8 +556,8 @@ def _auto_flat_plot(data, data_config: DataConfiguration, **kwargs) -> Plot:
             return ScatterPlot(data, data_config, x=leaves[0], y=leaves[1], **kwargs)
 
     if len(quantities) == 2 and all_scalar:
-        # ScatterPlot flattens every remaining axis into its implicit
-        # samples axis already - no control needed for `other_axes` here.
+        # ScatterPlot flattens every remaining axis into its samples axis,
+        # so `other_axes` need no control.
         return ScatterPlot(data, data_config, x=quantities[0], y=quantities[1], **kwargs)
 
     if len(quantities) >= 3 and all_scalar and other_axes:

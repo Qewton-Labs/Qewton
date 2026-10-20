@@ -16,3 +16,5 @@ The `optim` module manages the training, optimization, and hyperparameter tuning
 
 ## Parallelism
 The `Tuner` uses a worker-queue model to distribute training trials across available CPUs or GPUs, ensuring efficient utilization of hardware during hyperparameter searches.
+
+See [DECISIONS.md](DECISIONS.md) for design decisions.

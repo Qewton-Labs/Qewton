@@ -1,3 +1,6 @@
+"""Computation graphs (DAGs) of nodes and the tracking objects that build
+them from plain Python functions."""
+
 from __future__ import annotations
 from collections import deque
 from contextlib import contextmanager
@@ -26,11 +29,9 @@ from qewton.optim.parameters.trainable_parameters import TrainableParametersColl
 from qewton.graphs.edges import Edge
 
 if TYPE_CHECKING:
-    # Deferred (not just for typing - see visualize()'s own local imports):
-    # qewton.visualization / qewton.data.dataloaders.sampler.point_sampler
-    # both transitively import qewton.optim, which imports GraphBasedTrainer,
-    # which imports Graph itself - a module-level import here would make
-    # `import qewton` circular.
+    # qewton.visualization and qewton.data.dataloaders.sampler.point_sampler
+    # transitively import this module, so they are only imported for type
+    # checking here and locally inside the methods that need them.
     from qewton.visualization.plots.base import Plot
     from qewton.visualization.plots.graph import GraphPlot
     from qewton.visualization.layout import Layout
@@ -38,8 +39,36 @@ if TYPE_CHECKING:
 
 
 class Graph(Serializable):
-    """
-    Represents a directed acyclic graph (DAG) of interconnected nodes.
+    """Directed acyclic graph (DAG) of interconnected nodes.
+
+    Nodes are connected port to port via :class:`~qewton.graphs.edges.Edge`
+    objects. Every connection unifies the data configurations of both
+    ports; the unified configurations are stored per graph in
+    `dynamic_data_configs`, the static configurations of the ports stay
+    untouched.
+
+    Attributes:
+        nodes (set[Node]): All nodes of this graph.
+        sorted_nodes (list[Node]): The nodes in execution order, filled by
+            :meth:`sort`.
+        sorted_incoming_edges (list[dict[Port, Edge]]): For each entry of
+            `sorted_nodes`, its incoming edges keyed by the input port they end
+            in.
+        graph_was_sorted (bool): Whether :meth:`sort` was called since the last
+            structural change.
+        mode (EvaluationPhase): The evaluation phase of this graph.
+        incoming_edges (dict[Node, list[Edge]]): Incoming edges of each node,
+            including edges from outside of the graph.
+        outgoing_edges (dict[Node, list[Edge]]): Outgoing edges of each node,
+            including edges to outside of the graph.
+        skip_connections (list[Edge]): Edges added by
+            :meth:`add_skip_connection`.
+        edges_from_outside (list[Edge]): Edges from a port outside of this
+            graph into one of its nodes.
+        edges_to_outside (list[Edge]): Edges from one of its nodes to a port
+            outside of this graph.
+        dynamic_data_configs (dict[Node, dict[Port, DataConfiguration]]): The
+            unified data configuration of every port known to this graph.
     """
 
     def __init__(self):
@@ -63,20 +92,28 @@ class Graph(Serializable):
     def from_function(
         cls, func: Callable
     ) -> tuple[Graph, list[list[InputPort] | InputPort], list[OutputPort | int]]:
-        """
-        Creates a graph by tracking the execution of a given function.
+        """Build a graph by tracking the execution of `func`.
 
-        This method allows defining a graph structure programmatically by
-        using `TrackingObject`s as inputs and outputs within the function.
+        `func` is called once with one :class:`TrackingObject` per
+        parameter; every node called on them is recorded in the new graph
+        (see :meth:`tracker`).
 
         Args:
-            func (Callable): The function whose execution will be tracked to build the
-                graph.
+            func: The function to track. Its parameters become the graph
+                inputs, its returned tracking objects the graph outputs.
 
         Returns:
-            tuple[Graph, list[list[InputPort] | InputPort], list[OutputPort | int]]:
-                A tuple containing the constructed graph, its input ports, and its output
-                ports.
+            tuple: A tuple ``(graph, input_ports, output_ports)`` of
+
+                - graph (Graph): The constructed graph.
+                - input_ports (list[list[InputPort] | InputPort]): For each
+                  parameter of `func`, the input ports it was passed to.
+                - output_ports (list[OutputPort | int]): For each returned
+                  value, the output port producing it, or the index of the
+                  parameter if an input is returned unchanged.
+
+        Raises:
+            ValueError: If a parameter of `func` is neither used nor returned.
         """
         graph = Graph()
         sig = inspect.signature(func)
@@ -133,13 +170,20 @@ class Graph(Serializable):
         return graph, input_ports, output_ports  # type: ignore
 
     def add_node(self, node: Node, check_warning=True) -> None:
-        """Adds a node to this graph.
+        """Add a node to this graph.
+
+        Adding a node that is already part of the graph keeps its edges
+        and data configurations.
 
         Args:
-            node (Node): The node that is added.
-            check_warning (bool, optional): Whether it is checked, that
-                a node with the same name already exists in this graph.
-                Defaults to True.
+            node: The node to add.
+            check_warning (bool, optional): Whether to check that no node with
+                the same `node_id` is already part of this graph. Default is
+                True.
+
+        Raises:
+            ValueError: If `check_warning` is True and a node with the same
+                `node_id` already exists in this graph.
         """
         if check_warning:
             for known_node in self.nodes:
@@ -155,9 +199,11 @@ class Graph(Serializable):
             self.dynamic_data_configs[node] = node.copy_data_configs()
 
     def sort(self):
-        """
-        Sorts the nodes in the graph topologically (Kahn's algorithm) to determine the
-        execution order.
+        """Sort the nodes topologically to determine the execution order.
+
+        Uses Kahn's algorithm. Edges from outside of the graph do not
+        count towards a node's in-degree, since their data is already
+        available when the graph starts.
 
         Raises:
             ValueError: If a cycle is detected in the graph.
@@ -197,22 +243,22 @@ class Graph(Serializable):
         from_: Node | OutputPort,
         to_: Node | InputPort,
     ) -> None:
-        """
-        Connects two nodes or ports within the graph.
+        """Connect two nodes or ports within the graph.
 
-        If nodes are passed directly, it assumes a single output from `from_`
-        and a single input to `to_`. It adds nodes to the graph if they are not
-        already present and unifies their data configurations.
+        If nodes are passed, all output ports of `from_` are connected to
+        the input ports of `to_` in order. Both nodes are added to the
+        graph if needed, and the data configurations of every connected
+        port pair are unified. Warns if the graph was already sorted.
 
         Args:
-            from_ (Node | OutputPort): The source node or output port.
-            to_ (Node | InputPort): The destination node or input port.
+            from_: The source node or output port.
+            to_: The destination node or input port.
 
         Raises:
-            ValueError: If the number of ports do not match or an input port is
-                already connected.
-            DataConfigMismatchError: If the data configurations of the connected
-                ports are incompatible.
+            ValueError: If the numbers of ports do not match or an input port
+                is already connected.
+            DataConfigMismatchError: If the data configurations of the
+                connected ports are incompatible.
         """
         self._check_graph_was_sorted()
 
@@ -271,10 +317,14 @@ class Graph(Serializable):
         return unified_config
 
     def remove(self, obj: Node | Edge):
-        """Removes a node or edge from the graph.
+        """Remove a node or edge from the graph.
+
+        Removing a node also removes all edges connected to it. All data
+        configurations are recalculated afterwards and the graph is marked
+        as unsorted.
 
         Args:
-            object (Node | Edge): The node or edge to be removed.
+            obj: The node or edge to remove.
         """
         if isinstance(obj, Node):
             if obj in self.nodes:
@@ -308,8 +358,8 @@ class Graph(Serializable):
                 if obj.from_port.node in self.outgoing_edges:
                     if obj in self.outgoing_edges[obj.from_port.node]:
                         self.outgoing_edges[obj.from_port.node].remove(obj)
-        # Now we have to update the data configurations -> only possible
-        # be building them up from zero again.
+        # Unification cannot be undone, so the configurations are rebuilt
+        # from the static ones.
         self._recalculate_data_configurations()
         # A graph is never sorted after a node or edge was removed, since the
         # order might have changed.
@@ -318,10 +368,13 @@ class Graph(Serializable):
         self.sorted_incoming_edges = []
 
     def duplicate(self) -> Graph:
-        """Creates a duplicate of the current graph, including all nodes and edges.
+        """Create a copy of this graph's structure.
+
+        The copy shares the node objects but has its own edges and data
+        configurations. It is sorted if this graph is sorted.
 
         Returns:
-            Graph: A new instance of the graph with the same structure and nodes.
+            Graph: A new graph with the same nodes and connections.
         """
 
         def edge_copy(edge: Edge, edge_mapping: dict[Edge, Edge]) -> Edge:
@@ -370,22 +423,27 @@ class Graph(Serializable):
         input_port_mapping: dict[Port, Port] | None = None,
         output_port_mapping: dict[Port, Port] | None = None,
     ):
-        """Replaces an existing node in the graph with a new node. Both
-        nodes must have the same number of input and output ports. The
-        connections will be transferred from the old node to the new node,
-        in respect to the order of the ports.
+        """Replace a node of the graph with a new node.
+
+        All edges and skip connections of `old_node` are transferred to
+        `new_node`, the data configurations are recalculated and the graph
+        is marked as unsorted.
 
         Args:
-            old_node (Node): The node to be replaced.
-            new_node (Node): The new node that will replace the old node.
-            input_port_mapping (dict[InputPort, InputPort], optional):
-                A mapping of the input ports from the old node to the
-                new node. If not provided, the ports will be matched by
-                their order.
-            output_port_mapping (dict[OutputPort, OutputPort], optional):
-                A mapping of the output ports from the old node to the
-                new node. If not provided, the ports will be matched by
-                their order.
+            old_node: The node to replace.
+            new_node: The node that replaces `old_node`.
+            input_port_mapping: Maps input ports of `old_node` to input ports
+                of `new_node`. None (default) matches them by order, which
+                requires both nodes to have the same number of input ports.
+            output_port_mapping: Maps output ports of `old_node` to output
+                ports of `new_node`. None (default) matches them by order,
+                which requires both nodes to have the same number of output
+                ports.
+
+        Raises:
+            ValueError: If `old_node` is not part of the graph, `new_node`
+                already is, or the numbers of ports do not match without a
+                mapping.
         """
         if old_node not in self.nodes:
             raise ValueError(f"Node {old_node.name} is not part of this graph.")
@@ -456,13 +514,7 @@ class Graph(Serializable):
         self.graph_was_sorted = False
 
     def _remove_node_connections(self, edge_container: list[Edge], node: Node):
-        """Removes all edges from the provided edge list that are connected to the
-        specified node.
-
-        Args:
-            edge_list (list[Edge]): The list of edges to be filtered.
-            node (Node): The node whose connections should be removed.
-        """
+        """Remove all edges touching `node` from `edge_container` in place."""
         edge_list = list(edge_container)  # Create a copy
         for edge in edge_list:
             if edge.from_port.node == node or edge.to_port.node == node:
@@ -501,15 +553,25 @@ class Graph(Serializable):
         self.update_data_configurations(to_node, to_port, unified)
 
     def update_data_configurations(self, node: Node, port: Port, config_dict: dict):
-        """Updates the data configurations recursively for the given node, port,
-        and neighbors.
+        """Update the data configuration of `port` and propagate the change.
+
+        Every port of `node` whose configuration became more concrete is
+        unified with the ports it is connected to inside this graph, and
+        the update continues recursively from there. Edges to or from
+        outside of the graph are not followed.
 
         Args:
-            node (Node): The node for which the data configurations should be updated.
-            port (Port): The port of the node for which the data configuration should
-                be updated.
-            config_dict (dict): Mapping of configuration keys/values used to update the
-                node and neighbor data configurations.
+            node: The node owning `port`.
+            port: The port whose data configuration is updated.
+            config_dict: Maps axes to their replacements, as returned by
+                :meth:`~qewton.config.data_configurations.base.DataConfiguration.unify_with`.
+
+        Returns:
+            set[Port]: All ports whose configuration changed.
+
+        Raises:
+            DataConfigMismatchError: If a propagated configuration is
+                incompatible with a connected port.
         """
         updated_ports = node.update_data_configs(
             port, config_dict, self.dynamic_data_configs[node]
@@ -545,11 +607,8 @@ class Graph(Serializable):
         return updated_ports
 
     def _check_graph_was_sorted(self):
-        """
-        Checks if the graph has already been sorted.
-        If it has, a warning is issued because adding new edges might invalidate the
-        current sort order.
-        """
+        """Warn if the graph is sorted, since a new edge may invalidate the
+        order."""
         if self.graph_was_sorted:
             warn(
                 "The graph was already sorted. Inputting a new edge may change the "
@@ -557,16 +616,7 @@ class Graph(Serializable):
             )
 
     def _check_port_is_free(self, to_node: Node, input_port: InputPort) -> None:
-        """
-        Checks if a given input port of a node is already connected.
-
-        Args:
-            to_node (Node): The node whose input port is being checked.
-            input_port (InputPort): The specific input port to check.
-
-        Raises:
-            ValueError: If the input port is already connected.
-        """
+        """Raise a ValueError if `input_port` already has an incoming edge."""
         if to_node in self.incoming_edges:
             for e in self.incoming_edges[to_node]:
                 if e.to_port == input_port:
@@ -578,21 +628,9 @@ class Graph(Serializable):
     def _check_connect(
         self, user_input: InputPort | OutputPort | Node, check_input: bool = True
     ) -> InputPort | OutputPort:
-        """
-        Helper method to extract a single port from a user input (Node or Port).
-
-        Args:
-            user_input (InputPort | OutputPort | Node): The input provided by the user.
-            check_input (bool, optional): If True, checks input ports; otherwise, checks
-                output ports. Defaults to True.
-
-        Returns:
-            InputPort | OutputPort: The extracted single port.
-
-        Raises:
-            ValueError: If a Node with multiple ports is provided and a specific port i
-                not specified.
-        """
+        """Return `user_input` if it is a port, else the single input
+        (`check_input`) or output port of the node; raise a ValueError if
+        the node has more than one."""
         if isinstance(user_input, (InputPort, OutputPort)):
             return user_input
         ports = user_input.input_ports if check_input else user_input.output_ports
@@ -604,15 +642,21 @@ class Graph(Serializable):
         return ports[0]
 
     def connect_from_outside_of_graph(self, from_port: Port, to_port: InputPort):
-        """Connects to ports where the 'from_port' is not part of this graph itself.
-        The node of the 'to_port' will be added to this graph. The created edge
-        will pass data between the ports, but will not increase the in-degree
-        of the 'to_port' node (meaning the node can be evaluated at the start,
-        since data is read from 'outside' the graph)
+        """Connect a port outside of this graph to an input port inside it.
+
+        The node of `to_port` is added to this graph. The created edge
+        passes data between the ports but does not increase the in-degree
+        of the node of `to_port`, so that node can be evaluated at the
+        start of a run.
 
         Args:
-            from_port (Port): The port of a node where data should come from.
-            to_port (InputPort): The port of a node where data should go to.
+            from_port: The port outside of this graph that provides the data.
+            to_port: The input port that receives the data.
+
+        Raises:
+            ValueError: If `to_port` is already connected.
+            DataConfigMismatchError: If the data configurations of the ports
+                are incompatible. The edge is not added in this case.
         """
         self._check_graph_was_sorted()
         to_node = to_port.node
@@ -642,13 +686,19 @@ class Graph(Serializable):
         self.update_data_configurations(from_node, from_port, unified_to_config)
 
     def connect_to_outside_of_graph(self, from_port: OutputPort, to_port: Port):
-        """Connects to ports where the 'to_port' is not part of this graph itself.
-        The node of the 'from_port' will be added to this graph. The created edge
-        will pass data from an internal output port to an external port.
+        """Connect an output port inside this graph to a port outside of it.
+
+        The node of `from_port` is added to this graph. The value of
+        `from_port` is written to `to_port` at the end of :meth:`run`.
 
         Args:
-            from_port (OutputPort): The port of a node where data should come from.
-            to_port (Port): The port of a node where data should go to.
+            from_port: The output port inside this graph that provides the
+                data.
+            to_port: The port outside of this graph that receives the data.
+
+        Raises:
+            DataConfigMismatchError: If the data configurations of the ports
+                are incompatible. The edge is not added in this case.
         """
         self._check_graph_was_sorted()
         from_node = from_port.node
@@ -676,16 +726,8 @@ class Graph(Serializable):
         self.update_data_configurations(from_node, from_port, unified_from_config)
 
     def _check_external_node_in_config_dict(self, port: Port, node: Node):
-        """
-        Ensures that an external node and its port have an entry in the dynamic
-        data configurations.
-        This is crucial when connecting to or from nodes that are not formally part
-        of `self.nodes`.
-
-        Args:
-            port (Port): The port of the external node.
-            node (Node): The external node.
-        """
+        """Make sure `node` and `port` have an entry in
+        `dynamic_data_configs`, also if `node` is not part of `nodes`."""
         if node not in self.dynamic_data_configs:
             self.dynamic_data_configs[node] = node.copy_data_configs()
         if port not in self.dynamic_data_configs[node]:
@@ -694,7 +736,17 @@ class Graph(Serializable):
             )
 
     def add_skip_connection(self, from_port: Port, to_port: Port):
-        """Adds a skip connection between two ports."""
+        """Add a skip connection between two ports.
+
+        The edge is not part of the topological order; the value of
+        `from_port` is written to `to_port` at the end of :meth:`run`. The
+        data configuration of `from_port` in this graph is set to the one
+        of `to_port`.
+
+        Args:
+            from_port: The port providing the data.
+            to_port: The port receiving the data.
+        """
         to_node = to_port.node
         from_node = from_port.node
         self._check_external_node_in_config_dict(to_port, to_node)
@@ -708,12 +760,10 @@ class Graph(Serializable):
         ][to_port]
 
     def validate(self) -> None:
-        """
-        Validates the graph structure.
-        Checks if all required input ports of every node in the graph are connected.
+        """Check that every required input port of every node is connected.
 
         Raises:
-            ValueError: If a required input port is found to be unconnected.
+            ValueError: If a required input port is not connected.
         """
         for node in self.nodes:
             for port in node.input_ports:
@@ -730,7 +780,14 @@ class Graph(Serializable):
                         )
 
     def setup(self):
-        """Setup all nodes for evaluation."""
+        """Sort the graph and set up all nodes for evaluation.
+
+        A :class:`~qewton.graphs.nodes.GraphAwareNode` receives this graph
+        in its `setup`. A
+        :class:`~qewton.graphs.control_nodes.data_processing_node.DataProcessingNode`
+        also receives this graph, but is only set up if its data source
+        node is part of this graph.
+        """
         self.sort()
         for node in self.sorted_nodes:
             if isinstance(node, DataProcessingNode):
@@ -742,8 +799,15 @@ class Graph(Serializable):
                 node.setup()
 
     def run(self, mode: EvaluationPhase = EvaluationPhase.ALWAYS):
-        """
-        Runs the graph execution by iterating through the topologically sorted nodes.
+        """Run all nodes in topological order.
+
+        Before a node runs, each of its input ports receives the value of
+        its incoming edge, or its default if it has none. After all nodes
+        ran, values are passed along edges to outside of the graph and
+        skip connections. Requires :meth:`sort` (or :meth:`setup`) first.
+
+        Args:
+            mode: The evaluation phase every node is set to.
         """
         for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
             node.set_mode(mode)
@@ -757,18 +821,8 @@ class Graph(Serializable):
             edge.to_port.set_value(edge.from_port.value)
 
     def _build_path_to_node(self, node: Node) -> set[Node]:
-        """
-        Builds a path from the root nodes to the specified node.
-
-        Args:
-            node (Node): The target node for which the path is to be built.
-
-        Returns:
-            set[Node]: A set of nodes that need to be evaluated to reach
-                the specified node. Note that the specified node itself is not
-                included in the returned set and the nodes are not ordered
-                for evaluation.
-        """
+        """Unordered set of all nodes `node` depends on inside this graph,
+        excluding `node` itself."""
         nodes_to_run = set[Node]()
         nodes_to_check = deque[Node]([node])
         while nodes_to_check:
@@ -787,20 +841,18 @@ class Graph(Serializable):
     def run_to(
         self, last_node: Node, mode: EvaluationPhase = EvaluationPhase.ALWAYS
     ) -> dict[Port, Edge]:
-        """Runs the graph execution by iterating through the topologically
-        sorted nodes, only up to the provided node.
-        Then it returns the last_node and all incoming edges of this node in this
-        graph as a dictionary of [Port, Edge].
+        """Run only the nodes `last_node` depends on, in topological order.
+
+        `last_node` itself is not run.
 
         Args:
-            last_node (Node): The node we want to run the graph up to,
-                and return the incoming edges of this node.
-            mode (EvaluationPhase, optional): The mode the graph should be run
-                in. Defaults to EvaluationPhase.ALWAYS.
+            last_node: The node to run the graph up to.
+            mode: The evaluation phase every run node is set to.
 
         Returns:
-            dict[Port, Edge]: The incoming edges of the last_node in this
-                graph as a dictionary of [Port, Edge].
+            dict[Port, Edge]: The incoming edges of `last_node`, keyed by its
+                input ports. Empty if `last_node` is not among the sorted
+                nodes.
         """
         nodes_to_run = self._build_path_to_node(last_node)
         for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
@@ -818,7 +870,7 @@ class Graph(Serializable):
         return {}
 
     def _nodes_needed_for(self, target_nodes: set[Node]) -> set[Node]:
-        """Every node needed to produce a value for `target_nodes`,
+        """All nodes needed to produce a value for `target_nodes`,
         including the target nodes themselves."""
         nodes_to_run = set(target_nodes)
         for node in target_nodes:
@@ -826,8 +878,8 @@ class Graph(Serializable):
         return nodes_to_run
 
     def _samplers_on_path_to(self, ports: tuple[Port, ...]) -> list:
-        """Every PointSampler needed to produce a value for any of `ports` -
-        on the path to them, or one of their own owning nodes."""
+        """All PointSamplers needed to produce a value for any of `ports`,
+        including their owning nodes."""
         from qewton.data.dataloaders.sampler.point_sampler import PointSampler
 
         nodes_to_run = self._nodes_needed_for({p.node for p in ports})
@@ -836,13 +888,9 @@ class Graph(Serializable):
     def _run_nodes_needed_for(
         self, ports: tuple[Port, ...], mode: EvaluationPhase
     ) -> None:
-        """Runs every node needed to produce a value for each of `ports`, in
-        topological order - including each port's own owning node (unlike
-        run_to(), which stops just before its target so a caller can take
-        over from there instead). Unlike run_to()/connect(), this doesn't
-        warn via _check_graph_was_sorted() - an already-sorted graph is the
-        expected, normal precondition here (visualize() is meant to run
-        after setup()), not a stale-sort hazard to flag."""
+        """Run every node needed to produce a value for each of `ports` in
+        topological order, including the owning nodes of `ports`. Requires
+        a sorted graph."""
         nodes_to_run = self._nodes_needed_for({p.node for p in ports})
         for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
             if node not in nodes_to_run:
@@ -855,10 +903,30 @@ class Graph(Serializable):
                     in_port.clear_value()
             node.run()
 
-    def diagram(self, depth: int = 1) -> GraphPlot:
+    def diagram(self,
+                depth: int = 1,
+                show_port_names: bool = False,
+                show_edge_labels: bool = True) -> GraphPlot:
+        """Build a diagram of this graph's structure.
+
+        Args:
+            depth: How many levels of composite nodes (subclasses of
+                :class:`~qewton.graphs.control_nodes.graph_node.GraphNode`) are
+                expanded inline instead of drawn as a single box.
+            show_port_names: Whether nodes with more than one input or output
+                port also get a name label at each port.
+            show_edge_labels: Whether edges are labeled with their data
+                configuration.
+
+        Returns:
+            GraphPlot: The node-link diagram of this graph.
+        """
         from qewton.visualization.plots.graph import GraphPlot
 
-        return GraphPlot(self, depth=depth)
+        return GraphPlot(self,
+                         depth=depth,
+                         show_port_names=show_port_names,
+                         show_edge_labels=show_edge_labels)
 
     def visualize(
         self,
@@ -877,112 +945,99 @@ class Graph(Serializable):
         mode: EvaluationPhase = EvaluationPhase.VALIDATION,
         **plot_kwargs,
     ) -> "Layout":
-        """Runs just enough of the graph to produce a value for `port` (or
-        each of several), and builds a Layout of Plots via auto_plot().
+        """Evaluate the graph for `port` and build plots of the result.
 
-        Without `reference`, every PointSampler needed to reach `port` is
-        switched into mesh mode for this run (discretization_mode) - a
-        deterministic mesh/grid discretization of its geometry, instead of
-        whatever batch it would otherwise produce.
+        Only the nodes needed to produce a value for `port` are run. The
+        plots are built with :func:`~qewton.visualization.auto.auto_plot`.
 
-        With `reference` set, the model is instead evaluated at the
-        reference's own points, so no interpolation is needed to compare
-        them.
+        Without `reference`, every
+        :class:`~qewton.data.dataloaders.sampler.point_sampler.PointSampler`
+        on the path to `port` is switched to mesh mode for this run (see
+        :func:`~qewton.data.dataloaders.sampler.point_sampler.discretization_mode`),
+        so the result is drawn on a deterministic discretization of its
+        geometry.
+
+        With `reference`, the result is compared to reference data in a
+        Reference / Prediction / Error layout. The model is evaluated at
+        the points of the reference, so no interpolation is needed.
 
         Args:
-            port: One Port, or a list of Ports, to visualize.
-            reference: Already-loaded reference data (requires
-                `reference_config`; a numpy array or a backend tensor on any
-                device), another Port from this same graph (e.g.
-                a DataLoader's "true output" port, for an operator-learning
-                comparison), or a callable, evaluated at `port`'s own
-                points. Reference data (plain or from a Port) must be built
-                from the exact same Variable instance as `port`'s own
-                value, unless overridden by `reference_config`/
-                `prediction_config` - only supported for a single `port`,
-                not a list. None (default) draws `port` alone.
-            error: With `reference` set, which difference panel to add:
-                "signed" (pred - ref, diverging colormap, scale symmetric
-                around 0 - the default), "absolute" (abs(pred - ref),
-                sequential colormap, scale from 0), "relative"
-                ((pred - ref) / ref, NaN where abs(ref) is ~0, diverging,
-                symmetric), or None for no error panel. Ignored without
-                `reference`.
-            plot_type: Passed through to auto_plot() for every plot - an
-                explicit Plot type if auto-selection doesn't apply, or None
-                (default) to auto-select.
-            max_vertex_distance: Passed to discretization_mode() - caps the
-                mesh resolution used while sampling in mesh mode. A dict
-                sets it per geometry Variable, e.g. `{T: 0.1, X: 0.02}` for
-                the factors of a space-time domain; geometries missing from
-                it use None (the coarsest mesh). Unused
-                with `reference` set (the reference's own points are used
-                instead).
-            device: If given, every node needed to reach `port` is moved
-                there before running - the same explicit control
-                GraphBasedTrainer's own `device=` gives at training time.
-                Also controls where mesh-mode's own freshly-generated points
-                are built. Left alone (default None) otherwise.
-            share_scale: With `reference` set, whether the reference and
-                prediction panels share one color Scale, so they read on
-                the same range at a glance. The error panel always gets its
-                own Scale regardless of this flag.
-            scale: A Scale for the color range, e.g.
-                `Scale(vmin=0.0, vmax=1.0)` - one fixed colorbar over every
-                slider state and animation frame. With `reference` set, it is
-                shared by the reference and prediction panels in place of
-                `share_scale`'s own; the error panel keeps its own Scale.
-                None (default) leaves the range to the plot. Raises a
-                ValueError if the plot has no color.
-            controls: A ControlSpec class, instance, or `{axis: class-or-
-                instance}` dict, used to resolve a control for any axis left
-                over after `port`'s (and, with `reference` set, every
-                panel's) own roles - None (default) behaves as SliderSpec.
-                With `reference` set, one resolved instance per axis is
-                shared across every panel, so a slider dragged in one moves
-                them all. A list of ControlSpec instances is used as-is. A
-                dict key or single instance that no axis takes a control
-                for raises a ValueError instead of being ignored.
-                On a product geometry (e.g. a space-time domain), a control
-                bound to one of its 1-dimensional factor Variables, e.g.
-                `[TimeSpec(T)]`, steps through that factor while the other
-                factors are drawn - see auto_plot().
-            variables: Narrows `port` (and `reference`, unless it already
-                names exactly this combination) down to just these
-                Variables' own slice of a composed FeatureAxes before
-                anything else runs - e.g. `variables=[U]` to pick out a
-                velocity-only quantity from a port declared as a combined
-                velocity+pressure Variable, or `variables=[U, P]` to keep
-                both but drop some other bundled quantity. A single
-                element selects it outright; several same-dim ones also get
-                switched between live via one shared dropdown across every
-                panel, same as before - the narrowing is new, letting this
-                also cover quantities that weren't already jointly
-                dispatchable (e.g. dropping a differently-dimensioned P to
-                leave just a switchable U); the dropdown itself still
-                requires the remaining Variables to share one dim. None
-                (default) uses `port`'s (and `reference`'s) own Variable as
-                declared.
-            prediction_config: A DataConfiguration used in place of
-                `port.get_data_configuration(self)` to build/label the
-                prediction panel and to check `reference` against. None
-                (default) uses `port`'s own config as-is.
-            reference_config: Same as `prediction_config`, but for
-                `reference` when it's a Port - used in place of
-                `reference.get_data_configuration(self)`. Required (and
-                used as reference's own config) when `reference` is plain
-                data rather than a Port or a callable.
-            mode: The EvaluationPhase every DataLoader-like node needed for
-                the run is set to - determines which of its splits supplies
-                the batch. Defaults to EvaluationPhase.VALIDATION.
-            **plot_kwargs: Passed through to auto_plot() for every plot.
+            port: One port, or a list of ports, to visualize.
+            reference: Reference data for a single `port`. One of
+
+                - plain data (a numpy array or a backend tensor on any
+                  device); requires `reference_config`. Its Variable must
+                  be the exact same instance as the one of `port`'s value.
+                  The model is evaluated at the points of its geometry; a
+                  list of GeometryAxes, one per factor of a product domain,
+                  is evaluated at all combinations of the factors' points.
+                - another port of this graph (e.g. the true-output port of
+                  a data loader), run together with `port`. Its Variable
+                  must equal the one of `port` by name, dimension and
+                  structure.
+                - a callable, evaluated at the mesh-mode points of `port`.
+
+                None (default) draws `port` alone.
+            error: With `reference`, which error panel to add: ``"signed"``
+                (prediction - reference, diverging colormap, symmetric scale),
+                ``"absolute"`` (absolute difference, scale from 0),
+                ``"relative"`` (difference divided by the reference, NaN where
+                the reference is close to 0, diverging, symmetric), or None for
+                no error panel. Ignored without `reference`.
+            plot_type: Plot type passed to
+                :func:`~qewton.visualization.auto.auto_plot` for every plot.
+                None (default) selects it automatically.
+            max_vertex_distance: Maximal vertex distance of the mesh used in
+                mesh mode. A dict sets it per geometry Variable, e.g. per
+                factor of a space-time domain; geometries missing from it use
+                None (the coarsest mesh). Unused with plain reference data.
+            device: If given, every node needed for `port` is moved to this
+                device before running, and mesh-mode points are created there.
+            share_scale: With `reference`, whether the reference and prediction
+                panels share one color scale. The error panel always has its
+                own scale.
+            scale: A fixed color scale for every slider state and animation
+                frame. With `reference`, it is shared by the reference and
+                prediction panels instead of the scale from `share_scale`; the
+                error panel keeps its own scale. None (default) leaves the
+                range to the plot.
+            controls (ControlSpec class or instance, dict, list, or None):
+                Controls for the axes not used by a plot role. A class or
+                instance applies to all such axes, a dict maps axes to a class
+                or instance, a list of ControlSpec instances is used as-is.
+                None (default) uses sliders. With `reference`, each control
+                instance is shared by all panels. On a product geometry, a
+                control may be bound to one of its 1-dimensional factor
+                Variables to step through that factor.
+            variables: Narrows `port` (and `reference`, unless it already has
+                exactly this combination) to the slice of these Variables of a
+                composed FeatureAxes before plotting. With more than one
+                Variable, all panels share one dropdown to switch between them,
+                which requires them to have the same dimension. None (default)
+                uses the Variable of `port` as declared.
+            prediction_config: Used instead of the data configuration of `port`
+                in this graph to build the prediction plot and to check
+                `reference` against.
+            reference_config: Used instead of the data configuration of a port
+                `reference` in this graph. Required for plain reference data.
+            mode: The evaluation phase every run node is set to; selects which
+                split a data loader provides.
+            **plot_kwargs: Passed to
+                :func:`~qewton.visualization.auto.auto_plot` for every plot.
 
         Returns:
-            Layout: `Overlay(plot)` for a single port with no reference;
-                `Row(*plots)` for a list of ports; with `reference` set, the
-                reference/prediction[/error] comparison (`Overlay` for a
-                curve family - LinePlot/PathPlot - `Row` otherwise). The
-                caller composes: `Figure(graph.visualize(...)).show()`.
+            Layout: Without `reference`, an ``Overlay`` of the plot for a
+                single port, or a ``Row`` of plots for a list of ports. With
+                `reference`, an ``Overlay`` of the reference, prediction and
+                error plots for curve-like plots, or a ``Row`` of them
+                otherwise. Show it with ``Figure(layout).show()``.
+
+        Raises:
+            ValueError: If `reference` is given for a list of ports, plain
+                reference data is given without `reference_config`, the
+                Variables or shapes of prediction and reference do not match,
+                `error` is unknown, `scale` is given for plots without color,
+                or `controls` names an axis that takes no control.
         """
         from qewton.visualization.layout import Overlay, Row
 
@@ -1065,6 +1120,31 @@ class Graph(Serializable):
         return Overlay(plots[0]) if len(plots) == 1 else Row(*plots)
 
     @staticmethod
+    def _product_reference_geometry(geometry_axes: list, samplers) -> "Geometry":
+        """The points to evaluate the model at for reference data given with
+        one GeometryAxes per factor of a product domain: all combinations of
+        the factors' points, with the coordinates in the order of the
+        samplers' own domain variable - so the reference may list its
+        factors in any order, e.g. angle first for a sampler on space x
+        angle."""
+        from qewton.geometries.discrete.product_mesh_geometry import (
+            ProductDiscreteGeometry,
+        )
+
+        factors = [axes.geometry for axes in geometry_axes]
+        variable = samplers[0].geometry.variable if samplers else None
+        try:
+            return ProductDiscreteGeometry(factors, variable=variable)
+        except ValueError as e:
+            names = [f.variable.name for f in factors]
+            domain = variable.name if variable is not None else "the sampler's domain"
+            raise ValueError(
+                f"reference_config has one GeometryAxes per factor {names}, but "
+                f"they do not make up {domain}: {e} Build each factor from the "
+                "same Variable instance as the sampler's domain."
+            ) from e
+
+    @staticmethod
     def _reference_to_numpy(reference, port: Port) -> np.ndarray:
         """Reference values as a numpy array - also from a backend tensor on
         any device (e.g. a CUDA tensor), which np.asarray can't convert."""
@@ -1108,6 +1188,7 @@ class Graph(Serializable):
         from qewton.visualization.auto import auto_plot, is_curve_like
         from qewton.visualization.layout import Overlay, Row
         from qewton.visualization.plots.spec import ColorSpec, Scale, SelectorSpec
+        from qewton.visualization.themes import cmaps
 
         combined_variable = Variable.compose(variables) if variables else None
         pred_config = prediction_config or port.get_data_configuration(self)
@@ -1180,9 +1261,15 @@ class Graph(Serializable):
             ref_geometry_axes = ref_config.geometry_axes
             if ref_geometry_axes is None:
                 raise ValueError("reference_config has no GeometryAxes.")
+            samplers = self._samplers_on_path_to((port,))
             if isinstance(ref_geometry_axes, list):
-                ref_geometry_axes = ref_geometry_axes[0]
-            ref_geometry = ref_geometry_axes.geometry
+                # One GeometryAxes per factor of a product domain, e.g. the
+                # parameter values and a grid of space points.
+                ref_geometry = self._product_reference_geometry(
+                    ref_geometry_axes, samplers
+                )
+            else:
+                ref_geometry = ref_geometry_axes.geometry
 
             ref_variable = (
                 ref_config.feature_axes.variables if ref_config.feature_axes else None
@@ -1194,7 +1281,6 @@ class Graph(Serializable):
                 for node in nodes_to_run:
                     node.to(device)
 
-            samplers = self._samplers_on_path_to((port,))
             with active_discretization_mode(samplers, ref_geometry):
                 self._run_nodes_needed_for((port,), mode=mode)
 
@@ -1213,6 +1299,11 @@ class Graph(Serializable):
                     prediction_config or port.get_data_configuration(self),
                     combined_variable,
                 )
+            # The samplers evaluated ref_geometry's points as one flat batch -
+            # give the prediction the reference's structure back.
+            structure = tuple(ref_geometry.shape)
+            if pred_data.ndim == 2 and pred_data.shape[0] == int(np.prod(structure)):
+                pred_data = pred_data.reshape(*structure, pred_data.shape[-1])
             # auto_plot() dispatches on a DataConfiguration's structural
             # type (e.g. GridGeometry vs. a plain DiscreteGeometry) -
             # port.get_data_configuration(self) still reflects the
@@ -1317,7 +1408,7 @@ class Graph(Serializable):
             if isinstance(error_color, ColorSpec):
                 error_color.scale = error_scale
                 if error_color.cmap is None and diverging:
-                    error_color.cmap = "RdBu"
+                    error_color.cmap = cmaps.diverging
             plots.append(error_plot)
 
         return Overlay(*plots) if is_curve else Row(*plots)
@@ -1378,11 +1469,13 @@ class Graph(Serializable):
                 value.variable_or_axes = shared_spec
 
     def collect_trainable_parameters(self):
-        """
-        Collects all trainable parameters from all nodes within the graph.
+        """Collect the trainable parameters of all nodes in this graph.
+
+        Nodes in state ``NodeState.FIXED`` contribute no parameters.
 
         Returns:
-            TrainableParametersCollection: A collection of all trainable parameters.
+            TrainableParametersCollection: The trainable parameters of all
+                nodes.
         """
         params_collection = TrainableParametersCollection()
         for node in self.nodes:
@@ -1393,18 +1486,25 @@ class Graph(Serializable):
 
     @contextmanager
     def tracker(self, n_tracking_vars=1):
-        """
-        A context manager for tracking graph construction.
+        """Context manager that builds this graph from node calls.
 
-        When active, nodes will record connections and data flow, allowing a graph
-        to be built implicitly from function calls.
+        While active, calling a node with :class:`TrackingObject` arguments
+        does not compute anything but connects the node in this graph and
+        returns tracking objects for its outputs. Non-tracking arguments
+        become defaults of the corresponding input ports. Trackers can be
+        nested; the innermost graph receives the connections.
 
         Args:
-            n_tracking_vars (int, optional): The number of tracking variables to yield.
-                Defaults to 1.
+            n_tracking_vars (int, optional): The number of tracking objects to
+                yield. Default is 1.
 
         Yields:
-            TrackingObject | tuple[TrackingObject, ...]: One or more tracking objects.
+            TrackingObject or list[TrackingObject] or None: A single tracking
+                object if `n_tracking_vars` is 1, a list of them if it is
+                larger, None if it is 0.
+
+        Raises:
+            RuntimeError: If the graph already contains nodes.
         """
         if len(self.nodes) > 0:
             raise RuntimeError(
@@ -1430,10 +1530,14 @@ class Graph(Serializable):
 
 
 class SequentialGraph(Graph):
-    """
-    A graph specifically designed to represent a linear sequence of nodes.
+    """Graph of nodes connected in a linear sequence.
 
-    Nodes are connected in the order they are provided during initialization.
+    Each node is connected to the next one with :meth:`Graph.connect`, so
+    the output ports of a node must match the input ports of its
+    successor. The given order is used as execution order.
+
+    Args:
+        *nodes: The nodes in execution order.
     """
 
     def __init__(self, *nodes: Node):
@@ -1450,196 +1554,306 @@ class SequentialGraph(Graph):
 ############################################################################
 # region: Tracking
 class TrackingObject:
-    current_graph_tracked: Graph | None = None
-    """
-    A special object used during graph tracking to represent data flow.
+    """Placeholder for a value flowing through a graph during tracking.
 
-    When nodes are called with `TrackingObject`s as inputs, the graph
-    automatically records the connections.
+    Inside :meth:`Graph.tracker`, calling a node with tracking objects
+    connects the node in the tracked graph and returns new tracking objects
+    for its output ports. Arithmetic operators (``+``, ``-``, ``*``,
+    ``/``, ``**``, ``@``, unary ``-``, ``abs``), indexing, item assignment
+    and the methods of this class add the corresponding nodes from
+    :mod:`qewton.algorithms.building_blocks` in the same way and return
+    the tracking object of the result.
+
+    Args:
+        last_output_port: The output port that produces this value. None for a
+            graph input that is not produced by any node.
+
+    Attributes:
+        current_graph_tracked (Graph or None): Class attribute: the graph
+            currently being tracked, None outside of :meth:`Graph.tracker`.
+        last_output_port (OutputPort or None): The output port that produces
+            this value.
+        to_ports (list[InputPort]): For a graph input, the input ports it was
+            passed to.
     """
+
+    current_graph_tracked: Graph | None = None
 
     def __init__(self, last_output_port: OutputPort | None = None):
         self.last_output_port: OutputPort | None = last_output_port
         self.to_ports = []
 
     def add_to_port(self, port: InputPort):
+        """Record that this graph input is passed to `port`."""
         self.to_ports.append(port)
 
     def __add__(self, other):
+        """Track ``self + other``."""
         from qewton.algorithms.building_blocks.math import Add
 
         add_node = Add()
         return add_node(self, other)
 
     def __radd__(self, other):
+        """Track ``other + self``."""
         from qewton.algorithms.building_blocks.math import Add
 
         add_node = Add()
         return add_node(other, self)
 
     def __matmul__(self, other):
+        """Track the matrix product ``self @ other``."""
         from qewton.algorithms.building_blocks.math import MatMul
 
         matmul_node = MatMul()
         return matmul_node(self, other)
 
     def __sub__(self, other):
+        """Track ``self - other``."""
         from qewton.algorithms.building_blocks.math import Subtract
 
         subtract_node = Subtract()
         return subtract_node(self, other)
 
     def __neg__(self):
+        """Track the negation ``-self``."""
         from qewton.algorithms.building_blocks.math import Negative
 
         neg_node = Negative()
         return neg_node(self)
 
     def __rsub__(self, other):
+        """Track ``other - self``."""
         from qewton.algorithms.building_blocks.math import Subtract
 
         subtract_node = Subtract()
         return subtract_node(other, self)
 
     def __mul__(self, other):
+        """Track ``self * other``."""
         from qewton.algorithms.building_blocks.math import Multiply
 
         multiply_node = Multiply()
         return multiply_node(self, other)
 
     def __rmul__(self, other):
+        """Track ``other * self``."""
         from qewton.algorithms.building_blocks.math import Multiply
 
         multiply_node = Multiply()
         return multiply_node(other, self)
 
     def __pow__(self, other):
+        """Track ``self ** other``."""
         from qewton.algorithms.building_blocks.math import Power
 
         power_node = Power()
         return power_node(self, other)
 
     def __rpow__(self, other):
+        """Track ``other ** self``."""
         from qewton.algorithms.building_blocks.math import Power
 
         power_node = Power()
         return power_node(other, self)
 
     def __truediv__(self, other):
+        """Track ``self / other``."""
         from qewton.algorithms.building_blocks.math import Divide
 
         divide_node = Divide()
         return divide_node(self, other)
 
     def __rtruediv__(self, other):
+        """Track ``other / self``."""
         from qewton.algorithms.building_blocks.math import Divide
 
         divide_node = Divide()
         return divide_node(other, self)
 
     def __abs__(self):
+        """Track the element-wise absolute value ``abs(self)``."""
         from qewton.algorithms.building_blocks.math import Abs
 
         abs_node = Abs()
         return abs_node(self)
 
     def norm(self, ord: float | str = 2):
+        """Track the norm along the last axis.
+
+        Args:
+            ord: The order of the norm.
+        """
         from qewton.algorithms.building_blocks.math import Norm
 
         norm_node = Norm(ord=ord)
         return norm_node(self)
 
     def sqrt(self):
+        """Track the element-wise square root."""
         from qewton.algorithms.building_blocks.math import Sqrt
 
         sqrt_node = Sqrt()
         return sqrt_node(self)
 
     def __getitem__(self, key):
+        """Track the slice ``self[key]``."""
         from qewton.algorithms.building_blocks.array_operations import Slice
 
         slice_node = Slice(key)
         return slice_node(self)
 
     def __setitem__(self, key, value):
+        """Track the item assignment ``self[key] = value``."""
         from qewton.algorithms.building_blocks.array_operations import SetItem
 
         set_item_node = SetItem()
         return set_item_node(self, key, value)
 
     def dot(self, other):
+        """Track the dot product with `other`.
+
+        Args:
+            other (TrackingObject): The second factor.
+        """
         from qewton.algorithms.building_blocks.math import Dot
 
         dot_node = Dot()
         return dot_node(self, other)
 
     def squeeze(self, dim):
+        """Track removing the dimension `dim` of size 1.
+
+        Args:
+            dim (int): The dimension to remove.
+        """
         from qewton.algorithms.building_blocks.array_operations import Squeeze
 
         squeeze_node = Squeeze(dim)
         return squeeze_node(self)
 
     def unsqueeze(self, dim):
+        """Track adding a dimension of size 1 at position `dim`.
+
+        Args:
+            dim (int): The position of the new dimension.
+        """
         from qewton.algorithms.building_blocks.array_operations import Unsqueeze
 
         unsqueeze_node = Unsqueeze(dim)
         return unsqueeze_node(self)
 
     def track_gradient(self):
+        """Track enabling gradient computation with respect to this value."""
         from qewton.algorithms.building_blocks.derivatives import GradientTracking
 
         track_node = GradientTracking()
         return track_node(self)
 
     def gradient(self, with_respect_to):
+        """Track the gradient of this value.
+
+        Args:
+            with_respect_to (TrackingObject): The input to differentiate with
+                respect to.
+        """
         from qewton.algorithms.building_blocks.derivatives import Gradient
 
         grad_node = Gradient()
         return grad_node(self, with_respect_to)
 
     def normal_derivative(self, normals, with_respect_to):
+        """Track the normal derivative of this value.
+
+        Args:
+            normals (TrackingObject): The normal vectors.
+            with_respect_to (TrackingObject): The input to differentiate with
+                respect to.
+        """
         from qewton.algorithms.building_blocks.derivatives import NormalDerivative
 
         norm_der_node = NormalDerivative()
         return norm_der_node(self, normals, with_respect_to)
 
     def laplacian(self, with_respect_to):
+        """Track the Laplacian of this value.
+
+        Args:
+            with_respect_to (TrackingObject): The input to differentiate with
+                respect to.
+        """
         from qewton.algorithms.building_blocks.derivatives import Laplacian
 
         lap_node = Laplacian()
         return lap_node(self, with_respect_to)
 
     def jac(self, with_respect_to):
+        """Track the Jacobian of this value.
+
+        Args:
+            with_respect_to (TrackingObject): The input to differentiate with
+                respect to.
+        """
         from qewton.algorithms.building_blocks.derivatives import Jacobian
 
         jac_node = Jacobian()
         return jac_node(self, with_respect_to)
 
     def div(self, with_respect_to):
+        """Track the divergence of this value.
+
+        Args:
+            with_respect_to (TrackingObject): The input to differentiate with
+                respect to.
+        """
         from qewton.algorithms.building_blocks.derivatives import Divergence
 
         div_node = Divergence()
         return div_node(self, with_respect_to)
 
     def hessian(self, with_respect_to):
+        """Track the Hessian of this value.
+
+        Args:
+            with_respect_to (TrackingObject): The input to differentiate with
+                respect to.
+        """
         from qewton.algorithms.building_blocks.derivatives import Hessian
 
         hes_node = Hessian()
         return hes_node(self, with_respect_to)
 
     def sym_grad(self, with_respect_to):
+        """Track the symmetric gradient of this value.
+
+        Args:
+            with_respect_to (TrackingObject): The input to differentiate with
+                respect to.
+        """
         from qewton.algorithms.building_blocks.derivatives import SymmetricGradient
 
         sym_grad_node = SymmetricGradient()
         return sym_grad_node(self, with_respect_to)
 
     def rot(self, with_respect_to):
+        """Track the rotation (curl) of this value.
+
+        Args:
+            with_respect_to (TrackingObject): The input to differentiate with
+                respect to.
+        """
         from qewton.algorithms.building_blocks.derivatives import Rotation
 
         rot_node = Rotation()
         return rot_node(self, with_respect_to)
 
     def matrix_div(self, with_respect_to):
+        """Track the row-wise divergence of this value.
+
+        Args:
+            with_respect_to (TrackingObject): The input to differentiate with
+                respect to.
+        """
         from qewton.algorithms.building_blocks.derivatives import MatrixDivergence
 
         matrix_div_node = MatrixDivergence()

@@ -1,3 +1,5 @@
+"""Geometry holding the points a sampler currently provides."""
+
 from qewton.geometries.discrete.mesh import Mesh
 
 from qewton.backends import TensorType
@@ -8,14 +10,32 @@ from qewton.geometries.product import ProductGeometry
 
 
 class SampledGeometry(DiscreteGeometry[TensorType]):
-    """A point cloud sampled from a geometry. This class is used by
-    samplers to reference the generated geometry in DataConfigurations.
-    Stores a reference to the original geometry, so the sampler can
-    access it e.g. in plots.
+    """Point cloud sampled from a geometry.
+
+    Samplers use it to reference their generated points in data
+    configurations. It holds the points (and optionally cells) of the
+    current sampling step, set by the owning sampler through
+    :meth:`set_current_discretization`, and a reference to the source
+    geometry, e.g. for plotting.
 
     Args:
-        geometry (Geometry): The geometry to sample from.
-        n_points (int): The number of points to sample.
+        geometry: The geometry the points are sampled from.
+        n_points: The number of sampled points.
+
+    Attributes:
+        source_geometry (Geometry): The geometry the points are sampled from.
+        discretization_points (TensorType or None): The current points.
+        factors (list or None): The meshed factor geometries if the current
+            points are the vertices of a product mesh (first factor varying
+            slowest), otherwise ``None``.
+        mesh (Mesh or None): A :class:`~qewton.geometries.discrete.mesh.Mesh`
+            built from the current points and cells, or ``None`` for a plain
+            point cloud without cell connectivity. For a product mesh the cells
+            are built on first access.
+
+    Notes:
+        Deep copies return the same object, so copies of a data configuration
+        keep seeing the points the sampler sets.
     """
 
     def __init__(self, geometry: Geometry, n_points: int):
@@ -34,17 +54,9 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         )
 
     def __deepcopy__(self, memo):
-        # Every node's dynamic DataConfiguration is a deepcopy of its static
-        # one (Node.copy_data_config_of_port), so a GeometryAxes wrapping a
-        # SampledGeometry would otherwise get silently disconnected from the
-        # live object the owning sampler mutates via
-        # set_current_discretization() each forward() - a copy stuck
-        # reporting whatever state existed when the graph was built (usually
-        # nothing yet). This object's whole purpose is to be that shared,
-        # sampler-owned "current" state - identical to what a Node's own
-        # `self` reference already needs to survive graph copying - so it's
-        # exempted from copying instead, same as a live connection or cache
-        # normally would be.
+        """Return this object itself instead of a copy."""
+        # Shared, sampler-owned state: copies of a DataConfiguration must
+        # keep referencing the object the sampler updates.
         return self
 
     @property
@@ -53,27 +65,22 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
 
     @discretization_points.setter
     def discretization_points(self, value: TensorType | None) -> None:
-        # DiscreteGeometry.__init__ unconditionally assigns
-        # `self.discretization_points = discretization_points` (None here,
-        # since SampledGeometry doesn't have real points until a sampler
-        # actually runs) - this setter just routes that through the same
-        # backing field set_current_discretization() writes to, so the
-        # property stays live afterwards instead of freezing at None.
+        # Uses the same field as set_current_discretization(), including
+        # the None assigned by DiscreteGeometry.__init__.
         self._current_points = value
 
     def set_current_discretization(
         self, points: TensorType, cells: TensorType | None = None, product=None
     ):
-        """Stores the points (and cells) the sampler currently provides.
+        """Store the points (and cells) the sampler currently provides.
 
         Args:
-            points (TensorType): The current points.
-            cells (TensorType | None, optional): Cell connectivity of the
-                points. Defaults to None.
-            product (ProductMeshGeometry | None, optional): Set when the points
-                are the vertices of a product mesh. Its factors are exposed as
+            points: The current points.
+            cells: Cell connectivity of the points.
+            product (ProductMeshGeometry or None): Set when the points are the
+                vertices of a product mesh. Its factors are exposed as
                 `factors`, and its cells are only built when `mesh` is
-                accessed. Defaults to None.
+                accessed.
         """
         self._current_points = points
         self._current_cells = cells
@@ -83,12 +90,10 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
 
     @property
     def factors(self) -> list | None:
-        """The meshed factor geometries, if the current points are the
-        vertices of a product mesh (first factor varying slowest), else None."""
         return self._current_factors
 
     def to_numpy(self) -> None:
-        """Converts the current discretization to plain numpy, in place."""
+        """Convert the current points and cells to numpy arrays in place."""
         if self._current_points is not None:
             self._current_points = self.backend.to_numpy(self._current_points)
         if self._current_cells is not None:
@@ -97,13 +102,6 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
 
     @property
     def mesh(self) -> Mesh | None:
-        """A Mesh built from the current discretization, if it has cell
-        connectivity - None for a plain point cloud (random/grid sampling,
-        no connectivity). Same field name/shape MeshGeometry.mesh always
-        has, just not always present here - plotting dispatch (auto_plot,
-        MeshPlot, GeometryPlot) checks `geometry.mesh is not None` rather
-        than `isinstance(geometry, MeshGeometry)` precisely so it never
-        needs to know SampledGeometry exists."""
         if self._current_cells is None and self._current_product is not None:
             cells = self._current_product.mesh.cells
             self._current_cells = self.backend.to_numpy(cells) if self._is_numpy else cells
@@ -116,8 +114,16 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         max_vertex_distance: float | dict | None = None,
         device: Device | str | None = None,
     ) -> Mesh:
-        """Mesh of the source geometry at the given resolution and device,
-        see `visualization_geometry()`."""
+        """Return the mesh of the source geometry for visualization.
+
+        Args:
+            max_vertex_distance: The mesh resolution, see
+                :meth:`visualization_geometry`.
+            device: The device of the mesh, see :meth:`visualization_geometry`.
+
+        Returns:
+            Mesh: The mesh of :meth:`visualization_geometry`.
+        """
         return self.visualization_geometry(max_vertex_distance, device).mesh
 
     def visualization_geometry(
@@ -125,22 +131,22 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         max_vertex_distance: float | dict[Variable, float] | None = None,
         device: Device | str | None = None,
     ) -> Geometry:
-        """Meshed source geometry at the given resolution and device,
-        built once per distinct (resolution, device) pair and reused
-        afterwards.
+        """Return the meshed source geometry for visualization.
 
-        Caching rather than a single slot keeps repeated plots cheap while
-        still honouring a changed resolution/device. Within one run only one
-        mesh is ever used, so values and vertex positions cannot mismatch.
+        The mesh is built once per distinct ``(max_vertex_distance,
+        device)`` pair and cached.
 
-        `max_vertex_distance` may be a dict with one value per geometry
-        variable: a ProductGeometry receives it as-is to mesh each factor,
-        any other geometry uses the entry of its own variable.
+        Args:
+            max_vertex_distance: The maximum vertex distance of the mesh. A
+                dict gives one value per geometry variable: a
+                :class:`~qewton.geometries.product.ProductGeometry` receives it
+                as-is to mesh each factor, any other geometry uses the entry of
+                its own variable.
+            device: The device of the mesh. ``None`` uses the default device of
+                :meth:`~qewton.geometries.base.Geometry.create_mesh`.
 
-        `device=None` (default) falls back to Geometry.create_mesh()'s own
-        cpu default - PointSampler.set_mesh_mode() is the one that actually
-        resolves a concrete device (its own current one, unless overridden),
-        so this only sees None when called directly, outside mesh mode.
+        Returns:
+            Geometry: The meshed source geometry.
         """
         cache_key = (
             frozenset(max_vertex_distance.items())
