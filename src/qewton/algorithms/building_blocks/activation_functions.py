@@ -86,7 +86,7 @@ class Sigmoid(Node[TensorType]):
             TensorType: Output tensor with values in range [0, 1],
                 same shape and dtype as input.
         """
-        return self.backend.library.sigmoid(x)
+        return self.backend.nn.sigmoid(x)
 
 
 class GELU(Node[TensorType]):
