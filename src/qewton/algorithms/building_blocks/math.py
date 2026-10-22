@@ -260,16 +260,6 @@ class Abs(Node[TensorType]):
         return self.backend.math.abs(x)
 
 
-class Identity(Node[TensorType]):
-    ellipsis_dims = EllipsisAxes()
-
-    def forward(
-        self,
-        x: Annotated[TensorType, DC(ellipsis_dims)],
-    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
-        return x
-
-
 class Floor(Node[TensorType]):
     ellipsis_dims = EllipsisAxes()
 
