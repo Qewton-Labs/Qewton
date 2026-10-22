@@ -121,5 +121,5 @@ class GELU(Node[TensorType]):
             TensorType: Output tensor with values in range [0, inf],
                 same shape and dtype as input.
         """
-        return self.backend.library.gelu(x)
+        return self.backend.nn.gelu(x)
 
