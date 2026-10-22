@@ -17,6 +17,7 @@ class ParameterNode(Node[TensorType]):
         initial_value=None,
         name: str = "ParameterNode",
         backend: type[DeepLearningBackend] = DEFAULT_DL_BACKEND,
+        dtype=None
     ) -> None:
         self.shape = tuple(
             HyperParameter.from_value(s, f"shape_{i}") for i, s in enumerate(shape)
@@ -26,6 +27,7 @@ class ParameterNode(Node[TensorType]):
         self.backend: DeepLearningBackend
         super().__init__(name, state=NodeState.UNINITIALIZED, backend=backend)
         self.output = self.output_ports[0]
+        self.dtype=dtype
 
     def setup(self) -> None:
         if self.state == NodeState.UNINITIALIZED:
@@ -34,11 +36,11 @@ class ParameterNode(Node[TensorType]):
                     raise ValueError(f"initial_value must have a 'shape' attribute,\
                             got {type(self.initial_value)}")
                 self._trainable_parameter = self.backend.param.initialize(
-                    self.initial_value.shape, self.initial_value
+                    self.initial_value.shape, self.initial_value, dtype=self.dtype
                 )
             else:
                 int_shape = tuple(hp.value for hp in self.shape)
-                self._trainable_parameter = self.backend.param.initialize(int_shape)
+                self._trainable_parameter = self.backend.param.initialize(int_shape, dtype=self.dtype)
             self.output.set_value(self._trainable_parameter)
             self._state = NodeState.INITIALIZED
 

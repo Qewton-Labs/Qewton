@@ -6,7 +6,7 @@ from qewton.backends.base import Backend, TensorType
 class ParameterBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
-    def initialize(shape=None, tensor=None) -> TensorType:
+    def initialize(shape=None, tensor=None, dtype=None) -> TensorType:
         pass
 
     @staticmethod

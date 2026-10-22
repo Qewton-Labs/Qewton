@@ -5,7 +5,7 @@ from qewton.backends.torch.device import get_torch_device
 
 class TorchParameterBackend(ParameterBackend[torch.Tensor]):
     @staticmethod
-    def initialize(shape=None, tensor=None) -> torch.Tensor:
+    def initialize(shape=None, tensor=None, dtype=None) -> torch.Tensor:
         if tensor is not None:
             assert isinstance(
                 tensor, torch.Tensor
@@ -14,7 +14,7 @@ class TorchParameterBackend(ParameterBackend[torch.Tensor]):
         elif shape is not None:
             # TODO: We need some kind of initialization for these parameters
             # E.g. 0, rand, xavier,... But this also needs to be exposed to the outside
-            param = torch.zeros(shape, requires_grad=True)
+            param = torch.zeros(shape, requires_grad=True, dtype=dtype)
             if len(shape) > 1:
                 torch.nn.init.xavier_uniform_(param)
         else:
