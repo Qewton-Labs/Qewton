@@ -303,7 +303,7 @@ def compute_seed_points(surface_mesh, volume_mesh, n_requested):
     return _numpy_points_to_polydata(seeds), n_used, n_available
 
 
-def init_scene():
+def init_renderer():
     renderer = vtkRenderer()
     renderWindow = vtkRenderWindow()
     renderWindow.AddRenderer(renderer)
@@ -311,20 +311,7 @@ def init_scene():
     renderWindowInteractor = vtkRenderWindowInteractor()
     renderWindowInteractor.SetRenderWindow(renderWindow)
     renderWindowInteractor.GetInteractorStyle().SetCurrentStyleToTrackballCamera()
-
-    # Cube Axes
-    cubeAxes = vtkCubeAxesActor()
-    renderer.AddActor(cubeAxes)
-
-    # Cube Axes: camera, and styling
-    cubeAxes.SetCamera(renderer.GetActiveCamera())
-    cubeAxes.SetXLabelFormat("%6.1f")
-    cubeAxes.SetYLabelFormat("%6.1f")
-    cubeAxes.SetZLabelFormat("%6.1f")
-    cubeAxes.SetFlyModeToOuterEdges()
-
-    renderer.ResetCamera()
-    return renderer, renderWindow, cubeAxes
+    return renderer, renderWindow
 
 
 # -----------------------------------------------------------------------------
@@ -388,110 +375,59 @@ def use_preset(actor, preset):
     lut.Build()
 
 
-# -----------------------------------------------------------------------------
-# GUI elements
-# -----------------------------------------------------------------------------
+class MeshScene:
+    def __init__(self) -> None:
+        self.actors = []
 
+    def build(
+        self, qmesh: "qewton.geometries.MeshGeometry", scalar_fields, vector_fields
+    ):
+        self._init_cube_axes()
+        tet_mesh = create_mesh(qmesh.mesh.vertices, qmesh.mesh.cells, VTK_TETRA)
+        self._init_scalar_fields(tet_mesh, scalar_fields)
+        self._init_vector_fields(tet_mesh, vector_fields)
+        self.vtk_color_fields = self.vtk_scalar_fields + self.vtk_vector_fields
+        self._init_meshes(qmesh, tet_mesh)
+        self._init_streamlines()
 
-class TrameApplication(TrameApp, RenderApplication):
-    """Serves a Figure as a Trame app, supporting Plotly or VTK based backends"""
+    def _init_cube_axes(self):
+        self.cubeAxes = vtkCubeAxesActor()
+        self.actors.append(self.cubeAxes)
 
-    def __init__(self, server=None):
-        super().__init__(server, client_type="vue3")
-        self.title = None
-        self.state.setdefault("active_ui", None)
+        # Cube Axes: camera, and styling
+        self.cubeAxes.SetXLabelFormat("%6.1f")
+        self.cubeAxes.SetYLabelFormat("%6.1f")
+        self.cubeAxes.SetZLabelFormat("%6.1f")
+        self.cubeAxes.SetFlyModeToOuterEdges()
 
-    @staticmethod
-    def create(figure):
-        """Builds a Trame app displaying `figure`"""
-        # TODO: implement sliders / callbacks
-        app = TrameApplication()
+    def _init_meshes(self, qmesh: "qewton.geometries.MeshGeometry", tet_mesh):
+        tet_mapper = vtkDataSetMapper()
+        tet_mapper.SetInputData(tet_mesh)
+        tet_actor = vtkActor()
+        tet_actor.SetMapper(tet_mapper)
+        self.actors.append(tet_actor)
+        self.cubeAxes.SetBounds(tet_actor.GetBounds())
 
-        app._build_figure_ui(figure)
-        # _build_ui._register_callbacks(figure)
-        return app
+        self.vtk_meshes = [VtkItem("Mesh", tet_actor, tet_mapper, tet_mesh)]
 
-    @staticmethod
-    def createMesh(mesh, scalar_fields, vector_fields):
-        """Builds a Trame app displaying `mesh`, colored by `scalar_fields` or `vector_fields`"""
-        app = TrameApplication()
-
-        app._build_mesh_ui(mesh, scalar_fields, vector_fields)
-        return app
-
-    def _hide_kitware_link(self):
-        # Inject CSS to hide ONLY the Kitware website link inside the footer
-        client.Style(".v-footer a[href*='kitware.com'] { display: none !important; }")
-
-    def _build_figure_ui(self, figure):
-        # with SinglePageWithDrawerLayout(self.server, theme=("theme", "light"), hide_footer=True) as self.ui:
-        with SinglePageLayout(self.server, full_height=True) as self.ui:
-            self._hide_kitware_link()
-            title = figure.title if figure.title else "Plot"
-            self.ui.title.set_text("Qewton Viewer: " + title)
-            self.state.trame__title = "Qewton"
-            self.ui.icon.hide()
-
-            with self.ui.content:
-                pfig = plotly.Figure(
-                    ctx_name="plotly_display",
-                    display_logo=False,
-                    display_mode_bar=True,
-                )
-                pfig.update(figure.draw())
-
-    def _build_mesh_ui(self, mesh, scalar_fields, vector_fields):
-        self._init_vtk()
-        self._init_mesh(mesh, scalar_fields, vector_fields)
-
-        with SinglePageWithDrawerLayout(
-            self.server, theme=("theme", "light"), hide_footer=True
-        ) as self.ui:
-            self.state.vtk_field_types = {
-                f["value"]: f["type"] for f in self.vtk_color_fields
-            }
-
-            self._hide_kitware_link()
-            title = "Mesh"  # mesh.title if mesh.title else "Mesh"
-            self.ui.title.set_text("Qewton VTK Viewer: " + title)
-            self.state.trame__title = "Qewton"
-
-            with self.ui.toolbar:
-                # toolbar components
-                v3.VSpacer()
-                v3.VDivider(vertical=True, classes="mx-2")
-                self.standard_buttons()
-
-            with self.ui.footer as footer:
-                v3.VLabel("Qewton Viewer")
-
-            with self.ui.content:
-                # content components
-                with v3.VContainer(
-                    fluid=True,
-                    classes="pa-0 fill-height",
-                ):
-                    # view = vtk.VtkRemoteView(self.renderWindow, interactive_ratio=1)
-                    view = vtk.VtkLocalView(self.renderWindow)
-                    # view = vtk.VtkRemoteLocalView(
-                    #    self.renderWindow, namespace="view", mode="local", interactive_ratio=1
-                    # )
-                    self.ctrl.view_update = view.update
-                    self.ctrl.view_reset_camera = view.reset_camera
-
-            with self.ui.drawer as drawer:
-                # drawer components
-                drawer.width = 350
-                self.pipeline_widget()
-                v3.VDivider(classes="mb-2")
-                for i, m in enumerate(self.vtk_meshes):
-                    vol_mesh = i == 0
-                    self.mesh_card(
-                        m.name, i, allow_color=vol_mesh, allow_streamlines=vol_mesh
-                    )
-
-    def _init_vtk(self):
-        self.renderer, self.renderWindow, self.cubeAxes = init_scene()
+        submeshes = [
+            name for name, value in qmesh.mesh.marker_labels.items() if value[1] == 2
+        ]
+        for i, surf_name in enumerate(submeshes):
+            surface_geo = qmesh.boundary.get_submesh(surf_name)
+            surface_mesh = create_mesh(
+                surface_geo.mesh.vertices, surface_geo.mesh.cells, VTK_TRIANGLE
+            )
+            surface_mapper = vtkDataSetMapper()
+            surface_mapper.SetInputData(surface_mesh)
+            surface_actor = vtkActor()
+            surface_actor.SetMapper(surface_mapper)
+            colors = [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)]
+            surface_actor.GetProperty().SetColor(*colors[i % 3])
+            self.actors.append(surface_actor)
+            self.vtk_meshes.append(
+                VtkItem(surf_name, surface_actor, surface_mapper, surface_mesh)
+            )
 
     def _init_scalar_fields(self, mesh, fields: dict):
         self.vtk_scalar_fields = []
@@ -548,46 +484,34 @@ class TrameApplication(TrameApp, RenderApplication):
             if idx != 0  # Don't include volume mesh itself
         ]
 
-        self.state.streamlines_enabled = False
-        self.state.streamlines_field = (
-            self.vtk_vector_fields[0]["value"] if self.vtk_vector_fields else None
-        )
-        self.state.streamlines_seed_surface = (
-            self.vtk_seed_surfaces[0]["value"] if self.vtk_seed_surfaces else None
-        )
-        self.state.streamlines_n_seeds = STREAMLINE_DEFAULT_SEEDS
-        self.state.streamlines_seed_hint = ""
-
     def _build_streamlines(self):
         """Create Tracer/Mapper/Actor once upon first use."""
         sl = self.vtk_streamlines
         if sl.tracer is not None:
-            return
+            return None
 
         volume_mesh = self.vtk_meshes[0].mesh
         sl.build(volume_mesh)
         assert sl.actor
-        self.renderer.AddActor(sl.actor)
+        self.actors.append(sl.actor)
+        return sl.actor
 
-    def _update_streamlines(self):
+    def update_streamlines(self, streamlines_enabled, field, surface_id, n_requested):
         sl = self.vtk_streamlines
+        hint = None
+        new_actor = None
 
-        if not self.state.streamlines_enabled:
+        if not streamlines_enabled:
             if sl.actor is not None:
                 sl.actor.SetVisibility(False)
-            self.ctrl.view_update()
-            return
+            # self.ctrl.view_update()
+            return (hint, new_actor)
 
-        self._build_streamlines()
-
-        field = self.state.streamlines_field
-        surface_id = self.state.streamlines_seed_surface
-        n_requested = self.state.streamlines_n_seeds
+        new_actor = self._build_streamlines()
 
         if field is None or surface_id is None:
             sl.actor.SetVisibility(False)
-            self.ctrl.view_update()
-            return
+            return (hint, new_actor)
 
         # Set active vector field for volume mesh
         volume_mesh = self.vtk_meshes[0].mesh
@@ -607,11 +531,10 @@ class TrameApplication(TrameApp, RenderApplication):
 
         if seed_pd is None:
             sl.actor.SetVisibility(False)
-            self.state.streamlines_seed_hint = "No seeds available"
-            self.ctrl.view_update()
-            return
+            hint = "No seeds available"
+            return (hint, new_actor)
 
-        self.state.streamlines_seed_hint = f"{n_used} seeds from {n_available} faces"
+        hint = f"{n_used} seeds from {n_available} faces"
 
         tracer = sl.tracer
         tracer.SetSourceData(seed_pd)
@@ -637,12 +560,12 @@ class TrameApplication(TrameApp, RenderApplication):
             mapper.ScalarVisibilityOn()
         else:
             mapper.ScalarVisibilityOff()
-        self._sync_streamline_colors()
+        self.sync_streamline_colors()
 
         sl.actor.SetVisibility(True)
-        self.ctrl.view_update()
+        return (hint, new_actor)
 
-    def _sync_streamline_colors(self):
+    def sync_streamline_colors(self):
         """Apply the volume mesh color mapping to the streamline mapper."""
         sl = self.vtk_streamlines
         if sl.mapper is None:
@@ -662,44 +585,135 @@ class TrameApplication(TrameApp, RenderApplication):
         sl.mapper.SetScalarRange(volume_mapper.GetScalarRange())
         sl.mapper.ScalarVisibilityOn()
 
+
+# -----------------------------------------------------------------------------
+# GUI elements
+# -----------------------------------------------------------------------------
+
+
+class TrameApplication(TrameApp, RenderApplication):
+    """Serves a Figure as a Trame app, supporting Plotly or VTK based backends"""
+
+    def __init__(self, server=None):
+        super().__init__(server, client_type="vue3")
+        self.title = None
+        self.state.setdefault("active_ui", None)
+
+    @staticmethod
+    def create(figure):
+        """Builds a Trame app displaying `figure`"""
+        # TODO: implement sliders / callbacks
+        app = TrameApplication()
+
+        app._build_figure_ui(figure)
+        # _build_ui._register_callbacks(figure)
+        return app
+
+    @staticmethod
+    def createMesh(mesh, scalar_fields, vector_fields):
+        """Builds a Trame app displaying `mesh`, colored by `scalar_fields` or `vector_fields`"""
+        app = TrameApplication()
+
+        app._build_mesh_ui(mesh, scalar_fields, vector_fields)
+        return app
+
+    def _hide_kitware_link(self):
+        # Inject CSS to hide ONLY the Kitware website link inside the footer
+        client.Style(".v-footer a[href*='kitware.com'] { display: none !important; }")
+
+    def _build_figure_ui(self, figure):
+        # with SinglePageWithDrawerLayout(self.server, theme=("theme", "light"), hide_footer=True) as self.ui:
+        with SinglePageLayout(self.server, full_height=True) as self.ui:
+            self._hide_kitware_link()
+            title = figure.title if figure.title else "Plot"
+            self.ui.title.set_text("Qewton Viewer: " + title)
+            self.state.trame__title = "Qewton"
+            self.ui.icon.hide()
+
+            with self.ui.content:
+                pfig = plotly.Figure(
+                    ctx_name="plotly_display",
+                    display_logo=False,
+                    display_mode_bar=True,
+                )
+                pfig.update(figure.draw())
+
+    def _build_mesh_ui(self, mesh, scalar_fields, vector_fields):
+        self._init_vtk()
+        self._init_mesh(mesh, scalar_fields, vector_fields)
+        sc = self.scene
+
+        with SinglePageWithDrawerLayout(
+            self.server, theme=("theme", "light"), hide_footer=True
+        ) as self.ui:
+            self.state.vtk_field_types = {
+                f["value"]: f["type"] for f in sc.vtk_color_fields
+            }
+
+            self._hide_kitware_link()
+            title = "Mesh"  # mesh.title if mesh.title else "Mesh"
+            self.ui.title.set_text("Qewton VTK Viewer: " + title)
+            self.state.trame__title = "Qewton"
+
+            with self.ui.toolbar:
+                # toolbar components
+                v3.VSpacer()
+                v3.VDivider(vertical=True, classes="mx-2")
+                self.standard_buttons()
+
+            with self.ui.footer as footer:
+                v3.VLabel("Qewton Viewer")
+
+            with self.ui.content:
+                # content components
+                with v3.VContainer(
+                    fluid=True,
+                    classes="pa-0 fill-height",
+                ):
+                    # view = vtk.VtkRemoteView(self.renderWindow, interactive_ratio=1)
+                    view = vtk.VtkLocalView(self.renderWindow)
+                    # view = vtk.VtkRemoteLocalView(
+                    #    self.renderWindow, namespace="view", mode="local", interactive_ratio=1
+                    # )
+                    self.ctrl.view_update = view.update
+                    self.ctrl.view_reset_camera = view.reset_camera
+
+            with self.ui.drawer as drawer:
+                # drawer components
+                drawer.width = 350
+                self.pipeline_widget()
+                v3.VDivider(classes="mb-2")
+                for i, m in enumerate(sc.vtk_meshes):
+                    vol_mesh = i == 0
+                    self.mesh_card(
+                        m.name, i, show_color=vol_mesh, show_streamlines=vol_mesh
+                    )
+
+    def _init_vtk(self):
+        self.renderer, self.renderWindow = init_renderer()
+
+    def _init_streamlines_state(self):
+        sc = self.scene
+        self.state.streamlines_enabled = False
+        self.state.streamlines_field = (
+            sc.vtk_vector_fields[0]["value"] if sc.vtk_vector_fields else None
+        )
+        self.state.streamlines_seed_surface = (
+            sc.vtk_seed_surfaces[0]["value"] if sc.vtk_seed_surfaces else None
+        )
+        self.state.streamlines_n_seeds = STREAMLINE_DEFAULT_SEEDS
+        self.state.streamlines_seed_hint = ""
+
     def _init_mesh(
         self, qmesh: "qewton.geometries.MeshGeometry", scalar_fields, vector_fields
     ):
-        tet_mesh = create_mesh(qmesh.mesh.vertices, qmesh.mesh.cells, VTK_TETRA)
-        self._init_scalar_fields(tet_mesh, scalar_fields)
-        self._init_vector_fields(tet_mesh, vector_fields)
-        self.vtk_color_fields = self.vtk_scalar_fields + self.vtk_vector_fields
-        self._init_meshes(qmesh, tet_mesh)
-        self._init_streamlines()
-
-    def _init_meshes(self, qmesh: "qewton.geometries.MeshGeometry", tet_mesh):
-        tet_mapper = vtkDataSetMapper()
-        tet_mapper.SetInputData(tet_mesh)
-        tet_actor = vtkActor()
-        tet_actor.SetMapper(tet_mapper)
-        self.renderer.AddActor(tet_actor)
-        self.cubeAxes.SetBounds(tet_actor.GetBounds())
-
-        self.vtk_meshes = [VtkItem("Mesh", tet_actor, tet_mapper, tet_mesh)]
-
-        submeshes = [
-            name for name, value in qmesh.mesh.marker_labels.items() if value[1] == 2
-        ]
-        for i, surf_name in enumerate(submeshes):
-            surface_geo = qmesh.boundary.get_submesh(surf_name)
-            surface_mesh = create_mesh(
-                surface_geo.mesh.vertices, surface_geo.mesh.cells, VTK_TRIANGLE
-            )
-            surface_mapper = vtkDataSetMapper()
-            surface_mapper.SetInputData(surface_mesh)
-            surface_actor = vtkActor()
-            surface_actor.SetMapper(surface_mapper)
-            colors = [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)]
-            surface_actor.GetProperty().SetColor(*colors[i % 3])
-            self.renderer.AddActor(surface_actor)
-            self.vtk_meshes.append(
-                VtkItem(surf_name, surface_actor, surface_mapper, surface_mesh)
-            )
+        self.scene = MeshScene()
+        self.scene.build(qmesh, scalar_fields, vector_fields)
+        self.scene.cubeAxes.SetCamera(self.renderer.GetActiveCamera())
+        self._init_streamlines_state()
+        for actor in self.scene.actors:
+            self.renderer.AddActor(actor)
+        self.renderer.ResetCamera()
 
     # -----------------------------------------------------------------------------
     # Callbacks
@@ -707,7 +721,7 @@ class TrameApplication(TrameApp, RenderApplication):
 
     @change("cube_axes_visibility")
     def update_cube_axes_visibility(self, cube_axes_visibility, **_):
-        self.cubeAxes.SetVisibility(cube_axes_visibility)
+        self.scene.cubeAxes.SetVisibility(cube_axes_visibility)
         self.ctrl.view_update()
 
     # Selection Change
@@ -721,30 +735,35 @@ class TrameApplication(TrameApp, RenderApplication):
         idx = int(id) - 1
         visibility = event["visible"]
 
-        self.vtk_meshes[idx].actor.SetVisibility(visibility)
+        self.scene.vtk_meshes[idx].actor.SetVisibility(visibility)
         self.ctrl.view_update()
 
     def update_mesh_representation(self, mesh_id, mesh_representation, **_):
-        mesh_actor = self.vtk_meshes[mesh_id].actor
+        mesh_actor = self.scene.vtk_meshes[mesh_id].actor
         update_representation(mesh_actor, mesh_representation)
         self.ctrl.view_update()
 
     def update_mesh_opacity(self, mesh_id, mesh_opacity, **_):
-        mesh_actor = self.vtk_meshes[mesh_id].actor
+        mesh_actor = self.scene.vtk_meshes[mesh_id].actor
         mesh_actor.GetProperty().SetOpacity(mesh_opacity)
         self.ctrl.view_update()
 
     def update_mesh_color_preset(self, mesh_id, mesh_color_preset, **_):
-        mesh_actor = self.vtk_meshes[mesh_id].actor
+        mesh_actor = self.scene.vtk_meshes[mesh_id].actor
         use_preset(mesh_actor, mesh_color_preset)
-        if self.vtk_streamlines.actor is not None and self.state.streamlines_enabled:
-            self._sync_streamline_colors()
+        if (
+            self.scene.vtk_streamlines.actor is not None
+            and self.state.streamlines_enabled
+        ):
+            self.scene.sync_streamline_colors()
         self.ctrl.view_update()
 
     def update_mesh_color_array(
         self, mesh_id, mesh_color_field, mesh_color_component=None, **_
     ):
-        color_by_field(self.vtk_meshes[mesh_id], mesh_color_field, mesh_color_component)
+        color_by_field(
+            self.scene.vtk_meshes[mesh_id], mesh_color_field, mesh_color_component
+        )
         self.ctrl.view_update()
 
     @change(
@@ -754,67 +773,18 @@ class TrameApplication(TrameApp, RenderApplication):
         "streamlines_n_seeds",
     )
     def update_streamlines(self, **_):
-        self._update_streamlines()
-
-    # -----------------------------------------------------------------------------
-    # GUI elements
-    # -----------------------------------------------------------------------------
-
-    def standard_buttons(self):
-        v3.VCheckbox(
-            v_model=("cube_axes_visibility", True),
-            true_icon="mdi-cube-outline",
-            false_icon="mdi-cube-off-outline",
-            classes="mx-1",
-            hide_details=True,
-            density="compact",
+        enabled = self.state.streamlines_enabled
+        field = self.state.streamlines_field
+        surface_id = self.state.streamlines_seed_surface
+        n_requested = self.state.streamlines_n_seeds
+        hint, new_actor = self.scene.update_streamlines(
+            enabled, field, surface_id, n_requested
         )
-        v3.VCheckbox(
-            v_model="theme",
-            true_value="dark",
-            false_value="light",
-            true_icon="mdi-lightbulb-off-outline",
-            false_icon="mdi-lightbulb-outline",
-            classes="mx-1",
-            hide_details=True,
-            density="compact",
-        )
-        v3.VCheckbox(
-            v_model=("viewMode", "local"),
-            true_icon="mdi-lan-disconnect",
-            false_icon="mdi-lan-connect",
-            true_value="local",
-            false_value="remote",
-            classes="mx-1",
-            hide_details=True,
-            density="compact",
-        )
-        v3.VBtn(icon="mdi-crop-free", click=self.ctrl.view_reset_camera)
-
-    def pipeline_widget(self):
-        assert len(self.vtk_meshes) >= 1
-        pipeline = []
-        for i, m in enumerate(self.vtk_meshes):
-            # p = {"id": str(i+1), "parent": "0" if i == 0 else "1", "visible": 1, "name": m.name}
-            p = {"id": str(i + 1), "parent": str(i), "visible": 1, "name": m.name}
-            pipeline.append(p)
-        trame.GitTree(
-            sources=("pipeline", pipeline),
-            actives_change=(self.actives_change, "[$event]"),
-            visibility_change=(self.visibility_change, "[$event]"),
-        )
-
-    def ui_card(self, title, ui_id):
-        with v3.VCard(v_show=f"active_ui == 'card_id_{ui_id}'"):
-            v3.VCardTitle(
-                title,
-                classes="grey lighten-1 py-1 grey--text text--darken-3",
-                style="user-select: none; cursor: pointer",
-                hide_details=True,
-                density="compact",
-            )
-            content = v3.VCardText(classes="py-2")
-        return content
+        if hint:
+            self.state.streamlines_seed_hint = hint
+        if new_actor:
+            self.renderer.AddActor(new_actor)
+        self.ctrl.view_update()
 
     def _make_representation_callback(self, mesh_id):
         def on_change(**kwargs):
@@ -853,7 +823,9 @@ class TrameApplication(TrameApp, RenderApplication):
             ui_id = str(mesh_id + 1)
             field_name = kwargs[f"mesh_color_field_{ui_id}"]
             component = kwargs.get(f"mesh_color_component_{ui_id}", None)
-            field = next(f for f in self.vtk_color_fields if f["value"] == field_name)
+            field = next(
+                f for f in self.scene.vtk_color_fields if f["value"] == field_name
+            )
             # Explicitly set state variable to control visibility
             setattr(
                 self.state, f"mesh_color_is_vector_{ui_id}", field["type"] == "vector"
@@ -862,9 +834,70 @@ class TrameApplication(TrameApp, RenderApplication):
 
         return on_change
 
-    def mesh_card(self, title, mesh_id, allow_color=False, allow_streamlines=False):
+    # -----------------------------------------------------------------------------
+    # GUI elements
+    # -----------------------------------------------------------------------------
+
+    def standard_buttons(self):
+        v3.VCheckbox(
+            v_model=("cube_axes_visibility", True),
+            true_icon="mdi-cube-outline",
+            false_icon="mdi-cube-off-outline",
+            classes="mx-1",
+            hide_details=True,
+            density="compact",
+        )
+        v3.VCheckbox(
+            v_model="theme",
+            true_value="dark",
+            false_value="light",
+            true_icon="mdi-lightbulb-off-outline",
+            false_icon="mdi-lightbulb-outline",
+            classes="mx-1",
+            hide_details=True,
+            density="compact",
+        )
+        v3.VCheckbox(
+            v_model=("viewMode", "local"),
+            true_icon="mdi-lan-disconnect",
+            false_icon="mdi-lan-connect",
+            true_value="local",
+            false_value="remote",
+            classes="mx-1",
+            hide_details=True,
+            density="compact",
+        )
+        v3.VBtn(icon="mdi-crop-free", click=self.ctrl.view_reset_camera)
+
+    def pipeline_widget(self):
+        assert len(self.scene.vtk_meshes) >= 1
+        pipeline = []
+        for i, m in enumerate(self.scene.vtk_meshes):
+            # p = {"id": str(i+1), "parent": "0" if i == 0 else "1", "visible": 1, "name": m.name}
+            p = {"id": str(i + 1), "parent": str(i), "visible": 1, "name": m.name}
+            pipeline.append(p)
+        trame.GitTree(
+            sources=("pipeline", pipeline),
+            actives_change=(self.actives_change, "[$event]"),
+            visibility_change=(self.visibility_change, "[$event]"),
+        )
+
+    def ui_card(self, title, ui_id):
+        with v3.VCard(v_show=f"active_ui == 'card_id_{ui_id}'"):
+            v3.VCardTitle(
+                title,
+                classes="grey lighten-1 py-1 grey--text text--darken-3",
+                style="user-select: none; cursor: pointer",
+                hide_details=True,
+                density="compact",
+            )
+            content = v3.VCardText(classes="py-2")
+        return content
+
+    def mesh_card(self, title, mesh_id, show_color=False, show_streamlines=False):
         ui_id = str(mesh_id + 1)
-        default_field = self.vtk_color_fields[0]
+        sc = self.scene
+        default_field = self.scene.vtk_color_fields[0]
         self.state[f"mesh_color_is_vector_{ui_id}"] = default_field["type"] == "vector"
         with self.ui_card(title=title, ui_id=ui_id):
             # Representation
@@ -890,7 +923,7 @@ class TrameApplication(TrameApp, RenderApplication):
                 outlined=True,
                 classes="pt-1",
             )
-            if allow_color:
+            if show_color:
                 with v3.VRow(classes="pt-2", density="compact", no_gutters=True):
                     with v3.VCol(classes="pr-1", cols="6"):
                         # Color By
@@ -898,9 +931,9 @@ class TrameApplication(TrameApp, RenderApplication):
                             label="Color by",
                             v_model=(
                                 f"mesh_color_field_{ui_id}",
-                                self.vtk_color_fields[0]["value"],
+                                sc.vtk_color_fields[0]["value"],
                             ),
-                            items=("color_field_list", self.vtk_color_fields),
+                            items=("color_field_list", sc.vtk_color_fields),
                             item_title="text",
                             item_value="value",
                             hide_details=True,
@@ -952,7 +985,7 @@ class TrameApplication(TrameApp, RenderApplication):
                 hide_details=True,
                 density="compact",
             )
-            if allow_streamlines and self.vtk_vector_fields and self.vtk_seed_surfaces:
+            if show_streamlines and sc.vtk_vector_fields and sc.vtk_seed_surfaces:
                 v3.VDivider(classes="my-3")
                 v3.VCheckbox(
                     v_model=("streamlines_enabled", False),
@@ -971,7 +1004,7 @@ class TrameApplication(TrameApp, RenderApplication):
                             v3.VSelect(
                                 label="Vector field",
                                 v_model=("streamlines_field",),
-                                items=("vector_field_list", self.vtk_vector_fields),
+                                items=("vector_field_list", sc.vtk_vector_fields),
                                 item_title="text",
                                 item_value="value",
                                 hide_details=True,
@@ -983,7 +1016,7 @@ class TrameApplication(TrameApp, RenderApplication):
                             v3.VSelect(
                                 label="Seed surface",
                                 v_model=("streamlines_seed_surface",),
-                                items=("seed_surface_list", self.vtk_seed_surfaces),
+                                items=("seed_surface_list", sc.vtk_seed_surfaces),
                                 item_title="text",
                                 item_value="value",
                                 hide_details=True,
