@@ -3,19 +3,10 @@ import numpy as np
 import sys
 import qewton.visualization as viz
 
-# Trame
-from trame.app import TrameApp
-from trame.decorators import change
-from trame.ui.vuetify3 import SinglePageLayout
-from trame.widgets import vuetify3, plotly
-
-import plotly.express as px
-import plotly.graph_objects as go
-
 # Variables
 X = qewton.Variable("x", 3)
-U = qewton.Variable("u", 3) # velocity is vector valued
-P = qewton.Variable("p", 1) # pressure is scalar
+U = qewton.Variable("u", 3)  # velocity is vector valued
+P = qewton.Variable("p", 1)  # pressure is scalar
 
 # FEM reference
 fem_velocity = np.load("examples/PINN/data/stokes_pipe/velocity.npy")
@@ -33,13 +24,11 @@ side_geo = mesh_geo.boundary.get_submesh("Side")
 
 # Figure
 geo = mesh_geo
-mesh_config = qewton.DataConfiguration(
-    qewton.GeometryAxes(geo), qewton.FeatureAxes(X)
-)
+mesh_config = qewton.DataConfiguration(qewton.GeometryAxes(geo), qewton.FeatureAxes(X))
 vertices = geo.mesh.vertices.numpy()
 field = np.zeros((len(vertices), 1))
-field = (np.sin(vertices[:, 0]) * np.cos(vertices[:, 1]) + 10*vertices[:, 2])
-field = (np.sin(vertices[:, 0]) * np.cos(vertices[:, 1]) + 10*vertices[:, 2])[:, None]
+field = np.sin(vertices[:, 0]) * np.cos(vertices[:, 1]) + 10 * vertices[:, 2]
+field = (np.sin(vertices[:, 0]) * np.cos(vertices[:, 1]) + 10 * vertices[:, 2])[:, None]
 mesh_plot = viz.MeshFieldPlot(field, mesh_config, viz.ColorSpec(X.children[0]))
 
 inflow_mesh_verts = qewton.geometries.PointCloud(X, inflow_geo.mesh.vertices)
@@ -48,7 +37,7 @@ inflow_mesh_config = qewton.DataConfiguration(
 )
 inflow_geo_plot = viz.PointCloudPlot(inflow_geo.mesh.vertices, inflow_mesh_config)
 
-#figure = viz.Figure(viz.Overlay(mesh_plot, inflow_geo_plot))
+# figure = viz.Figure(viz.Overlay(mesh_plot, inflow_geo_plot))
 figure = viz.Figure(viz.Row(mesh_plot, inflow_geo_plot))
 
 # Dash plotly figure
@@ -65,12 +54,14 @@ if False:
 
 # Trame VTK figure
 if True:
-    scalar_fields = {"scalar_field": field,
-                     "pressure": fem_pressure,
-                     "Xvelocity": np.linalg.norm(fem_velocity, axis=1)[:, None],
-                     "Xvelocity_X": fem_velocity[:, 0:1],
-                     "Xvelocity_Y": fem_velocity[:, 1:2],
-                     "Xvelocity_Z": fem_velocity[:, 2:3]}
+    scalar_fields = {
+        "scalar_field": field,
+        "pressure": fem_pressure,
+        "s_velocity": np.linalg.norm(fem_velocity, axis=1)[:, None],
+        "s_velocity_X": fem_velocity[:, 0:1],
+        "s_velocity_Y": fem_velocity[:, 1:2],
+        "s_velocity_Z": fem_velocity[:, 2:3],
+    }
     vector_fields = {"velocity": fem_velocity}
     app = viz.TrameApplication.createMesh(mesh_geo, scalar_fields, vector_fields)
     app.server.start()

@@ -8,7 +8,11 @@
         "--disable=too-few-public-methods,missing-function-docstring"
     ],
     "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:pip",
+    "black-formatter.args": [
+        "--config",
+        "${workspaceFolder}/pyproject.toml"
+    ],
     "cSpell.words": [
         "allclose",
         "arccos",
