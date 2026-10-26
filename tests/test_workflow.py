@@ -147,5 +147,5 @@ class TestGeneralWorkflow(unittest.TestCase):
         tuner.run()
 
         # Check if the study result CSV was created
-        csv_path = os.path.join(tuner.file_path, "study.csv")
+        csv_path = tuner.result_collector.csv_path
         self.assertTrue(os.path.exists(csv_path), f"Tuner CSV not found at {csv_path}")

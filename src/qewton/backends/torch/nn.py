@@ -12,6 +12,7 @@ class TorchNNBackend(NNBackend[torch.Tensor]):
     tanh = torch.nn.functional.tanh
     softmax = torch.nn.functional.softmax
     gelu = torch.nn.functional.gelu
+    softplus = torch.nn.functional.softplus
 
     conv1d = torch.nn.functional.conv1d
     conv2d = torch.nn.functional.conv2d

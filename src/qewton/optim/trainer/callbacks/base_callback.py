@@ -14,6 +14,10 @@ class Callback:
     def __init__(self, priority=0) -> None:
         self.priority = priority
 
+    def add_callback_info_to_state(self, state: TrainerState):
+        """Adds this callback to the state."""
+        pass
+
     @property
     def saves_data(self) -> bool:
         return False

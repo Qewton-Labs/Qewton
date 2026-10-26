@@ -1,5 +1,3 @@
-# import warnings
-
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,
@@ -36,6 +34,9 @@ class IntersectionGeometry(ContinuousGeometry[TensorType]):
         self.geometry_b = geometry_b
         super().__init__(variable=geometry_a.variable, backend=geometry_a.backend)
 
+    def _related_geometries(self) -> list:
+        return [self.geometry_a, self.geometry_b, *super()._related_geometries()]
+
     def contains(self, points):
         in_a = self.geometry_a.contains(points)
         in_b = self.geometry_b.contains(points)
@@ -48,7 +49,7 @@ class IntersectionGeometry(ContinuousGeometry[TensorType]):
         for i in range(self.variable.dim):
             bounds.append(max([bounds_a[2 * i], bounds_b[2 * i]]))
             bounds.append(min([bounds_a[2 * i + 1], bounds_b[2 * i + 1]]))
-        return self.backend.build_tensor(bounds)
+        return self._bounds(bounds)
 
     def sample_random_uniform(self, n_points: int, device: Device = cpu):
         return _inside_random_with_n(

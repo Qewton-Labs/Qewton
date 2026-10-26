@@ -108,6 +108,83 @@ def test_contains_point_and_cell_based(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
+def test_contains_handles_multiple_bbox_candidates(backend):
+    """Regression test: a point near a shared vertex/edge falls inside the
+    bounding box of more than one cell. The point-based search used to
+    iterate over the raw where() tuple instead of its index array, so with
+    more than one candidate it either crashed (torch) or silently checked an
+    aggregated batch instead of each candidate individually (numpy)."""
+    vertices = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+    cells = [[0, 1, 2], [0, 2, 3]]
+    mesh = Mesh(vertices=vertices, cells=cells, backend=backend)
+    var = Variable("x", 2)
+    mg = MeshGeometry(variable=var, mesh=mesh, backend=backend)
+
+    # (0, 0) is the shared vertex of both cells - both bounding boxes match.
+    # Uses the point-based path directly (1 point < 2 cells).
+    shared_vertex = backend.build_tensor([[0.0, 0.0]])
+    assert bool(mg.contains(shared_vertex)[0])
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_interpolate_to_linear_field(backend):
+    # right triangle; u(x, y) = x + 2y is linear, so barycentric
+    # interpolation reproduces it exactly anywhere inside the triangle.
+    vertices = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+    cells = [[0, 1, 2]]
+    mesh = Mesh(vertices=vertices, cells=cells, backend=backend)
+    var = Variable("x", 2)
+    mg = MeshGeometry(variable=var, mesh=mesh, backend=backend)
+
+    values = backend.build_tensor([0.0, 1.0, 2.0])
+    points = backend.build_tensor(
+        [
+            [1 / 3, 1 / 3],  # centroid -> (0 + 1 + 2) / 3
+            [0.0, 0.0],  # exactly v0
+            [0.5, 0.0],  # edge midpoint v0-v1
+            [2.0, 2.0],  # outside the triangle
+        ]
+    )
+
+    result = mg.interpolate_to(points, values)
+    assert float(result[0]) == pytest.approx(1.0)
+    assert float(result[1]) == pytest.approx(0.0)
+    assert float(result[2]) == pytest.approx(0.5)
+    assert bool(backend.math.isnan(result[3]))
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_interpolate_to_point_based_path_asymmetric_tet(backend):
+    """Regression test: the point-based search (len(points) < len(cells))
+    computed barycentric weights as `inv_A @ (p - v0)` instead of the correct
+    `(p - v0) @ inv_A` (inv_A is the inverse of a matrix whose ROWS, not
+    columns, are the edge vectors, so only the second form actually solves
+    p - v0 = sum(u_i * edge_i)). Silently wrong for symmetric-enough cells,
+    exposed by an asymmetric tet - and needs >=2 cells so 1 point actually
+    takes the point-based path rather than the (correct) cell-based one."""
+    vertices = [
+        [0.0, 0.0, 0.0],
+        [2.0, 0.0, 0.0],
+        [0.0, 3.0, 0.0],
+        [0.0, 0.0, 4.0],
+        [2.0, 3.0, 4.0],  # a second, disjoint cell so len(cells) > len(points)
+    ]
+    cells = [[0, 1, 2, 3], [1, 2, 3, 4]]
+    mesh = Mesh(vertices=vertices, cells=cells, backend=backend)
+    var = Variable("x", 3)
+    mg = MeshGeometry(variable=var, mesh=mesh, backend=backend)
+
+    values = backend.build_tensor([0.0, 1.0, 1.0, 1.0, 0.0])  # u = x/2 + y/3 + z/4
+    # centroid of the first tet -> average of its 4 vertices
+    centroid = [0.5, 0.75, 1.0]
+    points = backend.build_tensor([centroid])
+    assert len(points) < len(cells)
+
+    result = mg.interpolate_to(points, values)
+    assert float(result[0]) == pytest.approx(0.75)  # mean of [0,1,1,1]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
 def test_get_submesh_returns_meshgeometry(backend):
     vertices = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
     cells = [[0, 1, 2], [0, 2, 3]]

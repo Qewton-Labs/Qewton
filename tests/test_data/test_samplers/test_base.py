@@ -92,6 +92,29 @@ def test_point_sampler_cache_and_clear_cache(backend):
     assert sampler.normal_cache is None
 
 
+@pytest.mark.skipif(not cuda_available(), reason="needs a real second device")
+def test_grid_sampler_moves_its_own_cache_even_when_populated_before_to():
+    """GridSampler.sample_points() caches its grid unconditionally (self.
+    point_cache), outside the base class's created_cache opt-in mechanism
+    - PointSampler.to() used to only move the cache when created_cache was
+    True, so a GridSampler run once (e.g. via DataNode.visualize()) before
+    .to(device) kept silently serving points on the old device forever
+    after, even though the sampler's own _device said otherwise."""
+    from qewton.backends.torch.base import TorchBackend
+
+    interval = Interval(T, 0, 1, backend=TorchBackend)
+    sampler = GridSampler(interval, 3, backend=TorchBackend)
+
+    sampler.forward()
+    assert sampler.point_cache.device.type == "cpu"
+
+    sampler.to(cuda(0))
+    assert sampler.point_cache.device.type == "cuda"
+
+    points = sampler.forward()
+    assert points.device.type == "cuda"
+
+
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("device", devices)
 def test_product_sampler_combines_two_samplers(backend, device):

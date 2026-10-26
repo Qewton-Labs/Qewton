@@ -1,5 +1,3 @@
-from numpy import ndarray
-
 from qewton.config.variables import Variable
 from qewton.geometries.continuous.domains_2d.parallelogram import Parallelogram
 from qewton.backends.base import TensorType, ComputingBackend
@@ -11,7 +9,7 @@ class Rectangle(Parallelogram[TensorType]):
 
     Args:
         variable (Variable): The variable associated with the rectangle, must be 2D.
-        origin (np.ndarray | list[float] | tuple[float, float]):
+        origin (list[float] | tuple[float, float]):
             The origin of the rectangle (lower left corner).
         width (float): The width of the rectangle.
         height (float): The height of the rectangle.
@@ -23,7 +21,7 @@ class Rectangle(Parallelogram[TensorType]):
     def __init__(
         self,
         variable: Variable,
-        origin: ndarray | list[float] | tuple[float, float],
+        origin: list[float] | tuple[float, float],
         width: float,
         height: float,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,

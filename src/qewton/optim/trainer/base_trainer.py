@@ -8,7 +8,7 @@ and tracks training state.
 The main training is controlled via callbacks.
 """
 
-from typing import Any
+from typing import Any, Callable
 
 from qewton.optim.trainer.callbacks.base_callback import Callback
 from qewton.optim.trainer.callbacks.progressbar_callback import ProgressBarCallback
@@ -78,6 +78,8 @@ class Trainer:
         self.train_state = TrainerState(
             save_path, enable_logging=enable_logging, log_interval=log_interval
         )
+        for cb in self.callbacks:
+            cb.add_callback_info_to_state(self.train_state)
 
     def set_trainable_parameters(self, parameters: _TrainableParameterBase):
         """Attach the trainable parameter container used by optimization phases.
@@ -203,8 +205,8 @@ class Trainer:
         output names before training begins.
         """
 
-    def cleanup(self):
+    def cleanup(self) -> Callable:
         """Perform cleanup tasks after the last optimization phase completes."""
-        self.optimization_phases[
-            -1
-        ].cleanup()  # clean up after the last optimization phase
+        return self.optimization_phases[-1].cleanup()
+        # for op_phase in self.optimization_phases:
+        #     op_phase.cleanup()

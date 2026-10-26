@@ -16,7 +16,7 @@ class TorchParameterBackend(ParameterBackend[torch.Tensor]):
             # E.g. 0, rand, xavier,... But this also needs to be exposed to the outside
             param = torch.zeros(shape, requires_grad=True, dtype=dtype)
             if len(shape) > 1:
-                torch.nn.init.xavier_uniform_(param)
+                torch.nn.init.xavier_normal_(param, gain=5.0 / 3.0)
         else:
             raise ValueError("Either 'shape' or 'tensor' must be provided to initialize.")
         return param
@@ -29,5 +29,6 @@ class TorchParameterBackend(ParameterBackend[torch.Tensor]):
 
     @staticmethod
     def requires_grad(data, requires_grad: bool) -> torch.Tensor:
-        data.requires_grad = requires_grad
+        if isinstance(data, torch.Tensor):
+            data.requires_grad = requires_grad
         return data

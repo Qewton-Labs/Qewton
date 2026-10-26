@@ -56,6 +56,7 @@ def test_fcn_deeponet_initialization_with_variable_output(backend):
     )
     assert model.output_dim == 3
     assert model.intermediate_neurons.current_value == 6
+    assert model.output_ports[0].data_configuration.feature_axes.variables is output_var
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

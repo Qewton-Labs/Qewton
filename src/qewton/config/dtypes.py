@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Annotated, Any
 
 # we trick the IDE to read type annotations as Annotated, while
-# at runtime, we use seperate classes to make them hashable
+# at runtime, we use separate classes to make them hashable
 
 if TYPE_CHECKING:
     from typing import Annotated as BFloat16

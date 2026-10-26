@@ -34,6 +34,26 @@ def test_create_triangle_mesh(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("device", devices)
+def test_boundary_facets_and_normals_on_device(backend, device):
+    """Regression: _find_boundary_facets()/_compute_normals() used to build
+    their own bookkeeping tensors (cell_ids, missing_vertex_ids,
+    boundary_normals_at_vertex, the 1D-case normals) on cpu regardless of
+    where vertices/cells actually live, mismatching them the moment a
+    non-cpu device was used."""
+    vertices = backend.build_tensor(
+        [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], device=device
+    )
+    cells = backend.build_tensor([[0, 1, 2], [1, 3, 2]], device=device)
+    m = Mesh(vertices=vertices, cells=cells, backend=backend, device=device)
+
+    assert m.vertex_count == 4
+    assert m.boundary_faces.shape[0] == 4
+    assert m.boundary_normals.shape[0] == 4
+    assert m.boundary_normals_at_vertex.shape[0] == 4
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
 def test_create_tetrahedron(backend):
     vertices3 = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
     cells3 = [[0, 1, 2, 3]]

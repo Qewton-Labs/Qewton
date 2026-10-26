@@ -11,6 +11,7 @@ from qewton.graphs.nodes import Node, NodeState
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.graphs.graphs import Graph
 from qewton.config.variables import Variable
+from qewton.config.devices import Device, cpu
 from qewton.config.data_configurations import DataConfiguration as DC
 from qewton.config.axes import EllipsisAxes, FeatureAxes, BatchAxes, AxesDim
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -67,6 +68,7 @@ class CNNDeepONet(DeepONet[TensorType]):
         self.activations = HyperParameter.from_value(activations, "Activations")
         self.output_dim = output if isinstance(output, int) else output.dim
         self.output_strategy: DefaultMerger.MERGE_TYPES = output_strategy
+        self.current_device: Device = cpu  # Default device; can be changed later
 
         self.trunk_net = FCN(
             in_neurons=trunk_input,
@@ -107,6 +109,7 @@ class CNNDeepONet(DeepONet[TensorType]):
         self.trunk_port = self.input_ports[1]
 
     def to(self, device):
+        self.current_device = device
         self.trunk_net.to(device)
         self.branch_net.to(device)
         return super().to(device)
@@ -162,11 +165,9 @@ class CNNDeepONet(DeepONet[TensorType]):
         # Reset the trunk and branch networks to ensure they are properly
         # initialized with the new output dimensions
         self.trunk_net.reset()
-        print("Trunk out:", trunk_out)
         self.trunk_net.out_neurons.set_value(trunk_out)
         self.trunk_net.setup()
         self.branch_net.reset()
-        print("Branch out:", branch_out)
         self.branch_net.out_channels.set_value(branch_out)
         self.branch_net.setup()
         self.intermediate_neurons.set_value(neurons_value)
@@ -199,6 +200,8 @@ class CNNDeepONet(DeepONet[TensorType]):
                 output_ports=self.merge_node.output_ports,
             )
             self.set_state(NodeState.INITIALIZED)
+            if self.current_device != cpu:
+                self.to(self.current_device)
 
     def _branch_config(self):
         return DC(

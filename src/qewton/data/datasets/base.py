@@ -5,9 +5,10 @@ from abc import ABC, abstractmethod
 
 
 from qewton.config.data_configurations import DataConfiguration
+from qewton.config.saving.saving import Serializable
 
 
-class DataSet(ABC):
+class DataSet(ABC, Serializable):
     """Abstract base class for all datasets.
 
     A DataSet provides a standard interface for accessing data samples,
@@ -65,7 +66,20 @@ class DataSet(ABC):
         """
         return self[:]
 
+    def setup(self):
+        """Optional setup method for subclasses to override."""
+        pass
+
     @property
     def metadata(self) -> dict:
         """Optional metadata associated with the dataset (e.g., HDF5 attributes)."""
         return {}
+
+    @property
+    def data_set_loaded(self) -> bool:
+        """Check if the dataset is fully loaded into memory.
+
+        Returns:
+            bool: True if all data objects are loaded, False otherwise.
+        """
+        return True

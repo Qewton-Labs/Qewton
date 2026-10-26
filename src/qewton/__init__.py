@@ -4,6 +4,7 @@ from .config import *
 from .data import *
 
 from .graphs import *
+from .graphs.pipelines import *
 from .optim.parameters import *
 from . import optim
 from .constraints import *

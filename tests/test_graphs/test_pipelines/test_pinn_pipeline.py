@@ -4,7 +4,9 @@ from qewton.config import Variable, DataConfiguration, BatchAxes, FeatureAxes, A
 from qewton.data import ArrayLikeDataSet, DataLoader
 from qewton.algorithms import FCN
 from qewton.constraints import PINNConstraint
+from qewton.graphs.control_nodes.wrapper_node import FunctionWrappingNode
 from qewton.graphs.pipelines import PINNPipeline
+from qewton.graphs.pipelines.pinn_pipeline import _variable_segments
 from qewton.optim import OptimizationPhase, Adam, GraphBasedTrainer
 
 
@@ -15,6 +17,35 @@ def simple_adam():
         lr=0.001,
         max_iterations=5,
     )
+
+
+class TestVariableSegments:
+    def test_a_variable_nothing_subdivides_stays_one_segment(self):
+        x, y, z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
+        leaves = [x, y, z]
+        segments = _variable_segments(leaves, [x * y * z])
+        assert segments == [leaves]
+
+    def test_a_requested_sub_leaf_forces_a_cut(self):
+        x, y, z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
+        leaves = [x, y, z]
+        segments = _variable_segments(leaves, [x * y * z, y])
+        assert segments == [[x], [y], [z]]
+
+    def test_a_non_adjacent_request_cuts_out_whats_in_between_too(self):
+        """X * Z (skipping Y) forces Y into its own segment too, even
+        though nothing directly asked for Y alone."""
+        x, y, z = Variable("x", 1), Variable("y", 1), Variable("z", 1)
+        leaves = [x, y, z]
+        segments = _variable_segments(leaves, [x * z])
+        assert segments == [[x], [y], [z]]
+
+    def test_unrelated_leaves_do_not_force_a_cut(self):
+        x, y = Variable("x", 1), Variable("y", 1)
+        f = Variable("f", 1)
+        leaves = [x, y]
+        segments = _variable_segments(leaves, [x * y, f])  # f isn't part of these leaves at all
+        assert segments == [leaves]
 
 
 def test_pinn_pipeline_basic_execution(simple_adam):
@@ -39,6 +70,53 @@ def test_pinn_pipeline_basic_execution(simple_adam):
 
     constraint = PINNConstraint(residual_fun)
     pipeline = PINNPipeline(data_loader, [model], constraint)
+    pipeline.setup()
+
+    trainer = GraphBasedTrainer(
+        optimization_phases=[simple_adam],
+        graphs=[pipeline],
+        training_objectives=[constraint],
+        device="cpu",
+    )
+    trainer.run()
+    assert trainer.train_state.iteration == 5
+
+
+def test_pinn_pipeline_track_residual_false_allows_raw_backend_ops(simple_adam):
+    """track_residual=False builds the residual as a FunctionWrappingNode,
+    which executes eagerly on real tensors instead of being traced through
+    TrackingObject - so a residual using a raw torch.autograd call (not
+    `u.gradient(x)`, which only TrackingObject understands how to trace)
+    still works. PINNPipeline's own gradient-tracking pass is unaffected -
+    it acts on ports/variables, not on how the residual itself is wrapped -
+    so `x` already has requires_grad set by the time it reaches here."""
+    x_data = torch.linspace(0, 1, 10).reshape(-1, 1)
+    f_data = 2.0 * x_data
+
+    X = Variable("x", 1)
+    U = Variable("u", 1)
+    F = Variable("f", 1)
+
+    x_config = DataConfiguration(BatchAxes(AxesDim(None)), FeatureAxes(X))
+    f_config = DataConfiguration(BatchAxes(AxesDim(None)), FeatureAxes(F))
+
+    dataset = ArrayLikeDataSet(data=[x_data, f_data], data_configs=[x_config, f_config])
+    data_loader = DataLoader(dataset, batch_size=10)
+
+    model = FCN(in_neurons=X, hidden_neurons=5, out_neurons=U, n_hidden_layers=1)
+
+    def residual_fun(u: U, f: F, x: X):  # type: ignore
+        u_x = torch.autograd.grad(u.sum(), x, create_graph=True)[0]
+        return u_x - f
+
+    # residual= + track_residual=, not a pre-built constraint - exercises
+    # PINNPipeline's own forwarding of track_residual into the PINNConstraint
+    # it constructs internally, not just PINNConstraint in isolation.
+    pipeline = PINNPipeline(
+        data_loader, [model], residual=residual_fun, track_residual=False
+    )
+    assert isinstance(pipeline.constraint.residual_node, FunctionWrappingNode)
+    constraint = pipeline.constraint
     pipeline.setup()
 
     trainer = GraphBasedTrainer(
@@ -183,3 +261,70 @@ def test_pinn_pipeline_mixed_split_concat(simple_adam):
     )
     trainer.run()
     assert trainer.train_state.iteration == 5
+
+
+class TestConstraintNames:
+    """Losses are recorded by constraint name - distinct constraints must
+    never overwrite each other's loss."""
+
+    @staticmethod
+    def _pipelines():
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.geometries.continuous.domains_1d.interval import Interval
+
+        X, U = Variable("x", 1), Variable("u", 1)
+        model = FCN(in_neurons=X, out_neurons=U, hidden_neurons=4, n_hidden_layers=1)
+
+        def residual(u: U):
+            return u - 1.0
+
+        inner = PINNPipeline(RandomUniformSampler(Interval(X, 0.0, 1.0), 10), [model], residual=residual)
+        boundary = PINNPipeline(
+            RandomUniformSampler(Interval(X, 0.0, 1.0).boundary, 4), [model], residual=residual
+        )
+        return inner, boundary
+
+    def test_default_name_is_the_residual_function_name(self):
+        inner, _ = self._pipelines()
+        assert inner.constraint.name == "residual"
+
+    def test_a_lambda_residual_falls_back_to_pinn_constraint(self):
+        constraint = PINNConstraint(lambda u: u)
+        assert constraint.name == "PINNConstraint"
+
+    def test_a_node_residual_falls_back_to_pinn_constraint(self):
+        U = Variable("u", 1)
+
+        def residual(u: U):
+            return u
+
+        constraint = PINNConstraint(FunctionWrappingNode(residual))
+        assert constraint.name == "PINNConstraint"
+
+    def test_duplicate_names_get_an_index_and_both_losses_count(self, simple_adam):
+        inner, boundary = self._pipelines()
+        trainer = GraphBasedTrainer(
+            optimization_phases=[simple_adam],
+            graphs=[inner, boundary],
+            training_objectives=[inner.constraint, boundary.constraint],
+            device="cpu",
+        )
+        assert (inner.constraint.name, boundary.constraint.name) == ("residual", "residual_2")
+        trainer.run()
+        from qewton.optim.base import EvaluationPhase
+
+        assert set(trainer.train_state.losses[EvaluationPhase.TRAIN]) == {
+            "residual", "residual_2"
+        }
+
+    def test_a_name_clash_after_construction_raises_instead_of_overwriting(self, simple_adam):
+        inner, boundary = self._pipelines()
+        trainer = GraphBasedTrainer(
+            optimization_phases=[simple_adam],
+            graphs=[inner, boundary],
+            training_objectives=[inner.constraint, boundary.constraint],
+            device="cpu",
+        )
+        boundary.constraint.name = inner.constraint.name
+        with pytest.raises(ValueError, match="overwrite"):
+            trainer.run()

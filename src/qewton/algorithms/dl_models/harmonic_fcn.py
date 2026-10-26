@@ -105,6 +105,7 @@ class HarmonicEmbedding(GraphNode[TensorType]):
             input_ports=[new_in],
             output_ports=[new_out],
         )
+        self.set_state(NodeState.INITIALIZED)
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -163,7 +164,7 @@ class HarmonicFCN(GraphNode[TensorType]):
 
     def __init__(
         self,
-        input_dim: int | Variable,
+        input_dim: int | Variable | HyperParameter,
         hidden_neurons: int | HyperParameter,
         output_dim: int | HyperParameter | Variable,
         n_hidden_layers: int | HyperParameter,
@@ -177,8 +178,7 @@ class HarmonicFCN(GraphNode[TensorType]):
     ) -> None:
         if isinstance(input_dim, Variable):
             self.in_neurons = input_dim.dim
-        else:
-            self.in_neurons = input_dim
+        self.in_neurons = HyperParameter.from_value(input_dim, "Input dimension")
 
         self.embedding = HarmonicEmbedding(
             max_harmonic=max_harmonic,
@@ -195,6 +195,7 @@ class HarmonicFCN(GraphNode[TensorType]):
             backend=backend,
         )
         graph = Graph()
+        self._state = NodeState.UNINITIALIZED
         self.setup()
         graph.connect(self.embedding, self.fcn)
         super().__init__(
@@ -206,20 +207,28 @@ class HarmonicFCN(GraphNode[TensorType]):
             **kwargs,
         )
         self._graph.setup()
+        self.set_state(NodeState.UNINITIALIZED)
 
     def _compute_network_input_dim(self) -> int:
         embedding_multiplier = 2 * self.embedding.max_harmonic.value
         if self.embedding.include_input.value:
             embedding_multiplier += 1
-        return embedding_multiplier * self.in_neurons
+        return embedding_multiplier * self.in_neurons.value
+
+    def reset(self):
+        self.set_state(NodeState.UNINITIALIZED)
+        return super().reset()
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
         return self.fcn.hyperparameters + self.embedding.hyperparameters
 
     def setup(self) -> None:
-        self.embedding.setup()
-        old_in_neurons = self.fcn.in_neurons.current_value
-        self.fcn.in_neurons.current_value = self._compute_network_input_dim()
-        self.fcn.setup()
-        self.fcn.in_neurons.current_value = old_in_neurons
+        if self.state == NodeState.UNINITIALIZED:
+            self.embedding.setup()
+            old_in_neurons = self.fcn.in_neurons.current_value
+            self.fcn.in_neurons.current_value = self._compute_network_input_dim()
+            self.fcn.reset()
+            self.fcn.setup()
+            self.fcn.in_neurons.current_value = old_in_neurons
+            self.set_state(NodeState.INITIALIZED)

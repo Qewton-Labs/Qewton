@@ -62,3 +62,7 @@ class TensorflowBackend(DeepLearningBackend[tf.Tensor]):
     @classmethod
     def from_numpy(cls, data, dtype=Float32):
         return tf.convert_to_tensor(data, dtype=cls.dtypes[dtype])
+
+    @classmethod
+    def to_numpy(cls, data):
+        return data.numpy()

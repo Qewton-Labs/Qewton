@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
@@ -36,49 +37,53 @@ class Sphere(ContinuousGeometry[TensorType]):
         self.center: TensorType = self.backend.build_tensor(center, dtype=Float32)
         self.radius = self.backend.build_tensor(radius, dtype=Float32)
 
-    def _move_center(self, device: Device):
+    def _move_data(self, device: Device | str) -> None:
         self.center = self.backend.to(self.center, device=device)
         self.radius = self.backend.to(self.radius, device=device)
 
     def contains(self, points):
+        center = self._on(self.center, self._device_of(points))
+        radius = self._on(self.radius, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 3)
         p_device = points.device if hasattr(points, "device") else cpu
-        self._move_center(p_device)
-        norm = self.backend.linalg.norm(points - self.center, order=2, axis=1).reshape(
+        norm = self.backend.linalg.norm(points - center, order=2, axis=1).reshape(
             -1, 1
         )
-        return norm <= self.radius
+        return norm <= radius
 
     def bounding_box(self):
         bounds = []
         for i in range(3):
             bounds.append(self.center[i] - self.radius)
             bounds.append(self.center[i] + self.radius)
-        return self.backend.build_tensor(bounds)
+        return self._bounds(bounds)
 
     def sample_random_uniform(self, n_points: int, device: Device = cpu):
+        center = self._on(self.center, device)
+        radius = self._on(self.radius, device)
         # Sample directions from normal distribution and scale radii with cube-root
         vec = self.backend.random.normal(shape=(n_points, 3), device=device)
         vec /= self.backend.linalg.norm(vec, order=2, axis=1, keepdims=True)
         r = (
             self.backend.random.uniform((n_points, 1), device=device) ** (1.0 / 3.0)
-            * self.radius
+            * radius
         )
-        self._move_center(device)
-        points = vec * r + self.center
+        points = vec * r + center
         return points
 
     def sample_grid(self, n_points: int, device: Device = cpu):
+        center = self._on(self.center, device)
+        radius = self._on(self.radius, device)
         # Create a grid inside the bounding box, keep points inside sphere.
         scaled_n = int(math.ceil((n_points * 6 / math.pi) ** (1.0 / 3.0)))
         if scaled_n < 2:
             return self.sample_random_uniform(n_points, device=device)
         axis = self.backend.math.linspace(
-            -self.radius, self.radius, scaled_n, device=device
+            -1.0 * radius, radius, scaled_n, device=device
         )
         X, Y, Z = self.backend.math.meshgrid(axis, axis, axis, indexing="xy")
         pts = self.backend.math.stack([X.ravel(), Y.ravel(), Z.ravel()], axis=-1)
-        inside = self.backend.linalg.norm(pts, order=2, axis=1) <= self.radius
+        inside = self.backend.linalg.norm(pts, order=2, axis=1) <= radius
         pts_inside = pts[inside]
         if len(pts_inside) >= n_points:
             selected = pts_inside[:n_points]
@@ -88,8 +93,7 @@ class Sphere(ContinuousGeometry[TensorType]):
             rand_pts = self.sample_random_uniform(needed, device=device)
             selected = self.backend.math.vstack([pts_inside, rand_pts])
         # translate to center
-        self._move_center(device)
-        selected += self.center
+        selected += center
         return selected
 
     def _get_volume(self):
@@ -111,13 +115,14 @@ class SphereBoundary(ContinuousBoundaryGeometry[TensorType]):
         self.geometry: Sphere = geometry  # type: ignore
 
     def contains(self, points):
+        center = self._on(self.geometry.center, self._device_of(points))
+        radius = self._on(self.geometry.radius, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 3)
         p_device = points.device if hasattr(points, "device") else cpu
-        self.geometry._move_center(p_device)
         norm = self.backend.linalg.norm(
-            points - self.geometry.center, order=2, axis=1
+            points - center, order=2, axis=1
         ).reshape(-1, 1)
-        return self.backend.math.isclose(norm, self.geometry.radius)
+        return self.backend.math.isclose(norm, radius)
 
     def _get_volume(self):
         # Surface area
@@ -126,11 +131,12 @@ class SphereBoundary(ContinuousBoundaryGeometry[TensorType]):
     def sample_random_uniform(
         self, n_points: int, device: Device = cpu, include_normals: bool = False
     ):
+        center = self._on(self.geometry.center, device)
+        radius = self._on(self.geometry.radius, device)
         # sample directions via normal distribution then normalize
-        self.geometry._move_center(device)
         vec = self.backend.random.normal(shape=(n_points, 3), device=device)
         vec /= self.backend.linalg.norm(vec, order=2, axis=1, keepdims=True)
-        points = vec * self.geometry.radius + self.geometry.center
+        points = vec * radius + center
         if include_normals:
             normals = self.normal(points, device=device)
             return points, normals
@@ -139,26 +145,27 @@ class SphereBoundary(ContinuousBoundaryGeometry[TensorType]):
     def sample_grid(
         self, n_points: int, device: Device = cpu, include_normals: bool = False
     ):
+        center = self._on(self.geometry.center, device)
+        radius = self._on(self.geometry.radius, device)
         # Fibonacci sphere
-        self.geometry._move_center(device)
         phi = math.pi * (3.0 - math.sqrt(5.0))
-        i = self.backend.math.arange(0, n_points)
+        i = self.backend.math.arange(0, n_points, device=device)
         y = 1 - (i / (n_points - 1)) * 2
         radius_xy = self.backend.math.sqrt(1 - y * y)
         theta = phi * i
         x = radius_xy * self.backend.math.cos(theta)
         z = radius_xy * self.backend.math.sin(theta)
         points = self.backend.math.stack([x, y, z], axis=-1)
-        points *= self.geometry.radius
-        points += self.geometry.center
+        points *= radius
+        points += center
         if include_normals:
             normals = self.normal(points, device=device)
             return points, normals
         return points
 
     def normal(self, points: TensorType, device: Device = cpu):
+        center = self._on(self.geometry.center, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 3)
-        self.geometry._move_center(device)
-        normal = points - self.geometry.center
+        normal = points - center
         normal /= self.backend.linalg.norm(normal, order=2, axis=1, keepdims=True)
         return normal

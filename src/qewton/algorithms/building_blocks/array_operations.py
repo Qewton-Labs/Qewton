@@ -12,6 +12,10 @@ from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort, Node
 
 # region: Slicing and value setting
 class SetItem(Node[TensorType]):
+    """Set item node that assigns values to specific indices of an input tensor.
+    Has variable input ports for tensor and indices, and one output port.
+    """
+
     data_axis = EllipsisAxes()
 
     def forward(
@@ -38,11 +42,18 @@ class SetItem(Node[TensorType]):
 
 
 class Slice(Node[TensorType]):
+    """Slice node that extracts a portion of the input tensor based on slice configuration.
+    Supports integer indices, slices, variables, and ellipsis notation.
+    Has one input port and one output port.
+    """
 
     def __init__(
         self,
         slice_config: (
-            int | slice | Variable | tuple[slice | list[int] | EllipsisType | int, ...]
+            int
+            | slice
+            | Variable
+            | tuple[slice | list[int] | EllipsisType | int | Any, ...]
         ),
         name=None,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
@@ -76,20 +87,76 @@ class Slice(Node[TensorType]):
                 pass
         return updated_ports
 
+    @classmethod
+    def _string_to_slice(cls, slice_str: str):
+        # Convert a string representation of a slice to an actual slice object
+        if slice_str == "...":
+            return Ellipsis
+        # Slices are saved as "slice(2, None, None)", so we split at commas
+        # and also need to remove the "slice(" and ")" parts as well as any
+        # whitespace
+        elif slice_str.startswith("slice"):
+            slice_str = slice_str.replace(" ", "")
+            slice_parts = slice_str[6:-1].split(",")
+            start = int(slice_parts[0]) if slice_parts[0] != "None" else None
+            stop = int(slice_parts[1]) if slice_parts[1] != "None" else None
+            step = int(slice_parts[2]) if slice_parts[2] != "None" else None
+            return slice(start, stop, step)
+        else:
+            return int(slice_str)
+
 
 class SplitVariables(Node[TensorType]):
+    """Splits an input tensor's feature axis into one output port per
+    Variable in `split_into`.
+
+    The caller decides the exact pieces upfront - this used to auto-derive
+    them from whatever named entries its own input happened to have, which
+    forced always splitting down to the finest granularity available before
+    anything downstream could ask for less. A caller that knows every
+    downstream consumer in advance (e.g. PINNPipeline) can instead split
+    only as finely as actually needed - a variable nothing ever asks to
+    subdivide can be named whole in `split_into` and passed through with a
+    single piece.
+
+    Args:
+        split_into (list[Variable]): The pieces to split the input's
+            feature axis into, in order. Each must be a contiguous run of
+            the eventual input's own feature Variable - not necessarily a
+            single leaf, e.g. an auto-expanded 3D variable can be its own
+            whole piece.
+    """
 
     def __init__(
         self,
+        split_into: list[Variable],
         name=None,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         super().__init__(
             name if name is not None else "SplitVariablesNode", backend=backend
         )
-        self.split_dim = None
         self.backend: type[DeepLearningBackend[TensorType]] = backend
-        self.split_sections = None
+        self.split_into = split_into
+        self.split_dim = None
+        self.split_sections = [var.dim for var in split_into]
+        # A real FeatureAxes here, not a DataConfiguration.empty() placeholder
+        # later overridden only in dynamic_configs: callers that inspect a
+        # port's *static* config before anything is connected (e.g.
+        # PINNPipeline's gradient-tracking pass) need `variables` to already
+        # be correct - only the other axes (batch shape etc.), unknown until
+        # the input actually connects, stay a wildcard here.
+        ellipsis_axes = EllipsisAxes()
+        self._output_ports = [
+            OutputPort(
+                DataConfiguration(
+                    ellipsis_axes, FeatureAxes(variable=var), dtype=backend.default_dtype
+                ),
+                node=self,
+                name=var.name,
+            )
+            for var in split_into
+        ]
 
     def forward(self, inp: Annotated[TensorType, DataConfiguration.empty()]):
         return self.backend.math.split(
@@ -103,44 +170,30 @@ class SplitVariables(Node[TensorType]):
             updated_port, config_dict, dynamic_configs
         )
         if isinstance(updated_port, InputPort):
-            self.split_dim = dynamic_configs[updated_port].feature_idx
-
-        if isinstance(updated_port, InputPort) and len(self.output_ports) == 0:
-            config_vars = dynamic_configs[updated_port].variables
-            if isinstance(config_vars, Variable):
-                copy_memo = {}
-                in_config = deepcopy(dynamic_configs[updated_port], copy_memo)
-                dynamic_configs[updated_port] = in_config
-                self.split_sections = []
-                for var_name, var_dim in config_vars.items():
-                    self.split_sections.append(var_dim)
-                    out_config = deepcopy(dynamic_configs[updated_port], copy_memo)
-                    # since we iterate multiple times over the same config, we need
-                    # to avoid reuse of the previous deepcopy
-                    copy_memo.pop(id(dynamic_configs[updated_port]))
-                    out_config.replace_feature_axes(
-                        FeatureAxes(variable=Variable(var_name, var_dim))
-                    )
-                    new_out_port = OutputPort(out_config, self, name=var_name)
-                    self.output_ports.append(new_out_port)
-                    dynamic_configs[new_out_port] = out_config
+            in_config = dynamic_configs[updated_port]
+            self.split_dim = in_config.feature_idx
+            copy_memo = {}
+            for out_port, var in zip(self.output_ports, self.split_into):
+                out_config = deepcopy(in_config, copy_memo)
+                # since we iterate multiple times over the same config, we need
+                # to avoid reuse of the previous deepcopy
+                copy_memo.pop(id(in_config), None)
+                out_config.replace_feature_axes(FeatureAxes(variable=var))
+                dynamic_configs[out_port] = out_config
 
         return updated_ports
 
     def get_output_port(self, name: str | Variable):
         # TODO Merge into general node?
-        if isinstance(name, str):
-            return super().get_output_port(name)
         if isinstance(name, Variable):
-            for port in self.output_ports:
-                if port.name == name.name:
-                    return port
-        raise ValueError(f"No output port with name {name} found in node {self.name}.")
+            name = name.name
+        return super().get_output_port(name)
 
 
 class ConcatVariables(Node[TensorType]):
-    """
+    """Concatenate variables node that combines multiple input tensors with different variables along a dimension.
     Assumes the feature axes are all the last axes.
+    Has multiple input ports (one per variable) and one output port.
     """
 
     def __init__(
@@ -175,9 +228,12 @@ class ConcatVariables(Node[TensorType]):
                     name=var.name,
                 )
             )
-        out_var = Variable()
-        for var in self.in_variables:
-            out_var *= var
+        # Fold starting from the first real variable, not an empty
+        # Variable() placeholder - composing with a genuinely empty
+        # Variable leaves its dim as None (Variable.__init__ propagates
+        # "any child's dim is None" outward), which breaks arithmetic like
+        # Variable.get_slice's running_idx += child.dim on the result.
+        out_var = Variable.compose(self.in_variables)
         self._output_ports = [
             OutputPort(
                 DataConfiguration(
@@ -193,22 +249,26 @@ class ConcatVariables(Node[TensorType]):
     def check_unique_var_keys(self):
         seen_keys = set()
         for var in self.in_variables:
-            for key in var.keys():
-                if key in seen_keys:
-                    raise ValueError(
-                        f"Variable key '{key}' is not unique across input variables."
-                    )
-                seen_keys.add(key)
+            if var.name in seen_keys:
+                raise ValueError(
+                    f"Variable key '{var.name}' is not unique across input variables."
+                )
+            seen_keys.add(var.name)
 
     def forward(self, *inp):
         return self.backend.math.concatenate(inp, axis=self.concat_dim)
 
 
 class ConcatNode(Node[TensorType]):
+    """Concatenate node that combines multiple input tensors along a specified dimension.
+    Has multiple input ports and one output port.
+    """
+
     def __init__(
         self, concat_dim: int, num_of_input_ports: int = 2, backend=DEFAULT_DL_BACKEND
     ):
         self.concat_dim = concat_dim
+        self.num_of_input_ports = num_of_input_ports
         super().__init__(name=None, backend=backend)
         self.backend: type[DeepLearningBackend[TensorType]] = backend
 
@@ -231,6 +291,10 @@ class ConcatNode(Node[TensorType]):
 
 
 class Narrow(Node[TensorType]):
+    """Narrow node that returns a narrowed view of the input tensor along a specified dimension.
+    Has one input port and one output port.
+    """
+
     def __init__(self, dim=None, start=0, length=None, backend=DEFAULT_DL_BACKEND):
         self.dim = dim if dim is not None else NO_DEFAULT
         self.start = start
@@ -247,6 +311,9 @@ class Narrow(Node[TensorType]):
 
 
 class Squeeze(Node[TensorType]):
+    """Squeeze node that removes a single dimension of size 1 from the input tensor.
+    Has one input port and one output port.
+    """
 
     def __init__(
         self,
@@ -283,6 +350,9 @@ class Squeeze(Node[TensorType]):
 
 
 class Unsqueeze(Node[TensorType]):
+    """Unsqueeze node that adds a new dimension of size 1 at the specified position.
+    Has one input port and one output port.
+    """
 
     def __init__(
         self,
@@ -324,6 +394,9 @@ class Unsqueeze(Node[TensorType]):
 
 
 class Reshape(Node[TensorType]):
+    """Reshape node that changes the shape of the input tensor to a specified new shape.
+    Has one input port and one output port.
+    """
 
     def __init__(
         self,
@@ -342,6 +415,9 @@ class Reshape(Node[TensorType]):
 
 
 class ReshapeAtDim(Node[TensorType]):
+    """Reshape at dimension node that reshapes a portion of the input tensor at a specified dimension.
+    Has one input port and one output port.
+    """
 
     def __init__(
         self,
@@ -366,6 +442,9 @@ class ReshapeAtDim(Node[TensorType]):
 
 
 class Flatten(Node[TensorType]):
+    """Flatten node that flattens the input tensor between specified dimensions.
+    Has one input port and one output port.
+    """
 
     def __init__(
         self,
@@ -386,11 +465,14 @@ class Flatten(Node[TensorType]):
 
 
 class Unflatten(Node[TensorType]):
+    """Unflatten node that reshapes a single dimension into multiple dimensions.
+    Has one input port and one output port.
+    """
 
     def __init__(
         self,
         axis: int,
-        sizes: tuple[int, ...],
+        sizes: tuple[int, ...] | None = None,
         name=None,
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
@@ -400,9 +482,38 @@ class Unflatten(Node[TensorType]):
         self.backend: type[DeepLearningBackend[TensorType]] = backend
 
     def forward(
+        self,
+        inp: Annotated[TensorType, DataConfiguration.empty()],
+        size: Annotated[
+            int | tuple[int, ...] | None,
+            FeatureAxes(shape=(AxesDim(None),)),
+        ] = None,
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        if isinstance(size, int):
+            size = (size,)
+        elif size is None and self.sizes is not None:
+            size = self.sizes
+        return self.backend.math.unflatten(inp, self.axis, size)  # type: ignore
+
+
+class Repeat(Node[TensorType]):
+
+    def __init__(
+        self,
+        repeats: int,
+        dim: int,
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        self.repeats = repeats
+        self.dim = dim
+        super().__init__(name if name is not None else "RepeatNode", backend=backend)
+        self.backend: type[DeepLearningBackend[TensorType]] = backend
+
+    def forward(
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.backend.math.unflatten(inp, self.axis, self.sizes)
+        return self.backend.math.repeat(inp, self.repeats, self.dim)
 
 
 class UnflattenLike(Node[TensorType]):
@@ -447,9 +558,7 @@ class UnflattenLike(Node[TensorType]):
         Returns:
             TensorType: `inp` with the last axis replaced by `like.shape[start_dim:]`.
         """
-        return self.backend.math.unflatten(
-            inp, -1, tuple(like.shape[self.start_dim :])
-        )
+        return self.backend.math.unflatten(inp, -1, tuple(like.shape[self.start_dim :]))
 
 
 # endregion
@@ -458,6 +567,9 @@ class UnflattenLike(Node[TensorType]):
 
 
 class GetShapeNode(Node[TensorType]):
+    """Get shape node that returns the shape tuple of the input tensor.
+    Has one input port and one output port.
+    """
 
     def forward(
         self, x: Annotated[TensorType, DataConfiguration.empty()]

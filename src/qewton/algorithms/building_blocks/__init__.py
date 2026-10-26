@@ -1,5 +1,5 @@
 from .parameters import ParameterNode
-from .activation_functions import ReLU, Tanh, Sigmoid
+from .activation_functions import ReLU, Tanh, Sigmoid, AdaptiveActivation, SoftPlus
 from .linear import Linear, FunctionalLinear
 from .conv import (
     FunctionalConv,
@@ -7,6 +7,7 @@ from .conv import (
     Conv1D,
     Conv2D,
     Conv3D,
+    DoubleConv,
     MaxPool1D,
     MaxPool2D,
     MaxPool3D,
@@ -45,6 +46,8 @@ from .math import (
     Mean,
     Negative,
     Inner,
+    Norm,
+    Dot,
 )
 
 from .array_operations import (
@@ -57,6 +60,10 @@ from .array_operations import (
     ConcatNode,
     SetItem,
     Reshape,
+    Flatten,
+    Unflatten,
+    Repeat,
+    ReshapeAtDim,
 )
 from .derivatives import (
     GradientTracking,
@@ -69,3 +76,4 @@ from .derivatives import (
     Hessian,
 )
 from .creation import Zeros, ZerosLike, Ones, OnesLike, Identity
+from .geometry import MeshInterpolationNode

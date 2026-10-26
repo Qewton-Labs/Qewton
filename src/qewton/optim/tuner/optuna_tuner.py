@@ -2,8 +2,8 @@ from copy import deepcopy
 import math
 import queue
 import multiprocessing as mp
-import os
 import sys
+import os
 from typing import Any
 import optuna
 
@@ -22,6 +22,7 @@ from qewton.optim.parameters.number_hyperparameter import (
     HyperParameterScale,
 )
 from qewton.optim.parameters.dag import HyperParameterDAG
+from qewton.optim.tuner.results.tune_results import TrainResult, TuneResultCollector
 from qewton.constraints.base import Constraint
 
 # TODO: Just a first version to try this out
@@ -85,7 +86,7 @@ def optuna_objective(
     local_trainer.train_state.losses = local_trainer.train_state.detach_data(
         local_trainer.train_state.losses
     )
-    result_queue.put((config, local_trainer.train_state))
+    result_queue.put(TrainResult(config, local_trainer.train_state))
 
     # TODO: Allow for multiple constraints to be optimized
     total_loss = None
@@ -106,16 +107,17 @@ class OptunaTuner(Tuner):
         trainer: Trainer,
         tuning_objectives: list,
         optuna_study: optuna.Study,
-        trial_number=10,
+        trial_number: int = 10,
         devices: str | list[str] = "cpu",
         trials_per_device: int = 1,
         track_tune_state: bool | TuningState = True,
         tuning_callbacks: list[TuningCallback] | None = None,
-        save_path="tuner_results",
+        save_path: str = "tuner",
+        result_collector: TuneResultCollector = TuneResultCollector(),
         use_multiprocessing: bool = True,
     ):
         super().__init__(
-            trainer,
+            trainer=trainer,
             tuning_objectives=tuning_objectives,
             trial_number=trial_number,
             devices=devices,
@@ -123,6 +125,7 @@ class OptunaTuner(Tuner):
             track_tune_state=track_tune_state,
             tuning_callbacks=tuning_callbacks,
             save_path=save_path,
+            result_collector=result_collector,
             use_multiprocessing=use_multiprocessing,
         )
         self.study = optuna_study
@@ -133,7 +136,7 @@ class OptunaTuner(Tuner):
 
     def run(self):
         print("--- Start Optuna Tuning ---")
-
+        self.result_collector.setup_file_tree()
         if not self.use_multiprocessing:
             res_queue = queue.Queue()
             self.study.optimize(
@@ -148,8 +151,10 @@ class OptunaTuner(Tuner):
                 n_trials=self.trial_number,
             )
             current_results = [res_queue.get() for _ in range(res_queue.qsize())]
-            if current_results:
-                self._write_to_csv(current_results)
+            for result in current_results:
+                self.result_collector.add_result(result)
+
+            self.result_collector.finish_tuning()
             print("--- Finished Tuning ---")
             return
 
@@ -183,31 +188,26 @@ class OptunaTuner(Tuner):
             for w in self.workers:
                 w.start()
 
-            current_results = []
             done_counter = 0
             self.print_update_text(done_counter, trials * self.process_number)
             for _ in range(trials * self.process_number):
                 result = self.result_queue.get()
-                current_results.append(result)
-
+                self.result_collector.add_result(result)
+                done_counter += 1
                 # Log the current results:
                 if self.tuning_state:
                     self.tuning_state.finished_trials += 1
-                    self.tuning_state.add_trial_history(result[1].history)
+                    self.tuning_state.add_trial_history(result.train_state.history)
 
                     if self.tuning_state.stop_tuning:
                         print("Stopping tuning...")
                         self.stop_event.set()
                         break
 
-                if len(current_results) % self.save_interval == 0:
-                    self._write_to_csv(current_results)
-                    current_results = []
-                    done_counter += self.save_interval
+                if done_counter % self.result_collector.save_interval == 0:
                     self.print_update_text(done_counter, trials * self.process_number)
 
-            if len(current_results) > 0:
-                self._write_to_csv(current_results)
+            self.result_collector.finish_tuning()
 
         finally:
             for w in self.workers:
@@ -219,7 +219,7 @@ class OptunaTuner(Tuner):
             print("--- Finished Tuning ---")
         print("Best params:", self.study.best_params)
 
-    def build_save_path(self, trainer: Trainer) -> str:
+    def build_save_path(self, save_path: str, trainer: Trainer) -> str:
         """
         Constructs a unique save path for the tuning results.
         Args:
@@ -230,6 +230,6 @@ class OptunaTuner(Tuner):
         # base_path = os.path.join(self.save_path, trainer.train_state.save_path)
 
         trainer.train_state.save_path = os.path.join(
-            self.save_path, trainer.train_state.save_path
+            save_path, trainer.train_state.save_path
         )
-        return self.save_path
+        return save_path

@@ -1,5 +1,6 @@
 from typing import Callable
 import torch
+import gc
 
 from qewton.backends.optim import OptimBackend
 
@@ -18,6 +19,19 @@ class TorchOptimBackend(OptimBackend[torch.Tensor]):
     @staticmethod
     def lbfgs(*args, **kwargs):
         return torch.optim.LBFGS(*args, **kwargs)
+
+    # lr scheduler creators
+    @staticmethod
+    def step_lr(*args, **kwargs):
+        return torch.optim.lr_scheduler.StepLR(*args, **kwargs)
+
+    @staticmethod
+    def exponential_lr(*args, **kwargs):
+        return torch.optim.lr_scheduler.ExponentialLR(*args, **kwargs)
+
+    @staticmethod
+    def cosine_annealing_lr(*args, **kwargs):
+        return torch.optim.lr_scheduler.CosineAnnealingLR(*args, **kwargs)
 
     # File contains how each backend should setup the optimizers and do the
     # optimization step.
@@ -82,6 +96,7 @@ class TorchOptimBackend(OptimBackend[torch.Tensor]):
 
     @staticmethod
     def _cleanup():
+        gc.collect()
         torch.cuda.empty_cache()
         if torch.cuda.is_available():
             torch.cuda.ipc_collect()

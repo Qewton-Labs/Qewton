@@ -5,6 +5,8 @@ import time
 import os
 
 from qewton.optim.trainer.optimizers.optimizers import Optimizer
+from qewton.optim.trainer.optimizers.schedulers import LR_Scheduler
+from qewton.constraints.base import ConstraintObjective
 from qewton.optim.base import EvaluationPhase
 
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
@@ -54,6 +56,8 @@ class TrainerState:
         self.history: list[LogEntry] = []
         self.enable_logging = enable_logging
         self.log_interval = log_interval
+        self.callback_info: dict[str, Any] = {}
+        self.callback_objectives: dict[str, ConstraintObjective] = {}
 
         self.stop_stage: bool = False
         self._stop_training: bool = False
@@ -116,9 +120,8 @@ class TrainerState:
 
     def clear_data_dict(self):
         """Reset stored loss values for all evaluation phases."""
-        for phase in EvaluationPhase:
-            for k in self.losses[phase]:
-                self.losses[phase][k] = None
+        for k in self.losses[EvaluationPhase.TRAIN]:
+            self.losses[EvaluationPhase.TRAIN][k] = None
 
     def check_file_path(self, callbacks):
         """Validate the save path and create a unique directory when needed.
@@ -135,6 +138,7 @@ class TrainerState:
         while os.path.exists(file_path):
             counter += 1
             file_path = f"{self.save_path}_{counter}"
+            time.sleep(0.25)  # Avoid race conditions in multi-process scenarios
 
         os.makedirs(file_path, exist_ok=True)
         self.save_path = file_path
@@ -181,8 +185,7 @@ class OptimizationPhase:
         lr: float | HyperParameter,
         max_iterations: int | HyperParameter,
         optimizer_args: dict | None = None,
-        lr_scheduler: Any = None,
-        lr_scheduler_args: dict | None = None,
+        lr_scheduler: LR_Scheduler | None = None,
     ) -> None:
         self.optimizer: Optimizer = optimizer
         self.optimizer_obj: Any
@@ -190,9 +193,6 @@ class OptimizationPhase:
         self.max_iterations = HyperParameter.from_value(max_iterations, "Max Iterations")
         self.optimizer_args = optimizer_args if optimizer_args is not None else {}
         self.lr_scheduler = lr_scheduler
-        self.lr_scheduler_args = (
-            lr_scheduler_args if lr_scheduler_args is not None else {}
-        )
 
         # Find correct function for the optimizer type
         self.setup_fn: Callable = optimizer.backend.optim.setup_optimizer
@@ -207,6 +207,8 @@ class OptimizationPhase:
         """
         hp_set = set[HyperParameter]()
         self._scan_for_hyperparameter(vars(self).values(), hp_set)
+        if self.lr_scheduler is not None:
+            hp_set.update(self.lr_scheduler.hyper_parameters())
         return hp_set
 
     def _scan_for_hyperparameter(self, value_collection, hp_set: set[HyperParameter]):
@@ -219,8 +221,10 @@ class OptimizationPhase:
         for value in value_collection:
             if isinstance(value, HyperParameter):
                 hp_set.add(value)
-            elif isinstance(value, (list, tuple, dict)):
+            elif isinstance(value, (list, tuple, set)):
                 self._scan_for_hyperparameter(value, hp_set)
+            elif isinstance(value, dict):
+                self._scan_for_hyperparameter(value.values(), hp_set)
 
     def setup_optimizer(self, trainer):
         """Build and initialize the backend optimizer object for this phase.
@@ -229,6 +233,8 @@ class OptimizationPhase:
             trainer (Trainer): Trainer instance used to configure the optimizer.
         """
         self.optimizer_obj = self.setup_fn(self, trainer)
+        if self.lr_scheduler is not None:
+            self.lr_scheduler_obj = self.lr_scheduler.build_scheduler(self.optimizer_obj)
 
     def do_optimization_step(
         self, eval_function: Callable, step_idx: int, train_state: TrainerState
@@ -241,7 +247,10 @@ class OptimizationPhase:
             train_state (TrainerState): Shared training state.
         """
         self.step_fn(self, eval_function, step_idx, train_state)
+        # TODO: Maybe only lr step after one epoch?
+        if self.lr_scheduler is not None:
+            self.lr_scheduler_obj.step()
 
     def cleanup(self):
         """Perform backend-specific cleanup after the optimization phase ends."""
-        self.cleanup_fn()
+        return self.cleanup_fn

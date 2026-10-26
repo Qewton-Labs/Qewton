@@ -1,4 +1,4 @@
-from .dl_models.fcn import FCN, DeepRitzNet
+from .dl_models.fcn import FCN, DeepRitzNet, QRES
 from .dl_models.convolutions.cnn import CNN, UNet
 from .dl_models.convolutions.encoding import ConvolutionalEncoder
 from .dl_models.harmonic_fcn import HarmonicEmbedding, HarmonicFCN

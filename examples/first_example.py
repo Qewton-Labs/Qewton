@@ -26,7 +26,6 @@ data_loader = qewton.data.DataLoader(
     shuffle_data=False,
 )
 
-
 model = qewton.algorithms.FCN(
     in_neurons=1,
     hidden_neurons=50,
@@ -36,7 +35,6 @@ model = qewton.algorithms.FCN(
 )
 
 constraint = qewton.constraints.MSEConstraint()
-
 computation_graph = qewton.Graph()
 
 computation_graph.connect(data_loader.get_output_port(X), model)

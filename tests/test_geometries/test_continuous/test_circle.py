@@ -89,6 +89,18 @@ def test_create_mesh(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("device", devices)
+def test_create_mesh_on_device(backend, device):
+    """Regression: triangulate_circle() used to build vertices/triangles on
+    cpu regardless of `device`, mismatching self.center once a non-cpu
+    device was requested."""
+    circle = Circle(X, [0, 0], 1.0, backend=backend)
+    mesh_geo = circle.create_mesh(max_vertex_distance=0.5, device=device)
+    assert len(mesh_geo.mesh.vertices) > 0
+    assert len(mesh_geo.mesh.cells) > 0
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
 def test_boundary(backend):
     circle = Circle(X, [0, 0], 1.0, backend=backend)
     boundary = circle.boundary

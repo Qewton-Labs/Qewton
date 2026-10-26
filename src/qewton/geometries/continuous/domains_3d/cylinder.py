@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
@@ -9,6 +10,8 @@ from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Float32
+from qewton.geometries.continuous.domains_2d.circle import Circle
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry, Mesh
 
 
 class Cylinder(ContinuousGeometry[TensorType]):
@@ -41,26 +44,28 @@ class Cylinder(ContinuousGeometry[TensorType]):
         self.radius = self.backend.build_tensor(radius, dtype=Float32)
         self.height = self.backend.build_tensor(height, dtype=Float32)
 
-    def _move_params(self, device: Device):
+    def _move_data(self, device: Device | str) -> None:
         self.center = self.backend.to(self.center, device=device)
         self.radius = self.backend.to(self.radius, device=device)
         self.height = self.backend.to(self.height, device=device)
 
     def contains(self, points):
+        center = self._on(self.center, self._device_of(points))
+        radius = self._on(self.radius, self._device_of(points))
+        height = self._on(self.height, self._device_of(points))
         p_device = points.device if hasattr(points, "device") else cpu
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 3)
-        self._move_params(p_device)
         # Distance from axis in x-y plane
         radial_dist = self.backend.linalg.norm(
-            points[:, :2] - self.center[:2], axis=1, order=2
+            points[:, :2] - center[:2], axis=1, order=2
         ).reshape(-1, 1)
         # Height check
-        z_min = self.center[2] - self.height / 2.0
-        z_max = self.center[2] + self.height / 2.0
+        z_min = center[2] - height / 2.0
+        z_max = center[2] + height / 2.0
         height_check = self.backend.math.logical_and(
             points[:, 2:3] >= z_min, points[:, 2:3] <= z_max
         )
-        return self.backend.math.logical_and(radial_dist <= self.radius, height_check)
+        return self.backend.math.logical_and(radial_dist <= radius, height_check)
 
     def bounding_box(self):
         bounds = []
@@ -71,12 +76,14 @@ class Cylinder(ContinuousGeometry[TensorType]):
         z_max = self.center[2] + self.height / 2.0
         bounds.append(z_min)
         bounds.append(z_max)
-        return self.backend.build_tensor(bounds)
+        return self._bounds(bounds)
 
     def sample_random_uniform(self, n_points: int, device: Device = cpu):
-        self._move_params(device)
+        center = self._on(self.center, device)
+        radius = self._on(self.radius, device)
+        height = self._on(self.height, device)
         # Sample radius with proper weighting (r^2 in 2D)
-        r = self.radius * self.backend.math.sqrt(
+        r = radius * self.backend.math.sqrt(
             self.backend.random.uniform((n_points, 1), device=device)
         )
         # Sample angle
@@ -84,21 +91,22 @@ class Cylinder(ContinuousGeometry[TensorType]):
         # Sample height uniformly
         z = self.backend.random.uniform(
             shape=(n_points, 1),
-            low=self.center[2] - self.height / 2.0,
-            high=self.center[2] + self.height / 2.0,
+            low=center[2] - height / 2.0,
+            high=center[2] + height / 2.0,
             device=device,
         )
         # Convert to Cartesian coordinates
-        x = r * self.backend.math.cos(phi) + self.center[0]
-        y = r * self.backend.math.sin(phi) + self.center[1]
+        x = r * self.backend.math.cos(phi) + center[0]
+        y = r * self.backend.math.sin(phi) + center[1]
         points = self.backend.math.concatenate([x, y, z], axis=1)
         return points
 
     def sample_grid(self, n_points: int, device: Device = cpu):
-        self._move_params(device)
+        center = self._on(self.center, device)
+        height = self._on(self.height, device)
         # Use a single radial grid and replicate it evenly along the cylinder height.
-        z_min = self.center[2] - self.height / 2.0
-        z_max = self.center[2] + self.height / 2.0
+        z_min = center[2] - height / 2.0
+        z_max = center[2] + height / 2.0
 
         n_xy = max(1, int(math.ceil(math.sqrt(n_points))))
         n_layers = max(1, int(math.ceil(n_points / n_xy)))
@@ -119,10 +127,12 @@ class Cylinder(ContinuousGeometry[TensorType]):
 
     def _sample_grid_circle(self, n_points: int, z_val: float, device: Device):
         """Sample points on a circle using sunflower arrangement."""
+        center = self._on(self.center, device)
+        radius = self._on(self.radius, device)
         grid = self._equidistant_points_in_circle(n_points, device=device)
-        xy = self.radius * grid
+        xy = radius * grid
         z = self.backend.math.full((n_points, 1), z_val, device=device)
-        xy += self.center[:2][None, :]
+        xy += center[:2][None, :]
         points = self.backend.math.concatenate([xy, z], axis=1)
         return points
 
@@ -146,6 +156,71 @@ class Cylinder(ContinuousGeometry[TensorType]):
     def create_boundary(self):
         return CylinderBoundary(self)
 
+    def create_mesh(
+        self, max_vertex_distance: float | None = None, device: Device = cpu
+    ) -> MeshGeometry:
+        radius = self._on(self.radius, device)
+        height = self._on(self.height, device)
+        vertices, triangles = Circle.triangulate_circle(
+            max_vertex_distance, radius=radius, backend=self.backend, device=device
+        )
+        zeros = self.backend.math.zeros((len(vertices), 1), device=device)
+        vertices = self.backend.math.concatenate([vertices, zeros], axis=1)
+        all_vertices = []
+        tetrahedra = []
+        nz = math.ceil(height / max_vertex_distance) + 1
+        for k in range(nz):
+            vertices_copy = self.backend.math.copy(vertices)
+            # triangles_copy = self.backend.math.copy(triangles)
+            vertices_copy[:, 2] = height * (k / (nz - 1))
+            all_vertices.append(vertices_copy)
+            if k == nz - 1:
+                continue
+            # Build tetraheder
+            v_count = len(vertices)
+            for tri in triangles:
+                a_original, b_original, c_original = tri
+                a_0, b_0, c_0 = self.ordering_vertices(
+                    vertices, a_original, b_original, c_original
+                )
+                a = a_0 + v_count * k
+                b = b_0 + v_count * k
+                c = c_0 + v_count * k
+                a1, b1, c1 = a + v_count, b + v_count, c + v_count
+                tetrahedra.append([a, b, c, a1])
+                tetrahedra.append([c, a1, b, b1])
+                tetrahedra.append([c, a1, b1, c1])
+        all_vertices = self.backend.math.concatenate(all_vertices, axis=0)
+        tetrahedra = self.backend.build_tensor(tetrahedra, device=device)
+
+        return MeshGeometry(
+            variable=self.variable,
+            mesh=Mesh(vertices=all_vertices, cells=tetrahedra, device=device),
+            discretization_of=self,
+        )
+
+    def ordering_vertices(self, vertices, a_original, b_original, c_original):
+        for i in [0, 1]:
+            a_vertex, b_vertex, c_vertex = (
+                vertices[int(a_original)],
+                vertices[int(b_original)],
+                vertices[int(c_original)],
+            )
+            if a_vertex[i] <= b_vertex[i] <= c_vertex[i]:
+                a, b, c = a_original, b_original, c_original
+            elif a_vertex[i] <= c_vertex[i] <= b_vertex[i]:
+                a, b, c = a_original, c_original, b_original
+            elif b_vertex[i] <= a_vertex[i] <= c_vertex[i]:
+                a, b, c = b_original, a_original, c_original
+            elif b_vertex[i] <= c_vertex[i] <= a_vertex[i]:
+                a, b, c = b_original, c_original, a_original
+            elif c_vertex[i] <= a_vertex[i] <= b_vertex[i]:
+                a, b, c = c_original, a_original, b_original
+            else:  # c_vertex[i] <= b_vertex[i] <= a_vertex[i]
+                a, b, c = c_original, b_original, a_original
+            a_original, b_original, c_original = a, b, c
+        return a_original, b_original, c_original
+
 
 class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
 
@@ -155,31 +230,33 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         self.geometry: Cylinder = geometry  # type: ignore
 
     def contains(self, points):
+        center = self._on(self.geometry.center, self._device_of(points))
+        radius = self._on(self.geometry.radius, self._device_of(points))
+        height = self._on(self.geometry.height, self._device_of(points))
         p_device = points.device if hasattr(points, "device") else cpu
-        self.geometry._move_params(p_device)
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 3)
         radial_dist = self.backend.linalg.norm(
-            points[:, :2] - self.geometry.center[:2], axis=1, order=2
+            points[:, :2] - center[:2], axis=1, order=2
         ).reshape(-1, 1)
         z_vals = points[:, 2:3]
 
-        z_min = self.geometry.center[2] - self.geometry.height / 2.0
-        z_max = self.geometry.center[2] + self.geometry.height / 2.0
+        z_min = center[2] - height / 2.0
+        z_max = center[2] + height / 2.0
 
         # On side surface: distance is close to radius and z is within range
         on_side = self.backend.math.logical_and(
-            self.backend.math.isclose(radial_dist, self.geometry.radius),
+            self.backend.math.isclose(radial_dist, radius),
             self.backend.math.logical_and(z_vals >= z_min, z_vals <= z_max),
         )
 
         # On bottom cap: z is close to z_min and radial distance <= radius
         on_bottom = self.backend.math.logical_and(
-            self.backend.math.isclose(z_vals, z_min), radial_dist <= self.geometry.radius
+            self.backend.math.isclose(z_vals, z_min), radial_dist <= radius
         )
 
         # On top cap: z is close to z_max and radial distance <= radius
         on_top = self.backend.math.logical_and(
-            self.backend.math.isclose(z_vals, z_max), radial_dist <= self.geometry.radius
+            self.backend.math.isclose(z_vals, z_max), radial_dist <= radius
         )
 
         return self.backend.math.logical_or(
@@ -190,10 +267,12 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         self, n_points: int, device: Device = cpu, include_normals: bool = False
     ):
         """Sample uniformly from all surfaces (side + bottom + top)."""
-        self.geometry._move_params(device)
+        center = self._on(self.geometry.center, device)
+        radius = self._on(self.geometry.radius, device)
+        height = self._on(self.geometry.height, device)
         # Surface areas
-        side_area = 2 * math.pi * self.geometry.radius * self.geometry.height
-        cap_area = math.pi * self.geometry.radius**2
+        side_area = 2 * math.pi * radius * height
+        cap_area = math.pi * radius**2
         total_area = side_area + 2 * cap_area
 
         n_side = max(1, int(n_points * side_area / total_area))
@@ -209,7 +288,7 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         # Sample bottom cap
         if n_cap > 0:
             bottom_points = self._sample_random_circle(
-                n_cap, self.geometry.center[2] - self.geometry.height / 2.0, device=device
+                n_cap, center[2] - height / 2.0, device=device
             )
             points_list.append(bottom_points)
 
@@ -218,7 +297,7 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         if remaining > 0:
             top_points = self._sample_random_circle(
                 remaining,
-                self.geometry.center[2] + self.geometry.height / 2.0,
+                center[2] + height / 2.0,
                 device=device,
             )
             points_list.append(top_points)
@@ -233,10 +312,12 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         self, n_points: int, device: Device = cpu, include_normals: bool = False
     ):
         """Sample on a grid from all surfaces."""
-        self.geometry._move_params(device)
+        center = self._on(self.geometry.center, device)
+        radius = self._on(self.geometry.radius, device)
+        height = self._on(self.geometry.height, device)
         # Surface areas
-        side_area = 2 * math.pi * self.geometry.radius * self.geometry.height
-        cap_area = math.pi * self.geometry.radius**2
+        side_area = 2 * math.pi * radius * height
+        cap_area = math.pi * radius**2
         total_area = side_area + 2 * cap_area
 
         n_side = max(1, int(n_points * side_area / total_area))
@@ -252,7 +333,7 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         # Sample bottom cap
         if n_cap > 0:
             bottom_points = self._sample_grid_circle(
-                n_cap, self.geometry.center[2] - self.geometry.height / 2.0, device=device
+                n_cap, center[2] - height / 2.0, device=device
             )
             points_list.append(bottom_points)
 
@@ -261,7 +342,7 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         if remaining > 0:
             top_points = self._sample_grid_circle(
                 remaining,
-                self.geometry.center[2] + self.geometry.height / 2.0,
+                center[2] + height / 2.0,
                 device=device,
             )
             points_list.append(top_points)
@@ -274,39 +355,49 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
 
     def _sample_random_circle(self, n_points: int, z_val: float, device: Device):
         """Sample random points on a circle."""
-        r = self.geometry.radius * self.backend.math.sqrt(
+        center = self._on(self.geometry.center, device)
+        radius = self._on(self.geometry.radius, device)
+        r = radius * self.backend.math.sqrt(
             self.backend.random.uniform((n_points, 1), device=device)
         )
         phi = 2 * math.pi * self.backend.random.uniform((n_points, 1), device=device)
-        x = r * self.backend.math.cos(phi) + self.geometry.center[0]
-        y = r * self.backend.math.sin(phi) + self.geometry.center[1]
+        x = r * self.backend.math.cos(phi) + center[0]
+        y = r * self.backend.math.sin(phi) + center[1]
         z = self.backend.math.full((n_points, 1), z_val, device=device)
         return self.backend.math.concatenate([x, y, z], axis=1)
 
     def _sample_grid_circle(self, n_points: int, z_val: float, device: Device):
         """Sample grid points on a circle using sunflower arrangement."""
+        center = self._on(self.geometry.center, device)
+        radius = self._on(self.geometry.radius, device)
         grid = self.geometry._equidistant_points_in_circle(n_points, device=device)
-        xy = self.geometry.radius * grid
-        z = self.backend.math.full((n_points, 1), z_val)
-        xy += self.geometry.center[:2][None, :]
+        xy = radius * grid
+        z = self.backend.math.full((n_points, 1), z_val, device=device)
+        xy += center[:2][None, :]
         points = self.backend.math.concatenate([xy, z], axis=1)
         return points
 
     def _sample_random_side(self, n_points: int, device: Device):
         """Sample random points on the cylindrical side surface."""
+        center = self._on(self.geometry.center, device)
+        radius = self._on(self.geometry.radius, device)
+        height = self._on(self.geometry.height, device)
         phi = 2 * math.pi * self.backend.random.uniform((n_points, 1), device=device)
         z = self.backend.random.uniform(
             shape=(n_points, 1),
-            low=self.geometry.center[2] - self.geometry.height / 2.0,
-            high=self.geometry.center[2] + self.geometry.height / 2.0,
+            low=center[2] - height / 2.0,
+            high=center[2] + height / 2.0,
             device=device,
         )
-        x = self.geometry.radius * self.backend.math.cos(phi) + self.geometry.center[0]
-        y = self.geometry.radius * self.backend.math.sin(phi) + self.geometry.center[1]
+        x = radius * self.backend.math.cos(phi) + center[0]
+        y = radius * self.backend.math.sin(phi) + center[1]
         return self.backend.math.concatenate([x, y, z], axis=1)
 
     def _sample_grid_side(self, n_points: int, device: Device):
         """Sample grid points on the cylindrical side surface."""
+        center = self._on(self.geometry.center, device)
+        radius = self._on(self.geometry.radius, device)
+        height = self._on(self.geometry.height, device)
         n_phi = max(1, int(math.sqrt(n_points)))
         n_z = max(1, (n_points + n_phi - 1) // n_phi)
 
@@ -314,8 +405,8 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
             0, 2 * math.pi, n_phi, endpoint=False, device=device
         )
         z_vals = self.backend.math.linspace(
-            self.geometry.center[2] - self.geometry.height / 2.0,
-            self.geometry.center[2] + self.geometry.height / 2.0,
+            center[2] - height / 2.0,
+            center[2] + height / 2.0,
             n_z,
             device=device,
         )
@@ -325,12 +416,12 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         z_flat = z_grid.flatten()[:n_points]
 
         x = (
-            self.geometry.radius * self.backend.math.cos(phi_flat)
-            + self.geometry.center[0]
+            radius * self.backend.math.cos(phi_flat)
+            + center[0]
         ).reshape(-1, 1)
         y = (
-            self.geometry.radius * self.backend.math.sin(phi_flat)
-            + self.geometry.center[1]
+            radius * self.backend.math.sin(phi_flat)
+            + center[1]
         ).reshape(-1, 1)
         z = self.backend.math.unsqueeze(z_flat, axis=-1)
 
@@ -339,12 +430,13 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
 
     def normal(self, points, device: Device = cpu):
         """Compute outward normal vectors at boundary points."""
-        self.geometry._move_params(device)
+        center = self._on(self.geometry.center, self._device_of(points))
+        height = self._on(self.geometry.height, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 3)
         normals = self.backend.math.zeros_like(points, device=device)
 
-        z_min = self.geometry.center[2] - self.geometry.height / 2.0
-        z_max = self.geometry.center[2] + self.geometry.height / 2.0
+        z_min = center[2] - height / 2.0
+        z_max = center[2] + height / 2.0
 
         # On bottom cap
         bottom_mask = self.backend.math.isclose(points[:, 2], z_min)
@@ -358,7 +450,7 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
 
         # On side surface: radial direction
         side_mask = ~(bottom_mask | top_mask)
-        radial = points[side_mask, :2] - self.geometry.center[:2]
+        radial = points[side_mask, :2] - center[:2]
         radial_dist = self.backend.linalg.norm(radial, order=2, axis=1, keepdims=True)
         normals[side_mask, :2] = radial / radial_dist
 

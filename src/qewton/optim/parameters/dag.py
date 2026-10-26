@@ -3,8 +3,12 @@ from typing import Any
 from itertools import product
 import warnings
 import random
+import math
 
-from qewton.optim.parameters.hyperparameter_base import HyperParameter
+from qewton.optim.parameters.hyperparameter_base import (
+    HyperParameter,
+    HyperParameterOperation,
+)
 
 
 class HyperParameterDAG:
@@ -61,32 +65,61 @@ class HyperParameterDAG:
             random_sample = {}
             for node in self.sorted_nodes:
                 if node.is_active(random_sample):
-                    random_sample[node.name] = node.sample_parameter_random()
+                    if isinstance(node, HyperParameterOperation):
+                        value = node.sample_from_config(random_sample)
+                    else:
+                        value = node.sample_parameter_random()
+                    random_sample[node.name] = value
             random_samples.append(random_sample)
         return random_samples
+
+    def _index_to_combo(self, index: int, hp_grids: list[list]) -> tuple:
+        """Decode a flat index into the combination a mesh grid
+        would have produced at that position, without materializing the
+        whole product."""
+        combo = []
+        for grid in reversed(hp_grids):
+            index, r = divmod(index, len(grid))
+            combo.append(grid[r])
+        return tuple(reversed(combo))
 
     def create_grid_samples(self, n_samples: int) -> list[dict[str, Any]]:
         hp_grids = []
         for hp in self.sorted_nodes:
-            hp_grids.append(hp.tuning_grid)
-        total_param_grid = list(product(*hp_grids))
-        # Resample the grid if the above division yielded too many points.
-        # This of course will lead to some "holes" in the grid.
-        if len(total_param_grid) > n_samples:
-            total_param_grid = random.sample(total_param_grid, n_samples)
-        elif len(total_param_grid) < n_samples:
-            warnings.warn(
-                f"Defined tuning grids in given HyperParameters only yield "
-                f"{len(total_param_grid)} combinations. To sample {n_samples} "
-                f"combinations, increase the 'default_grid' in the HyperParameters."
-            )
-        # specific conditions are fulfilled, check this now.
-        # These are all possible combinations from HyperParameters,
+            if not isinstance(hp, HyperParameterOperation):
+                hp_grids.append(hp.tuning_grid)
+
+        total_size = math.prod(len(g) for g in hp_grids) if hp_grids else 0
+
+        if total_size > n_samples:
+            # Sample n_samples unique indices from the product space,
+            # then decode only those, never build the full product.
+            sampled_indices = random.sample(range(total_size), n_samples)
+            total_param_grid = [
+                self._index_to_combo(i, hp_grids) for i in sampled_indices
+            ]
+        else:
+            # We need all combinations anyway, so materializing is fine (and unavoidable).
+            total_param_grid = list(product(*hp_grids))
+            if len(total_param_grid) < n_samples:
+                warnings.warn(
+                    f"Defined tuning grids in given HyperParameters only yield "
+                    f"{len(total_param_grid)} combinations. To sample {n_samples} "
+                    f"combinations, increase the 'default_grid' in the HyperParameters."
+                )
+
         grid_samples = []
         for current_params in total_param_grid:
             config = {}
-            for j, hp in enumerate(self.sorted_nodes):
+            param_idx = 0  # separate counter, aligned with hp_grids/current_params
+            for hp in self.sorted_nodes:
                 if hp.is_active(config):
-                    config[hp.name] = current_params[j]
+                    if isinstance(hp, HyperParameterOperation):
+                        value = hp.sample_from_config(config)
+                    else:
+                        value = current_params[param_idx]
+                    config[hp.name] = value
+                if not isinstance(hp, HyperParameterOperation):
+                    param_idx += 1
             grid_samples.append(config)
         return grid_samples

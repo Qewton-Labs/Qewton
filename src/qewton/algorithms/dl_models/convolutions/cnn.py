@@ -123,7 +123,7 @@ class CNN(GraphNode, Generic[TensorType]):
                         if i == layers - 1
                         else self.hidden_channels.value
                     ),
-                    kernel_size=tuple(k.value for k in self.kernel_size),
+                    kernel_size=tuple(self.kernel_size),
                     padding=tuple((k.value - 1) // 2 for k in self.kernel_size),
                     bias=self.bias.value,
                     name=f"conv_{i}",
@@ -155,7 +155,7 @@ class CNN(GraphNode, Generic[TensorType]):
             self.n_hidden_layers,
             self.bias,
             self.activation,
-        ]
+        ] + self.kernel_size
 
     def forward(self, x):
         self.input_ports[0].set_value(x)
@@ -248,6 +248,7 @@ class UNet(GraphNode, Generic[TensorType]):
         )
         self.activation = HyperParameter.from_value(activation, "UNet Activations")
         self.pooling_node = self._pick_pooling_type(pooling_type=pooling_type)
+        self.pooling_type = pooling_type
         # Build a starting graph/network
         self._graph, in_node, out_node = self._build_network(backend)
         super().__init__(

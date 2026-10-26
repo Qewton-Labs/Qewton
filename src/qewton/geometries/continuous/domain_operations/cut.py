@@ -1,5 +1,3 @@
-# import warnings
-
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,
@@ -40,6 +38,9 @@ class CutGeometry(ContinuousGeometry[TensorType]):
         self.geometry_b = geometry_b
         self.contained = contained
         super().__init__(variable=geometry_a.variable, backend=geometry_a.backend)
+
+    def _related_geometries(self) -> list:
+        return [self.geometry_a, self.geometry_b, *super()._related_geometries()]
 
     def contains(self, points):
         in_a = self.geometry_a.contains(points)

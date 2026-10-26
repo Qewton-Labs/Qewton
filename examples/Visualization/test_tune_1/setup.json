@@ -1,0 +1,16 @@
+{
+    "Hyperparameters": [
+        "FCN Activations",
+        "Max Iterations",
+        "FCN Hidden Neurons",
+        "FCN Hidden Layers",
+        "batch_size",
+        "Learning Rate"
+    ],
+    "Objective Names": [
+        "MSEConstraint"
+    ],
+    "Objective": [
+        "ConstraintObjective.MINIMIZE"
+    ]
+}

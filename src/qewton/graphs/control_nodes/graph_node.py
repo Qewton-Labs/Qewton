@@ -1,10 +1,12 @@
 from __future__ import annotations
+from copy import deepcopy
 from typing import Callable
 import inspect
 
 from qewton.graphs.nodes import InputPort, Node, OutputPort, Port
-from qewton.graphs import Graph
+from qewton.graphs.graphs import Graph
 from qewton.backends import Backend, TensorType
+from qewton.optim.base import EvaluationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import _TrainableParameterBase
 
@@ -55,9 +57,7 @@ class GraphNode(Node[TensorType]):
         self._input_ports = []
 
         self.configs_defined_in_forward = self._configs_were_defined_in_forward()
-        in_forward_ports, out_forward_ports = self._build_ports(
-            self.forward, self, backend
-        )
+        in_forward_ports, out_forward_ports = self._build_ports(self.forward, self)
         for i, p in enumerate(input_ports):
             if isinstance(input_ports, dict):
                 self._input_ports.append(p)
@@ -192,6 +192,15 @@ class GraphNode(Node[TensorType]):
         Returns:
             Any: The output of the encapsulated graph, either a single value or a
                 tuple of values.
+
+        Note:
+            Opposite to the forward method of a normal Node, this method
+            is not the one that is called when the node is run inside a graph.
+            The forward method should always call the inner graph for
+            computations, and should only be overridden if the user wants to
+            speed up the argument passing to the inner graph. For custom
+            behavior, create a subclass of Node instead of overriding this
+            method.
         """
         for i, arg in enumerate(args):
             self.input_ports[i].set_value(arg)  # type: ignore
@@ -307,20 +316,23 @@ class GraphNode(Node[TensorType]):
         if self.configs_defined_in_forward:
             return super().copy_data_configs()
         dynamic_configs = {}
+        copy_memory = {}
         for input_port in self.input_ports:
             for e in self._graph.edges_from_outside + self._graph.skip_connections:
                 if e.from_port == input_port:
                     inner_config = self._graph.dynamic_data_configs[e.to_port.node][
                         e.to_port
                     ]
-                    dynamic_configs[input_port] = inner_config
+                    dynamic_configs[input_port] = deepcopy(inner_config, memo=copy_memory)
         for output_port in self.output_ports:
             for e in self._graph.edges_to_outside + self._graph.skip_connections:
                 if e.to_port == output_port:
                     inner_config = self._graph.dynamic_data_configs[e.from_port.node][
                         e.from_port
                     ]
-                    dynamic_configs[output_port] = inner_config
+                    dynamic_configs[output_port] = deepcopy(
+                        inner_config, memo=copy_memory
+                    )
         return dynamic_configs
 
     def _configs_were_defined_in_forward(self):
@@ -334,7 +346,7 @@ class GraphNode(Node[TensorType]):
         call_sig = inspect.signature(self.forward)
         for param in call_sig.parameters.values():
             hint = param.annotation
-            _, was_annotated = self._unwrap_annotated(hint, self, self.backend)
+            _, was_annotated = self._unwrap_annotated(hint, self)
             if not was_annotated:
                 return False
         return True
@@ -350,6 +362,12 @@ class GraphNode(Node[TensorType]):
         Sets up the encapsulated graph.
         """
         self._graph.setup()
+
+    def set_mode(self, new_mode: EvaluationPhase):
+        self._graph.mode = new_mode
+        for node in self._graph.nodes:
+            node.set_mode(new_mode)
+        return super().set_mode(new_mode)
 
     def reset(self):
         """
@@ -375,7 +393,7 @@ class GraphNode(Node[TensorType]):
 
     def _build_graph_from_function(self, function, backend):
         graph, input_ports, output_ports = Graph.from_function(function)
-        outer_input_ports, outer_output_ports = Node._build_ports(function, self, backend)
+        outer_input_ports, outer_output_ports = Node._build_ports(function, self)
 
         # Outputs that are integers are automatically mapped to the
         # corresponding input ports.
@@ -410,6 +428,13 @@ class GraphNode(Node[TensorType]):
         input_ports_dict = dict(zip(outer_input_ports, input_port_list))
         output_ports_dict = dict(zip(outer_output_ports, output_ports))
         return graph, input_ports_dict, output_ports_dict
+
+    @property
+    def memory_consumption(self) -> int:
+        total_bytes = 0
+        for node in self._graph.nodes:
+            total_bytes += node.memory_consumption
+        return total_bytes
 
 
 class FromFunctionNode(GraphNode):

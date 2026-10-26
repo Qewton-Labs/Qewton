@@ -7,7 +7,7 @@ from qewton.data.dataloaders.base import DataNode
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.optim.base import EvaluationPhase
-from qewton.graphs.nodes import NodeState
+from qewton.graphs.nodes import NodeState, Node
 from qewton.graphs.graphs import Graph
 from qewton.config.axes import EllipsisAxes, BatchAxes
 from qewton.config.data_configurations import DataConfiguration
@@ -80,9 +80,14 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
         # Now compute the mean and std, save them also into the ports:
         self.mean = self.backend.math.mean(total_data, axis=0, keepdims=True)
         self.std = self.backend.math.std(total_data, axis=0, keepdims=True)
+        self.std = self.backend.math.mean(
+            self.std,
+            axis=tuple(i for i in range(1, len(self.std.shape) - 1)),
+            keepdims=True,
+        )
         self.std += self.eps
         self._set_port_values(self.mean, self.std)
-        self._state = NodeState.INITIALIZED
+        self.set_state(NodeState.INITIALIZED)
 
     def _set_port_values(self, mean, std):
         self.sub_node.input_ports[1].default = mean
@@ -94,6 +99,14 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
             self.std = self.backend.to(self.std, device=device)
             self._set_port_values(self.mean, self.std)
         return super().to(device)
+
+    @property
+    def memory_consumption(self) -> int:
+        total_bytes = 0
+        if self.state != NodeState.UNINITIALIZED:
+            total_bytes += self.backend.memory_consumption(self.mean)
+            total_bytes += self.backend.memory_consumption(self.std)
+        return total_bytes
 
     def forward(
         self, x: Annotated[TensorType, DataConfiguration(batch_axes, data_axes)]
@@ -144,7 +157,7 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
                     been setup yet!"
             )
         self._set_port_values(self.data_source_node.mean, self.data_source_node.std)
-        self._state = NodeState.INITIALIZED
+        self.set_state(NodeState.INITIALIZED)
 
     def _set_port_values(self, mean, std):
         self.add_node.input_ports[1].default = mean

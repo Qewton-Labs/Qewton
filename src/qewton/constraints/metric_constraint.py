@@ -1,5 +1,6 @@
 from qewton.constraints.base import Constraint, ConstraintObjective
 from qewton.config.data_configurations import DataConfiguration
+from qewton.constraints.weight_functions import ConstraintWeightFunction
 from qewton.optim.parameters.categorical_hyperparameter import (
     HyperParameter,
     BooleanHyperparameter,
@@ -9,7 +10,14 @@ from qewton.graphs.nodes import InputPort
 from qewton.graphs.graphs import Graph
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.backends import DEFAULT_DL_BACKEND
-from qewton.algorithms.building_blocks.math import Subtract, Square, Mean, Divide, Sum
+from qewton.algorithms.building_blocks.math import (
+    Subtract,
+    Square,
+    Mean,
+    Divide,
+    Sum,
+    Add,
+)
 from qewton.optim.base import EvaluationPhase
 
 
@@ -39,7 +47,7 @@ class MetricConstraint(Constraint):
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         weight: float | ContinuousHyperparameter = 1,
         backend=DEFAULT_DL_BACKEND,
-        epsilon=1e-8,
+        epsilon=1e-6,
         **kwargs,
     ):
         super().__init__(
@@ -62,6 +70,10 @@ class MetricConstraint(Constraint):
             self.input_2 = InputPort(input_config, self, name="input2")
             self._input_ports = [self.input_1, self.input_2]
 
+    @property
+    def hyperparameters(self) -> list[HyperParameter]:
+        return super().hyperparameters + [self.relative]
+
 
 class MSEConstraint(MetricConstraint, GraphNode):
     """A constraint that computes the mean squared error between two inputs"""
@@ -74,6 +86,7 @@ class MSEConstraint(MetricConstraint, GraphNode):
         relative: bool | BooleanHyperparameter = False,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
         weight: float | ContinuousHyperparameter = 1,
+        activation_condition: ConstraintWeightFunction | None = None,
         backend=DEFAULT_DL_BACKEND,
         epsilon=1e-8,
     ):
@@ -84,6 +97,8 @@ class MSEConstraint(MetricConstraint, GraphNode):
         self.sum_node_relative = Sum(backend=backend, axis=-1)
         self.square_node_relative = Square(backend=backend)
         self.divide_node = Divide(backend=backend)
+        self.eps_add_node = Add(backend=backend)
+        self.eps_add_node.input_ports[1].default = epsilon
 
         self.mean_node = Mean(backend=backend)
 
@@ -94,6 +109,7 @@ class MSEConstraint(MetricConstraint, GraphNode):
         super().__init__(
             graph=new_graph,
             weight=weight,
+            activation_condition=activation_condition,
             relative=relative,
             input_ports=in_ports,
             output_ports=out_ports,
@@ -111,7 +127,8 @@ class MSEConstraint(MetricConstraint, GraphNode):
         new_graph.connect(self.square_node, self.sum_node)
         if use_relative:
             new_graph.connect(self.square_node_relative, self.sum_node_relative)
-            new_graph.connect(self.sum_node_relative, self.divide_node.input_ports[1])
+            new_graph.connect(self.sum_node_relative, self.eps_add_node.input_ports[0])
+            new_graph.connect(self.eps_add_node, self.divide_node.input_ports[1])
             new_graph.connect(self.sum_node, self.divide_node.input_ports[0])
             new_graph.connect(self.divide_node, self.mean_node)
         else:

@@ -6,19 +6,23 @@ from qewton.config.axes import (
     Axes,
     EllipsisAxes,
     EllipsisDim,
+    GeometryAxes,
     _match_remainder,
     FeatureAxes,
     AxesDim,
 )
 from qewton.config.errors import DataConfigMismatchError
+from qewton.config.saving.loading import Deserializer
+from qewton.config.saving.schema_keys import SavingKeys
 from qewton.config.variables import Variable
+from qewton.config.saving.saving import Serializable, Serializer
 
 ## TODO: could we simplify the config passing to use common AxesDim
 # objects nearly around the whole graph? this would allow for less
 # passing operations and less objects.
 
 
-class DataConfiguration:
+class DataConfiguration(Serializable):
     """A *DataConfiguration* describes the expected structure of the data,
     including the axes and their dimensions, as well as the data type.
     It is used to ensure that the data being passed through the graph
@@ -112,6 +116,24 @@ class DataConfiguration:
         for axes in self.axes:
             if isinstance(axes, FeatureAxes):
                 return axes
+        return None
+
+    @property
+    def geometry_axes(self) -> GeometryAxes | list[GeometryAxes] | None:
+        """Returns the geometry axes of this configuration.
+
+        Returns:
+            GeometryAxes | list[GeometryAxes] | None: The geometry axes if
+                defined, otherwise None.
+        """
+        geom_axes = []
+        for axes in self.axes:
+            if isinstance(axes, GeometryAxes):
+                geom_axes.append(axes)
+        if len(geom_axes) == 1:
+            return geom_axes[0]
+        if len(geom_axes) > 1:
+            return geom_axes
         return None
 
     def replace_feature_axes(self, new_feature_axes: FeatureAxes):
@@ -260,7 +282,7 @@ class DataConfiguration:
 
         # First we check if they match from the end
         matching_end_self, matching_end_other = self._match_axes(
-            reversed(self.axes), reversed(other.axes)
+            list(reversed(self.axes)), list(reversed(other.axes))
         )
         if len(matching_end_self) == len(self.axes) and len(matching_end_other) == len(
             other.axes
@@ -421,3 +443,96 @@ class DataConfiguration:
             else:
                 slc.extend([slice(None)] * len(axes.shape))  # type: ignore
         return tuple(slc)
+
+    def get_axes_range(self, axes: Axes) -> int | tuple[int, int]:
+        try:
+            return self._find_axes_idx(self.axes, axes)
+        except ValueError:
+            try:
+                reverse_axis_idx = self._find_axes_idx(self.axes[::-1], axes)
+                if isinstance(reverse_axis_idx, int):
+                    return -1 - reverse_axis_idx
+                else:
+                    return -1 - reverse_axis_idx[1], -1 - reverse_axis_idx[0]
+            except ValueError as exc:
+                raise ValueError(f"Axis {axes} not found in data config {self}.") from exc
+
+    @classmethod
+    def _find_axes_idx(cls, axes_list, searched_axes: Axes) -> int | tuple[int, int]:
+        counter = 0
+        for axes in axes_list:
+            if axes is searched_axes:
+                if len(axes.shape) == 1:
+                    return counter
+                return (counter, counter + len(axes.shape))
+            if isinstance(axes, EllipsisAxes) or any(
+                isinstance(d, EllipsisDim) for d in axes.shape
+            ):
+                raise ValueError
+            counter += len(axes.shape)
+        raise ValueError
+
+    def get_slice(self, data_config: DataConfiguration):
+        try:
+            axis_idx, slc = self._find_axis_idx(self.variable_or_axes, data_config.axes)
+        except ValueError:
+            try:
+                reverse_axis_idx, slc = self._find_axis_idx(
+                    self.variable_or_axes, data_config.axes[::-1]
+                )
+                axis_idx = -1 - reverse_axis_idx
+            except ValueError as exc:
+                raise ValueError(f"Axis {self.variable_or_axes} not found in data \
+                        config {data_config}.") from exc
+        return axis_idx, slc
+
+    def _find_axis_idx(
+        self, variable_or_axis, axes: list[Axes]
+    ) -> tuple[int | slice, slice | None]:
+        counter = 0
+        for i_axis in axes:
+            if isinstance(i_axis, EllipsisAxes):
+                raise ValueError
+            if any(isinstance(i_dim, EllipsisDim) for i_dim in i_axis.shape):
+                raise ValueError
+
+            if i_axis is variable_or_axis:
+
+                if len(i_axis.shape) == 1:
+                    return counter, None
+                return slice(counter, counter + len(i_axis.shape)), None
+            if isinstance(variable_or_axis, Variable):
+                if isinstance(i_axis, (FeatureAxes, GeometryAxes)):
+                    i_var = i_axis.variables
+                    if variable_or_axis in i_var:
+                        if len(i_axis.shape) == 1:
+                            return counter, None
+                        return counter, i_var.get_slice(variable_or_axis)
+
+            counter += len(i_axis.shape)
+
+        raise ValueError
+
+    def save(self, serializer: Serializer) -> None:
+        axes_idx = serializer.add_objects(self, [self.axes])
+        data_config = {
+            SavingKeys.KEY_TYPE: SavingKeys.KEY_SERIALIZABLE,
+            SavingKeys.KEY_CLASS: self.__class__.__name__,
+            SavingKeys.KEY_MODULE: self.__class__.__module__,
+            "axes": axes_idx[0],
+            "dtype": str(self.dtype),
+        }
+        serializer.set_serialization_data(id(self), data_config)
+
+    def load(self, serializer: Deserializer, data_config: dict) -> None:
+        setattr(self, "axes", serializer.id_to_obj[data_config["axes"]])
+        from qewton.backends.base import TensorType
+
+        # TODO: How to handle the dtypes?
+        dtype = data_config.get("dtype", None)
+        setattr(self, "dtype", None)
+        if isinstance(dtype, str) and dtype == "~TensorType":
+            self.dtype = TensorType
+
+    def ready_to_load(self, serializer: Deserializer, data_config: dict) -> bool:
+        return serializer.ready_to_reference.get(data_config["axes"], False)

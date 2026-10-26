@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 
 from qewton.config.dtypes import (
@@ -54,10 +55,6 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
         Bool: np.bool,
     }
 
-    @staticmethod
-    def load(path, **kwargs):
-        return np.load(path, **kwargs)
-
     @classmethod
     def from_numpy(cls, data, dtype=Float32):
         converted_type = cls.dtypes.get(dtype, dtype)
@@ -77,5 +74,36 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
         return data  # always on cpu
 
     @classmethod
+    def move_to_same_device(cls, data, reference):
+        return data  # always on cpu
+
+    @classmethod
     def cast_dtype(cls, data: np.ndarray, dtype):
         return data.astype(cls.dtypes.get(dtype, dtype))
+
+    @classmethod
+    def to_numpy(cls, data: np.ndarray) -> np.ndarray:
+        return data
+
+    @classmethod
+    def save_data(cls, data, path: str | Path):
+        path = Path(path)
+        if path.suffix != ".npy":
+            path = path.with_suffix(".npy")
+        np.save(path, data)
+
+    @classmethod
+    def load_data(cls, path: str | Path):
+        path = Path(path)
+        if path.suffix != ".npy":
+            path = path.with_suffix(".npy")
+        return np.load(path, allow_pickle=True)
+
+    @classmethod
+    def memory_consumption(cls, data) -> int:
+        """Returns the memory consumption of the given data in bytes.
+
+        Args:
+            data (np.ndarray): The data to calculate the memory consumption of.
+        """
+        return data.nbytes

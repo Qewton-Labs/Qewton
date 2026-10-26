@@ -57,12 +57,13 @@ class Interval(ContinuousGeometry[TensorType]):
             self.lower_bound,
             self.upper_bound,
             1 + int(steps),
+            device=device,
         )
         vertices = self.backend.math.unsqueeze(vertices, -1)
         cells = [[i, i + 1] for i in range(len(vertices) - 1)]
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=cells),
+            mesh=Mesh(vertices=vertices, cells=cells, device=device),
             discretization_of=self,
             backend=self.backend,
         )
@@ -82,7 +83,7 @@ class Interval(ContinuousGeometry[TensorType]):
         return points
 
     def bounding_box(self):
-        return self.backend.build_tensor([self.lower_bound, self.upper_bound])
+        return self._bounds([self.lower_bound, self.upper_bound])
 
     def _get_volume(self):
         return self.upper_bound - self.lower_bound
@@ -99,8 +100,8 @@ class Interval(ContinuousGeometry[TensorType]):
 
     @property
     def boundary_right(self) -> IntervalSingleBoundaryPoint:
-        """Returns only the left boundary value, useful for the definition
-        of end conditions.
+        """Returns only the right boundary value, useful for the definition
+        of end conditions. 
         """
         return IntervalSingleBoundaryPoint(self, side=self.upper_bound, normal_vec=1)
 
@@ -124,13 +125,14 @@ class IntervalBoundary(ContinuousBoundaryGeometry[TensorType]):
     def create_mesh(
         self,
         max_vertex_distance: float | None = None,  # pylint: disable=unused-argument
-        device: Device = cpu,  # pylint: disable=unused-argument
+        device: Device = cpu,
     ):
         return MeshGeometry(
             variable=self.variable,
             mesh=Mesh(
                 vertices=[[self.geometry.lower_bound], [self.geometry.upper_bound]],
                 cells=[],
+                device=device,
             ),
             discretization_of=self,
             backend=self.backend,
@@ -189,13 +191,14 @@ class IntervalSingleBoundaryPoint(ContinuousBoundaryGeometry[TensorType]):
     def create_mesh(
         self,
         max_vertex_distance: float | None = None,  # pylint: disable=unused-argument
-        device: Device = cpu,  # pylint: disable=unused-argument
+        device: Device = cpu,
     ):
         return MeshGeometry(
             variable=self.variable,
             mesh=Mesh(
                 vertices=[[self.side]],
                 cells=[],
+                device=device,
             ),
             discretization_of=self,
             backend=self.backend,

@@ -115,6 +115,7 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
             pooling_kernel_size, "Encoder Pooling Size"
         )
         self.activation = HyperParameter.from_value(activation, "UNet Activations")
+        self.pooling_type = pooling_type
         self.pooling_node = self._pick_pooling_type(pooling_type=pooling_type)
         self.fcn_hidden_neurons = HyperParameter.from_value(
             fcn_hidden_neurons, "Encoder FCN Hidden Neurons"
@@ -197,6 +198,13 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
         """
         if self.state == NodeState.UNINITIALIZED:
             new_graph = self._build_network(self.backend)
+            # Update the static data configurations of the input and output ports
+            self.input_ports[0].update_static_data_configuration(
+                new_graph.sorted_nodes[0].input_ports[0].data_configuration
+            )
+            self.output_ports[0].update_static_data_configuration(
+                new_graph.sorted_nodes[-1].output_ports[0].data_configuration
+            )
             self.setup_graph(
                 new_graph,
                 input_ports=new_graph.sorted_nodes[0].input_ports,

@@ -6,9 +6,10 @@ from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Int32, Float32
+from qewton.config.saving.saving import Serializable
 
 
-class Mesh(Generic[TensorType]):
+class Mesh(Serializable, Generic[TensorType]):
     """A generic simplex mesh represented by vertices and cells.
 
     Args:
@@ -41,20 +42,33 @@ class Mesh(Generic[TensorType]):
         face_markers: list[int] | None | TensorType = None,
         marker_labels: dict[str, tuple[int, int]] | None = None,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
+        device: Device | str = cpu,
     ) -> None:
+        # Only matters when vertices/cells are plain lists/arrays, not
+        # already-built tensors - build_tensor() preserves an existing
+        # tensor's own device untouched (its `.to(dtype=...)` branch never
+        # receives `device`), by design: the caller already placed them
+        # deliberately (e.g. a create_mesh(device=...) building on an
+        # already-moved origin/corners), so this must not silently override
+        # that. `device` is still needed below, for the boundary-facet
+        # bookkeeping this constructor builds fresh either way.
         self.backend = backend
-        self.vertices = backend.build_tensor(vertices, dtype=Float32)
-        self.cells = backend.build_tensor(cells, dtype=Int32)
+        self.vertices = backend.build_tensor(vertices, dtype=Float32, device=device)
+        self.cells = backend.build_tensor(cells, dtype=Int32, device=device)
         self.cell_markers = (
-            backend.build_tensor(cell_markers, dtype=Int32)
+            backend.build_tensor(cell_markers, dtype=Int32, device=device)
             if cell_markers is not None
             else None
         )
+        # Maps cell indices to the original mesh
+        self.parent_cell_mapping: TensorType | None = None
         self.faces = (
-            backend.build_tensor(faces, dtype=Int32) if faces is not None else None
+            backend.build_tensor(faces, dtype=Int32, device=device)
+            if faces is not None
+            else None
         )
         self.face_markers = (
-            backend.build_tensor(face_markers, dtype=Int32)
+            backend.build_tensor(face_markers, dtype=Int32, device=device)
             if face_markers is not None
             else None
         )
@@ -64,13 +78,29 @@ class Mesh(Generic[TensorType]):
         self.cell_volumes: TensorType | None = None
         self.cell_probability_weights: TensorType | None = None
         self.boundary_normals: TensorType = self.backend.math.empty(
-            (0, self.vertices.shape[1])
+            (0, self.vertices.shape[1]), device=device
         )
         self.boundary_normals_at_vertex: TensorType = self.backend.math.empty(
-            (0, self.vertices.shape[1])
+            (0, self.vertices.shape[1]), device=device
         )
 
-        self._find_boundary_facets()
+        self._find_boundary_facets(device)
+
+    def map_cells_to_original(self, cell_indices: TensorType) -> TensorType:
+        """Maps the given cell indices to the original mesh.
+
+        Args:
+            cell_indices (TensorType): The cell indices to map.
+
+        Returns:
+            TensorType: The mapped cell indices.
+        """
+        if self.parent_cell_mapping is None:
+            return cell_indices  # No parent provided -> identity mapping
+        cell_indices = self.backend.move_to_same_device(
+            cell_indices, self.parent_cell_mapping
+        )
+        return self.parent_cell_mapping[cell_indices]
 
     @property
     def vertex_count(self) -> int:
@@ -81,7 +111,7 @@ class Mesh(Generic[TensorType]):
         """
         return len(self.vertices)
 
-    def _find_boundary_facets(self):
+    def _find_boundary_facets(self, device: Device | str = cpu):
         if len(self.cells.shape) <= 1:
             return
         # Find boundary faces:
@@ -96,12 +126,14 @@ class Mesh(Generic[TensorType]):
             ],
             axis=0,
         )
-        # Also remember where they are from at what is the missing vertex
+        # Also remember where they are from at what is the missing vertex -
+        # must land on the same device as self.cells (facets, above) or the
+        # boundary_cell_ids = cell_ids[boundary_rows] indexing below raises.
         cell_ids = self.backend.math.concatenate(
-            [self.backend.math.arange(len(self.cells)) for _ in range(n)]
+            [self.backend.math.arange(len(self.cells), device=device) for _ in range(n)]
         )
         missing_vertex_ids = self.backend.math.concatenate(
-            [self.backend.math.full(len(self.cells), i) for i in range(n)]
+            [self.backend.math.full(len(self.cells), i, device=device) for i in range(n)]
         )
         # Find the elements that only appear once -> boundary face
         unique_facets, first_idx, counts = self.backend.math.unique(
@@ -123,9 +155,11 @@ class Mesh(Generic[TensorType]):
         boundary_cell_ids = cell_ids[boundary_rows]
         boundary_missing_vertex_ids = missing_vertex_ids[boundary_rows]
 
-        self._compute_normals(boundary_cell_ids, boundary_missing_vertex_ids)
+        self._compute_normals(boundary_cell_ids, boundary_missing_vertex_ids, device)
 
-    def _compute_normals(self, boundary_cell_ids, boundary_missing_vertex_ids):
+    def _compute_normals(
+        self, boundary_cell_ids, boundary_missing_vertex_ids, device: Device | str = cpu
+    ):
         b_vertex = self.vertices[self.boundary_faces]
         opposite_v = self.vertices[
             self.cells[
@@ -145,16 +179,18 @@ class Mesh(Generic[TensorType]):
             normals[:, 1] = -normals_save
             normals /= self.backend.linalg.norm(normals, order=2, axis=1, keepdims=True)
         else:  # 1d case:
-            normals = self.backend.build_tensor([[-1.0], [1.0]])
+            normals = b_vertex[:, 0, :] - opposite_v
+            normals /= self.backend.linalg.norm(normals, order=2, axis=1, keepdims=True)
         # Fix sign of the normal vectors:
-        flip = (
-            self.backend.math.sum(
-                normals * (opposite_v - b_vertex.mean(axis=1)),
-                axis=1,
+        if self.boundary_faces.shape[1] != 1:
+            flip = (
+                self.backend.math.sum(
+                    normals * (opposite_v - b_vertex.mean(axis=1)),
+                    axis=1,
+                )
+                > 0
             )
-            > 0
-        )
-        normals[flip] *= -1
+            normals[flip] *= -1
         self.boundary_normals = normals
         # Compute also the normals at the vertices (take the average of the
         # adjacent faces)
@@ -162,7 +198,7 @@ class Mesh(Generic[TensorType]):
             vertex_ids = self.boundary_faces.ravel()
             num_vertices = vertex_ids.max() + 1
             self.boundary_normals_at_vertex = self.backend.math.zeros(
-                (num_vertices, self.boundary_normals.shape[1])
+                (num_vertices, self.boundary_normals.shape[1]), device=device
             )
             for f, verts in enumerate(self.boundary_faces):
                 self.boundary_normals_at_vertex[verts[0]] += normals[f]
@@ -182,6 +218,7 @@ class Mesh(Generic[TensorType]):
         marker_key: str | None = None,
         default_cell_tags: int = -1,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
+        prune_z: bool = False,
     ) -> Mesh:
         """Load a mesh from the disk. The mesh should already be a "volume" mesh.
         Currently only simplex meshes are supported.
@@ -194,6 +231,8 @@ class Mesh(Generic[TensorType]):
                 dont have any markers. Defaults to -1.
             backend (type[ComputingBackend[TensorType]], optional):
                 Defaults to DEFAULT_DL_BACKEND.
+            prune_z (bool, optional): If True, the z-coordinate of the
+                vertices will be pruned if the mesh is 3D. Defaults to False.
 
         Raises:
             ImportError: Use Meshio to convert and read the mesh, raises an error if
@@ -218,6 +257,7 @@ class Mesh(Generic[TensorType]):
                 marker_key=marker_key,
                 default_cell_tags=default_cell_tags,
                 backend=backend,
+                prune_z=prune_z,
             )
         )
         return cls(
@@ -258,12 +298,18 @@ class Mesh(Generic[TensorType]):
         boundary_indices = self.backend.math.unique(boundary_indices)
         boundary_vertices = self.vertices[boundary_indices]
 
-        # Map faces to new vertex ordering:
-        inverse_map = self.backend.math.full(
-            self.vertices.shape[0], -1, dtype=self.backend.dtypes[Int32]
+        # Map faces to new vertex ordering, on the device of the mesh data:
+        inverse_map = self.backend.move_to_same_device(
+            self.backend.math.full(
+                self.vertices.shape[0], -1, dtype=self.backend.dtypes[Int32]
+            ),
+            self.vertices,
         )
-        inverse_map[boundary_indices] = self.backend.math.arange(
-            len(boundary_indices), dtype=self.backend.dtypes[Int32]
+        inverse_map[boundary_indices] = self.backend.move_to_same_device(
+            self.backend.math.arange(
+                len(boundary_indices), dtype=self.backend.dtypes[Int32]
+            ),
+            self.vertices,
         )
         remapped_faces = inverse_map[self.boundary_faces]
 
@@ -332,13 +378,15 @@ class Mesh(Generic[TensorType]):
         )
         new_cells = inverse_map[new_cells]
 
-        return Mesh(
+        sub_mesh = Mesh(
             vertices=remaining_vertices,
             cells=new_cells,
             cell_markers=self.cell_markers[mask],
             marker_labels=self.marker_labels,
             backend=self.backend,
         )
+        sub_mesh.parent_cell_mapping = self.backend.math.arange(len(self.cells))[mask]
+        return sub_mesh
 
     def sample_random_from_vertices(
         self, n_points: int, device: Device | str = cpu
@@ -349,32 +397,66 @@ class Mesh(Generic[TensorType]):
             replace=(n_points > self.vertex_count),
             device=device,
         )
+        return self.backend.to(self.vertices, device=device)[idx], idx
+
+    def to(self, device: Device | str = cpu) -> Mesh:
+        """Move all data of this mesh to `device`.
+
+        Args:
+            device (Device | str, optional): The target device. Defaults to cpu.
+
+        Returns:
+            Mesh: This mesh.
+        """
         self.vertices = self.backend.to(self.vertices, device=device)
-        return self.vertices[idx], idx
+        self.cells = self.backend.to(self.cells, device=device)
+        if self.cell_markers is not None:
+            self.cell_markers = self.backend.to(self.cell_markers, device=device)
+        if self.faces is not None:
+            self.faces = self.backend.to(self.faces, device=device)
+        if self.face_markers is not None:
+            self.face_markers = self.backend.to(self.face_markers, device=device)
+        if self.cell_volumes is not None:
+            self.cell_volumes = self.backend.to(self.cell_volumes, device=device)
+        if self.cell_probability_weights is not None:
+            self.cell_probability_weights = self.backend.to(
+                self.cell_probability_weights, device=device
+            )
+        self.boundary_normals = self.backend.to(self.boundary_normals, device=device)
+        self.boundary_normals_at_vertex = self.backend.to(
+            self.boundary_normals_at_vertex, device=device
+        )
+        if getattr(self, "boundary_faces", None) is not None:
+            self.boundary_faces = self.backend.to(self.boundary_faces, device=device)
+        if self.parent_cell_mapping is not None:
+            self.parent_cell_mapping = self.backend.to(
+                self.parent_cell_mapping, device=device
+            )
+        return self
 
     def sample_grid_from_vertices(
         self, n_points: int, device: Device | str = cpu
     ) -> tuple[TensorType, TensorType]:
-        self.vertices = self.backend.to(self.vertices, device=device)
+        vertices = self.backend.to(self.vertices, device=device)
         # TODO: Could be done distance based
         if n_points <= self.vertex_count:
             idx = self.backend.random.permutation(self.vertex_count, device=device)[
                 :n_points
             ]
-            return self.vertices[idx], idx
+            return vertices[idx], idx
         # Else, more points wanted then exist in the mesh itself
         vertex_count = self.vertex_count
 
         reps = n_points // vertex_count
         rem = n_points % vertex_count
 
-        base = self.backend.math.tile(self.vertices, (reps, 1))
+        base = self.backend.math.tile(vertices, (reps, 1))
         base_idx = self.backend.math.tile(
             self.backend.math.arange(vertex_count, device=device), (reps,)
         )
 
         extra_idx = self.backend.random.permutation(vertex_count, device=device)[:rem]
-        extra = self.vertices[extra_idx]
+        extra = vertices[extra_idx]
 
         return self.backend.math.vstack([base, extra]), self.backend.math.concatenate(
             [base_idx, extra_idx]
@@ -390,11 +472,11 @@ class Mesh(Generic[TensorType]):
             device=device,
         )
 
-        self.vertices = self.backend.to(self.vertices, device=device)
-        self.cells = self.backend.to(self.cells, device=device)
+        vertices = self.backend.to(self.vertices, device=device)
+        cells = self.backend.to(self.cells, device=device)
 
-        simplices = self.cells[chosen_cells]
-        verts = self.vertices[simplices]
+        simplices = cells[chosen_cells]
+        verts = vertices[simplices]
 
         # (Dirichlet sampling via exponential function)
         w = self.backend.random.exponential(shape=verts.shape[:2], device=device)

@@ -21,6 +21,7 @@ class Identity(Node[TensorType]):
 
 
 class Zeros(Node[TensorType]):
+
     def __init__(
         self,
         shape: int | tuple[int, ...],
@@ -47,6 +48,7 @@ class ZerosLike(Node[TensorType]):
 
 
 class Ones(Node[TensorType]):
+
     def __init__(
         self,
         shape: int | tuple[int, ...],

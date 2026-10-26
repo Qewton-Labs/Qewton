@@ -43,24 +43,27 @@ class Triangle(ContinuousGeometry[TensorType]):
         self.corner_1 = self._to_vector(corner_1)
         self.corner_2 = self._to_vector(corner_2)
 
-    def _update_device(self, new_device):
-        self.origin = self.backend.to(self.origin, device=new_device)
-        self.corner_1 = self.backend.to(self.corner_1, device=new_device)
-        self.corner_2 = self.backend.to(self.corner_2, device=new_device)
+    def _move_data(self, device: Device | str) -> None:
+        self.origin = self.backend.to(self.origin, device=device)
+        self.corner_1 = self.backend.to(self.corner_1, device=device)
+        self.corner_2 = self.backend.to(self.corner_2, device=device)
 
     def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
-        self._update_device(device)
-        max_length = self.backend.math.max(
-            [
-                self.backend.linalg.norm(self.corner_1 - self.origin, order=2),
-                self.backend.linalg.norm(self.corner_2 - self.origin, order=2),
-                self.backend.linalg.norm(self.corner_1 - self.corner_2, order=2),
-            ]
+        origin = self._on(self.origin, device)
+        corner_1 = self._on(self.corner_1, device)
+        corner_2 = self._on(self.corner_2, device)
+        # Resolved to a plain float (same pattern Parallelogram.create_mesh()
+        # uses) rather than a tensor reduction - self.backend.math.max()
+        # expects a single Tensor, not a list of them, and everything past
+        # this point (nx, the loop bounds) is plain Python math anyway.
+        max_length = max(
+            float(self.backend.linalg.norm(corner_1 - origin, order=2)),
+            float(self.backend.linalg.norm(corner_2 - origin, order=2)),
+            float(self.backend.linalg.norm(corner_1 - corner_2, order=2)),
         )
-        max_length = self.backend.cast_dtype(max_length, dtype=Float32)
         if max_vertex_distance is None:
             max_vertex_distance = max_length
-        nx = int(self.backend.math.ceil(max_length / max_vertex_distance))
+        nx = int(math.ceil(max_length / max_vertex_distance))
 
         vertices = []
         triangles = []
@@ -69,7 +72,7 @@ class Triangle(ContinuousGeometry[TensorType]):
             for j in range(nx + 1 - i):
                 v = j / nx
                 w = 1 - u - v
-                vertices.append([w * self.origin + v * self.corner_1 + u * self.corner_2])
+                vertices.append(w * origin + v * corner_1 + u * corner_2)
 
                 if i > 0:
                     v_count = len(vertices) - 1
@@ -80,21 +83,27 @@ class Triangle(ContinuousGeometry[TensorType]):
                         triangles.append(
                             [v_count, v_count - 1, v_count - (nx + 1 - i) - 1]
                         )
-        vertices = self.backend.build_tensor(vertices, dtype=Float32).reshape(-1, 2)  # type: ignore
-        triangles = self.backend.build_tensor(triangles, dtype=Int32).reshape(-1, 3)  # type: ignore
+        # vertices are already device-placed tensors (each built from
+        # origin/corner_1/corner_2 on `device`) - stacked, not
+        # build_tensor()'d, since build_tensor() on a list of Tensors (via
+        # torch.as_tensor) doesn't reliably reconstruct them.
+        vertices = self.backend.math.stack(vertices)
+        triangles = self.backend.build_tensor(triangles, dtype=Int32, device=device).reshape(-1, 3)  # type: ignore
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=triangles),
+            mesh=Mesh(vertices=vertices, cells=triangles, device=device),
             discretization_of=self,
             backend=self.backend,
         )
 
     def contains(self, points):
+        origin = self._on(self.origin, self._device_of(points))
+        corner_1 = self._on(self.corner_1, self._device_of(points))
+        corner_2 = self._on(self.corner_2, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32)
         points = points.reshape(-1, 2)  # type: ignore
-        origin = self.origin
-        dir_1 = self.corner_1 - origin
-        dir_2 = self.corner_2 - origin
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
         relative = points - origin
         bary_x, bary_y = self.solve_barycentric(relative, dir_1, dir_2)
         x_y_ok = self.backend.math.logical_and(bary_x >= 0.0, bary_y >= 0.0)
@@ -108,22 +117,26 @@ class Triangle(ContinuousGeometry[TensorType]):
         return self.backend.math.concatenate((mins[0:1], maxs[0:1], mins[1:2], maxs[1:2]))
 
     def sample_random_uniform(self, n_points: int, device: Device = cpu):
+        origin = self._on(self.origin, device)
+        corner_1 = self._on(self.corner_1, device)
+        corner_2 = self._on(self.corner_2, device)
         # use standard method to sample uniformly in triangle
-        self._update_device(device)
         r1 = self.backend.random.uniform((n_points,), device=device)
         r2 = self.backend.random.uniform((n_points,), device=device)
         sqrt_r1 = self.backend.math.sqrt(r1)
         b = sqrt_r1 * (1 - r2)
         c = sqrt_r1 * r2
         # point = a*A + b*B + c*C  -> convert to origin + b*(B-A) + c*(C-A)
-        dir_1 = self.corner_1 - self.origin
-        dir_2 = self.corner_2 - self.origin
-        points = self.origin + (b[:, None] * dir_1) + (c[:, None] * dir_2)
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
+        points = origin + (b[:, None] * dir_1) + (c[:, None] * dir_2)
         return points
 
     def sample_grid(self, n_points: int, device: Device = cpu):
+        origin = self._on(self.origin, device)
+        corner_1 = self._on(self.corner_1, device)
+        corner_2 = self._on(self.corner_2, device)
         # build a barycentric grid and keep first n_points
-        self._update_device(device)
         n_side = int(math.ceil(math.sqrt(2 * n_points)))
         u = self.backend.math.linspace(0, 1, n_side, device=device)
         v = self.backend.math.linspace(0, 1, n_side, device=device)
@@ -140,9 +153,9 @@ class Triangle(ContinuousGeometry[TensorType]):
             bary = self.backend.math.vstack([bary, bary_rand])
         random_choice = self.backend.random.permutation(len(bary), device=device)
         bary = bary[random_choice[:n_points]]
-        dir_1 = self.corner_1 - self.origin
-        dir_2 = self.corner_2 - self.origin
-        points = self.origin + bary[:, :1] * dir_1 + bary[:, 1:] * dir_2
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
+        points = origin + bary[:, :1] * dir_1 + bary[:, 1:] * dir_2
         return points
 
     def solve_barycentric(
@@ -182,18 +195,25 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         self.geometry: Triangle = geometry  # type: ignore
 
     def contains(self, points):
+        origin = self._on(self.geometry.origin, self._device_of(points))
+        corner_1 = self._on(self.geometry.corner_1, self._device_of(points))
+        corner_2 = self._on(self.geometry.corner_2, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 2)
-        dir_1 = self.geometry.corner_1 - self.geometry.origin
-        dir_2 = self.geometry.corner_2 - self.geometry.origin
-        relative = points - self.geometry.origin
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
+        relative = points - origin
         bary_x, bary_y = self.geometry.solve_barycentric(relative, dir_1, dir_2)
 
-        on_diagonal = self.backend.math.isclose(bary_x + bary_y, 1)
+        zero = self.backend.math.zeros_like(bary_x)
+        one = self.backend.math.ones_like(bary_x)
+        on_diagonal = self.backend.math.logical_and(
+            self.backend.math.isclose(bary_x + bary_y, one), (bary_x >= 0) & (bary_y >= 0)
+        )
         on_bottom = self.backend.math.logical_and(
-            self.backend.math.isclose(bary_x, 0), (bary_y >= 0) & (bary_y <= 1)
+            self.backend.math.isclose(bary_x, zero), (bary_y >= 0) & (bary_y <= 1)
         )
         on_side = self.backend.math.logical_and(
-            self.backend.math.isclose(bary_y, 0), (bary_x >= 0) & (bary_x <= 1)
+            self.backend.math.isclose(bary_y, zero), (bary_x >= 0) & (bary_x <= 1)
         )
         on_edge = self.backend.math.logical_or(on_diagonal, on_bottom)
         on_edge = self.backend.math.logical_or(on_edge, on_side)
@@ -203,13 +223,13 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         _, _, side_length = self._compute_edge_length()
         return side_length
 
-    def _compute_edge_length(self):
-        edges = [
-            (self.geometry.origin, self.geometry.corner_1),
-            (self.geometry.corner_1, self.geometry.corner_2),
-            (self.geometry.corner_2, self.geometry.origin),
-        ]
-        lengths = self.backend.build_tensor(
+    def _compute_edge_length(self, device: Device | str | None = None):
+        device = self.device if device is None else device
+        origin = self._on(self.geometry.origin, device)
+        corner_1 = self._on(self.geometry.corner_1, device)
+        corner_2 = self._on(self.geometry.corner_2, device)
+        edges = [(origin, corner_1), (corner_1, corner_2), (corner_2, origin)]
+        lengths = self.backend.math.stack(
             [self.backend.linalg.norm(b - a, order=2) for a, b in edges]
         )
         total = self.backend.math.sum(lengths)
@@ -219,8 +239,7 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         self, n_points: int, device: Device = cpu, include_normals: bool = False
     ):
         # sample uniformly along triangle edges proportional to edge length
-        self.geometry._update_device(device)
-        edges, lengths, total = self._compute_edge_length()
+        edges, lengths, total = self._compute_edge_length(device)
         probs = lengths / total
         choices = self.backend.random.choice(3, shape=(n_points,), p=probs, device=device)
         points = self.backend.math.zeros((n_points, 2), device=device)
@@ -240,8 +259,7 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         self, n_points: int, device: Device = cpu, include_normals: bool = False
     ):
         # distribute roughly equally across edges
-        self.geometry._update_device(device)
-        edges, lengths, total = self._compute_edge_length()
+        edges, lengths, total = self._compute_edge_length(device)
         counts = self.backend.math.floor(n_points * (lengths / total))
         counts = self.backend.cast_dtype(counts, Int32)
         # ensure total count
@@ -269,18 +287,20 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         return points
 
     def normal(self, points, device: Device = cpu):
-        self.geometry._update_device(device)
+        origin = self._on(self.geometry.origin, self._device_of(points))
+        corner_1 = self._on(self.geometry.corner_1, self._device_of(points))
+        corner_2 = self._on(self.geometry.corner_2, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 2)
         edges = [
-            (self.geometry.origin, self.geometry.corner_1),
-            (self.geometry.corner_1, self.geometry.corner_2),
-            (self.geometry.corner_2, self.geometry.origin),
+            (origin, corner_1),
+            (corner_1, corner_2),
+            (corner_2, origin),
         ]
         mids = [0.5 * (a + b) for a, b in edges]
         edge_vecs = [b - a for a, b in edges]
         # normals (perp) and ensure outward by checking centroid
         centroid = (
-            self.geometry.origin + self.geometry.corner_1 + self.geometry.corner_2
+            origin + corner_1 + corner_2
         ) / 3.0
         normals = []
         for vec, mid in zip(edge_vecs, mids):
@@ -294,10 +314,10 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         normals = self.backend.math.stack(normals, axis=0)
 
         # compute barycentric coords to decide which edge each point belongs to
-        dir_1 = self.geometry.corner_1 - self.geometry.origin
-        dir_2 = self.geometry.corner_2 - self.geometry.origin
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
         bary_x, bary_y = self.geometry.solve_barycentric(
-            points - self.geometry.origin, dir_1, dir_2
+            points - origin, dir_1, dir_2
         )
         out = self.backend.math.zeros_like(points)
         # edge mapping: x==0 -> edge CA (index 2), y==0 -> edge AB (index 0),
