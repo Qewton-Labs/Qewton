@@ -6,11 +6,9 @@ from dataclasses import dataclass
 
 # TRAME
 from trame.app import TrameApp
-from trame.ui.vuetify3 import SinglePageLayout, SinglePageWithDrawerLayout
-from trame.widgets import vuetify3 as v3
-from trame.widgets import plotly, vtk, trame
 from trame.decorators import change
-from trame.widgets import client
+from trame.ui.vuetify3 import SinglePageLayout, SinglePageWithDrawerLayout
+from trame.widgets import plotly, vtk, trame, client, vuetify3 as v3
 
 # VTK
 from vtkmodules.vtkCommonCore import vtkPoints, vtkLookupTable
@@ -29,7 +27,7 @@ from vtkmodules.vtkFiltersCore import (
     vtkTubeFilter,
 )
 from vtkmodules.vtkFiltersFlowPaths import vtkStreamTracer
-from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor
+from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor, vtkScalarBarActor
 
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
@@ -389,6 +387,7 @@ class MeshScene:
         self.vtk_color_fields = self.vtk_scalar_fields + self.vtk_vector_fields
         self._init_meshes(qmesh, tet_mesh)
         self._init_streamlines()
+        self._init_scalar_bar()
 
     def _init_cube_axes(self):
         self.cubeAxes = vtkCubeAxesActor()
@@ -400,6 +399,22 @@ class MeshScene:
         self.cubeAxes.SetZLabelFormat("%6.1f")
         self.cubeAxes.SetFlyModeToOuterEdges()
 
+    def _init_scalar_bar(self):
+        mapper = self.volume_mesh.mapper
+        bar = vtkScalarBarActor()
+        bar.SetLookupTable(mapper.GetLookupTable())
+        bar.SetNumberOfLabels(5)
+        bar.SetOrientationToVertical()
+        bar.SetWidth(0.08)
+        bar.SetHeight(0.45)
+        bar.SetPosition(0.88, 0.5)
+        bar.SetLabelFormat("%.3f")
+        bar.SetTitle("")
+        bar.GetTitleTextProperty().SetJustificationToLeft()
+        bar.GetLabelTextProperty().SetJustificationToLeft()
+        self.scalar_bar = bar
+        self.actors.append(bar)
+
     def _init_meshes(self, qmesh: "qewton.geometries.MeshGeometry", tet_mesh):
         tet_mapper = vtkDataSetMapper()
         tet_mapper.SetInputData(tet_mesh)
@@ -408,7 +423,8 @@ class MeshScene:
         self.actors.append(tet_actor)
         self.cubeAxes.SetBounds(tet_actor.GetBounds())
 
-        self.vtk_meshes = [VtkItem("Mesh", tet_actor, tet_mapper, tet_mesh)]
+        self.volume_mesh = VtkItem("Mesh", tet_actor, tet_mapper, tet_mesh)
+        self.vtk_meshes = [self.volume_mesh]
 
         submeshes = [
             name for name, value in qmesh.mesh.marker_labels.items() if value[1] == 2
@@ -490,8 +506,7 @@ class MeshScene:
         if sl.tracer is not None:
             return None
 
-        volume_mesh = self.vtk_meshes[0].mesh
-        sl.build(volume_mesh)
+        sl.build(self.volume_mesh.mesh)
         assert sl.actor
         self.actors.append(sl.actor)
         return sl.actor
@@ -504,7 +519,6 @@ class MeshScene:
         if not streamlines_enabled:
             if sl.actor is not None:
                 sl.actor.SetVisibility(False)
-            # self.ctrl.view_update()
             return (hint, new_actor)
 
         new_actor = self._build_streamlines()
@@ -514,7 +528,7 @@ class MeshScene:
             return (hint, new_actor)
 
         # Set active vector field for volume mesh
-        volume_mesh = self.vtk_meshes[0].mesh
+        volume_mesh = self.volume_mesh.mesh
         volume_mesh.GetPointData().SetActiveVectors(field)
 
         # Compute seeds
@@ -541,25 +555,6 @@ class MeshScene:
         tracer.Update()
         sl.tube.Update()
 
-        # Color according to vector field magnitude
-        mapper = sl.mapper
-        volume_mapper = self.vtk_meshes[0].mapper
-        lut_src = volume_mapper.GetLookupTable()
-        lut = vtkLookupTable()
-        lut.DeepCopy(lut_src)
-        lut.SetVectorModeToMagnitude()
-        lut.Build()
-        out = tracer.GetOutput()
-        arr = out.GetPointData().GetArray(field)
-        if arr is not None:
-            lut = mapper.GetLookupTable()
-            lut.SetVectorModeToMagnitude()
-            lut.Build()
-            mapper.SelectColorArray(field)
-            mapper.SetScalarRange(arr.GetRange(-1))
-            mapper.ScalarVisibilityOn()
-        else:
-            mapper.ScalarVisibilityOff()
         self.sync_streamline_colors()
 
         sl.actor.SetVisibility(True)
@@ -575,7 +570,7 @@ class MeshScene:
         if field is None:
             return
 
-        volume_mapper = self.vtk_meshes[0].mapper
+        volume_mapper = self.volume_mesh.mapper
         lut = volume_mapper.GetLookupTable()
         if lut is None:
             return
@@ -764,7 +759,33 @@ class TrameApplication(TrameApp, RenderApplication):
         color_by_field(
             self.scene.vtk_meshes[mesh_id], mesh_color_field, mesh_color_component
         )
+        self.update_colorbar(mesh_id)
         self.ctrl.view_update()
+
+    def update_colorbar(self, mesh_id=0):
+        """Sync scalar bar title and LUT with the volume mapper."""
+        if mesh_id != 0:
+            return
+
+        ui_id = str(mesh_id + 1)
+        field_name = self.state[f"mesh_color_field_{ui_id}"]
+        field = next(
+            (f for f in self.scene.vtk_color_fields if f["value"] == field_name), None
+        )
+        if field is None:
+            return
+
+        if field["type"] == "scalar":
+            title = field["text"]
+        else:
+            comp = self.state[f"mesh_color_component_{ui_id}"] or "Magnitude"
+            title = f"{field['text']} ({comp})"
+
+        volume_mapper = self.scene.volume_mesh.mapper
+        bar = self.scene.scalar_bar
+        bar.SetTitle(title)
+        bar.SetLookupTable(volume_mapper.GetLookupTable())
+        bar.Modified()
 
     @change(
         "streamlines_enabled",
@@ -843,6 +864,14 @@ class TrameApplication(TrameApp, RenderApplication):
             v_model=("cube_axes_visibility", True),
             true_icon="mdi-cube-outline",
             false_icon="mdi-cube-off-outline",
+            classes="mx-1",
+            hide_details=True,
+            density="compact",
+        )
+        v3.VCheckbox(
+            v_model=("colorbar_visible", True),
+            true_icon="mdi-palette",
+            false_icon="mdi-palette-outline",
             classes="mx-1",
             hide_details=True,
             density="compact",
