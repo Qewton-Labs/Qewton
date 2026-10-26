@@ -405,6 +405,53 @@ class Unflatten(Node[TensorType]):
         return self.backend.math.unflatten(inp, self.axis, self.sizes)
 
 
+class UnflattenLike(Node[TensorType]):
+    """Unflattens the last axis of a tensor into the trailing shape of another one.
+
+    The last axis of the input is split into the shape `like.shape[start_dim:]`. This
+    is the inverse of `Flatten(start_dim)` when the shape to restore is only known at
+    runtime, taken from the tensor that was flattened.
+
+    Args:
+        start_dim (int): Index of the first axis of `like` whose shape is restored.
+        name (str | None, optional): Name of the node. Defaults to "UnflattenLikeNode".
+        backend (type[DeepLearningBackend[TensorType]], optional): The backend used for
+            the computations. Defaults to DEFAULT_DL_BACKEND.
+    """
+
+    def __init__(
+        self,
+        start_dim: int,
+        name: str | None = None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        self.start_dim = start_dim
+        super().__init__(
+            name if name is not None else "UnflattenLikeNode", backend=backend
+        )
+        self.backend: type[DeepLearningBackend[TensorType]] = backend
+
+    def forward(
+        self,
+        inp: Annotated[TensorType, DataConfiguration.empty()],
+        like: Annotated[TensorType, DataConfiguration.empty()],
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        """Splits the last axis of `inp` into the trailing shape of `like`.
+
+        Args:
+            inp (TensorType): Tensor whose last axis is split, e.g. the flattened
+                spatial axes `(..., n_positions)`. The size of the last axis must be
+                the product of `like.shape[start_dim:]`.
+            like (TensorType): Tensor that provides the shape to restore.
+
+        Returns:
+            TensorType: `inp` with the last axis replaced by `like.shape[start_dim:]`.
+        """
+        return self.backend.math.unflatten(
+            inp, -1, tuple(like.shape[self.start_dim :])
+        )
+
+
 # endregion
 
 # region: Array info

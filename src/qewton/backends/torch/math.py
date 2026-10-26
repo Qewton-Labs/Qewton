@@ -66,6 +66,12 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     clip = torch.clamp
     real = torch.real
 
+    # Fourier transform
+    rfftn = torch.fft.rfftn
+    irfftn = torch.fft.irfftn
+    fftshift = torch.fft.fftshift
+    ifftshift = torch.fft.ifftshift
+
     @staticmethod
     def delete(x: torch.Tensor, obj: Any, axis: int | None = None) -> torch.Tensor:
         if isinstance(obj, int):
