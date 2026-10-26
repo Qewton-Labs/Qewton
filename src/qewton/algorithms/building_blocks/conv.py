@@ -11,6 +11,7 @@ from qewton.config.axes import (
     GeometryAxes,
     EllipsisAxes,
 )
+from qewton.config.dtypes import Float32
 from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.algorithms.building_blocks.array_operations import Flatten, UnflattenLike
 from qewton.algorithms.building_blocks.creation import Identity
@@ -290,6 +291,10 @@ class Flattened1dConv(GraphNode[TensorType]):
             the computations. Defaults to DEFAULT_DL_BACKEND.
         name (str, optional): Name of the node. Defaults to "flattened_1d_conv".
 
+    Note:
+        Weight and bias are initialized like `torch.nn.Conv1d`, i.e. uniformly in
+        `[-1/sqrt(in_channels), 1/sqrt(in_channels)]`.
+
     Raises:
         ValueError: If `kernel_size` is not 1.
     """
@@ -318,6 +323,9 @@ class Flattened1dConv(GraphNode[TensorType]):
         self.conv = Conv1D(
             in_channels, out_channels, kernel_size, bias=bias, backend=backend
         )
+        self._initialize_like_torch(
+            _current_value(in_channels), _current_value(out_channels), bias, backend
+        )
         self.unflatten = UnflattenLike(start_dim=FIRST_SPATIAL_AXIS, backend=backend)
 
         graph = Graph()
@@ -336,6 +344,29 @@ class Flattened1dConv(GraphNode[TensorType]):
         self._graph.setup()
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
+
+    def _initialize_like_torch(
+        self,
+        in_channels: int,
+        out_channels: int,
+        bias: bool,
+        backend: type[DeepLearningBackend[TensorType]],
+    ) -> None:
+        """Draws kernel and bias like `torch.nn.Conv1d`, which the backend's default
+        parameter initialization does not do.
+
+        The parameters are set up again with these values on the next setup of the graph.
+        """
+        bound = in_channels**-0.5
+        dtype = backend.dtypes[Float32]
+        shapes = [(self.conv.kernel, (out_channels, in_channels, 1))]
+        if bias:
+            shapes.append((self.conv.bias, (out_channels,)))
+        for parameter, shape in shapes:
+            parameter.initial_value = backend.random.uniform(
+                shape, -bound, bound, dtype=dtype
+            )
+            parameter.set_state(NodeState.UNINITIALIZED)
 
     def x_data_config(self) -> DC:
         return DC(self.batch_axes, self.feature_axes_x, self.spatial_axes)

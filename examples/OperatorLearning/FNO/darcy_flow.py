@@ -190,9 +190,9 @@ neuralop_model = neuralop.models.FNO(
 ).to(DEVICE)
 
 qewton_model = FNO(
+    n_modes=N_MODES,
     in_channels=1,
     out_channels=1,
-    n_modes=N_MODES,
     hidden_channels=HIDDEN_CHANNELS,
     n_layers=N_LAYERS,
     lifting_channel_ratio=LIFTING_CHANNEL_RATIO,

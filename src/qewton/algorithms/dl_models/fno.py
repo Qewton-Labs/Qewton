@@ -7,7 +7,6 @@ from qewton.algorithms.building_blocks.channel_mlp import ChannelMLP
 from qewton.algorithms.building_blocks.embeddings import GridEmbeddingND
 from qewton.algorithms.building_blocks.fno_block import FNOBlock
 from qewton.algorithms.building_blocks.skip_connections import SkipType
-from qewton.algorithms.building_blocks.spectral_convolution import FFTNorm
 from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.graphs.graphs import SequentialGraph
@@ -29,22 +28,22 @@ class FNO(GraphNode, Generic[TensorType]):
     rebuilt for their current values in `setup`, which re-initializes all weights.
 
     Attributes:
-        in_channels, out_channels, n_modes, hidden_channels, n_layers,
+        n_modes, in_channels, out_channels, hidden_channels, n_layers,
             lifting_channel_ratio, projection_channel_ratio, positional_embedding,
             non_linearity, use_channel_mlp, channel_mlp_expansion, channel_mlp_skip,
-            fno_skip, conv_bias, init_std, fft_norm (HyperParameter): The arguments of
-            the same name, each stored as a hyperparameter.
+            fno_skip (HyperParameter): The arguments of the same name, each stored as a
+            hyperparameter.
         lifting_channels (int): Number of hidden channels of the lifting channel MLP.
         projection_channels (int): Number of hidden channels of the projection channel
             MLP.
 
     Args:
-        in_channels (int | HyperParameter): Number of input channels.
-        out_channels (int | HyperParameter): Number of output channels.
         n_modes (tuple[int, ...] | HyperParameter): Number of Fourier modes kept in
             every spatial dimension. Its length is the number of spatial dimensions.
-        hidden_channels (int | HyperParameter, optional): Number of channels of the
-            Fourier layers. Defaults to 64.
+        in_channels (int | HyperParameter): Number of input channels.
+        out_channels (int | HyperParameter): Number of output channels.
+        hidden_channels (int | HyperParameter): Number of channels of the Fourier
+            layers.
         n_layers (int | HyperParameter, optional): Number of Fourier layers.
             Defaults to 4.
         lifting_channel_ratio (float | HyperParameter, optional): The hidden layer of
@@ -69,12 +68,6 @@ class FNO(GraphNode, Generic[TensorType]):
             "soft-gating".
         fno_skip (SkipType | HyperParameter | None, optional): Skip connection around
             the spectral convolutions. Defaults to "linear".
-        conv_bias (bool | HyperParameter, optional): If the spectral convolutions
-            have a bias. Defaults to True.
-        init_std (float | Literal["auto"] | HyperParameter, optional): Standard
-            deviation to initialize the spectral convolutions. Defaults to "auto".
-        fft_norm (FFTNorm | HyperParameter, optional): Normalization of the FFT of the
-            spectral convolutions. Defaults to "forward".
         name (str, optional): Name of the node. Defaults to "fno".
         backend (type[Backend[TensorType]], optional): The backend used for the
             computations. Defaults to DEFAULT_DL_BACKEND.
@@ -98,10 +91,10 @@ class FNO(GraphNode, Generic[TensorType]):
 
     def __init__(
         self,
+        n_modes: tuple[int, ...] | HyperParameter,
         in_channels: int | HyperParameter,
         out_channels: int | HyperParameter,
-        n_modes: tuple[int, ...] | HyperParameter,
-        hidden_channels: int | HyperParameter = 64,
+        hidden_channels: int | HyperParameter,
         n_layers: int | HyperParameter = 4,
         lifting_channel_ratio: float | HyperParameter = 2,
         projection_channel_ratio: float | HyperParameter = 2,
@@ -111,15 +104,12 @@ class FNO(GraphNode, Generic[TensorType]):
         channel_mlp_expansion: float | HyperParameter = 0.5,
         channel_mlp_skip: SkipType | HyperParameter | None = "soft-gating",
         fno_skip: SkipType | HyperParameter | None = "linear",
-        conv_bias: bool | HyperParameter = True,
-        init_std: float | Literal["auto"] | HyperParameter = "auto",
-        fft_norm: FFTNorm | HyperParameter = "forward",
         name: str = "fno",
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
+        self.n_modes = HyperParameter.from_value(n_modes, "FNO modes")
         self.in_channels = HyperParameter.from_value(in_channels, "FNO input channels")
         self.out_channels = HyperParameter.from_value(out_channels, "FNO output channels")
-        self.n_modes = HyperParameter.from_value(n_modes, "FNO modes")
         self.hidden_channels = HyperParameter.from_value(
             hidden_channels, "FNO hidden channels"
         )
@@ -144,9 +134,6 @@ class FNO(GraphNode, Generic[TensorType]):
             channel_mlp_skip, "FNO channel MLP skip"
         )
         self.fno_skip = HyperParameter.from_value(fno_skip, "FNO FNO skip")
-        self.conv_bias = HyperParameter.from_value(conv_bias, "FNO conv bias")
-        self.init_std = HyperParameter.from_value(init_std, "FNO init std")
-        self.fft_norm = HyperParameter.from_value(fft_norm, "FNO FFT norm")
 
         self._graph = self._build_network(backend)
         super().__init__(
@@ -162,9 +149,9 @@ class FNO(GraphNode, Generic[TensorType]):
     @property
     def hyperparameters(self) -> list[HyperParameter]:
         return [
+            self.n_modes,
             self.in_channels,
             self.out_channels,
-            self.n_modes,
             self.hidden_channels,
             self.n_layers,
             self.lifting_channel_ratio,
@@ -175,9 +162,6 @@ class FNO(GraphNode, Generic[TensorType]):
             self.channel_mlp_expansion,
             self.channel_mlp_skip,
             self.fno_skip,
-            self.conv_bias,
-            self.init_std,
-            self.fft_norm,
         ]
 
     @property
@@ -315,9 +299,6 @@ class FNO(GraphNode, Generic[TensorType]):
                 ),
                 fno_skip=self.fno_skip.value,
                 channel_mlp_skip=self.channel_mlp_skip.value,
-                conv_bias=self.conv_bias.value,
-                init_std=self.init_std.value,
-                fft_norm=self.fft_norm.value,
                 backend=backend,
             )
             for layer_idx in range(n_layers)
