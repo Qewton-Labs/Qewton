@@ -1090,7 +1090,8 @@ class Graph(Serializable):
         # Move right before plotting, not before running - the sampler(s)
         # and model can stay on the set device
         for sampler in samplers:
-            sampler.sampled_geometry.to_numpy()
+            for sampled_geometry in sampler.sampled_geometries:
+                sampled_geometry.to_numpy()
 
         combined_variable = Variable.compose(variables) if variables else None
         controls_kwarg = {} if controls is None else {"controls": controls}
@@ -1216,7 +1217,8 @@ class Graph(Serializable):
                 self._run_nodes_needed_for((port,), mode=mode)
 
             for sampler in samplers:
-                sampler.sampled_geometry.to_numpy()
+                for sampled_geometry in sampler.sampled_geometries:
+                    sampled_geometry.to_numpy()
 
             pred_data = port.node.backend.to_numpy(port.value)
             geometry_axes = pred_config.geometry_axes
@@ -1255,6 +1257,16 @@ class Graph(Serializable):
             pred_config = prediction_config or port.get_data_configuration(self)
             ref_data = ref_port.node.backend.to_numpy(ref_port.value)
             ref_config = reference_config or ref_port.get_data_configuration(self)
+            if (
+                prediction_config is None
+                and pred_config.matches(ref_config)
+                and pred_data.shape == ref_data.shape
+            ):
+                # Both ports describe the same data (e.g. a model output and
+                # the true output of its data loader) through separate axes
+                # objects. One configuration lets controls made for one panel,
+                # e.g. a slider over the batch axis, apply to every panel.
+                pred_config = ref_config
         else:
             assert reference_config is not None
             ref_config = reference_config
@@ -1285,7 +1297,8 @@ class Graph(Serializable):
                 self._run_nodes_needed_for((port,), mode=mode)
 
             for sampler in samplers:
-                sampler.sampled_geometry.to_numpy()
+                for sampled_geometry in sampler.sampled_geometries:
+                    sampled_geometry.to_numpy()
 
             pred_data = port.node.backend.to_numpy(port.value)
             if combined_variable is not None:
@@ -1330,8 +1343,13 @@ class Graph(Serializable):
 
         # A curve-like family uses "label" (an Overlay legend entry) to
         # distinguish panels; every other family uses "title" (a Row panel
-        # heading) - probe once with auto_plot() to find out which.
-        probe = auto_plot(ref_data, ref_config, plot_type, **plot_kwargs)
+        # heading) - probe once with auto_plot() to find out which. The probe
+        # gets the same controls as the panels, since they decide e.g. which
+        # factor of a space-time domain is drawn.
+        probe_kwargs = dict(plot_kwargs)
+        if controls is not None:
+            probe_kwargs["controls"] = controls
+        probe = auto_plot(ref_data, ref_config, plot_type, **probe_kwargs)
         is_curve = is_curve_like(probe)
         name_kwarg = "label" if is_curve else "title"
 

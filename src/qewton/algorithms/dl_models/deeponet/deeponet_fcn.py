@@ -113,6 +113,7 @@ class FCNDeepONet(DeepONet[TensorType]):
         self.inner_ellipsis_axes = EllipsisAxes()
         self.batch_axes = BatchAxes(None)
 
+        self.output_variable = output if isinstance(output, Variable) else None
         self.output_dim = output if isinstance(output, int) else output.dim
         self.output_strategy: DefaultMerger.MERGE_TYPES = output_strategy
         self.intermediate_neurons = HyperParameter.from_value(
@@ -146,6 +147,9 @@ class FCNDeepONet(DeepONet[TensorType]):
         )
         self.branch_port = self.input_ports[0]
         self.trunk_port = self.input_ports[1]
+        # The merge node only knows the output dimension; the output port
+        # carries the output Variable, if one was given.
+        self.output_ports[0].update_static_data_configuration(self.output_data_config())
 
     def _build_network(self, backend):
         merge_node = DefaultMerger(
@@ -273,12 +277,10 @@ class FCNDeepONet(DeepONet[TensorType]):
             DataConfiguration: A batch axis, the inner axes of the inputs and
                 the output feature axis.
         """
-        if isinstance(self.output_dim, int):
-            f_axis = FeatureAxes(shape=(self.output_dim,))
-        elif isinstance(self.output_dim, Variable):
-            f_axis = FeatureAxes(self.output_dim)
+        if self.output_variable is not None:
+            f_axis = FeatureAxes(self.output_variable)
         else:
-            f_axis = FeatureAxes(shape=self.output_dim)
+            f_axis = FeatureAxes(shape=(self.output_dim,))
         return DataConfiguration(
             self.batch_axes,
             self.inner_ellipsis_axes,

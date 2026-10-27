@@ -45,3 +45,31 @@ class TestDiscretizationModeContextManager:
         with discretization_mode([sampler], None):
             assert sampler.mesh_mode is True
         assert sampler.mesh_mode is False
+
+
+class TestVisualizationGeometry:
+    def test_different_device_arguments_get_separate_cache_entries(self):
+        """A call with an explicit device never reuses a mesh built for a
+        different or unspecified one."""
+        sampler = _sampler()
+        sampler.visualization_geometry(None, None)
+        sampler.visualization_geometry(None, "cpu")
+        assert len(sampler._mesh_cache) == 2
+
+    def test_repeated_calls_with_the_same_key_reuse_the_cached_mesh(self):
+        sampler = _sampler()
+        assert sampler.visualization_geometry(0.5, "cpu") is sampler.visualization_geometry(
+            0.5, "cpu"
+        )
+
+    def test_a_copied_sampler_meshes_its_own_geometry(self):
+        """In tuning, every trial deep-copies the trainer. The copy shares the
+        SampledGeometry with the original, but meshes (and moves) only its
+        own geometry."""
+        import copy
+
+        sampler = _sampler()
+        copied = copy.deepcopy(sampler)
+        assert copied.sampled_geometry is sampler.sampled_geometry
+        assert copied.geometry is not sampler.geometry
+        assert copied.visualization_geometry(0.5).discretization_of is copied.geometry

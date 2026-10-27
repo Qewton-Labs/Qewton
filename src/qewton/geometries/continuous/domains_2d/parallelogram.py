@@ -45,11 +45,9 @@ class Parallelogram(ContinuousGeometry[TensorType]):
 
     def contains(self, points):
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 2)
-        if hasattr(points, "device"):
-            self.move_to_device(points.device)
-        origin = self.origin
-        dir_1 = self.corner_1 - origin
-        dir_2 = self.corner_2 - origin
+        origin, corner_1, corner_2 = self.corners_on(self._device_of(points))
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
         relative = points - origin
         bary_x, bary_y = self.solve_barycentric(relative, dir_1, dir_2)
 
@@ -78,10 +76,10 @@ class Parallelogram(ContinuousGeometry[TensorType]):
     def create_mesh(
         self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshGeometry:
-        self.move_to_device(device)
+        origin, corner_1, corner_2 = self.corners_on(device)
         # edge vectors
-        e1 = self.corner_1 - self.origin
-        e2 = self.corner_2 - self.origin
+        e1 = corner_1 - origin
+        e2 = corner_2 - origin
 
         # choose subdivision count
         if max_vertex_distance is None:
@@ -111,7 +109,7 @@ class Parallelogram(ContinuousGeometry[TensorType]):
 
         # affine map
         vertices = self.backend.math.reshape(
-            self.origin + U[..., None] * e1 + V[..., None] * e2, (-1, 2)
+            origin + U[..., None] * e1 + V[..., None] * e2, (-1, 2)
         )
 
         # triangulation
@@ -138,21 +136,30 @@ class Parallelogram(ContinuousGeometry[TensorType]):
             discretization_of=self,
         )
 
-    def move_to_device(self, new_device: Device | str):
-        self.origin = self.backend.to(self.origin, device=new_device)
-        self.corner_1 = self.backend.to(self.corner_1, device=new_device)
-        self.corner_2 = self.backend.to(self.corner_2, device=new_device)
+    def _move_data(self, device: Device | str) -> None:
+        self.origin = self.backend.to(self.origin, device=device)
+        self.corner_1 = self.backend.to(self.corner_1, device=device)
+        self.corner_2 = self.backend.to(self.corner_2, device=device)
+
+    def corners_on(self, device: Device | str):
+        """``(origin, corner_1, corner_2)`` on `device`, without moving the
+        parallelogram."""
+        return (
+            self._on(self.origin, device),
+            self._on(self.corner_1, device),
+            self._on(self.corner_2, device),
+        )
 
     def sample_random_uniform(self, n_points: int, device: Device | str = cpu):
-        self.move_to_device(device)
+        origin, corner_1, corner_2 = self.corners_on(device)
         bary_coords = self.backend.random.uniform((n_points, 2), device=device)
-        dir_1 = self.corner_1 - self.origin
-        dir_2 = self.corner_2 - self.origin
-        points = self.origin + bary_coords[:, :1] * dir_1 + bary_coords[:, 1:] * dir_2
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
+        points = origin + bary_coords[:, :1] * dir_1 + bary_coords[:, 1:] * dir_2
         return points
 
     def sample_grid(self, n_points: int, device: Device | str = cpu):
-        self.move_to_device(device)
+        origin, corner_1, corner_2 = self.corners_on(device)
         n_side = int(math.ceil(math.sqrt(n_points)))
         u = self.backend.math.linspace(0.0, 1.0, num=n_side + 2, device=device)[1:-1]
         v = self.backend.math.linspace(0.0, 1.0, num=n_side + 2, device=device)[1:-1]
@@ -165,9 +172,9 @@ class Parallelogram(ContinuousGeometry[TensorType]):
             axis=-1,
         )
 
-        dir_1 = self.corner_1 - self.origin
-        dir_2 = self.corner_2 - self.origin
-        points = self.origin + bary_coords[:, :1] * dir_1 + bary_coords[:, 1:] * dir_2
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
+        points = origin + bary_coords[:, :1] * dir_1 + bary_coords[:, 1:] * dir_2
         return points[:n_points]
 
     def solve_barycentric(
@@ -209,9 +216,9 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
 
     def contains(self, points):
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 2)
-        origin = self.geometry.origin
-        dir_1 = self.geometry.corner_1 - origin
-        dir_2 = self.geometry.corner_2 - origin
+        origin, corner_1, corner_2 = self.geometry.corners_on(self._device_of(points))
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
         relative = points - origin
         bary_x, bary_y = self.geometry.solve_barycentric(relative, dir_1, dir_2)
         x_close = self._bary_coords_close_to_0_or_1(
@@ -248,11 +255,10 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
     def sample_random_uniform(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
-        self.geometry.move_to_device(device)
-        origin = self.geometry.origin
-        dir_1 = self.geometry.corner_1 - origin
-        dir_2 = self.geometry.corner_2 - origin
-        corner_3 = self.geometry.corner_1 + self.geometry.corner_2 - origin
+        origin, corner_1, corner_2 = self.geometry.corners_on(device)
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
+        corner_3 = corner_1 + corner_2 - origin
         side_lengths = self.backend.math.stack(
             [
                 self.backend.linalg.norm(dir_1, order=2),
@@ -276,7 +282,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
             self.backend.math.less(positions, breaks[1]),
         )
         t1 = (positions - breaks[0]) / side_lengths[1]
-        p1 = self.geometry.corner_1 + self.backend.math.unsqueeze(t1, -1) * dir_2
+        p1 = corner_1 + self.backend.math.unsqueeze(t1, -1) * dir_2
 
         # Segment 2: corner_3 to corner_2
         mask2 = self.backend.math.logical_and(
@@ -289,7 +295,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         # Segment 3: corner_2 to origin
         mask3 = self.backend.math.greater_equal(positions, breaks[2])
         t3 = (positions - breaks[2]) / side_lengths[3]
-        p3 = self.geometry.corner_2 - self.backend.math.unsqueeze(t3, -1) * dir_2
+        p3 = corner_2 - self.backend.math.unsqueeze(t3, -1) * dir_2
 
         points = self.backend.math.zeros((n_points, 2), device=device)
         points = self.backend.math.where(
@@ -313,11 +319,10 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
     def sample_grid(
         self, n_points: int, device: Device | str = cpu, include_normals: bool = False
     ):
-        self.geometry.move_to_device(device)
-        origin = self.geometry.origin
-        dir_1 = self.geometry.corner_1 - origin
-        dir_2 = self.geometry.corner_2 - origin
-        corner_3 = self.geometry.corner_1 + self.geometry.corner_2 - origin
+        origin, corner_1, corner_2 = self.geometry.corners_on(device)
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
+        corner_3 = corner_1 + corner_2 - origin
         side_lengths = self.backend.math.stack(
             [
                 self.backend.linalg.norm(dir_1, order=2),
@@ -343,7 +348,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
             self.backend.math.less(positions, breaks[1]),
         )
         t1 = (positions - breaks[0]) / side_lengths[1]
-        p1 = self.geometry.corner_1 + self.backend.math.unsqueeze(t1, -1) * dir_2
+        p1 = corner_1 + self.backend.math.unsqueeze(t1, -1) * dir_2
 
         # Segment 2
         mask2 = self.backend.math.logical_and(
@@ -356,7 +361,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         # Segment 3
         mask3 = self.backend.math.greater_equal(positions, breaks[2])
         t3 = (positions - breaks[2]) / side_lengths[3]
-        p3 = self.geometry.corner_2 - self.backend.math.unsqueeze(t3, -1) * dir_2
+        p3 = corner_2 - self.backend.math.unsqueeze(t3, -1) * dir_2
 
         points = self.backend.math.zeros((n_points, 2), device=device)
         points = self.backend.math.where(
@@ -378,11 +383,10 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         return points
 
     def normal(self, points, device: Device | str = cpu):
-        self.geometry.move_to_device(device)
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 2)
-        origin = self.geometry.origin
-        dir_1 = self.geometry.corner_1 - origin
-        dir_2 = self.geometry.corner_2 - origin
+        origin, corner_1, corner_2 = self.geometry.corners_on(self._device_of(points))
+        dir_1 = corner_1 - origin
+        dir_2 = corner_2 - origin
         relative = points - origin
         bary_x, bary_y = self.geometry.solve_barycentric(relative, dir_1, dir_2)
 

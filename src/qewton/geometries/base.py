@@ -3,6 +3,7 @@ and :class:`BoundaryGeometry`."""
 
 from __future__ import annotations
 from types import EllipsisType
+import warnings
 from typing import Any, Generic
 
 from qewton.config.errors import DataConfigMismatchError
@@ -30,6 +31,13 @@ def vertex_distance_for(
     if isinstance(max_vertex_distance, dict):
         return max_vertex_distance.get(variable)
     return max_vertex_distance
+
+
+class DeviceTransferWarning(UserWarning):
+    """A discrete geometry (e.g. a mesh) transferred points or results between
+    its own device and another one for a single call, e.g. `contains` on a
+    mesh on the CPU with points on a GPU. Moving the geometry with
+    ``to(device)`` avoids the transfer."""
 
 
 class Geometry(Serializable, Generic[TensorType]):
@@ -83,6 +91,91 @@ class Geometry(Serializable, Generic[TensorType]):
         self._user_volume = None
         self.boundary_object: BoundaryGeometry | None = None
         self.backend = backend
+        self._device: Device | str = cpu
+
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        # The device is stored as text ("cpu", "cuda:0"), which tensors and
+        # `to()` accept as well.
+        keys, values = super()._collect_serializable_attributes()
+        return keys, [
+            str(self.backend.get_device(value)) if key == "_device" else value
+            for key, value in zip(keys, values)
+        ]
+
+    @property
+    def device(self) -> Device | str:
+        """The device holding this geometry's data. Only :meth:`to` changes it;
+        methods called with points or a `device` on another device compute
+        there without moving the geometry."""
+        return getattr(self, "_device", cpu)
+
+    def to(self, device: Device | str) -> Geometry:
+        """Move this geometry's data to `device`.
+
+        Related geometries (its boundary, the domain of a boundary, the
+        factors of a product, the parts of a union, ...) are moved as well,
+        since they share data or are used together.
+
+        Args:
+            device (Device | str): The target device.
+
+        Returns:
+            Geometry: This geometry.
+        """
+        self._to(device, set())
+        return self
+
+    def _to(self, device: Device | str, moved: set[int]) -> None:
+        if id(self) in moved:
+            return
+        moved.add(id(self))
+        self._move_data(device)
+        self._device = device
+        for geometry in self._related_geometries():
+            geometry._to(device, moved)
+
+    def _related_geometries(self) -> list[Geometry]:
+        """Geometries moved together with this one by :meth:`to`."""
+        return [self.boundary_object] if self.boundary_object is not None else []
+
+    def _move_data(self, device: Device | str) -> None:
+        """Move the tensors this geometry stores itself to `device`."""
+
+    def _on(self, data, device: Device | str):
+        """`data` of this geometry on `device`, as a local copy if needed.
+
+        Used by continuous geometries for their few constants (corners,
+        centers, ...); the geometry itself is not changed.
+        """
+        return self.backend.to(data, device)
+
+    def _transfer(self, data, device: Device | str, warn: bool = True):
+        """`data` (e.g. points or a result) moved to `device`.
+
+        Used by discrete geometries, which compute on their own device: points
+        from another device are brought there and the result is moved back.
+        With `warn`, a transfer issues a :class:`DeviceTransferWarning`.
+        """
+        moved = self.backend.to(data, device)
+        if warn and moved is not data:
+            warnings.warn(
+                f"{type(self).__name__} on {self.device} transfers data from or "
+                f"to {device} for this call. Move it with .to(...) to the device "
+                "of the points to avoid the transfer.",
+                DeviceTransferWarning,
+                stacklevel=3,
+            )
+        return moved
+
+    def _bounds(self, bounds) -> TensorType:
+        """A bounding box ``[axis_1_min, axis_1_max, ...]`` built from numbers
+        or scalar tensors, on this geometry's device."""
+        return self.backend.build_tensor([float(b) for b in bounds], device=self.device)
+
+    @staticmethod
+    def _device_of(points) -> Device | str:
+        """The device of `points`, the CPU for data without one."""
+        return getattr(points, "device", cpu)
 
     @property
     def boundary(self) -> BoundaryGeometry:
@@ -516,7 +609,7 @@ class DiscreteGeometry(Geometry[TensorType]):
                 max_val = self.backend.math.max(self.discretization_points[..., i])
                 bounding_box.append(min_val)
                 bounding_box.append(max_val)
-            return self.backend.build_tensor(bounding_box)
+            return self._bounds(bounding_box)
         if self.discretization_of is not None:
             return self.discretization_of.bounding_box()
         raise NotImplementedError(
@@ -597,6 +690,10 @@ class BoundaryGeometry(Geometry[TensorType]):
             dim = None
         super().__init__(variable=geometry.variable, dim=dim, backend=geometry.backend)
         self.geometry = geometry
+        self._device = geometry.device
+
+    def _related_geometries(self) -> list[Geometry]:
+        return [self.geometry, *super()._related_geometries()]
 
     def bounding_box(self):
         """Return the bounding box of the underlying geometry.
