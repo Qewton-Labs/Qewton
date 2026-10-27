@@ -38,14 +38,20 @@ class TablePlot(Plot):
         pairs, which a dict and a DataFrame both do. Normalizes to
         dict[str, Column]. Categorical columns (non-numeric dtype) are coded
         to integers exactly once, here, so labels survive to the artist
-        instead of being flattened by the caller."""
+        instead of being flattened by the caller. Boolean columns are coded
+        the same way (False=0, True=1), since Plotly does not plot JSON
+        booleans as numeric values."""
         normalized = {}
         for name, col in columns.items():
             if isinstance(col, Column):
                 normalized[name] = col
                 continue
             values = np.asarray(col)
-            if values.dtype.kind in "OU":  # object/unicode -> categorical
+            if values.dtype.kind == "b":  # bool -> categorical with 0/1 codes
+                normalized[name] = Column(
+                    values=values.astype(int), labels=["False", "True"]
+                )
+            elif values.dtype.kind in "OU":  # object/unicode -> categorical
                 labels, codes = np.unique(values, return_inverse=True)
                 normalized[name] = Column(values=codes, labels=list(labels))
             else:

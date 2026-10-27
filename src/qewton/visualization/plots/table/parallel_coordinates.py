@@ -56,15 +56,22 @@ class ParallelCoordinatesPlot(TablePlot):
 
     def evaluate(self):
         rows = self.apply_controls()
-        color = (
-            np.asarray(rows[self.color.variable_or_axes].values)
-            if self.color is not None
-            else None
-        )
+        color = None
+        color_log_scale = False
+        if self.color is not None:
+            color_name = self.color.variable_or_axes
+            color = np.asarray(rows[color_name].values)
+            color_log_scale = color_name in self.log_axes
+            if color_log_scale:
+                color = np.log10(color)
         for axes in self.log_axes:
             rows[axes].log_scale = True
 
-        return TableResult(columns={key: rows[key] for key in self.axes}, color=color)
+        return TableResult(
+            columns={key: rows[key] for key in self.axes},
+            color=color,
+            color_log_scale=color_log_scale,
+        )
 
     def create_artist(self, backend_figure, renderer, row=None, col=None):
         return renderer.ParallelCoordinatesArtist.create(

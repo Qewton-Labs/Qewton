@@ -31,6 +31,12 @@ class TestTablePlotNormalization:
         decoded = [column.labels[i] for i in column.values]
         assert decoded == ["b", "a", "b", "c"]
 
+    def test_bool_columns_are_coded_to_0_1_with_false_true_labels(self):
+        plot = TablePlot({"flag": np.array([True, False, True])})
+        column = plot.columns["flag"]
+        assert column.labels == ["False", "True"]
+        assert column.values.tolist() == [1, 0, 1]
+
     def test_n_rows_matches_column_length(self):
         plot = TablePlot(_tuning_columns())
         assert plot.n_rows == 20
@@ -101,3 +107,40 @@ class TestParallelCoordinatesPlot:
         plot = ParallelCoordinatesPlot(_tuning_columns(), axes=["learning_rate", "loss"])
         backend_figure = Figure(plot).draw()
         assert backend_figure.data[0].type == "parcoords"
+
+    def test_log_axis_color_is_colored_by_log10_values(self):
+        columns = _tuning_columns()
+        plot = ParallelCoordinatesPlot(
+            columns, axes=["loss"], color=ColorSpec("loss"), log_axes=["loss"]
+        )
+        result = plot.evaluate()
+        assert result.color_log_scale
+        assert np.allclose(result.color, np.log10(columns["loss"]))
+
+    def test_linear_color_is_not_log_transformed(self):
+        columns = _tuning_columns()
+        plot = ParallelCoordinatesPlot(columns, axes=["loss"], color=ColorSpec("loss"))
+        result = plot.evaluate()
+        assert not result.color_log_scale
+        assert np.allclose(result.color, columns["loss"])
+
+    def test_log_color_colorbar_is_labeled_in_original_scale(self):
+        plot = ParallelCoordinatesPlot(
+            _tuning_columns(), axes=["loss"], color=ColorSpec("loss"), log_axes=["loss"]
+        )
+        trace = Figure(plot).draw().data[0]
+        colorbar = trace.line.colorbar
+        assert list(colorbar.ticktext) == [f"{10**v:.0e}" for v in colorbar.tickvals]
+        assert np.allclose(trace.line.color, np.log10(_tuning_columns()["loss"]))
+
+    def test_shared_scale_trains_on_log_values_for_log_color(self):
+        scale = Scale()
+        plot = ParallelCoordinatesPlot(
+            _tuning_columns(),
+            axes=["loss"],
+            color=ColorSpec("loss", scale=scale),
+            log_axes=["loss"],
+        )
+        Figure(plot).draw()
+        loss = _tuning_columns()["loss"]
+        assert np.allclose(scale.range, [np.log10(loss.min()), np.log10(loss.max())])

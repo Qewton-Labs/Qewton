@@ -7,6 +7,25 @@ from qewton.visualization.plots.result import TableResult
 from qewton.visualization.renderers.plotly.common import PlotlyArtist, _apply_scale
 
 
+def _log_tick_marks(log_values):
+    """Powers-of-ten tick positions (in log10 units) and labels for log10 data."""
+    lo, hi = log_values.min(), log_values.max()
+    dist = int(np.ceil(hi) - np.floor(lo))
+    dist = dist + 7 if dist < 2 else dist + 5
+    tick_vals = np.linspace(np.floor(lo), np.ceil(hi), num=dist)
+    tick_text = [f"{10**v:.0e}" for v in tick_vals]
+    return tick_vals, tick_text
+
+
+def _set_log_colorbar_ticks(scale_kwargs, log_color):
+    """Labels a log-scaled color colorbar with powers of ten rather than the
+    log10 exponents the colors are stored as."""
+    tick_vals, tick_text = _log_tick_marks(log_color)
+    colorbar = dict(scale_kwargs.get("colorbar", {}))
+    colorbar.update(tickvals=tick_vals, ticktext=tick_text)
+    scale_kwargs["colorbar"] = colorbar
+
+
 class ParallelCoordinatesArtist(PlotlyArtist):
     """Draws a parallel-coordinates plot as ``go.Parcoords``.
 
@@ -28,11 +47,12 @@ class ParallelCoordinatesArtist(PlotlyArtist):
         if result.color is not None:
             cmap = plot.theme.resolve_cmap(plot.color.cmap)
             line.update(color=result.color, colorscale=cmap)
-            line.update(
-                _apply_scale(
-                    plot.color.scale, backend_figure=backend_figure, row=row, col=col
-                )
+            scale_kwargs = _apply_scale(
+                plot.color.scale, backend_figure=backend_figure, row=row, col=col
             )
+            if result.color_log_scale:
+                _set_log_colorbar_ticks(scale_kwargs, result.color)
+            line.update(scale_kwargs)
         trace = go.Parcoords(dimensions=cls._dimensions(plot, result), line=line)
         backend_figure.add_trace(trace, row=row, col=col)
         return cls(len(backend_figure.data) - 1)
@@ -48,11 +68,7 @@ class ParallelCoordinatesArtist(PlotlyArtist):
                 )
             if column.log_scale:
                 log_values = np.log10(column.values)
-                lo, hi = log_values.min(), log_values.max()
-                dist = int(np.ceil(hi) - np.floor(lo))
-                dist = dist + 7 if dist < 2 else dist + 5
-                tick_vals = np.linspace(np.floor(lo), np.ceil(hi), num=dist)
-                tick_text = [f"{10**v:.0e}" for v in tick_vals]
+                tick_vals, tick_text = _log_tick_marks(log_values)
                 dim.update(values=log_values, tickvals=tick_vals, ticktext=tick_text)
             dimensions.append(dim)
         return dimensions
@@ -69,3 +85,7 @@ class ParallelCoordinatesArtist(PlotlyArtist):
             trace.line.color = result.color
             if plot.color.scale is not None:
                 trace.line.cmin, trace.line.cmax = plot.color.scale.range
+            if result.color_log_scale:
+                tick_vals, tick_text = _log_tick_marks(result.color)
+                trace.line.colorbar.tickvals = tick_vals
+                trace.line.colorbar.ticktext = tick_text

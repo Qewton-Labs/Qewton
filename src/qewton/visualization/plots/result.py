@@ -211,6 +211,8 @@ class TableResult:
 
     columns: dict[str, Column]
     color: np.ndarray | None = None
+    # True when `color` already holds log10 of the plotted values.
+    color_log_scale: bool = False
 
 
 @dataclass
