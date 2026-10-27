@@ -1,7 +1,8 @@
 import torch
 
-from qewton.data import DataLoader, GridDataSet
 from qewton.config import Variable
+from qewton.data import DataLoader, GridDataSet
+from qewton.optim import DiscreteHyperparameter
 
 domain_var = Variable("domain", 1)
 temperature_var = Variable("temperature", 1)
@@ -9,13 +10,15 @@ velocity_var = Variable("velocity", 3)
 pressure_var = Variable("pressure", 1)
 
 
-def load_data(batch_size=10, path="/localdata/qewton/dataset.pt"):
+def load_data(
+    batch_size: int | DiscreteHyperparameter = 10, path="/localdata/qewton/dataset.pt"
+):
     data = torch.load(path, weights_only=True)
 
     # discard pressure for now
     dataset = GridDataSet(
         data=[
-            data["domain_mask"].unsqueeze(-1),
+            data["domain_mask"].float().unsqueeze(-1),
             data["temperature"],
             data["velocity"],
             # data["pressure"],
