@@ -479,11 +479,11 @@ class Geometry(Serializable, Generic[TensorType]):
 
     def __add__(self, other):
         """Return the union of two geometries."""
-        return NotImplementedError()
+        raise NotImplementedError()
 
     def __or__(self, other):
         """Return the union of two geometries."""
-        raise self + other
+        return self + other
 
     def __sub__(self, other):
         """Return the difference of two geometries."""

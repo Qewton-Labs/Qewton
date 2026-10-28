@@ -136,6 +136,9 @@ class Variable(Serializable):
         return f"Variable({self.name}, dim={self.dim}, children={len(self.children)})"
 
     def __mul__(self, other: Variable) -> "Variable":
+        if not isinstance(other, Variable):
+            # Not a composition: let the other operand handle it, e.g. t * u.
+            return NotImplemented
         new_var = Variable(name=f"({self.name}, {other.name})", children=[self, other])
         if self.parent is None:
             self.parent = new_var
