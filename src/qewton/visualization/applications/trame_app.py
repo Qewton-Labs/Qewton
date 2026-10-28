@@ -16,6 +16,7 @@ from vtkmodules.vtkCommonDataModel import (
     vtkCellArray,
     vtkCellLocator,
     vtkUnstructuredGrid,
+    vtkPlane,
     vtkPolyData,
     VTK_TETRA,
     VTK_TRIANGLE,
@@ -23,9 +24,13 @@ from vtkmodules.vtkCommonDataModel import (
 
 from vtkmodules.vtkFiltersCore import (
     vtkCellCenters,
+    vtkClipPolyData,
+    vtkCutter,
     vtkPolyDataNormals,
+    vtkTriangleFilter,
     vtkTubeFilter,
 )
+from vtkmodules.vtkFiltersGeneral import vtkTableBasedClipDataSet
 from vtkmodules.vtkFiltersFlowPaths import vtkStreamTracer
 from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor, vtkScalarBarActor
 
@@ -63,13 +68,27 @@ Representation = IntEnum(
     "Representation", ["Points", "Wireframe", "Surface", "SurfaceWithEdges"]
 )
 
+
+class VectorComponent(IntEnum):
+    """Component of a vector field used for coloring.
+
+    The values match the component index expected by VTK, where ``-1`` selects
+    the vector magnitude.
+    """
+
+    Magnitude = -1
+    X = 0
+    Y = 1
+    Z = 2
+
+
 VECTOR_COMPONENTS = [
-    {"text": "Magnitude", "value": "Magnitude"},
-    {"text": "X", "value": "X"},
-    {"text": "Y", "value": "Y"},
-    {"text": "Z", "value": "Z"},
+    {"text": "Magnitude", "value": VectorComponent.Magnitude},
+    {"text": "X", "value": VectorComponent.X},
+    {"text": "Y", "value": VectorComponent.Y},
+    {"text": "Z", "value": VectorComponent.Z},
 ]
-COMPONENT_INDEX = {"X": 0, "Y": 1, "Z": 2, "Magnitude": -1}
+COMPONENT_TEXT = {entry["value"]: entry["text"] for entry in VECTOR_COMPONENTS}
 
 STREAMLINE_SEED_OFFSET_FACTOR = 1e-4  # relative to bounding box diagonal
 STREAMLINE_MAX_SEEDS = 500
@@ -77,6 +96,19 @@ STREAMLINE_DEFAULT_SEEDS = 100
 
 STREAMLINE_TUBE_RADIUS_FACTOR = 1.5e-3  # relative to the bounding box diagonal
 STREAMLINE_TUBE_SIDES = 24
+
+SLICE_MODES = [
+    {"text": "Off", "value": "off"},
+    {"text": "Slice", "value": "slice"},
+    {"text": "Clip", "value": "clip"},
+]
+
+AXIS_NORMALS = {
+    "X": (1.0, 0.0, 0.0),
+    "Y": (0.0, 1.0, 0.0),
+    "Z": (0.0, 0.0, 1.0),
+    "Custom": None,
+}
 
 # -----------------------------------------------------------------------------
 # VTK STUFF
@@ -110,6 +142,36 @@ lookup_tables = [
 ]
 
 
+@dataclass
+class ColorState:
+    field: dict | None = None
+    component: VectorComponent = VectorComponent.Magnitude
+    preset: int = 0
+
+
+class PolyDataBuffer:
+    """Geometry shown by a mapper, decoupled from the producing filter.
+
+    The mapper always refers to the same vtkPolyData instance, so the mapper
+    input never has to be re-connected at runtime. In addition, an empty filter
+    result is not forwarded: the previous geometry is kept and the caller can
+    simply hide the actor until the filter produces cells again.
+    """
+
+    def __init__(self):
+        self.data = vtkPolyData()
+
+    def update_from(self, algorithm):
+        """Pull `algorithm`; return True if it produced renderable geometry."""
+        algorithm.Update()
+        output = algorithm.GetOutput()
+        if output is None or output.GetNumberOfCells() == 0:
+            return False
+        self.data.ShallowCopy(output)
+        self.data.Modified()
+        return True
+
+
 class Streamlines:
     def __init__(self):
         self.enabled = False
@@ -117,13 +179,16 @@ class Streamlines:
         self.mapper: vtkMapper | None = None
         self.tracer: vtkStreamTracer | None = None
         self.tube: vtkTubeFilter | None = None
+        self.tube_triangles: vtkTriangleFilter | None = None
+        self.tube_clip: vtkClipPolyData | None = None
+        self.buffer: PolyDataBuffer | None = None
         self.seed_polydata = None
         self.vector_field = None
         self.seed_surface_id: int | None = None
         self.n_seeds = STREAMLINE_DEFAULT_SEEDS
         self.n_available = 0
 
-    def build(self, volume_mesh):
+    def build(self, volume_mesh, plane: vtkPlane):
         tracer = vtkStreamTracer()
         tracer.SetInputData(volume_mesh)
         tracer.SetIntegratorTypeToRungeKutta45()
@@ -140,8 +205,20 @@ class Streamlines:
         tube.SetCapping(True)
         tube.SetVaryRadiusToVaryRadiusOff()
 
+        # The tube filter emits triangle strips, which vtkClipPolyData cannot
+        # handle. Always triangulate, so clipped and unclipped tubes come from
+        # the exact same geometry.
+        triangles = vtkTriangleFilter()
+        triangles.SetInputConnection(tube.GetOutputPort())
+
+        tube_clip = vtkClipPolyData()
+        tube_clip.SetInputConnection(triangles.GetOutputPort())
+        tube_clip.SetClipFunction(plane)
+
+        buffer = PolyDataBuffer()
+
         mapper = vtkPolyDataMapper()
-        mapper.SetInputConnection(tube.GetOutputPort())
+        mapper.SetInputData(buffer.data)
         mapper.ScalarVisibilityOn()
         mapper.SetScalarModeToUsePointFieldData()
         mapper.SetColorModeToMapScalars()
@@ -154,8 +231,118 @@ class Streamlines:
 
         self.tracer = tracer
         self.tube = tube
+        self.tube_triangles = triangles
+        self.tube_clip = tube_clip
+        self.buffer = buffer
         self.mapper = mapper
         self.actor = actor
+
+    def refresh(self, clip_enabled, invert):
+        """Re-pull the tube geometry, optionally clipped. Returns True if shown."""
+        if self.buffer is None or self.seed_polydata is None:
+            return False
+        self.tube_clip.SetInsideOut(invert)
+        source = self.tube_clip if clip_enabled else self.tube_triangles
+        return self.buffer.update_from(source)
+
+
+class MeshClip:
+    """Per-mesh clip filter that can be switched in/out of the mapper input."""
+
+    def __init__(self, item: VtkItem, plane: vtkPlane):
+        self.item = item
+        if isinstance(item.mesh, vtkPolyData):
+            clip = vtkClipPolyData()
+        else:
+            clip = vtkTableBasedClipDataSet()
+        clip.SetInputData(item.mesh)
+        clip.SetClipFunction(plane)
+        self.clip = clip
+
+    def set_enabled(self, enabled, invert=False):
+        self.clip.SetInsideOut(invert)
+        if enabled:
+            self.item.mapper.SetInputConnection(self.clip.GetOutputPort())
+        else:
+            self.item.mapper.SetInputData(self.item.mesh)
+
+
+class ClipSlice:
+    """Single plane used for slicing or clipping the scene."""
+
+    def __init__(self):
+        self.plane = vtkPlane()
+        self.cutter: vtkCutter | None = None
+        self.buffer: PolyDataBuffer | None = None
+        self.mapper: vtkPolyDataMapper | None = None
+        self.actor: vtkActor | None = None
+        self.mode = "off"
+        self.invert = False
+        self.bounds = (0, 1, 0, 1, 0, 1)
+        self.center = (0.0, 0.0, 0.0)
+
+    def set_bounds(self, volume_mesh):
+        """Store the reference bounds and place the plane at the center."""
+        self.bounds = volume_mesh.GetBounds()
+        b = self.bounds
+        self.center = (
+            0.5 * (b[0] + b[1]),
+            0.5 * (b[2] + b[3]),
+            0.5 * (b[4] + b[5]),
+        )
+        self.plane.SetOrigin(*self.center)
+        self.plane.SetNormal(0.0, 0.0, 1.0)
+
+    def build(self, volume_mesh):
+        """Create the slice pipeline once; returns the new actor (or None)."""
+        if self.cutter is not None:
+            return None
+
+        cutter = vtkCutter()
+        cutter.SetInputData(volume_mesh)
+        cutter.SetCutFunction(self.plane)
+        cutter.GenerateTrianglesOn()
+
+        buffer = PolyDataBuffer()
+
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputData(buffer.data)
+        mapper.ScalarVisibilityOn()
+        mapper.SetScalarModeToUsePointFieldData()
+        mapper.SetColorModeToMapScalars()
+        mapper.InterpolateScalarsBeforeMappingOn()
+
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetAmbient(0.3)
+        actor.SetVisibility(False)
+
+        self.cutter, self.buffer, self.mapper, self.actor = cutter, buffer, mapper, actor
+        return actor
+
+    def refresh(self):
+        """Re-pull the cut geometry. Returns True if the slice has geometry."""
+        if self.buffer is None:
+            return False
+        return self.buffer.update_from(self.cutter)
+
+    def set_plane(self, normal, offset):
+        """`normal` in world coords, `offset` in [-1, 1] along the normal."""
+        n = np.asarray(normal, dtype=float)
+        norm = np.linalg.norm(n)
+        if norm < 1e-12:
+            n, norm = np.array([0.0, 0.0, 1.0]), 1.0
+        n /= norm
+
+        b = self.bounds
+        extent = np.array([b[1] - b[0], b[3] - b[2], b[5] - b[4]])
+        # half-width of the bounding box projected onto the normal
+        half = 0.5 * float(np.abs(n) @ extent)
+        origin = np.asarray(self.center) + n * (offset * half)
+
+        self.plane.SetNormal(*n)
+        self.plane.SetOrigin(*origin)
+        self.plane.Modified()
 
 
 def create_points(vertices):
@@ -338,39 +525,54 @@ def update_representation(actor, mode):
         property.EdgeVisibilityOn()
 
 
-# Color By Callback
-def color_by_field(vtk_item, field, component=None):
-    mapper = vtk_item.mapper
-    name = field["text"]
-    lut = mapper.GetLookupTable()
+def apply_lut_preset(lut, preset):
+    """Configure a lookup table from the preset table."""
+    if lut is None:
+        return
+    table = lookup_tables[int(preset)]
+    lut.SetHueRange(*table.hue_range)
+    lut.SetSaturationRange(*table.saturation_range)
+    lut.SetValueRange(*table.value_range)
+    lut.Build()
 
+
+def apply_color_state(mapper, state: ColorState, lut):
+    """Configure `mapper` to color by `state` using `lut`."""
+    if mapper is None:
+        return
+
+    field = state.field
+    if field is None or lut is None:
+        mapper.ScalarVisibilityOff()
+        return
+
+    name = field["text"]
+    mapper.SetLookupTable(lut)
     mapper.SetScalarModeToUsePointFieldData()
     mapper.SelectColorArray(name)
+    mapper.SetColorModeToMapScalars()
+    mapper.InterpolateScalarsBeforeMappingOn()
+
     if field["type"] == "scalar":
         mapper.SetScalarRange(*field["range"])
         lut.SetVectorModeToComponent()
         lut.SetVectorComponent(0)
     else:
-        comp = component or "Magnitude"
-        value_range = field["component_ranges"][comp]
-        mapper.SetScalarRange(*value_range)
-        if comp == "Magnitude":
+        comp = state.component
+        mapper.SetScalarRange(*field["component_ranges"][comp])
+        if comp == VectorComponent.Magnitude:
             lut.SetVectorModeToMagnitude()
         else:
             lut.SetVectorModeToComponent()
-            lut.SetVectorComponent(COMPONENT_INDEX[comp])
-        mapper.ColorByArrayComponent(name, COMPONENT_INDEX[comp])
+            lut.SetVectorComponent(int(comp))
+        mapper.ColorByArrayComponent(name, int(comp))
+
     mapper.ScalarVisibilityOn()
 
 
-# Color Map Callback
-def use_preset(actor, preset):
-    lut = actor.GetMapper().GetLookupTable()
-    table = lookup_tables[preset]
-    lut.SetHueRange(*table.hue_range)
-    lut.SetSaturationRange(*table.saturation_range)
-    lut.SetValueRange(*table.value_range)
-    lut.Build()
+# -----------------------------------------------------------------------------
+# Scene
+# -----------------------------------------------------------------------------
 
 
 class MeshScene:
@@ -386,6 +588,8 @@ class MeshScene:
         self._init_vector_fields(tet_mesh, vector_fields)
         self.vtk_color_fields = self.vtk_scalar_fields + self.vtk_vector_fields
         self._init_meshes(qmesh, tet_mesh)
+        self._init_colors()
+        self._init_clip_slice()
         self._init_streamlines()
         self._init_scalar_bar()
 
@@ -475,10 +679,12 @@ class MeshScene:
 
             magnitudes = np.linalg.norm(values, axis=1)
             component_ranges = {
-                "X": [values[:, 0].min(), values[:, 0].max()],
-                "Y": [values[:, 1].min(), values[:, 1].max()],
-                "Z": [values[:, 2].min(), values[:, 2].max()] if dim == 3 else None,
-                "Magnitude": [magnitudes.min(), magnitudes.max()],
+                VectorComponent.X: [values[:, 0].min(), values[:, 0].max()],
+                VectorComponent.Y: [values[:, 1].min(), values[:, 1].max()],
+                VectorComponent.Z: (
+                    [values[:, 2].min(), values[:, 2].max()] if dim == 3 else None
+                ),
+                VectorComponent.Magnitude: [magnitudes.min(), magnitudes.max()],
             }
 
             self.vtk_vector_fields.append(
@@ -489,6 +695,73 @@ class MeshScene:
                     "component_ranges": component_ranges,
                 }
             )
+
+    # -------------------------------------------------------------------------
+    # Colors
+    # -------------------------------------------------------------------------
+
+    def _init_colors(self):
+        """One authoritative color state per mesh; mesh 0 drives derived actors."""
+        self.color_states = [ColorState() for _ in self.vtk_meshes]
+        for mesh_id, state in enumerate(self.color_states):
+            apply_lut_preset(
+                self.vtk_meshes[mesh_id].mapper.GetLookupTable(), state.preset
+            )
+
+    def set_color_field(self, mesh_id, field, component=None):
+        """Select the colored field (and vector component) of a mesh."""
+        state = self.color_states[mesh_id]
+        state.field = field
+        state.component = (
+            VectorComponent(component)
+            if component is not None
+            else VectorComponent.Magnitude
+        )
+        self._apply_colors(mesh_id)
+
+    def set_color_preset(self, mesh_id, preset):
+        """Select the colormap preset of a mesh."""
+        state = self.color_states[mesh_id]
+        state.preset = int(preset)
+        apply_lut_preset(self.vtk_meshes[mesh_id].mapper.GetLookupTable(), state.preset)
+        self._apply_colors(mesh_id)
+
+    def _apply_colors(self, mesh_id):
+        """Push the stored color state of a mesh into VTK and sync dependents."""
+        item = self.vtk_meshes[mesh_id]
+        state = self.color_states[mesh_id]
+        apply_color_state(item.mapper, state, item.mapper.GetLookupTable())
+        if mesh_id == 0:
+            self.sync_derived_colors()
+            self.update_scalar_bar()
+
+    def sync_derived_colors(self):
+        """Re-apply the volume mesh color state to slice + streamlines."""
+        state = self.color_states[0]
+        lut = self.volume_mesh.mapper.GetLookupTable()
+        apply_color_state(self.vtk_clip_slice.mapper, state, lut)
+        apply_color_state(self.vtk_streamlines.mapper, state, lut)
+
+    def update_scalar_bar(self):
+        """Sync scalar bar title and LUT with the volume mesh color state."""
+        state = self.color_states[0]
+        field = state.field
+        if field is None:
+            return
+
+        if field["type"] == "scalar":
+            title = field["text"]
+        else:
+            title = f"{field['text']} ({COMPONENT_TEXT[state.component]})"
+
+        bar = self.scalar_bar
+        bar.SetTitle(title)
+        bar.SetLookupTable(self.volume_mesh.mapper.GetLookupTable())
+        bar.Modified()
+
+    # -------------------------------------------------------------------------
+    # Streamlines
+    # -------------------------------------------------------------------------
 
     def _init_streamlines(self):
         self.vtk_streamlines = Streamlines()
@@ -506,17 +779,19 @@ class MeshScene:
         if sl.tracer is not None:
             return None
 
-        sl.build(self.volume_mesh.mesh)
+        sl.build(self.volume_mesh.mesh, self.vtk_clip_slice.plane)
         assert sl.actor
         self.actors.append(sl.actor)
         return sl.actor
 
     def update_streamlines(self, streamlines_enabled, field, surface_id, n_requested):
         sl = self.vtk_streamlines
+        cs = self.vtk_clip_slice
+        sl.enabled = bool(streamlines_enabled)
         hint = None
         new_actor = None
 
-        if not streamlines_enabled:
+        if not sl.enabled:
             if sl.actor is not None:
                 sl.actor.SetVisibility(False)
             return (hint, new_actor)
@@ -550,35 +825,56 @@ class MeshScene:
 
         hint = f"{n_used} seeds from {n_available} faces"
 
-        tracer = sl.tracer
-        tracer.SetSourceData(seed_pd)
-        tracer.Update()
-        sl.tube.Update()
+        sl.tracer.SetSourceData(seed_pd)
 
-        self.sync_streamline_colors()
+        self.sync_derived_colors()
 
-        sl.actor.SetVisibility(True)
+        sl.actor.SetVisibility(sl.refresh(cs.mode == "clip", cs.invert))
         return (hint, new_actor)
 
-    def sync_streamline_colors(self):
-        """Apply the volume mesh color mapping to the streamline mapper."""
+    # -------------------------------------------------------------------------
+    # Slicing / clipping
+    # -------------------------------------------------------------------------
+
+    def _init_clip_slice(self):
+        self.vtk_clip_slice = ClipSlice()
+        self.vtk_clip_slice.set_bounds(self.volume_mesh.mesh)
+        self.mesh_clips = [
+            MeshClip(item, self.vtk_clip_slice.plane) for item in self.vtk_meshes
+        ]
+
+    def update_clip_slice(self, mode, normal, offset, invert):
+        """Apply slice/clip state. Returns a newly created actor or None."""
+        cs = self.vtk_clip_slice
+        cs.mode = mode
+        # Inverting is only meaningful for clipping, where it selects the kept
+        # side without moving the plane.
+        cs.invert = bool(invert) and mode == "clip"
+        new_actor = None
+
+        if mode != "off":
+            new_actor = cs.build(self.volume_mesh.mesh)
+
+        cs.set_plane(normal, offset)
+
+        # clipping: real geometry, so it also works with local rendering
+        clip_on = mode == "clip"
+        for mesh_clip in self.mesh_clips:
+            mesh_clip.set_enabled(clip_on, cs.invert)
+
         sl = self.vtk_streamlines
-        if sl.mapper is None:
-            return
+        if sl.actor is not None:
+            sl.actor.SetVisibility(sl.enabled and sl.refresh(clip_on, cs.invert))
 
-        field = sl.vector_field
-        if field is None:
-            return
+        # slicing
+        if cs.actor is not None:
+            if mode == "slice":
+                self.sync_derived_colors()
+                cs.actor.SetVisibility(cs.refresh())
+            else:
+                cs.actor.SetVisibility(False)
 
-        volume_mapper = self.volume_mesh.mapper
-        lut = volume_mapper.GetLookupTable()
-        if lut is None:
-            return
-
-        sl.mapper.SetLookupTable(lut)
-        sl.mapper.SelectColorArray(field)
-        sl.mapper.SetScalarRange(volume_mapper.GetScalarRange())
-        sl.mapper.ScalarVisibilityOn()
+        return new_actor
 
 
 # -----------------------------------------------------------------------------
@@ -681,7 +977,11 @@ class TrameApplication(TrameApp, RenderApplication):
                 for i, m in enumerate(sc.vtk_meshes):
                     vol_mesh = i == 0
                     self.mesh_card(
-                        m.name, i, show_color=vol_mesh, show_streamlines=vol_mesh
+                        m.name,
+                        i,
+                        show_color=vol_mesh,
+                        show_streamlines=vol_mesh,
+                        show_slice=vol_mesh,
                     )
 
     def _init_vtk(self):
@@ -699,6 +999,13 @@ class TrameApplication(TrameApp, RenderApplication):
         self.state.streamlines_n_seeds = STREAMLINE_DEFAULT_SEEDS
         self.state.streamlines_seed_hint = ""
 
+    def _init_clip_slice_state(self):
+        self.state.slice_mode = "off"
+        self.state.slice_axis = "Z"
+        self.state.slice_normal = [0.0, 0.0, 1.0]
+        self.state.slice_offset = 0.0
+        self.state.slice_invert = False
+
     def _init_mesh(
         self, qmesh: "qewton.geometries.MeshGeometry", scalar_fields, vector_fields
     ):
@@ -706,6 +1013,7 @@ class TrameApplication(TrameApp, RenderApplication):
         self.scene.build(qmesh, scalar_fields, vector_fields)
         self.scene.cubeAxes.SetCamera(self.renderer.GetActiveCamera())
         self._init_streamlines_state()
+        self._init_clip_slice_state()
         for actor in self.scene.actors:
             self.renderer.AddActor(actor)
         self.renderer.ResetCamera()
@@ -717,6 +1025,11 @@ class TrameApplication(TrameApp, RenderApplication):
     @change("cube_axes_visibility")
     def update_cube_axes_visibility(self, cube_axes_visibility, **_):
         self.scene.cubeAxes.SetVisibility(cube_axes_visibility)
+        self.ctrl.view_update()
+
+    @change("colorbar_visible")
+    def update_colorbar_visibility(self, colorbar_visible, **_):
+        self.scene.scalar_bar.SetVisibility(colorbar_visible)
         self.ctrl.view_update()
 
     # Selection Change
@@ -744,48 +1057,14 @@ class TrameApplication(TrameApp, RenderApplication):
         self.ctrl.view_update()
 
     def update_mesh_color_preset(self, mesh_id, mesh_color_preset, **_):
-        mesh_actor = self.scene.vtk_meshes[mesh_id].actor
-        use_preset(mesh_actor, mesh_color_preset)
-        if (
-            self.scene.vtk_streamlines.actor is not None
-            and self.state.streamlines_enabled
-        ):
-            self.scene.sync_streamline_colors()
+        self.scene.set_color_preset(mesh_id, mesh_color_preset)
         self.ctrl.view_update()
 
     def update_mesh_color_array(
         self, mesh_id, mesh_color_field, mesh_color_component=None, **_
     ):
-        color_by_field(
-            self.scene.vtk_meshes[mesh_id], mesh_color_field, mesh_color_component
-        )
-        self.update_colorbar(mesh_id)
+        self.scene.set_color_field(mesh_id, mesh_color_field, mesh_color_component)
         self.ctrl.view_update()
-
-    def update_colorbar(self, mesh_id=0):
-        """Sync scalar bar title and LUT with the volume mapper."""
-        if mesh_id != 0:
-            return
-
-        ui_id = str(mesh_id + 1)
-        field_name = self.state[f"mesh_color_field_{ui_id}"]
-        field = next(
-            (f for f in self.scene.vtk_color_fields if f["value"] == field_name), None
-        )
-        if field is None:
-            return
-
-        if field["type"] == "scalar":
-            title = field["text"]
-        else:
-            comp = self.state[f"mesh_color_component_{ui_id}"] or "Magnitude"
-            title = f"{field['text']} ({comp})"
-
-        volume_mapper = self.scene.volume_mesh.mapper
-        bar = self.scene.scalar_bar
-        bar.SetTitle(title)
-        bar.SetLookupTable(volume_mapper.GetLookupTable())
-        bar.Modified()
 
     @change(
         "streamlines_enabled",
@@ -804,6 +1083,21 @@ class TrameApplication(TrameApp, RenderApplication):
         if hint:
             self.state.streamlines_seed_hint = hint
         if new_actor:
+            self.renderer.AddActor(new_actor)
+        self.ctrl.view_update()
+
+    @change("slice_mode", "slice_axis", "slice_normal", "slice_offset", "slice_invert")
+    def update_clip_slice(self, **_):
+        axis = self.state.slice_axis
+        preset = AXIS_NORMALS.get(axis)
+        normal = preset if preset is not None else self.state.slice_normal
+        new_actor = self.scene.update_clip_slice(
+            self.state.slice_mode,
+            normal,
+            float(self.state.slice_offset),
+            bool(self.state.slice_invert),
+        )
+        if new_actor is not None:
             self.renderer.AddActor(new_actor)
         self.ctrl.view_update()
 
@@ -828,14 +1122,6 @@ class TrameApplication(TrameApp, RenderApplication):
             ui_id = str(mesh_id + 1)
             value = kwargs[f"mesh_color_preset_{ui_id}"]
             self.update_mesh_color_preset(mesh_id, value)
-
-        return on_change
-
-    def _make_color_array_callback(self, mesh_id):
-        def on_change(**kwargs):
-            ui_id = str(mesh_id + 1)
-            value = kwargs[f"mesh_color_array_idx_{ui_id}"]
-            self.update_mesh_color_array(mesh_id, value)
 
         return on_change
 
@@ -923,7 +1209,7 @@ class TrameApplication(TrameApp, RenderApplication):
             content = v3.VCardText(classes="py-2")
         return content
 
-    def mesh_card(self, title, mesh_id, show_color=False, show_streamlines=False):
+    def mesh_card(self, title, mesh_id, show_color, show_streamlines, show_slice):
         ui_id = str(mesh_id + 1)
         sc = self.scene
         default_field = self.scene.vtk_color_fields[0]
@@ -974,7 +1260,10 @@ class TrameApplication(TrameApp, RenderApplication):
                         v3.VSelect(
                             v_show=(f"mesh_color_is_vector_{ui_id}",),
                             label="Component",
-                            v_model=(f"mesh_color_component_{ui_id}", "Magnitude"),
+                            v_model=(
+                                f"mesh_color_component_{ui_id}",
+                                VectorComponent.Magnitude,
+                            ),
                             items=("component_list", VECTOR_COMPONENTS),
                             item_title="text",
                             item_value="value",
@@ -1067,6 +1356,66 @@ class TrameApplication(TrameApp, RenderApplication):
                     v3.VLabel(
                         "{{ streamlines_seed_hint }}",
                         classes="text-caption text-medium-emphasis",
+                    )
+            if show_slice:
+                v3.VDivider(classes="my-3")
+                v3.VSelect(
+                    label="Slice / Clip",
+                    v_model=("slice_mode",),
+                    items=("slice_modes", SLICE_MODES),
+                    item_title="text",
+                    item_value="value",
+                    hide_details=True,
+                    density="compact",
+                    outlined=True,
+                )
+                with v3.VSheet(
+                    v_show="slice_mode !== 'off'",
+                    classes="pl-3 ml-1 pt-2",
+                    style="border-left: 2px solid rgba(128,128,128,0.35);",
+                    elevation=0,
+                ):
+                    v3.VSelect(
+                        label="Normal",
+                        v_model=("slice_axis",),
+                        items=("slice_axes_list", list(AXIS_NORMALS.keys())),
+                        hide_details=True,
+                        density="compact",
+                        outlined=True,
+                        classes="pt-1",
+                    )
+                    with v3.VRow(
+                        v_show="slice_axis === 'Custom'",
+                        classes="pt-2",
+                        no_gutters=True,
+                    ):
+                        for i, lbl in enumerate(("nx", "ny", "nz")):
+                            with v3.VCol(cols="4", classes="px-1"):
+                                v3.VTextField(
+                                    label=lbl,
+                                    v_model_number=(f"slice_normal[{i}]",),
+                                    type="number",
+                                    step="0.1",
+                                    hide_details=True,
+                                    density="compact",
+                                )
+                    v3.VSlider(
+                        label="Position",
+                        v_model=("slice_offset",),
+                        min=-1.0,
+                        max=1.0,
+                        step=0.01,
+                        thumb_label=True,
+                        hide_details=True,
+                        density="compact",
+                        classes="mt-3",
+                    )
+                    v3.VCheckbox(
+                        v_show="slice_mode === 'clip'",
+                        v_model=("slice_invert",),
+                        label="Invert clip side",
+                        hide_details=True,
+                        density="compact",
                     )
 
             callback = self._make_representation_callback(mesh_id)
