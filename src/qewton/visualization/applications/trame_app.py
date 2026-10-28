@@ -1002,9 +1002,12 @@ class TrameApplication(TrameApp, RenderApplication):
     def _init_clip_slice_state(self):
         self.state.slice_mode = "off"
         self.state.slice_axis = "Z"
-        self.state.slice_normal = [0.0, 0.0, 1.0]
         self.state.slice_offset = 0.0
         self.state.slice_invert = False
+        # Separate scalars: trame does not track in-place mutation of list items.
+        self.state.slice_nx = 0.0
+        self.state.slice_ny = 0.0
+        self.state.slice_nz = 1.0
 
     def _init_mesh(
         self, qmesh: "qewton.geometries.MeshGeometry", scalar_fields, vector_fields
@@ -1086,11 +1089,29 @@ class TrameApplication(TrameApp, RenderApplication):
             self.renderer.AddActor(new_actor)
         self.ctrl.view_update()
 
-    @change("slice_mode", "slice_axis", "slice_normal", "slice_offset", "slice_invert")
+    @change(
+        "slice_mode",
+        "slice_axis",
+        "slice_nx",
+        "slice_ny",
+        "slice_nz",
+        "slice_offset",
+        "slice_invert",
+    )
     def update_clip_slice(self, **_):
         axis = self.state.slice_axis
         preset = AXIS_NORMALS.get(axis)
-        normal = preset if preset is not None else self.state.slice_normal
+        if preset is not None:
+            normal = preset
+            # Keep the custom fields in sync, so switching to "Custom"
+            # starts from the currently shown plane.
+            self.state.slice_nx, self.state.slice_ny, self.state.slice_nz = preset
+        else:
+            normal = (
+                float(self.state.slice_nx or 0.0),
+                float(self.state.slice_ny or 0.0),
+                float(self.state.slice_nz or 0.0),
+            )
         new_actor = self.scene.update_clip_slice(
             self.state.slice_mode,
             normal,
@@ -1389,11 +1410,15 @@ class TrameApplication(TrameApp, RenderApplication):
                         classes="pt-2",
                         no_gutters=True,
                     ):
-                        for i, lbl in enumerate(("nx", "ny", "nz")):
+                        for lbl, var in (
+                            ("nx", "slice_nx"),
+                            ("ny", "slice_ny"),
+                            ("nz", "slice_nz"),
+                        ):
                             with v3.VCol(cols="4", classes="px-1"):
                                 v3.VTextField(
                                     label=lbl,
-                                    v_model_number=(f"slice_normal[{i}]",),
+                                    v_model_number=(var,),
                                     type="number",
                                     step="0.1",
                                     hide_details=True,
