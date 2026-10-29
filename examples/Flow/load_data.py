@@ -8,6 +8,7 @@ domain_var = Variable("domain", 1)
 temperature_var = Variable("temperature", 1)
 velocity_var = Variable("velocity", 3)
 pressure_var = Variable("pressure", 1)
+x_var = Variable("x", 3)
 
 
 def load_data(
@@ -21,12 +22,14 @@ def load_data(
             data["domain_mask"].float().unsqueeze(-1),
             data["temperature"],
             data["velocity"],
+            data["domain_coords"],
             # data["pressure"],
         ],
         feature_variables=[
             domain_var,
             temperature_var,
             velocity_var,
+            x_var,
             # pressure_var,
         ],
         point_grid=data["domain_coords"][0],
