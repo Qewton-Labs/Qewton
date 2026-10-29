@@ -97,6 +97,22 @@ class Variable(Serializable):
             return leaves
 
     @property
+    def quantities(self) -> list[Variable]:
+        """The distinct quantities this variable bundles: e.g. ``[u, p]``
+        for ``u * p``. A variable with components of its own (created with
+        ``dim > 1`` and no children) is one quantity.
+
+        Returns:
+            list[Variable]: The quantities, in order.
+        """
+        own_components = all(
+            child.name == f"{self.name}_{i + 1}" for i, child in enumerate(self.children)
+        )
+        if own_components:
+            return [self]
+        return [q for child in self.children for q in child.quantities]
+
+    @property
     def leaf_names(self) -> set[str]:
         """The names of every leaf in this Variable's tree."""
         return {leaf.name for leaf in self.leaves}
@@ -107,7 +123,7 @@ class Variable(Serializable):
         support) - every Variable is a plotted quantity, so every Variable
         renders as a math symbol wherever a name is shown as a title/label.
         The single place this wrapping is defined, so callers throughout
-        visualization (PlotSpec.math_name, axis_names_from_variable, ...)
+        visualization (e.g. the titles in ``qewton.visualization.references``)
         stay consistent by deferring to it instead of re-wrapping their own
         `$...$` in different places.
 
@@ -200,7 +216,7 @@ class Variable(Serializable):
         for child in self.children:
             if variable == child:
                 return slice(running_idx, running_idx + child.dim)  # type: ignore
-            if variable in child.leaves:
+            if variable in child:
                 child_slice = child.get_slice(variable)
                 return slice(
                     running_idx + child_slice.start, running_idx + child_slice.stop

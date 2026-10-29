@@ -3,6 +3,6 @@ class RenderApplication:
 
     @staticmethod
     def create(figure):
-        """Builds and returns an application serving `figure`, wiring up
-        an interactive widget for each SliderSpec control it declares."""
+        """Builds and returns an application serving `figure`, with an
+        interactive widget for each control it connects."""
         raise NotImplementedError

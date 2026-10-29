@@ -1,209 +1,170 @@
 """Base class :class:`Plot` shared by every plot family."""
 
-import itertools
+from enum import Enum, auto
 
-import numpy as np
-
-from qewton.visualization.plots.spec import (
-    ControlSpec,
-    PlotSpec,
-    SliderSpec,
-    SelectorSpec,
-    TimeSpec,
-)
+from qewton.visualization.axes import ControlAxis, Selector
+from qewton.visualization.scales import ColorScale, Scale
 
 
-def axis_names_from_variable(variable, n: int) -> list[str]:
-    """Derive per-axis labels from a geometry's coordinate Variable.
+class PointEncoding(Enum):
+    """How a plot shows values at the points of its domain. Two plots of
+    one encoding on one domain hide each other; plots of different ones
+    read well together, e.g. arrows over a heatmap.
 
-    Used by plot families whose positions come directly from a geometry
-    (mesh, geometry, vector, embedded-grid plots) rather than from an
-    :class:`~qewton.visualization.plots.spec.AxisSpec`.
-
-    Args:
-        variable (Variable or None): The geometry's coordinate
-            :class:`~qewton.config.variables.Variable`.
-        n: Number of axes to label.
-
-    Returns:
-        list of str: One label per axis. If `variable` decomposes into exactly
-            `n` leaves, each label is the leaf's ``math_name`` (TeX math mode,
-            e.g. ``Variable("x", 1) * Variable("y", 1)`` gives ``["$x$",
-            "$y$"]``). Otherwise the plain-text fallback ``["axis_1", ...,
-            "axis_n"]``. Never raises.
+    Attributes:
+        COLOR: By color, e.g. a heatmap, a surface, colored points of a
+            domain or a filled geometry.
+        ARROW: By arrows.
     """
-    if variable is not None:
-        leaves = variable.leaves
-        if len(leaves) == n:
-            return [leaf.math_name for leaf in leaves]
-    return [f"axis_{i}" for i in range(1, n + 1)]
+
+    COLOR = auto()
+    ARROW = auto()
 
 
 class Plot:
-    """Base class for anything that can be evaluated and drawn.
+    """Anything drawn into an Overlay.
 
-    Four input families derive from it:
-    :class:`~qewton.visualization.plots.data.base.DataPlot` (data plus a
-    DataConfiguration),
-    :class:`~qewton.visualization.plots.table.base.TablePlot` (named
-    columns), :class:`~qewton.visualization.plots.geometry.GeometryPlot` (a
-    Geometry) and :class:`~qewton.visualization.plots.graph.GraphPlot` (a
-    computation Graph). Specs, Scale, controls, Figure, artists and the
-    result-object contract are shared by all of them.
+    A plot evaluates, in the current states of its controls, to one Result
+    per drawn copy (:meth:`evaluate`); the number of copies does not
+    change with the states.
 
     Args:
-        title (str, optional): Panel heading, shown as subplot annotation or
-            figure title.
-        label (str, optional): Legend entry text. None falls back to the
-            family's default, e.g. the name of the plotted variable.
-        theme (Theme, optional): Theme used to draw this plot. If None, the
-            Figure's theme is assigned when the plot is added.
-        controls: Control specs (slider, fixed, facet, time) that reduce or
-            partition this plot's data.
+        title: Heading of the plot's cell.
+        label: Legend entry; None derives it from the plotted quantity.
+        controls: Control axes reducing dimensions of the plot's input.
 
     Attributes:
-        controls (list of ControlSpec): The control specs passed as `controls`.
-        color_index (int or None): Position of this plot among all plots of its
-            Figure, in add order; set by ``Figure.add_plot()``, None before.
-            Artists without data-driven coloring use it with
-            ``theme.get_color(index)`` so overlaid traces get distinct colors.
-        theme (Theme or None): Theme of this plot. Setting it only has an
-            effect while it is None.
-        title (str or None): Panel heading.
-        label (str or None): Legend entry text, distinct from `title`.
-        embedding_dim (int or None): Number of spatial dimensions the plot
-            draws into: 2 (default), 3, or None for non-spatial plots without
-            cartesian axes (e.g. ParallelCoordinatesPlot, GraphPlot). Used by a
-            faceted Figure to choose each cell's subplot type.
-        selector_specs (list of SelectorSpec): Every
-            :class:`~qewton.visualization.plots.spec.SelectorSpec` embedded in
-            one of this plot's
-            :class:`~qewton.visualization.plots.spec.PlotSpec` attributes,
-            found by scanning the instance attributes. Selector specs are never
-            listed in `controls`.
+        point_encoding (PointEncoding or None): How the plot shows values at
+            the points of its domain; None if it shows them by position
+            (e.g. a line graph or points in value space) or not at all.
+            An Overlay draws plots encoding by color first. A class
+            attribute, or a property where it depends on the plot.
+        title (str or None): Heading of the plot's cell.
+        label (str or None): The explicit legend entry.
+        controls (list of ControlAxis): The control axes.
+        selectors (list of Selector): Selectors in place of references.
+        color_scales (list of ColorScale): The color scales the Figure
+            draws colorbars of, trained over all states.
+        active_color_scales (list of ColorScale): Those of `color_scales`
+            shown in the current states (e.g. of the chosen Selector
+            candidate).
+        scales (list of Scale): Every scale of the plot besides the
+            position axes, e.g. its color scales (also those without a
+            colorbar of the Figure) and a VectorScale; the Figure resets
+            them before training.
+        color_index (int): Index of the first categorical color of the
+            plot; set by the Figure so plots and their copies get distinct
+            colors.
+        dim (int): Number of position components drawn: 2 or 3, or 0 for a
+            plot that lays out its own axes (e.g. parallel coordinates).
+        n_copies (int): Number of Results :meth:`evaluate` returns.
+        scaled_channels (tuple of str): Position channels drawn to one
+            scale, e.g. the coordinates of a geometry, so it is not
+            distorted; empty if none.
+        color_title (str or None): Name of what is bound to the color
+            channel in the current states; None if nothing named is.
 
     Notes:
-        Subclasses must implement :meth:`evaluate` and :meth:`create_artist`.
-        They may override `embedding_dim` and, if they support controls,
-        provide an ``apply_controls()`` that reduces their input to the current
-        control states. A plot with a ``color`` attribute (a
-        :class:`~qewton.visualization.plots.spec.ColorSpec`) whose result has a
-        ``color`` field gets :meth:`color_values` for free.
+        Subclasses implement `dim` and :meth:`evaluate`, and may override
+        `selectors`, `color_scales`, `active_color_scales`, `scales`,
+        `n_copies`, `scaled_channels`, `color_title`, :meth:`axis_title`,
+        :meth:`axis_ticks`, :meth:`channels_of` and :meth:`train_scales`.
     """
+
+    point_encoding: PointEncoding | None = None
 
     def __init__(
         self,
-        title=None,
-        label=None,
-        theme=None,
-        controls: list[ControlSpec] | None = None,
+        title: str | None = None,
+        label: str | None = None,
+        controls: tuple[ControlAxis, ...] | list[ControlAxis] = (),
     ) -> None:
-        self._title = title
-        self._label = label
-        self._theme = theme
-        self.controls = controls or []
-        self.color_index: int | None = None
+        self.title = title
+        self.label = label
+        self.controls = list(controls)
+        self.color_index = 0
 
     @property
-    def theme(self):
-        return self._theme
-
-    @theme.setter
-    def theme(self, value):
-        if self._theme is None:
-            self._theme = value
-
-    @property
-    def title(self):
-        return self._title
-
-    @property
-    def label(self):
-        return self._label
-
-    @property
-    def embedding_dim(self) -> int | None:
-        return 2
-
-    def evaluate(self):
-        """Evaluate the plot in its current control state.
-
-        Returns:
-            object: A renderer-agnostic result dataclass from
-                :mod:`qewton.visualization.plots.result`, e.g.
-                :class:`~qewton.visualization.plots.result.GridResult`.
-        """
+    def dim(self) -> int:
         raise NotImplementedError
 
-    def create_artist(self, backend_figure, renderer, row=None, col=None):
-        """Create the renderer-specific artist that draws this plot.
+    @property
+    def selectors(self) -> list[Selector]:
+        return []
+
+    @property
+    def color_scales(self) -> list[ColorScale]:
+        return []
+
+    @property
+    def active_color_scales(self) -> list[ColorScale]:
+        return self.color_scales
+
+    @property
+    def scales(self) -> list[Scale]:
+        return list(self.color_scales)
+
+    @property
+    def n_copies(self) -> int:
+        return 1
+
+    @property
+    def scaled_channels(self) -> tuple[str, ...]:
+        return ()
+
+    @property
+    def color_title(self) -> str | None:
+        return None
+
+    def axis_title(self, channel: str) -> str | None:
+        """The title the plot gives a position axis.
 
         Args:
-            backend_figure (object): The renderer's figure object to draw into.
-            renderer (Renderer): The
-                :class:`~qewton.visualization.renderers.base.Renderer` whose
-                artist class is used.
-            row (int, optional): Facet grid row (1-indexed), or None for a
-                non-faceted figure.
-            col (int, optional): Facet grid column (1-indexed), or None for a
-                non-faceted figure.
+            channel: ``"x"``, ``"y"`` or ``"z"``.
 
         Returns:
-            Artist: The new
-                :class:`~qewton.visualization.renderers.base.Artist`, already
-                drawn from the plot's current control state.
+            str or None: The name of what is bound to `channel`; None if
+                nothing named is.
+        """
+        return None
+
+    def channels_of(self, selector: Selector) -> tuple[str, ...]:
+        """The channels a Selector of the plot fills.
+
+        Args:
+            selector: One of `selectors`.
+
+        Returns:
+            tuple of str: E.g. ``("color",)``.
+        """
+        return ()
+
+    def axis_ticks(self, channel: str) -> tuple[list[float], list[str]] | None:
+        """The ticks the plot gives a position axis in the current states,
+        e.g. the categories of a categorical column.
+
+        Args:
+            channel: ``"x"``, ``"y"`` or ``"z"``.
+
+        Returns:
+            tuple or None: Tick positions and their labels; None for
+                automatic ticks.
+        """
+        return None
+
+    def train_scales(self, axes: dict[str, Scale]) -> None:
+        """Train the plot's scales and the given position axis scales over
+        all states of its controls. Restores the states afterwards.
+
+        Args:
+            axes: Scale of each position axis of the plot's overlay, by
+                channel.
+        """
+
+    def evaluate(self) -> list:
+        """Evaluate the plot in the current states of its controls.
+
+        Returns:
+            list of Result: One Result per drawn copy.
         """
         raise NotImplementedError
-
-    @property
-    def selector_specs(self) -> list[SelectorSpec]:
-        found = []
-        for value in vars(self).values():
-            if isinstance(value, PlotSpec):
-                spec = value.embedded_selector_spec
-                if spec is not None and spec not in found:
-                    found.append(spec)
-        return found
-
-    def color_values(self):
-        """Collect the values that train this plot's shared color Scale.
-
-        With SliderSpec or TimeSpec controls, the plot is evaluated in every
-        combination of their states and the values are concatenated; the
-        original states are restored afterwards. Other controls keep their
-        current state.
-
-        Returns:
-            numpy.ndarray or None: The color values (flattened when collected
-                over several states), or None if the plot has no ``color``
-                spec, the spec has no
-                :class:`~qewton.visualization.plots.spec.Scale`, or the result
-                has no color values.
-        """
-        spec = getattr(self, "color", None)
-        if spec is None or spec.scale is None:
-            return None
-
-        stepping = [c for c in self.controls if isinstance(c, (SliderSpec, TimeSpec))]
-        if not stepping:
-            return getattr(self.evaluate(), "color", None)
-
-        originals = [s.state for s in stepping]
-        try:
-            all_values = []
-            state_ranges = (
-                s.values
-                if isinstance(s, TimeSpec)
-                else range(s.minimum, s.maximum + 1, s.step)
-                for s in stepping
-            )
-            for states in itertools.product(*state_ranges):
-                for control, state in zip(stepping, states):
-                    control.state = state
-                values = getattr(self.evaluate(), "color", None)
-                if values is not None:
-                    all_values.append(np.asarray(values).reshape(-1))
-            return np.concatenate(all_values) if all_values else None
-        finally:
-            for control, original in zip(stepping, originals):
-                control.state = original

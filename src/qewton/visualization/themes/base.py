@@ -53,7 +53,7 @@ class Theme:
             :data:`~qewton.visualization.themes.cmaps.sequential` resolves
             to: a :class:`~qewton.visualization.themes.cmaps.QewtonColormap`
             or a renderer-native colormap (a Plotly colorscale name or
-            list), never a role. Also used for a ColorSpec without a cmap.
+            list), never a role. Also used for a ColorScale without a cmap.
         diverging_cmap: The concrete colormap the role
             :data:`~qewton.visualization.themes.cmaps.diverging` resolves
             to (same kinds as `sequential_cmap`).
@@ -181,7 +181,7 @@ class Theme:
         )
 
     def resolve_cmap(self, cmap=None):
-        """Resolve a ColorSpec's `cmap` to a renderer-ready colormap.
+        """Resolve a ColorScale's `cmap` to a renderer-ready colormap.
 
         Args:
             cmap (Colormap | str | list | None): None or a

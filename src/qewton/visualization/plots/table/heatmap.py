@@ -1,80 +1,95 @@
+"""TableHeatMap: the mean of a column over a raster of two others."""
+
 import numpy as np
 
-from qewton.visualization.plots.result import ParametricGridResult
-from qewton.visualization.plots.spec import SelectorSpec, ColorSpec, AxisSpec
+from qewton.visualization.axes import ControlAxis, Selector
+from qewton.visualization.plots.base import PointEncoding
+from qewton.visualization.plots.result import HeatmapResult, Result
 from qewton.visualization.plots.table.base import TablePlot
+from qewton.visualization.scales import ColorScale
 
 
 class TableHeatMap(TablePlot):
-    """A heat map of a data table, with two axes and a color scale.
+    """The mean of the color column over the rows in each rectangle of a
+    raster spanned by two columns; rectangles without rows stay empty. A
+    log column is rastered in log space.
 
     Args:
-        data: A table of data. Anything that can be indexed by column name
-            and can be iterated over (e.g. a pandas DataFrame or a dict of
-            lists).
-        bins (int): The number of bins to use for the heat map. The data will
-            be binned into a grid of size `bins x bins`.
-        axis_keys (list[str]): The names of the columns to use for the x and y
-            axes. The first two names in this list will be used for the x and y
-            axes, respectively.
-        objective_keys (list[str]): The names of the columns to use for the color
-            scale. If more than one name is provided, a SelectorSpec will be used
-            to allow the user to choose which column to use for the color scale.
-        log_axes (list[str], optional): The names of the columns to use for the
-            log scale. If a column name is in this list, the corresponding axis will
-            be displayed on a log scale. Defaults to an empty list.
-        title (str, optional): The title of the plot. Defaults to None.
-        theme (str, optional): The theme of the plot. Defaults to None.
+        table, color_scale, log_columns, controls, title, label: As for
+            :class:`~qewton.visualization.plots.table.base.TablePlot`.
+        x, y: Numeric column names, or Selectors of them.
+        color: The averaged column, or a Selector of columns.
+        bins_x, bins_y: Number of rectangles along x and y.
+
+    Raises:
+        ValueError: As for TablePlot, and if a position column is
+            categorical.
+
+    Attributes:
+        bins_x, bins_y (int): Number of rectangles along x and y.
     """
+
+    dim = 2
+    point_encoding = PointEncoding.COLOR
 
     def __init__(
         self,
-        data,
-        bins_x: int,
-        bins_y: int,
-        axis_keys: list[str],
-        objective_keys: list[str],
-        log_axes: list[str] | None = None,
-        title=None,
-        theme=None,
-    ):
-        self.x = AxisSpec(SelectorSpec(candidates=axis_keys, init_index=0))
-        self.y = AxisSpec(SelectorSpec(candidates=axis_keys, init_index=1))
-        self.objective_keys = objective_keys
-        if len(objective_keys) > 1:
-            self.color = ColorSpec(variable_or_axes=SelectorSpec(objective_keys))
-        else:
-            self.color = ColorSpec(variable_or_axes=objective_keys[0])
-        super().__init__(columns=data, title=title, theme=theme, controls=[])
-        self.log_axes = log_axes if log_axes is not None else []
+        table,
+        *,
+        x: str | Selector,
+        y: str | Selector,
+        color: str | Selector,
+        bins_x: int = 10,
+        bins_y: int = 10,
+        color_scale: ColorScale | list[ColorScale] | None = None,
+        log_columns: tuple[str, ...] | list[str] = (),
+        controls: tuple[ControlAxis, ...] | list[ControlAxis] = (),
+        title: str | None = None,
+        label: str | None = None,
+    ) -> None:
+        super().__init__(
+            table,
+            color=color,
+            color_scale=color_scale,
+            log_columns=log_columns,
+            controls=controls,
+            title=title,
+            label=label,
+        )
+        self._positions = {"x": x, "y": y}
+        for reference in self._positions.values():
+            self._check_reference(reference)
+            names = reference.candidates if isinstance(reference, Selector) else [reference]
+            categorical = [n for n in names if self.columns[n].categories is not None]
+            if categorical:
+                raise ValueError(f"TableHeatMap rasters numeric columns only, not {categorical}.")
         self.bins_x = bins_x
         self.bins_y = bins_y
-        self.controls = [self.x, self.y]
 
-    def evaluate(self):
-        data_x = self.columns[self.x.name].values  # type: ignore
-        data_y = self.columns[self.y.name].values  # type: ignore
-        color = self.columns[self.color.name].values  # type: ignore
+    @property
+    def positions(self) -> dict:
+        return dict(self._positions)
 
-        self.x.log_scale = self.x.name in self.log_axes
-        self.y.log_scale = self.y.name in self.log_axes
-
-        counts, x_edges, y_edges = np.histogram2d(
-            data_x, data_y, bins=[self.bins_x, self.bins_y]
-        )
-        sums, _, _ = np.histogram2d(
-            data_x, data_y, bins=[x_edges, y_edges], weights=color
-        )
-
+    def build(self, rows: np.ndarray) -> Result:
+        """See :meth:`~qewton.visualization.plots.table.base.TablePlot.build`."""
+        every = np.ones(self.n_rows, dtype=bool)
+        x_name, y_name = (self.current(r) for r in self._positions.values())
+        x_edges = _edges(self.drawn_values(x_name, every), self.bins_x)
+        y_edges = _edges(self.drawn_values(y_name, every), self.bins_y)
+        x, y = self.drawn_values(x_name, rows), self.drawn_values(y_name, rows)
+        counts, _, _ = np.histogram2d(x, y, bins=[x_edges, y_edges])
+        sums, _, _ = np.histogram2d(x, y, bins=[x_edges, y_edges], weights=self.color_values(rows))
         with np.errstate(invalid="ignore", divide="ignore"):
-            grid = sums / counts
-
-        grid[counts == 0] = np.nan
-        grid = grid.reshape((self.bins_x, self.bins_y, 1))
-        # values = np.array(np.meshgrid(x_edges, y_edges, indexing="ij")).T
-        return ParametricGridResult(values=grid, x=x_edges, y=y_edges, z=grid)
-
-    def create_artist(self, backend_figure, renderer, row=None, col=None):
-        return renderer.ParametricHeatmapArtist.create(
-            backend_figure, self, row=row, col=col
+            means = np.where(counts > 0, sums / counts, np.nan)
+        return HeatmapResult(
+            x=(x_edges[:-1] + x_edges[1:]) / 2,
+            y=(y_edges[:-1] + y_edges[1:]) / 2,
+            values=means.T,
         )
+
+
+def _edges(values: np.ndarray, bins: int) -> np.ndarray:
+    # Raster edges over the span of every row, so they stay fixed between
+    # the states of the controls.
+    lo, hi = float(values.min()), float(values.max())
+    return np.linspace(lo, hi if hi > lo else lo + 1.0, bins + 1)

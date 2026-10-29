@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import torch
 from qewton.config.axes import BatchAxes, FeatureAxes, AxesDim
@@ -119,8 +120,8 @@ def test_visualize_with_mode_test_draws_the_test_data_set():
     graph.setup()
 
     layout = graph.visualize(loader.output_ports[0], mode=EvaluationPhase.TEST)
-    values = np.asarray(layout.plots[0].evaluate().y)
-    assert np.all(values == 9.0)
+    (result,) = layout.plots[0].evaluate()
+    assert np.all(result.positions[:, 1] == 9.0)
 
 
 if __name__ == "__main__":

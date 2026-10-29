@@ -2,7 +2,7 @@ from __future__ import annotations
 import math
 
 from qewton.config.variables import Variable
-from qewton.geometries.base import Geometry, DiscreteGeometry
+from qewton.geometries.base import Geometry, DiscreteGeometry, Structure
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
@@ -42,6 +42,18 @@ class PointCloud(DiscreteGeometry[TensorType]):
             backend=backend,
         )
         self.discretization_of = discretization_of
+
+    @property
+    def structure(self) -> Structure:
+        return Structure.POINTS
+
+    @property
+    def topological_dim(self) -> int:
+        return 0
+
+    @property
+    def cells(self) -> None:
+        return None
 
     def _move_data(self, device: Device | str) -> None:
         self.discretization_points = self.backend.to(

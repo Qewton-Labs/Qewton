@@ -2,16 +2,15 @@
 
 from plotly import graph_objects as go
 
+from qewton.visualization.plots.result import NodeCategory
+from qewton.visualization.renderers.base import Artist
 from qewton.visualization.renderers.plotly import card_geometry as cg
-from qewton.visualization.renderers.plotly.common import PlotlyArtist
 
 
-class NodeLinkArtist(PlotlyArtist):
-    """Draws a GraphPlot's node-link layout as beveled cards.
+class NodeLinkArtist(Artist):
+    """Draws a GraphLayoutResult as beveled cards.
 
-    Draws the :class:`~qewton.visualization.plots.result.GraphLayoutResult`
-    of a :class:`~qewton.visualization.plots.graph.GraphPlot`. Every
-    :class:`~qewton.visualization.plots.result.NodeLayout` and
+    Every :class:`~qewton.visualization.plots.result.NodeLayout` and
     :class:`~qewton.visualization.plots.result.ClusterBox` becomes a card
     (see :mod:`~qewton.visualization.renderers.plotly.card_geometry`) with
     one notch per port; node titles are uppercase, rotated 90 degrees and
@@ -19,82 +18,115 @@ class NodeLinkArtist(PlotlyArtist):
     wires without arrowheads, optionally labeled.
 
     Cards, wires, port dots and label backgrounds are ``layout.shapes``,
-    texts are ``layout.annotations``. Three invisible-marker
-    ``go.Scatter`` traces carry hover text for nodes, ports and edges, so
-    the trace count stays 3 regardless of graph size. Shapes are stacked
-    back to front: card bodies (clusters before nodes), wires and label
-    backgrounds, port dots/rings, edge end dots and edge labels.
+    texts are ``layout.annotations``, both in the axes of the cell. Three
+    invisible-marker ``go.Scatter`` traces carry hover text for nodes,
+    ports and edges, so the trace count stays 3 regardless of graph size.
+    Shapes are stacked back to front: card bodies (clusters before nodes),
+    wires and label backgrounds, port dots/rings, edge end dots and edge
+    labels.
 
-    For a non-faceted figure without explicit size, :meth:`create` sets the
-    figure size from ``theme.graph_px_per_unit`` and the layout extent. The
-    y-axis is reversed (layout y grows downward) and scale-anchored to x.
+    The axes of the cell are hidden; y is reversed (layout y grows
+    downward). A figure of this one cell without explicit size is sized
+    from ``theme.graph_px_per_unit`` and the layout extent.
 
     Args:
-        node_trace_idx (int): Index of the node hover trace.
-        port_trace_idx (int): Index of the port hover trace.
-        edge_trace_idx (int): Index of the edge hover trace.
-        shape_range (tuple of int): ``(start, count)`` of the artist's entries
-            in ``layout.shapes``.
-        annotation_range (tuple of int): ``(start, count)`` of the artist's
-            entries in ``layout.annotations``.
+        trace_indices: Indices of the node, port and edge hover traces.
+        shape_range: ``(start, count)`` of the artist's entries in
+            ``layout.shapes``.
+        annotation_range: ``(start, count)`` of the artist's entries in
+            ``layout.annotations``.
 
     Attributes:
-        port_trace_idx (int): Index of the port hover trace.
-        edge_trace_idx (int): Index of the edge hover trace.
-        shape_range (tuple of int): ``(start, count)`` of the artist's entries
-            in ``layout.shapes``.
-        annotation_range (tuple of int): ``(start, count)`` of the artist's
-            entries in ``layout.annotations``.
+        trace_indices (list of int): Indices of the hover traces.
+        shape_range (tuple of int): Its entries in ``layout.shapes``.
+        annotation_range (tuple of int): Its entries in
+            ``layout.annotations``.
     """
 
-    def __init__(self, node_trace_idx, port_trace_idx, edge_trace_idx, shape_range, annotation_range):
-        super().__init__(node_trace_idx)
-        self.port_trace_idx = port_trace_idx
-        self.edge_trace_idx = edge_trace_idx
+    def __init__(self, trace_indices, shape_range, annotation_range) -> None:
+        self.trace_indices = trace_indices
         self.shape_range = shape_range
         self.annotation_range = annotation_range
 
     @classmethod
-    def create(cls, backend_figure, plot, row=None, col=None):
-        """Draw `plot` into `backend_figure`.
-
-        See :meth:`~qewton.visualization.renderers.base.Artist.create`.
-        """
-        layout = plot.evaluate()
-        shapes, annotations = cls._shapes_and_annotations(plot, layout)
-
+    def create(cls, backend_figure, result, cell, theme) -> "NodeLinkArtist":
+        """See :meth:`~qewton.visualization.renderers.base.Artist.create`."""
+        shapes, annotations = cls._placed(backend_figure, result, cell, theme)
         shape_start = len(backend_figure.layout.shapes)
         annotation_start = len(backend_figure.layout.annotations)
         backend_figure.layout.shapes = tuple(backend_figure.layout.shapes) + tuple(shapes)
-        backend_figure.layout.annotations = tuple(backend_figure.layout.annotations) + tuple(annotations)
+        backend_figure.layout.annotations = tuple(backend_figure.layout.annotations) + tuple(
+            annotations
+        )
+        indices = []
+        for trace in cls._traces(result, theme):
+            indices.append(len(backend_figure.data))
+            backend_figure.add_trace(trace, row=cell.row, col=cell.col)
+        cls._set_axes(backend_figure, result, cell, theme)
+        return cls(
+            indices, (shape_start, len(shapes)), (annotation_start, len(annotations))
+        )
 
-        node_idx = len(backend_figure.data)
-        backend_figure.add_trace(cls._node_hover_trace(layout, plot.theme), row=row, col=col)
-        port_idx = len(backend_figure.data)
-        backend_figure.add_trace(cls._port_trace(layout, plot.theme), row=row, col=col)
-        edge_idx = len(backend_figure.data)
-        backend_figure.add_trace(cls._edge_trace(layout, plot.theme), row=row, col=col)
+    def update(self, backend_figure, result, cell, theme) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Artist.update`."""
+        shapes, annotations = self._placed(backend_figure, result, cell, theme)
+        backend_figure.layout.shapes = _replaced(backend_figure.layout.shapes, self.shape_range, shapes)
+        backend_figure.layout.annotations = _replaced(
+            backend_figure.layout.annotations, self.annotation_range, annotations
+        )
+        for index, trace in zip(self.trace_indices, self._traces(result, theme)):
+            properties = trace.to_plotly_json()
+            properties.pop("type")
+            backend_figure.data[index].update(properties, overwrite=True)
 
-        backend_figure.update_xaxes(visible=False, row=row, col=col)
-        # GraphLayout and the card geometry use a y axis growing downward,
-        # so the y range below is descending.
-        backend_figure.update_yaxes(visible=False, row=row, col=col, scaleanchor="x")
+    def set_visible(self, backend_figure, visible: bool) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Artist.set_visible`."""
+        for index in self.trace_indices:
+            backend_figure.data[index].visible = visible
+        for entries, (start, count) in (
+            (backend_figure.layout.shapes, self.shape_range),
+            (backend_figure.layout.annotations, self.annotation_range),
+        ):
+            for entry in entries[start : start + count]:
+                entry.visible = visible
 
-        x0, x1, y0, y1 = cls._layout_bounds(layout)
-        backend_figure.update_xaxes(range=[x0, x1], row=row, col=col)
-        backend_figure.update_yaxes(range=[y1, y0], row=row, col=col)
+    @classmethod
+    def _placed(cls, backend_figure, result, cell, theme):
+        # Shapes and annotations in the axes of the cell.
+        subplot = backend_figure.get_subplot(cell.row, cell.col)
+        refs = dict(
+            xref=subplot.xaxis.plotly_name.replace("axis", ""),
+            yref=subplot.yaxis.plotly_name.replace("axis", ""),
+        )
+        shapes, annotations = cls._shapes_and_annotations(result, theme)
+        return [dict(s, **refs) for s in shapes], [dict(a, **refs) for a in annotations]
 
-        # Pixel size from graph_px_per_unit, only for an unsized,
-        # non-faceted figure.
-        if row is None and col is None and backend_figure.layout.width is None and backend_figure.layout.height is None:
-            px = plot.theme.graph_px_per_unit
+    @classmethod
+    def _traces(cls, result, theme) -> list:
+        return [
+            cls._node_hover_trace(result, theme),
+            cls._port_trace(result, theme),
+            cls._edge_trace(result, theme),
+        ]
+
+    @classmethod
+    def _set_axes(cls, backend_figure, result, cell, theme) -> None:
+        # Hidden axes around the layout, y reversed and to scale; a figure
+        # of this one cell is sized from the layout.
+        x0, x1, y0, y1 = cls._layout_bounds(result)
+        backend_figure.update_xaxes(visible=False, range=[x0, x1], row=cell.row, col=cell.col)
+        backend_figure.update_yaxes(
+            visible=False, range=[y1, y0], scaleanchor="x", row=cell.row, col=cell.col
+        )
+        layout = backend_figure.layout
+        n_cells = len(list(backend_figure.select_xaxes())) + len(
+            list(backend_figure.select_scenes())
+        )
+        if n_cells == 1 and layout.width is None and layout.height is None:
+            px = theme.graph_px_per_unit
             backend_figure.update_layout(
                 width=max(400, (x1 - x0) * px), height=max(300, (y1 - y0) * px)
             )
-
-        return cls(
-            node_idx, port_idx, edge_idx, (shape_start, len(shapes)), (annotation_start, len(annotations))
-        )
 
     #: Data-unit padding around every node/cluster's own bounding box when
     #: computing the figure's axis range - just enough that a card's own
@@ -123,10 +155,11 @@ class NodeLinkArtist(PlotlyArtist):
     @staticmethod
     def _node_colors(category, theme) -> tuple[str, str]:
         """(fill, border) for a node/cluster category, from
-        theme.node_color_by_type. Unknown categories (e.g. "default") use
-        the "graphnode" pair; theme.node_color_default is only used if that
-        is missing too."""
-        pair = theme.node_color_by_type.get(category) or theme.node_color_by_type.get("graphnode")
+        theme.node_color_by_type; a category without a pair uses the model
+        pair, theme.node_color_default only if that is missing too."""
+        pair = theme.node_color_by_type.get(category.value) or theme.node_color_by_type.get(
+            NodeCategory.MODEL.value
+        )
         if pair is not None:
             return pair["fill"], pair["border"]
         return theme.node_color_default, theme.line_color
@@ -141,10 +174,9 @@ class NodeLinkArtist(PlotlyArtist):
         return owned
 
     @classmethod
-    def _shapes_and_annotations(cls, plot, layout):
-        theme = plot.theme
-        show_port_names = getattr(plot, "show_port_names", False)
-        show_edge_labels = getattr(plot, "show_edge_labels", True)
+    def _shapes_and_annotations(cls, layout, theme):
+        show_port_names = layout.show_port_names
+        show_edge_labels = layout.show_edge_labels
         shapes, annotations = [], []
         cards = (*layout.nodes, *layout.clusters)
 
@@ -303,7 +335,7 @@ class NodeLinkArtist(PlotlyArtist):
         for every non-constraint port; strokes are theme.line_color."""
         fill_color, _border_color = cls._node_colors(node.category, theme)
         shapes = []
-        is_constraint = node.category == "constraint"
+        is_constraint = node.category is NodeCategory.CONSTRAINT
         for port in node.output_ports:
             is_wired = (port.x, port.y) in wired_from
             if is_constraint or is_wired:
@@ -478,40 +510,10 @@ class NodeLinkArtist(PlotlyArtist):
             showlegend=False,
         )
 
-    def update(self, backend_figure, plot, row=None, col=None):
-        """Rebuild this artist's shapes, annotations and hover traces.
 
-        See :meth:`~qewton.visualization.renderers.base.Artist.update`.
-        """
-        layout = plot.evaluate()
-        shapes, annotations = self._shapes_and_annotations(plot, layout)
-
-        current_shapes = list(backend_figure.layout.shapes)
-        start, count = self.shape_range
-        current_shapes[start : start + count] = shapes
-        backend_figure.layout.shapes = tuple(current_shapes)
-
-        current_annotations = list(backend_figure.layout.annotations)
-        start, count = self.annotation_range
-        current_annotations[start : start + count] = annotations
-        backend_figure.layout.annotations = tuple(current_annotations)
-
-        node_trace = backend_figure.data[self.figure_idx]
-        new_nodes = self._node_hover_trace(layout, plot.theme)
-        node_trace.x, node_trace.y = new_nodes.x, new_nodes.y
-        node_trace.hovertext = new_nodes.hovertext
-        node_trace.marker.size = new_nodes.marker.size
-        node_trace.hoverlabel = new_nodes.hoverlabel
-
-        port_trace = backend_figure.data[self.port_trace_idx]
-        new_ports = self._port_trace(layout, plot.theme)
-        port_trace.x, port_trace.y = new_ports.x, new_ports.y
-        port_trace.hovertext = new_ports.hovertext
-        port_trace.hoverlabel = new_ports.hoverlabel
-
-        edge_trace = backend_figure.data[self.edge_trace_idx]
-        new_edges = self._edge_trace(layout, plot.theme)
-        edge_trace.x, edge_trace.y = new_edges.x, new_edges.y
-        edge_trace.hovertext = new_edges.hovertext
-        edge_trace.hoverlabel = new_edges.hoverlabel
-        edge_trace.marker.size = new_edges.marker.size
+def _replaced(entries, entry_range, new) -> tuple:
+    # `entries` with the range of an artist replaced by `new`.
+    start, count = entry_range
+    entries = list(entries)
+    entries[start : start + count] = new
+    return tuple(entries)

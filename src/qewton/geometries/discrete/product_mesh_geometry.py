@@ -9,8 +9,9 @@ from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
-from qewton.geometries.base import Geometry, DiscreteGeometry
+from qewton.geometries.base import Geometry, DiscreteGeometry, Structure
 from qewton.geometries.discrete.mesh import Mesh
+from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 
 
 def _as_numpy(data, backend) -> np.ndarray:
@@ -135,7 +136,9 @@ class ProductMeshGeometry(DiscreteGeometry[TensorType]):
         ValueError: If fewer than two factors are given.
 
     Attributes:
-        factors (list): The meshed factor geometries.
+        factors (list of DiscreteGeometry): The meshed factor geometries; a
+            factor that is no discrete geometry (e.g. the boundary of a
+            mesh) as a MeshGeometry of its mesh.
         device (Device or str): The device of the vertices and cells.
         factor_shape (tuple of int): Number of vertices of each factor.
         mesh (Mesh): The simplex mesh of the full product, built on first
@@ -166,10 +169,37 @@ class ProductMeshGeometry(DiscreteGeometry[TensorType]):
             discretization_points=backend.build_tensor(points, device=device),
             backend=backend,
         )
-        self.factors = list(factors)
+        # A meshed factor that is no discrete geometry itself (e.g. the
+        # boundary of a mesh) is kept as the discrete geometry of its mesh.
+        self._factors = [
+            f
+            if isinstance(f, DiscreteGeometry)
+            else MeshGeometry(f.variable, f.mesh, discretization_of=f, backend=f.backend)
+            for f in factors
+        ]
         self.discretization_of = discretization_of
         self._device = device
         self._mesh: Mesh | None = None
+
+    @property
+    def factors(self) -> list:
+        return self._factors
+
+    def subproduct(self, factors: list) -> ProductMeshGeometry:
+        """See :meth:`~qewton.geometries.base.DiscreteGeometry.subproduct`."""
+        return ProductMeshGeometry(factors, device=self._device, backend=self.backend)
+
+    @property
+    def structure(self) -> Structure:
+        return Structure.MESH
+
+    @property
+    def topological_dim(self) -> int:
+        return sum(f.topological_dim for f in self.factors)
+
+    @property
+    def cells(self) -> np.ndarray:
+        return _as_numpy(self.mesh.cells, self.backend)
 
     @property
     def factor_shape(self) -> tuple[int, ...]:
@@ -305,7 +335,27 @@ class ProductDiscreteGeometry(DiscreteGeometry[TensorType]):
             discretization_points=backend.build_tensor(points),
             backend=backend,
         )
-        self.factors = list(factors)
+        self._factors = list(factors)
+
+    @property
+    def factors(self) -> list:
+        return self._factors
+
+    def subproduct(self, factors: list) -> ProductDiscreteGeometry:
+        """See :meth:`~qewton.geometries.base.DiscreteGeometry.subproduct`."""
+        return ProductDiscreteGeometry(factors, backend=self.backend)
+
+    @property
+    def structure(self) -> Structure:
+        return Structure.POINTS
+
+    @property
+    def topological_dim(self) -> int:
+        return 0
+
+    @property
+    def cells(self) -> None:
+        return None
 
     @property
     def factor_shapes(self) -> list[tuple[int, ...]]:

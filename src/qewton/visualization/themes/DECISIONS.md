@@ -2,7 +2,7 @@
 
 ## Colormap roles vs. concrete colormaps vs. renderer strings
 
-A ColorSpec's `cmap` is one of three kinds. A role (`cmaps.sequential`,
+A ColorScale's `cmap` is one of three kinds. A role (`cmaps.sequential`,
 `diverging`, `cyclic`) means "this kind of colormap, as the theme defines
 it" and is resolved at draw time, so changing the theme changes every plot
 that used a role. A concrete colormap (`cmaps.meadow`, ...) is fixed and
@@ -25,6 +25,6 @@ colors are the same in every theme.
 
 ## Graph plots use a fixed pixel size per data unit
 
-Node cards are sized in layout data units but their fonts in points. The
-figure size of a graph plot is therefore derived from
-`Theme.graph_px_per_unit`, so text fits its card at any graph size.
+Node cards are sized in layout data units but their fonts in points, so
+`Theme.graph_px_per_unit` gives the figure size of a graph plot and text
+fits its card at any graph size.

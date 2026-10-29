@@ -1,649 +1,495 @@
-"""The Figure, which arranges Plots in a panel grid and draws them."""
+"""The Figure, which arranges plots in a grid of cells and draws them."""
 
+import itertools
 import warnings
+from dataclasses import dataclass, field
 
+from qewton.visualization.axes import (
+    Control,
+    FixedAxis,
+    PositionAxis,
+    Selector,
+    SliderAxis,
+    TimeAxis,
+)
 from qewton.visualization.layout import Layout, Overlay, Row, normalize
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.spec import (
-    AxisSpec,
-    ControlSpec,
-    FacetSpec,
-    Scale,
-    SliderSpec,
-    TimeSpec,
-)
-from qewton.visualization.renderers.base import Artist, Renderer
-from qewton.visualization.themes.base import Theme
 from qewton.visualization.renderers import DEFAULT_RENDERER
-from qewton.visualization.themes import DEFAULT_THEME
+from qewton.visualization.renderers.base import Renderer
+from qewton.visualization.scales import ColorScale
+
+
+@dataclass(eq=False)
+class Cell:
+    """One drawn copy of an Overlay in the figure grid.
+
+    Args:
+        row: Grid row, 1-indexed.
+        col: Grid column, 1-indexed.
+        overlay: The overlay drawn here.
+        facet_states: ``{FacetAxis: state}`` of this copy.
+
+    Attributes:
+        dim (int): Number of position components: 2 or 3, or 0 for plots
+            that lay out their own axes (e.g. parallel coordinates).
+        axes (dict): ``{channel: PositionAxis}`` of the overlay.
+        title (str or None): The overlay's title, followed by the facet
+            states and the states of fixed axes, e.g. ``"u, t = 0.5"``.
+        scaled_channels (tuple of str): The channels drawn to one scale.
+    """
+
+    row: int
+    col: int
+    overlay: Overlay
+    facet_states: dict = field(default_factory=dict)
+
+    @property
+    def dim(self) -> int:
+        return self.overlay.dim
+
+    @property
+    def axes(self) -> dict[str, PositionAxis]:
+        return self.overlay.axes
+
+    @property
+    def scaled_channels(self) -> tuple[str, ...]:
+        return self.overlay.scaled_channels
+
+    @property
+    def title(self) -> str | None:
+        parts = [self.overlay.title]
+        parts += [
+            f"{facet.name} = {facet.label(s)}" for facet, s in self.facet_states.items()
+        ]
+        parts += [
+            f"{c.name} = {c.label(c.state)}"
+            for plot in self.overlay.plots
+            for c in plot.controls
+            if isinstance(c, FixedAxis)
+        ]
+        parts = list(dict.fromkeys(p for p in parts if p))  # each text once, in order
+        return ", ".join(parts) if parts else None
+
+    def axis_title(self, channel: str) -> str | None:
+        """The title of a position axis; see
+        :meth:`~qewton.visualization.layout.Overlay.axis_title`."""
+        return self.overlay.axis_title(channel)
+
+    def axis_ticks(self, channel: str) -> tuple | None:
+        """The ticks of a position axis; see
+        :meth:`~qewton.visualization.layout.Overlay.axis_ticks`."""
+        return self.overlay.axis_ticks(channel)
 
 
 class Figure:
-    """Draws one or more Plots into a single backend figure.
+    """Draws plots, arranged in a layout, with a renderer.
 
-    Plots are arranged in a grid of panels (see
-    :class:`~qewton.visualization.layout.Overlay`,
-    :class:`~qewton.visualization.layout.Row` and
-    :class:`~qewton.visualization.layout.Column`). A panel is split into a
-    facet grid when one of its plots declares a
-    :class:`~qewton.visualization.plots.spec.FacetSpec`, and the figure is
-    animated when a plot declares a
-    :class:`~qewton.visualization.plots.spec.TimeSpec`.
+    Each overlay of the layout is one cell of the grid, repeated per state
+    of its facet axes. Drawing trains all scales over every state of the
+    plots' controls, then draws one artist per Result into its cell, the
+    position axes of every cell and one colorbar per ColorScale.
+
+    A control is shown in one of two ways: *connected* to a widget of an
+    application, which sets its state and draws again, or *embedded* into
+    the output, which then holds every state (:meth:`draw` with
+    `embedded`). An embedded Selector draws every candidate and shows the
+    chosen one. Per plot at most one control axis and one Selector are
+    embedded, since their states would overwrite each other.
 
     Args:
-        plots: A single Plot, a Layout (Overlay/Row/Column, arbitrarily
-            nested), a list of Plots (equivalent to ``Row(*plots)``), or
-            None to add plots later via :meth:`add_plot`.
-        renderer: The renderer used to draw and export the figure.
-        theme: The theme applied to every plot of this figure.
-        title (str, optional): Figure title.
+        plots: A Plot, a Layout, or a list of plots (a Row).
+        renderer: The renderer drawing and exporting the figure, used by
+            this figure only; a new default renderer if None.
+        title: Title of the figure.
+
+    Raises:
+        ValueError: With more than one TimeAxis, an overlay with more than
+            one facet axis per orientation, or a renderer already drawing
+            another figure.
 
     Attributes:
-        renderer (Renderer): The renderer used to draw and export the
-            figure.
-        theme (Theme): The theme applied to every plot of this figure.
-        title (str | None): Figure title.
-        panels (list[list[Overlay]]): The panel grid, row by row.
-        plots (list[Plot]): Every plot of this figure, in the order they
-            were added.
-        controls (list[ControlSpec]): The distinct controls of all plots,
-            except FacetSpecs.
-        selector_specs (list[SelectorSpec]): The distinct SelectorSpecs
-            embedded in all plots.
-        artists (dict): The Artist per plot and facet cell, keyed by plot,
-            then by ``(row_index, col_index)``; ``(None, None)`` without
-            facets.
-        backend_figure (object): The renderer's figure object, e.g. a
-            Plotly figure.
+        renderer (Renderer): The renderer.
+        title (str or None): The title.
+        plots (list of Plot): Every plot, in reading order.
+        cells (list of Cell): The cells of the grid.
+        grid_shape (tuple of int): Number of grid rows and columns.
+        controls (list of Control): Every control of the plots (control
+            axes and selectors), each shared instance once.
+        color_scales (list of ColorScale): Every color scale of the plots,
+            each shared instance once.
+        backend_figure (object): The renderer's figure.
     """
 
     def __init__(
         self,
-        plots: Plot | Layout | list[Plot] | None = None,
-        renderer: Renderer = DEFAULT_RENDERER,
-        theme: Theme = DEFAULT_THEME,
-        title=None,
-    ):
-        self.renderer = renderer
-        self.theme = theme
+        plots: Plot | Layout | list[Plot],
+        renderer: Renderer | None = None,
+        title: str | None = None,
+    ) -> None:
+        self.renderer = renderer if renderer is not None else DEFAULT_RENDERER()
         self.title = title
-        self.panels: list[list[Overlay]] = []
-        self.plots = []
-        self.controls = []
-        self.selector_specs = []
-
-        if plots is not None:
-            if isinstance(plots, list):
-                plots = Row(*plots)
-            self.panels = normalize(plots)
-            for row in self.panels:
-                for overlay in row:
-                    for plot in overlay.plots:
-                        self._register_plot(plot)
-
-        # One artist per (plot, cell) - the non-faceted case degenerates to a
-        # single {(None, None): artist} entry per plot.
-        self.artists: dict[Plot, dict[tuple, Artist]] = {}
-        self.backend_figure = renderer.setup(self)
-
-    def add_plot(self, plot: Plot):
-        """Add `plot` as a new panel in a new row of the panel grid.
-
-        The plot gets this figure's theme and a ``color_index`` (its
-        position among all plots of the figure), and its controls and
-        SelectorSpecs are registered.
-
-        Args:
-            plot: The plot to add.
-        """
-        self.panels.append([Overlay(plot)])
-        self._register_plot(plot)
-        self._sync_backend_figure()
-
-    def _sync_backend_figure(self):
-        """Rebuild backend_figure and drop every cached Artist.
-
-        The backend figure fixes the grid shape and cell types when built,
-        so it is rebuilt whenever the panel grid changes; the next draw()
-        recreates the artists.
-        """
-        self.backend_figure = self.renderer.setup(self)
-        self.artists = {}
-
-    def _register_plot(self, plot: Plot):
-        """Apply this Figure's theme and collect `plot`'s controls and
-        SelectorSpecs."""
-        plot.theme = self.theme
-        plot.color_index = len(self.plots)
-        self.plots.append(plot)
-        for spec in plot.controls:
-            if isinstance(spec, ControlSpec) and not isinstance(spec, FacetSpec):
-                if spec not in self.controls:
-                    self.controls.append(spec)
-        for spec in plot.selector_specs:
-            if spec not in self.selector_specs:
-                self.selector_specs.append(spec)
-
-    def _rebuild_controls_and_selector_specs(self):
-        """Recompute self.controls/self.selector_specs from self.plots."""
-        self.controls = []
-        self.selector_specs = []
-        for plot in self.plots:
-            for spec in plot.controls:
-                if isinstance(spec, ControlSpec) and not isinstance(spec, FacetSpec):
-                    if spec not in self.controls:
-                        self.controls.append(spec)
-            for spec in plot.selector_specs:
-                if spec not in self.selector_specs:
-                    self.selector_specs.append(spec)
-
-    def remove_plot(self, plot: Plot):
-        """Remove `plot` from this figure's panel grid.
-
-        Args:
-            plot: The plot to remove.
-
-        Raises:
-            ValueError: If `plot` is not part of this figure.
-        """
-        for row in self.panels:
-            for overlay in row:
-                if overlay.remove(plot):
-                    self.plots.remove(plot)
-                    self._rebuild_controls_and_selector_specs()
-                    self._sync_backend_figure()
-                    return
-        raise ValueError(f"{plot} is not part of this Figure.")
-
-    def replace_plot(self, old: Plot, new: Plot):
-        """Replace `old` with `new` in the same panel position.
-
-        `new` gets this figure's theme and keeps `old`'s ``color_index``.
-
-        Args:
-            old: The plot of this figure to replace.
-            new: The plot to put in its place.
-
-        Raises:
-            ValueError: If `old` is not part of this figure, or if `new`
-                does not share the ``embedding_dim`` of `old`'s Overlay.
-        """
-        for row in self.panels:
-            for overlay in row:
-                if old in overlay.plots:
-                    overlay.replace(old, new)
-                    self.plots[self.plots.index(old)] = new
-                    new.theme = self.theme
-                    new.color_index = old.color_index
-                    self._rebuild_controls_and_selector_specs()
-                    self._sync_backend_figure()
-                    return
-        raise ValueError(f"{old} is not part of this Figure.")
-
-    @staticmethod
-    def facet_specs(plot: Plot) -> dict[str, FacetSpec]:
-        """Collect the FacetSpecs of `plot` by orientation.
-
-        Args:
-            plot: The plot whose controls are searched.
-
-        Returns:
-            The FacetSpec per orientation (``"row"`` and/or ``"col"``).
-
-        Raises:
-            AssertionError: If `plot` has more than one FacetSpec for one
-                orientation.
-        """
-        specs = [s for s in plot.controls if isinstance(s, FacetSpec)]
-        by_orientation = {s.orientation: s for s in specs}
-        assert len(by_orientation) == len(
-            specs
-        ), "At most one FacetSpec per orientation (row/col) allowed per plot."
-        return by_orientation
-
-    def _facet_extent(self) -> tuple[int, int]:
-        """(facet_rows, facet_cols): the largest facet grid of any plot.
-        Every panel's block of cells has this size."""
-        facet_rows, facet_cols = 1, 1
-        for plot in self.plots:
-            facets = self.facet_specs(plot)
-            if "row" in facets:
-                facet_rows = max(facet_rows, len(facets["row"].values))
-            if "col" in facets:
-                facet_cols = max(facet_cols, len(facets["col"].values))
-        return facet_rows, facet_cols
-
-    def grid_shape(self) -> tuple[int, int]:
-        """Compute the size of the figure's cell grid.
-
-        Every panel gets a block of the largest facet grid of any plot. A
-        plot without a FacetSpec on an orientation draws into the first
-        row or column of its block only.
-
-        Returns:
-            ``(n_rows, n_cols)``: panel rows times facet rows, panel
-            columns times facet columns.
-        """
-        facet_rows, facet_cols = self._facet_extent()
-        panel_rows = len(self.panels) if self.panels else 1
-        panel_cols = max((len(row) for row in self.panels), default=1)
-        return panel_rows * facet_rows, panel_cols * facet_cols
-
-    def cell_titles(self, n_rows: int, n_cols: int) -> list[str]:
-        """Compute the subplot title of every grid cell.
-
-        A cell's title joins the distinct, non-None titles of its panel's
-        plots, followed by the facet labels of that cell if any. Cells no
-        plot draws into get ``""``.
-
-        Args:
-            n_rows: Number of grid rows, as returned by :meth:`grid_shape`.
-            n_cols: Number of grid columns, as returned by
-                :meth:`grid_shape`.
-
-        Returns:
-            One title per cell, in row-major order.
-        """
-        titles = [["" for _ in range(n_cols)] for _ in range(n_rows)]
-        facet_rows, facet_cols = self._facet_extent()
-        for panel_row, row in enumerate(self.panels):
-            for panel_col, overlay in enumerate(row):
-                row_off = panel_row * facet_rows
-                col_off = panel_col * facet_cols
-                panel_title = ", ".join(
-                    dict.fromkeys(p.title for p in overlay.plots if p.title is not None)
-                )
-                cells_reached = set()
-                for plot in overlay.plots:
-                    facets = self.facet_specs(plot)
-                    row_indices = (
-                        range(len(facets["row"].values)) if "row" in facets else [0]
-                    )
-                    col_indices = (
-                        range(len(facets["col"].values)) if "col" in facets else [0]
-                    )
-                    cells_reached.update((r, c) for r in row_indices for c in col_indices)
-                for row_idx, col_idx in cells_reached or {(0, 0)}:
-                    titles[row_off + row_idx][col_off + col_idx] = panel_title
-                for plot in overlay.plots:
-                    facets = self.facet_specs(plot)
-                    row_facet, col_facet = facets.get("row"), facets.get("col")
-                    row_indices = range(len(row_facet.values)) if row_facet else [0]
-                    col_indices = range(len(col_facet.values)) if col_facet else [0]
-                    for row_idx in row_indices:
-                        for col_idx in col_indices:
-                            facet_parts = [
-                                facet.labels[idx]
-                                for facet, idx in (
-                                    (row_facet, row_idx),
-                                    (col_facet, col_idx),
-                                )
-                                if facet is not None and facet.labels is not None
-                            ]
-                            if not facet_parts:
-                                continue
-                            cell = (row_off + row_idx, col_off + col_idx)
-                            facet_title = ", ".join(facet_parts)
-                            existing = titles[cell[0]][cell[1]]
-                            titles[cell[0]][cell[1]] = (
-                                f"{existing}, {facet_title}" if existing else facet_title
-                            )
-        return [title for row in titles for title in row]
-
-    def cell_y_titles(self, n_rows: int, n_cols: int) -> list[str | None]:
-        """Compute the y-axis title override of every grid cell.
-
-        Considers the plots of the cell's panel whose ``y`` is an
-        :class:`~qewton.visualization.plots.spec.AxisSpec`.
-
-        Args:
-            n_rows: Number of grid rows, as returned by :meth:`grid_shape`.
-            n_cols: Number of grid columns, as returned by
-                :meth:`grid_shape`.
-
-        Returns:
-            One entry per cell, in row-major order: the shared
-            ``y.math_name`` if all these plots agree on it, ``""`` if they
-            differ, and None if the panel has no such plot (the artists'
-            own titles are kept).
-        """
-        titles: list[str | None] = [None] * (n_rows * n_cols)
-        facet_rows, facet_cols = self._facet_extent()
-        for panel_row, row in enumerate(self.panels):
-            for panel_col, overlay in enumerate(row):
-                names = {
-                    p.y.math_name
-                    for p in overlay.plots
-                    if isinstance(getattr(p, "y", None), AxisSpec)
-                }
-                if not names:
-                    continue
-                title = names.pop() if len(names) == 1 else ""
-                row_off = panel_row * facet_rows
-                col_off = panel_col * facet_cols
-                for dr in range(facet_rows):
-                    for dc in range(facet_cols):
-                        titles[(row_off + dr) * n_cols + (col_off + dc)] = title
-        return titles
-
-    def cell_dimensions(self, n_rows: int, n_cols: int) -> list[list[int]]:
-        """Compute the embedding dimension of every grid cell.
-
-        Args:
-            n_rows: Number of grid rows, as returned by :meth:`grid_shape`.
-            n_cols: Number of grid columns, as returned by
-                :meth:`grid_shape`.
-
-        Returns:
-            The ``embedding_dim`` (2 or 3) of the plots drawing into each
-            cell, row by row; 2 for cells no plot draws into.
-        """
-        dims = [[2] * n_cols for _ in range(n_rows)]
-        facet_rows, facet_cols = self._facet_extent()
-        for panel_row, row in enumerate(self.panels):
-            for panel_col, overlay in enumerate(row):
-                row_off = panel_row * facet_rows
-                col_off = panel_col * facet_cols
-                for plot in overlay.plots:
-                    facets = self.facet_specs(plot)
-                    row_indices = (
-                        range(len(facets["row"].values)) if "row" in facets else [0]
-                    )
-                    col_indices = (
-                        range(len(facets["col"].values)) if "col" in facets else [0]
-                    )
-                    for row_idx in row_indices:
-                        for col_idx in col_indices:
-                            dims[row_off + row_idx][
-                                col_off + col_idx
-                            ] = plot.embedding_dim
-        return dims
-
-    def cell_spans(self, n_rows: int, n_cols: int) -> list[list[tuple[int, int] | None]]:
-        """Compute the row and column span of every grid cell.
-
-        A panel without a FacetSpec on an orientation, in a figure whose
-        blocks are faceted on that orientation, spans its whole block on
-        that orientation. All other cells span ``(1, 1)``.
-
-        Args:
-            n_rows: Number of grid rows, as returned by :meth:`grid_shape`.
-            n_cols: Number of grid columns, as returned by
-                :meth:`grid_shape`.
-
-        Returns:
-            ``(rowspan, colspan)`` per cell, row by row; None for a cell
-            covered by a spanning neighbor.
-        """
-        spans: list[list[tuple[int, int] | None]] = [
-            [(1, 1) for _ in range(n_cols)] for _ in range(n_rows)
+        self._grid = normalize(Row(*plots) if isinstance(plots, list) else plots)
+        self.plots = [
+            plot for row in self._grid for overlay in row for plot in overlay.plots
         ]
-        absorbed = set()
-        facet_rows, facet_cols = self._facet_extent()
-        for panel_row, row in enumerate(self.panels):
-            for panel_col, overlay in enumerate(row):
+        self._assign_colors()
+        self._check_controls()
+        self.cells, self.grid_shape = self._layout_cells()
+        self._embedded: list[Control] = []
+        self._by_visibility: set = set()
+        self._keys: set = set()
+        self.renderer.setup(self)
+
+    @property
+    def backend_figure(self):
+        return self.renderer.backend_figure
+
+    # --- structure -----------------------------------------------------------
+
+    def _assign_colors(self) -> None:
+        index = 0
+        for plot in self.plots:
+            plot.color_index = index
+            index += plot.n_copies
+
+    def _check_controls(self) -> None:
+        times = [c for c in self.controls if isinstance(c, TimeAxis)]
+        if len(times) > 1:
+            raise ValueError(f"A Figure supports one TimeAxis, got {len(times)}.")
+        for row in self._grid:
+            for overlay in row:
+                orientations = [f.orientation for f in overlay.facets]
+                if len(orientations) != len(set(orientations)):
+                    raise ValueError(
+                        "An overlay takes at most one FacetAxis per orientation."
+                    )
+
+    @property
+    def controls(self) -> list[Control]:
+        return _unique(c for plot in self.plots for c in plot.controls + plot.selectors)
+
+    @property
+    def color_scales(self) -> list[ColorScale]:
+        return _unique(s for plot in self.plots for s in plot.color_scales)
+
+    def _layout_cells(self) -> tuple[list[Cell], tuple[int, int]]:
+        # Every overlay takes a block of cells, one per facet state; rows
+        # and columns of the grid are as large as their largest block.
+        blocks = [[_facet_block(overlay) for overlay in row] for row in self._grid]
+        heights = [max((len(b[0]) for b in row), default=1) for row in blocks]
+        widths = [
+            max((len(blocks[r][c][1]) for r in range(len(blocks))), default=1)
+            for c in range(len(blocks[0]))
+        ]
+        cells = []
+        for r, row in enumerate(self._grid):
+            for c, overlay in enumerate(row):
                 if not overlay.plots:
                     continue
-                row_off = panel_row * facet_rows
-                col_off = panel_col * facet_cols
-                has_row_facet = any("row" in self.facet_specs(p) for p in overlay.plots)
-                has_col_facet = any("col" in self.facet_specs(p) for p in overlay.plots)
-                rowspan = 1 if has_row_facet else facet_rows
-                colspan = 1 if has_col_facet else facet_cols
-                if rowspan == 1 and colspan == 1:
-                    continue
-                for plot in overlay.plots:
-                    facets = self.facet_specs(plot)
-                    row_indices = (
-                        range(len(facets["row"].values)) if "row" in facets else [0]
-                    )
-                    col_indices = (
-                        range(len(facets["col"].values)) if "col" in facets else [0]
-                    )
-                    for row_idx in row_indices:
-                        for col_idx in col_indices:
-                            origin = (row_off + row_idx, col_off + col_idx)
-                            spans[origin[0]][origin[1]] = (rowspan, colspan)
-                            for dr in range(rowspan):
-                                for dc in range(colspan):
-                                    if (dr, dc) != (0, 0):
-                                        absorbed.add((origin[0] + dr, origin[1] + dc))
-        for r, c in absorbed:
-            spans[r][c] = None
-        return spans
+                row_states, col_states = blocks[r][c]
+                for i, row_state in enumerate(row_states):
+                    for j, col_state in enumerate(col_states):
+                        states = {**row_state, **col_state}
+                        row_index, col_index = (
+                            sum(heights[:r]) + i + 1,
+                            sum(widths[:c]) + j + 1,
+                        )
+                        cells.append(Cell(row_index, col_index, overlay, states))
+        return cells, (sum(heights), sum(widths))
 
-    def _animation_spec(self) -> TimeSpec | None:
-        """The one TimeSpec of the whole Figure, or None. Animation frames
-        are figure-wide, so at most one TimeSpec is supported."""
-        specs = [s for s in self.controls if isinstance(s, TimeSpec)]
-        assert len(specs) <= 1, "At most one TimeSpec per Figure is supported."
-        return specs[0] if specs else None
+    def cell_at(self, row: int, col: int) -> Cell | None:
+        """The cell at a grid position, or None for an empty position.
 
-    def _scales_in_use(self) -> list[Scale]:
-        seen = []
-        for plot in self.plots:
-            spec = getattr(plot, "color", None)
-            scale = getattr(spec, "scale", None) if spec is not None else None
-            if scale is not None and scale not in seen:
-                seen.append(scale)
-        return seen
-
-    def _plot_cells(self, plot: Plot) -> list[tuple[int, int]]:
-        """Every 1-indexed (row, col) grid cell `plot` draws into."""
-        facet_rows, facet_cols = self._facet_extent()
-        for panel_row, row in enumerate(self.panels):
-            for panel_col, overlay in enumerate(row):
-                if plot not in overlay.plots:
-                    continue
-                row_off, col_off = panel_row * facet_rows, panel_col * facet_cols
-                facets = self.facet_specs(plot)
-                row_indices = range(len(facets["row"].values)) if "row" in facets else [0]
-                col_indices = range(len(facets["col"].values)) if "col" in facets else [0]
-                return [
-                    (row_off + r + 1, col_off + c + 1)
-                    for r in row_indices
-                    for c in col_indices
-                ]
-        return []
-
-    def _assign_colorbar_cells(self) -> None:
-        """Set each in-use Scale's `colorbar_cell` to the rightmost grid
-        cell of the plots using it, so a shared Scale gets one colorbar
-        after all of them. No-op for a single-cell figure."""
-        if self.grid_shape() == (1, 1):
-            return
-        for scale in self._scales_in_use():
-            cells = [
-                cell
-                for plot in self.plots
-                if getattr(plot, "color", None) is not None and plot.color.scale is scale
-                for cell in self._plot_cells(plot)
-            ]
-            if cells:
-                scale.colorbar_cell = max(cells, key=lambda cell: cell[1])
-
-    def draw(self):
-        """Draw every plot into the backend figure.
-
-        Shared color scales are trained on all plots first, then each plot
-        is drawn into its cells, and with a TimeSpec the animation frames
-        are added. Artists from an earlier call are updated, not recreated.
+        Args:
+            row: Grid row, 1-indexed.
+            col: Grid column, 1-indexed.
 
         Returns:
-            object: The renderer's figure object (:attr:`backend_figure`).
+            Cell or None: The cell.
         """
-        # Pass 1: reset and train shared scales before anything is drawn, so
-        # no colorbar claim from a previous draw() remains.
-        for scale in self._scales_in_use():
-            scale.reset()
-        for plot in self.plots:
-            values = plot.color_values()
-            if values is not None:
-                plot.color.scale.observe(values)
-        self._assign_colorbar_cells()
+        return next((c for c in self.cells if (c.row, c.col) == (row, col)), None)
 
-        # Pass 2: draw with the trained scales. In a grid, Plotly requires
-        # row and col together, so a non-faceted orientation uses cell 1 of
-        # the plot's block instead of None.
-        is_grid = self.grid_shape() != (1, 1)
-        facet_rows, facet_cols = self._facet_extent()
-        for panel_row, row in enumerate(self.panels):
-            for panel_col, overlay in enumerate(row):
-                block_offset = (panel_row * facet_rows, panel_col * facet_cols)
-                for plot in overlay.plots:
-                    self._draw_plot(plot, is_grid, block_offset)
+    def cells_of(self, scale: ColorScale) -> list[Cell]:
+        """The cells with a plot using `scale`.
 
-        # Reconcile y-axis titles per panel after all artists set theirs: a
-        # single artist can't see its Overlay siblings (see cell_y_titles()).
-        n_rows, n_cols = self.grid_shape()
-        self.renderer.reconcile_y_axis_titles(self, self.backend_figure, n_rows, n_cols)
+        Args:
+            scale: A color scale of the figure.
 
-        # Pass 3 (only with a TimeSpec): the renderer adds one frame per
-        # animated state on top of the drawn figure.
-        spec = self._animation_spec()
-        if spec is not None:
-            self.renderer.animate(self, self.backend_figure, spec)
+        Returns:
+            list of Cell: The cells, in grid order.
+        """
+        return [
+            c for c in self.cells if any(scale in p.color_scales for p in c.overlay.plots)
+        ]
 
+    def color_title(self, scale: ColorScale) -> str | None:
+        """The colorbar title of `scale`: the color title all plots drawing
+        with it share in their current states, else None.
+
+        Args:
+            scale: A color scale of the figure.
+
+        Returns:
+            str or None: The title.
+        """
+        titles = {
+            plot.color_title for plot in self.plots if scale in plot.active_color_scales
+        }
+        return titles.pop() if len(titles) == 1 else None
+
+    # --- drawing -------------------------------------------------------------
+
+    def draw(self, embedded: list[Control] = ()):
+        """Train the scales and draw every plot, axis and colorbar in the
+        current states of the controls; embed the states of `embedded`.
+        Artists of an earlier call are updated, not recreated.
+
+        Args:
+            embedded: Controls whose states the output holds. Controls the
+                renderer cannot embed are left out; of controls on one plot
+                that would overwrite each other, the first is embedded and
+                the others warn (a TimeAxis comes first, then SliderAxes,
+                then Selectors). A plot embeds one control axis; next to
+                it one Selector, drawn as every candidate of which the
+                chosen one is shown. Without one, it embeds several
+                Selectors of different channels, each by its data.
+
+        Returns:
+            object: The renderer's figure (:attr:`backend_figure`).
+        """
+        self._embedded, self._by_visibility = self._embeddable(embedded)
+        self._train_scales()
+        self.redraw()
+        self.renderer.clear_embeddings()
+        for control in self._embedded:
+            self._embed(control)
         return self.backend_figure
 
-    def _draw_plot(
-        self, plot: Plot, is_grid: bool, block_offset: tuple[int, int] = (0, 0)
-    ):
-        """Draw one plot into every grid cell of its FacetSpec(s), offset by
-        `block_offset` (its panel's top-left cell). Each FacetSpec's state is
-        set per cell and restored afterwards."""
-        facets = self.facet_specs(plot)
-        row_spec = facets.get("row")
-        col_spec = facets.get("col")
-        row_values = row_spec.values if row_spec is not None else [None]
-        col_values = col_spec.values if col_spec is not None else [None]
-        row_off, col_off = block_offset
+    def redraw(self) -> None:
+        """Draw every plot, axis and colorbar in the current states of the
+        controls, without training the scales again."""
+        drawn = self._draw(list(enumerate(self.cells)), self.plots, self.color_scales)
+        for key in self._keys - drawn:
+            self.renderer.hide(key)
+        self._keys |= drawn
 
-        cell_artists = self.artists.setdefault(plot, {})
-        original_row_state = row_spec.state if row_spec is not None else None
-        original_col_state = col_spec.state if col_spec is not None else None
+    def _draw(self, cells, plots, scales) -> set:
+        # Draw `plots` in `cells` (index, cell), their axes and the colorbars
+        # of `scales`; returns the keys of the drawn artists.
+        keys = set()
+        for index, cell in cells:
+            originals = {facet: facet.state for facet in cell.facet_states}
+            try:
+                for facet, state in cell.facet_states.items():
+                    facet.state = state
+                for plot in cell.overlay.plots:
+                    if plot in plots:
+                        keys |= self._draw_plot(plot, index, cell)
+            finally:
+                for facet, state in originals.items():
+                    facet.state = state
+            self.renderer.draw_axes(cell)
+        for scale in scales:
+            active = any(scale in p.active_color_scales for p in self.plots)
+            self.renderer.draw_colorbar(
+                scale, self.color_title(scale), self.cells_of(scale), visible=active
+            )
+        return keys
+
+    def _draw_plot(self, plot: Plot, index: int, cell: Cell) -> set:
+        # One artist per copy and choice of the plot's selectors embedded by
+        # visibility; only those of the current choice are visible.
+        selectors = [s for s in plot.selectors if s in self._by_visibility]
+        current = tuple(s.state for s in selectors)
+        keys = set()
         try:
-            for row_idx, row_value in enumerate(row_values):
-                if row_spec is not None:
-                    row_spec.state = row_value
-                for col_idx, col_value in enumerate(col_values):
-                    if col_spec is not None:
-                        col_spec.state = col_value
-
-                    key = (
-                        row_idx if row_spec is not None else None,
-                        col_idx if col_spec is not None else None,
-                    )
-                    if is_grid:
-                        row = row_off + (row_idx if row_spec is not None else 0) + 1
-                        col = col_off + (col_idx if col_spec is not None else 0) + 1
-                    else:
-                        row = col = None
-
-                    artist = cell_artists.get(key)
-                    if artist is None:
-                        artist = plot.create_artist(
-                            self.backend_figure, self.renderer, row=row, col=col
-                        )
-                        cell_artists[key] = artist
-                    else:
-                        artist.update(self.backend_figure, plot, row=row, col=col)
+            for choice in itertools.product(*(s.states for s in selectors)):
+                for selector, state in zip(selectors, choice):
+                    selector.state = state
+                for copy, result in enumerate(plot.evaluate()):
+                    key = (id(plot), index, copy, choice)
+                    self.renderer.draw(key, result, cell, visible=choice == current)
+                    keys.add(key)
         finally:
-            if row_spec is not None:
-                row_spec.state = original_row_state
-            if col_spec is not None:
-                col_spec.state = original_col_state
+            for selector, state in zip(selectors, current):
+                selector.state = state
+        return keys
 
-    def _apply_selectors(self):
-        """Bake every SelectorSpec into the backend figure as a dropdown.
-        Called by show()/save_html() only, not by draw(), since
-        DashApplication provides its own dropdowns."""
-        for spec in self.selector_specs:
-            self.renderer.apply_selector(self, self.backend_figure, spec)
+    def _train_scales(self) -> None:
+        overlays = _unique(cell.overlay for cell in self.cells)
+        for scale in _unique(
+            [s for o in overlays for s in (a.scale for a in o.axes.values())]
+            + [s for plot in self.plots for s in plot.scales]
+        ):
+            scale.reset()
+        for overlay in overlays:
+            axes = {channel: axis.scale for channel, axis in overlay.axes.items()}
+            for plot in overlay.plots:
+                plot.train_scales(axes)
 
-    def _apply_sliders(self):
-        """Bake a single SliderSpec into the backend figure (see
-        Renderer.apply_slider()). With several SliderSpecs, only the initial
-        state is shown and a warning is issued. Called by show()/save_html()
-        only, like _apply_selectors().
-        """
-        sliders = [c for c in self.controls if isinstance(c, SliderSpec)]
-        if len(sliders) == 1:
-            self.renderer.apply_slider(self, self.backend_figure, sliders[0])
-        elif len(sliders) > 1:
+    # --- embedding -----------------------------------------------------------
+
+    def _embeddable(self, requested) -> tuple[list[Control], set]:
+        # The requested controls the renderer embeds, in _EMBEDDINGS order,
+        # without those overwriting an earlier one on a common plot, and
+        # the selectors among them embedded by visibility.
+        kinds = list(_EMBEDDINGS)
+        candidates = sorted(
+            (c for c in requested if type(c) in _EMBEDDINGS),
+            key=lambda c: kinds.index(type(c)),
+        )
+        accepted, skipped, by_visibility = [], [], set()
+        for control in candidates:
+            if self._overwrites(control, accepted):
+                skipped.append(control)
+                continue
+            accepted.append(control)
+            if isinstance(control, Selector) and self._next_to_a_control_axis(
+                control, accepted
+            ):
+                by_visibility.add(control)
+        if skipped:
             warnings.warn(
-                f"Figure has {len(sliders)} SliderSpecs "
-                f"({', '.join(s.name for s in sliders)}) - show()/save_html() "
-                "can only bake a single slider into a static figure, so only "
-                "the initial state is shown. Use DashApplication for "
-                "interactive sliders.",
+                f"{', '.join(c.name for c in skipped)} cannot be embedded together "
+                "with another control of the same kind on one plot; only the current "
+                "state is shown. Use a connected output, e.g. DashApplication.",
                 stacklevel=3,
             )
+        return accepted, by_visibility
 
-    def show(self):
-        """Draw the figure and display it, e.g. in a browser tab.
-
-        One SliderSpec and all SelectorSpecs are baked into the figure as
-        static widgets; with several SliderSpecs, only their initial state
-        is shown and a warning is issued.
-        """
-        self.draw()
-        self._apply_selectors()
-        self._apply_sliders()
-        self.renderer.show(self.backend_figure)
-
-    def save_html(self, path):
-        """Draw the figure and write it to an interactive HTML file.
-
-        Widgets are baked in as for :meth:`show`.
-
-        Args:
-            path (str | os.PathLike): The output file.
-        """
-        self.draw()
-        self._apply_selectors()
-        self._apply_sliders()
-        self.renderer.save_html(self.backend_figure, path)
-
-    def save_gif(self, path, fps=10):
-        """Draw the figure and write its animation to an animated GIF.
-
-        Requires a TimeSpec in the figure: each animation frame is
-        rasterized and becomes one GIF frame.
-
-        Args:
-            path (str | os.PathLike): The output file.
-            fps (float): Frame rate for equally spaced time steps. With
-                non-uniform time steps, each frame is shown in proportion to
-                its time step (see
-                :meth:`~qewton.visualization.plots.spec.TimeSpec.frame_weights`).
-                Defaults to 10.
-        """
-        self.draw()
-        spec = self._animation_spec()
-        self.renderer.save_gif(
-            self.backend_figure,
-            path,
-            fps=fps,
-            frame_weights=spec.frame_weights() if spec is not None else None,
+    def _next_to_a_control_axis(self, selector: Selector, accepted) -> bool:
+        # Whether a plot of `selector` embeds a control axis, which writes
+        # all its data.
+        return any(
+            selector in p.selectors and any(c in p.controls for c in accepted)
+            for p in self.plots
         )
 
-    def save_png(self, path, **kwargs):
-        """Draw the figure and write its current state to a PNG file.
+    def _overwrites(self, control: Control, accepted) -> bool:
+        # Whether embedding `control` next to the accepted controls would
+        # overwrite states on a common plot: two control axes, a selector
+        # next to a control axis and another selector, or two selectors of
+        # one channel.
+        for plot in self.plots:
+            axes = [c for c in accepted if c in plot.controls]
+            selectors = [c for c in accepted if c in plot.selectors]
+            if control in plot.controls and axes:
+                return True
+            if control in plot.selectors and selectors:
+                if axes:
+                    return True
+                channels = set(plot.channels_of(control))
+                if any(channels & set(plot.channels_of(s)) for s in selectors):
+                    return True
+        return False
+
+    def _embed(self, control: Control) -> None:
+        # Draw each state of the plots depending on `control` and hand the
+        # renderer's snapshots to its embedding.
+        plots = [p for p in self.plots if control in p.controls + p.selectors]
+        cells = [
+            (i, c)
+            for i, c in enumerate(self.cells)
+            if any(p in plots for p in c.overlay.plots)
+        ]
+        scales = _unique(s for p in plots for s in p.color_scales)
+        original = control.state
+        snapshots = []
+        try:
+            for state in control.states:
+                control.state = state
+                keys = sorted(self._draw(cells, plots, scales))
+                snapshots.append(
+                    self.renderer.snapshot(keys, [c for _, c in cells], scales)
+                )
+        finally:
+            control.state = original
+            self._draw(cells, plots, scales)
+        _EMBEDDINGS[type(control)](self.renderer)(control, snapshots)
+
+    # --- outputs -------------------------------------------------------------
+
+    def show(self) -> None:
+        """Draw the figure with every control embedded and display it."""
+        self.draw(embedded=self.controls)
+        self.renderer.show()
+
+    def save_html(self, path) -> None:
+        """Draw the figure with every control embedded and write it as an
+        interactive HTML file.
 
         Args:
-            path (str | os.PathLike): The output file.
-            **kwargs: Forwarded to the renderer's ``save_image``.
+            path (str or path-like): Output file path.
         """
-        self.draw()
-        self.renderer.save_image(self.backend_figure, path, format="png", **kwargs)
+        self.draw(embedded=self.controls)
+        self.renderer.save_html(path)
 
-    def save_svg(self, path, **kwargs):
-        """Draw the figure and write its current state to an SVG file.
+    def save_png(self, path, **kwargs) -> None:
+        """Draw the figure in its current states and write a PNG image.
 
         Args:
-            path (str | os.PathLike): The output file.
-            **kwargs: Forwarded to the renderer's ``save_image``.
+            path (str or path-like): Output file path.
+            **kwargs: Passed on to the renderer's image export.
         """
         self.draw()
-        self.renderer.save_image(self.backend_figure, path, format="svg", **kwargs)
+        self.renderer.save_image(path, format="png", **kwargs)
+
+    def save_svg(self, path, **kwargs) -> None:
+        """Draw the figure in its current states and write an SVG image.
+
+        Args:
+            path (str or path-like): Output file path.
+            **kwargs: Passed on to the renderer's image export.
+        """
+        self.draw()
+        self.renderer.save_image(path, format="svg", **kwargs)
+
+    def save_gif(self, path, fps: float = 10) -> None:
+        """Draw the figure with its TimeAxis embedded and write the
+        animation as a looping GIF; other controls stay in their current
+        states.
+
+        Args:
+            path (str or path-like): Output file path.
+            fps: Frames per second of equally spaced time steps; each frame
+                is shown in proportion to its time step (see
+                :meth:`~qewton.visualization.axes.TimeAxis.frame_weights`).
+
+        Raises:
+            ValueError: If the figure has no TimeAxis.
+        """
+        times = [c for c in self.controls if isinstance(c, TimeAxis)]
+        if not times:
+            raise ValueError("save_gif needs a TimeAxis in the figure.")
+        (time,) = times
+        self.draw(embedded=[time])
+        self.renderer.save_gif(path, fps=fps, frame_weights=time.frame_weights())
+
+
+#: How a self-contained output embeds a kind of control: the renderer
+#: method embedding its states.
+_EMBEDDINGS = {
+    TimeAxis: lambda renderer: renderer.animate,
+    SliderAxis: lambda renderer: renderer.apply_slider,
+    Selector: lambda renderer: renderer.apply_selector,
+}
+
+
+def _facet_block(overlay: Overlay) -> tuple[list[dict], list[dict]]:
+    # The facet states of the rows and of the columns of an overlay's block.
+    if not overlay.plots:
+        return [{}], [{}]
+    by_orientation = {f.orientation: f for f in overlay.facets}
+    rows, cols = by_orientation.get("row"), by_orientation.get("col")
+    row_states = [{rows: s} for s in rows.states] if rows is not None else [{}]
+    col_states = [{cols: s} for s in cols.states] if cols is not None else [{}]
+    return row_states, col_states
+
+
+def _unique(items) -> list:
+    # Items in order, each instance once.
+    found = []
+    for item in items:
+        if not any(item is other for other in found):
+            found.append(item)
+    return found

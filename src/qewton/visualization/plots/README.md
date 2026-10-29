@@ -1,100 +1,59 @@
 # Plots
 
-Plot classes describe *what* to draw: which input is shown and how its
-parts map onto visual roles. They do no drawing themselves. A `Figure`
-evaluates each plot and hands the result to a renderer-specific artist
-(see the [visualization README](../README.md)).
+Plot classes describe *what* is drawn: they bind references into their
+input to channels and evaluate to renderer-neutral Results, one per drawn
+copy. They never draw; a renderer's artists draw the Results (see the
+[visualization README](../README.md)).
 
-## Plot families
+## Plot interface (`base.py`)
 
-`Plot` (`base.py`) is the common base. Four input families derive from it:
+`Plot` is the base of every family. A Figure uses only this interface:
+`evaluate()`, `train_scales(axes)`, `dim` (number of positions; 0 for a
+plot that lays out its own axes), `controls`, `selectors`,
+`channels_of(selector)`, `color_scales` (with a colorbar of the figure),
+`active_color_scales`, `scales` (all to reset before training),
+`n_copies`, `scaled_channels`, `point_encoding`, `axis_title(channel)`,
+`axis_ticks(channel)` and `color_title`.
 
-- **`DataPlot`** (`data/`): `data` plus the `DataConfiguration`
-  describing its axes. Grid plots (`HeatmapPlot`, `SurfacePlot`,
-  `ImagePlot`, `EmbeddedGridPlot`, `QuiverPlot`), mesh plots
-  (`MeshFieldPlot`, `MeshSurfacePlot`, `MeshVectorPlot`),
-  `PointCloudPlot`, curves (`LinePlot`, `PathPlot`) and samples
-  (`ScatterPlot`, `BarPlot`).
-- **`TablePlot`** (`table/`): named columns, e.g. run logs or tuning
-  results; categorical columns are coded to integers once.
-  `ParallelCoordinatesPlot`, `TableScatter`, and `TableHeatMap`
-  (`table/heatmap.py`, not exported by the package).
-- **`GeometryPlot`** (`geometry/`): a geometry, drawn as its mesh.
-- **`GraphPlot`** (`graph/`): a computation graph, drawn as a node-link
-  diagram by `GraphLayout` (`graph/layout.py`).
+## Families
 
-Specs, controls, `Scale`, `Figure`, artists and the result contract are
-shared by all families; only `evaluate()` and the control reduction differ.
+- **`DataPlot`** (`data/`): data plus its `DataConfiguration`. A type
+  declares `channels`, `required` channels, `results` per domain
+  (structure and topological dimension), the numbers of positions `dims`,
+  whether positions must come from the domain, and whether colors are
+  mapped through a ColorScale; it implements `build(positions, color,
+  features)`. `supports(domain, n_positions)` answers from these
+  declarations. Types: `HeatmapPlot`, `SurfacePlot`, `LinePlot`,
+  `ScatterPlot`, `BarPlot`, `VectorPlot`, `ImagePlot`.
+- **`TablePlot`** (`table/`): a table of named columns (a dict or a
+  DataFrame); text and boolean columns are categorical. Channels take
+  column names or Selectors of them; controls reference a column and draw
+  the rows of one of its values; log columns are drawn by their log10
+  with ticks labeled by values. Types: `TableScatter`, `TableHeatMap`,
+  `ParallelCoordinatesPlot`.
+- **`GeometryPlot`** (`geometry/`): a geometry without data: points,
+  curves, surfaces with edges, volumes by their boundary.
+- **`GraphPlot`** (`graph/`): a computation graph as a node-link diagram,
+  laid out by `GraphLayout`.
 
-## Specs (`spec.py`)
+## Results (`result.py`)
 
-A spec maps one role of a plot onto a `Variable`/`Axes` (data plots) or a
-column name (table plots). Plots accept plain Variables and wrap them in
-the matching spec.
+| Result | Drawn as | Produced by |
+|---|---|---|
+| `HeatmapResult` | colored cells of a rectilinear grid | `HeatmapPlot`, `TableHeatMap` |
+| `SurfaceResult` | triangles, flat in 2D or a surface in 3D | `HeatmapPlot` (mesh), `SurfacePlot`, `GeometryPlot` |
+| `LineResult` | segments through points | `LinePlot`, `GeometryPlot` |
+| `MarkerResult` | a marker per point | `ScatterPlot`, `TableScatter`, `GeometryPlot` |
+| `BarResult` | a bar per point | `BarPlot` |
+| `ArrowResult` | an arrow per point | `VectorPlot` |
+| `ImageResult` | colors on a uniform grid | `ImagePlot` |
+| `ParallelCoordinatesResult` | a line per row through one axis per column | `ParallelCoordinatesPlot` |
+| `GraphLayoutResult` | node cards, ports, edges, clusters | `GraphPlot` |
 
-- **`AxisSpec`**: a structural axis (`x`, `y`, `z`), optionally
-  logarithmic.
-- **`ColorSpec`**: the quantity that colors the plot, with an optional
-  colormap and `Scale`.
-- **`VectorSpec`**: a 2D or 3D vector field, with arrow `scale`
-  (None autoscales), `normalize` and `subsample`.
-- **`Scale`**: a value range shared by every `ColorSpec` referencing the
-  same instance; explicit `vmin`/`vmax` win over observed values, and
-  `symmetric=True` centers the range on zero.
-- **Controls** (`ControlSpec` subclasses), passed as `controls=[...]`, for
-  dimensions that are not drawn directly: `SliderSpec` (interactive
-  slider), `FixedSpec` (one fixed index), `FacetSpec` (one subplot per
-  value), `TimeSpec` (animation frames). The owning plot resolves their
-  defaults (bounds, values, physical coordinates) from the data.
-- **`SelectorSpec`**: passed in place of a Variable to another spec,
-  e.g. `ColorSpec(SelectorSpec([u, p]))`, to switch which candidate fills
-  that role. It is found through `Plot.selector_specs`, not `controls`.
+Every Result carries its legend entry, the index of its categorical
+color, its color scale and title, and its opacity.
 
-## From `evaluate()` to artists
-
-1. `Figure.draw()` resets every `Scale`, collects each plot's
-   `color_values()` (over all slider and time states) and trains the
-   scales.
-2. For each grid cell, `plot.create_artist(backend_figure, renderer,
-   row, col)` picks the renderer's artist class (e.g.
-   `renderer.HeatmapArtist`), which calls `plot.evaluate()`.
-3. `evaluate()` reduces the input to the current control states (a data
-   plot via `apply_controls()`, which also reduces geometry coordinates)
-   and returns a renderer-neutral result dataclass from `result.py`:
-
-   | Result                 | Produced by                                     |
-   |------------------------|-------------------------------------------------|
-   | `GridResult`           | `HeatmapPlot`, `SurfacePlot`, `ImagePlot`       |
-   | `ParametricGridResult` | `EmbeddedGridPlot`, `TableHeatMap`              |
-   | `MeshResult`           | mesh field/surface plots, `GeometryPlot`        |
-   | `VectorResult`         | `QuiverPlot`, `MeshVectorPlot`                  |
-   | `PointCloudResult`     | `PointCloudPlot`                                |
-   | `CurveResult`          | `LinePlot`                                      |
-   | `PathResult`           | `PathPlot`                                      |
-   | `ScatterResult`        | `ScatterPlot`, `TableScatter`                   |
-   | `TableResult`          | `ParallelCoordinatesPlot`                       |
-   | `GraphLayoutResult`    | `GraphPlot`                                     |
-
-4. The artist draws the result; when a control changes,
-   `artist.update()` evaluates the plot again and refreshes its traces.
-
-## Usage
-
-```python
-from qewton.visualization import (
-    ColorSpec, Figure, HeatmapPlot, Scale, SliderSpec, cmaps,
-)
-
-shared = Scale(symmetric=True)
-plot = HeatmapPlot(
-    data, data_config, x=x, y=y,
-    color=ColorSpec(u, cmap=cmaps.diverging, scale=shared),
-    controls=[SliderSpec(t)],
-)
-Figure(plot).show()
-```
-
-Usually `auto_plot` chooses the plot type and roles; the classes here are
-used directly to override that choice.
+`color_channel.py` holds the color scales of a color binding, shared by
+data and table plots.
 
 See [DECISIONS.md](DECISIONS.md) for design decisions.

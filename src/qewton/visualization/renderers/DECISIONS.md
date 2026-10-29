@@ -1,56 +1,60 @@
 # Renderers: design decisions
 
-## Artists own fixed traces and refresh them fully in update()
+Decisions of the renderers component (R in
+[../REQUIREMENTS.md](../REQUIREMENTS.md)) that concern the subpackage only.
 
-An artist creates its traces once in `create()` and `update()` rewrites
-them in place from the plot's current control state. The number of traces
-never changes between updates (binned artists keep empty bins), so trace
-indices stay valid. Every trace an artist owns is listed in
-`trace_indices`.
+## A renderer draws one figure (R1)
 
-## Static controls are baked by replaying update()
+The renderer holds the framework's figure and the artists of one figure;
+binding it to a second one raises. Keys given by the figure identify an
+artist across states, so redrawing updates artists in place.
 
-`animate()`, `apply_slider()` and `apply_selector()` need no per-artist
-code: they set the control to each state, replay `update()` and capture
-the traces in `trace_indices` (and the titles/types of their 2D axes) as
-Plotly frames, slider steps or dropdown buttons. Afterwards the control and
-the live traces return to their initial state. The figure grows with the
-number of states. Dash does not use this; it redraws live.
+## Embedding writes what differs (R2, F3)
 
-## Baked controls are limited where replay cannot be correct
+The figure redraws each state of a control; the renderer snapshots what
+was drawn and writes only the properties that differ between the states.
+Steps of different controls thereby leave each other's properties alone.
+Frames of an animation hold the changed traces only; exporting them (GIF)
+applies each frame to the whole figure.
 
-Each baked state varies one control with all others frozen. Hence:
+## Colored 2D marks are binned into one trace per value bin (R1)
 
-- A plot with more than one `SelectorSpec` raises `NotImplementedError`
-  in `apply_selector()`; most combinations would silently show wrong data.
-- A `TimeSpec` on a faceted plot raises `NotImplementedError` in
-  `animate()`, and a `SliderSpec` on a faceted plot is skipped with a
-  warning: `update()` has no per-cell facet state to replay.
+Plotly gives filled 2D scatters and lines one color per trace. Filled
+triangles, colored lines and arrows are therefore grouped into a fixed
+number of value bins, one trace each; the number of traces never changes
+between states, so trace indices stay valid. Colorbars are drawn by the
+renderer on invisible carrier traces, one per color scale.
 
-`DashApplication` handles these cases.
+## No transitions, no autoplay (R2)
 
-## TimeSpec uses frames, sliders and selectors use update buttons
+Plotly would interpolate the coordinates of traces between frames, which
+moves elements between the traces of different value bins. Frames switch
+without transition, and an animation starts with its play button, since
+playing on load would use Plotly's default transitions.
 
-Only `animate()` uses Plotly frames (play/pause, frame slider, GIF
-export). Sliders and dropdowns use `method="update"` steps, so they can
-coexist with an animation on the same figure.
+## Math only where Plotly renders it (R4)
 
-## Per-element colors are binned into one trace per value bin
+Plotly renders math only through MathJax, only for a text that is math
+as a whole, and never in slider labels or dropdown buttons. With MathJax,
+a text naming a Variable is written as one math text (plain parts as
+`\text`); slider labels and buttons get Plotly's markup (italics, sub-
+and superscripts). Notebook frontends load no MathJax for Plotly's own
+output, so `show()` displays HTML that loads it.
 
-Plotly's 2D `go.Scatter` fills and lines have one color per trace, and
-`go.Cone` only colors by its own vector norm. Filled 2D meshes, 2D field
-curves and arrow fields (2D and 3D) therefore group elements into
-`plot.n_bins` value bins, one flat-colored trace each, plus an invisible
-carrier trace for the continuous colorbar. Filled 2D meshes use
-`go.Scatter` instead of `go.Mesh3d` at z = 0 so they stay in a cartesian
-cell that can share a row with heatmaps. Cones use `sizemode="raw"` so
-cone lengths stay comparable across bins.
+## Linked views (F5)
 
-## Graph plots draw with shapes and a fixed pixel scale
+Cells sharing position axes are linked by Plotly's `matches`. Plotly
+forbids an axis in both a `matches` and a `scaleanchor` constraint, so
+only the first cell of a group is drawn to scale and the others follow
+it. 3D scenes have no linking of their own: a script in HTML outputs and
+a clientside callback in Dash pass a camera change on to the scenes of
+its group. Embedded states never set a camera or range, and `uirevision`
+keeps the viewer's view when Dash redraws.
+
+## Graph plots use shapes and a fixed pixel scale (GI4)
 
 `NodeLinkArtist` draws cards, wires and labels as layout shapes and
-annotations, with exactly three invisible hover traces, so the trace count
-does not grow with the graph. Card sizes are in data units but fonts in
-points, so an unsized, non-faceted graph figure gets a pixel size from
-`theme.graph_px_per_unit`, and `show()` / `save_html()` disable Plotly's
-responsive mode for figures with explicit size.
+annotations in the axes of its cell, with three invisible hover traces,
+so the trace count does not grow with the graph. Cards are sized in data
+units but fonts in points, so a figure of one graph cell is sized from
+`theme.graph_px_per_unit`.
