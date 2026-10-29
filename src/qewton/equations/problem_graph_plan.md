@@ -204,6 +204,8 @@ class Signature:
     domain: SetNode | None = None           # inferred: smallest set on which it is evaluated
 ```
 
+As built (`analysis/signatures.py`) the signature is richer and `signatures(task)` returns one per function: `Signature(symbol, axes, batch, shape, evaluated_on, role, shape_assumed)`. `axes` are the declared inputs in order, `batch` is the function's own parameter axis if it is varying, and `evaluated_on` replaces the single `domain`: the sets where the function is evaluated (constraint sets after normalizing, narrowed by restrictions and integrals), none inside another. A single smallest set would need set unions, which the plan avoids. A function that is merely coupled to a varying one does not get the batch axis yet; that comes with the coupling graph (M3). The one warning is for a declared input that no constraint the function appears in can use, e.g. `q(x, t)` in a constraint on `Omega` when no interval exists to lift it onto.
+
 ### 5.3 Operator registry
 
 ```python
@@ -341,7 +343,7 @@ class AnalysisContext:
 
 ### 6.0 axis pre-pass
 
-A syntactic scan of the constraints: which unknowns have a time derivative (`d(u, t)`) or appear under a time `Slice`. It runs before normalize, so time lifting does not depend on inference.
+Not a separate pass. It was meant to find the functions that depend on time, so that time lifting could run before inference. `free_axes` (`analysis/axes.py`) already answers that for every expression, with no inference, so time lifting uses it directly. Whether a function has a time *derivative* (evolution versus a time-parametrised stationary problem) is a question for structure and classification (M3, M4), which compute derivative orders anyway.
 
 ### 6.1 validate
 
@@ -352,12 +354,14 @@ A syntactic scan of the constraints: which unknowns have a time derivative (`d(u
 
 ### 6.2 normalize
 
-- Bring every constraint into the form `lhs − rhs REL 0`, keeping the original for display.
-- **Time lifting.** If the pre-pass found a time derivative or time slice for an unknown, a constraint holding on S without time is rewritten to hold on S × I. Constraints containing a `Slice` (initial conditions) are left alone. Each lift is reported as an info diagnostic.
+- Bring every constraint into the form `lhs − rhs REL 0` (`analysis/normalize.py`, done), keeping the original for display in `Normalized.origin`. A right side that is already zero stays, and a complementarity is not rewritten.
+- **Time lifting** (`analysis/normalize.py`, done). A constraint whose sides vary in time (`free_axes` contains t) but which holds on a set without time is rewritten to hold on S × I, and a global one to hold on I. Initial conditions are left alone, since `Restrict` to a slice already removed t. The interval is the one `Domain` on the time coordinate found in the problem; if there is none, or several, nothing is lifted and a warning says why. Each lift is an info diagnostic, and `Normalized.origin` keeps the original constraints for display. The `partitions` are not lifted: a lifted part `Gamma_D x I` is covered by its declaration of `Gamma_D`.
 - **Batch lifting.** Constraints that involve a batched symbol get its parameter axis (× P).
-- Choose canonical forms: expand `lap(u, axes)` into `div(grad(u, axes), axes)`, so that −div(ν∇u) and −νΔu are analysed consistently.
+- Choose canonical forms (done): expand `lap(u, axes)` into `div(grad(u, axes), axes)`, so that −div(ν∇u) and −νΔu are analysed consistently. The rewrite uses the new generic `transform(expr, rewrite)` in `expr/nodes.py`, which rebuilds a tree bottom-up and reuses unchanged nodes.
 
 ### 6.3 infer: signatures and shapes
+
+- **Pipeline.** `run_pipeline(task)` (`analysis/pipeline.py`) runs validate, normalize and signatures, merges all findings (errors first) into an `AnalysisContext(task, problem, origin, signatures, diagnostics)`, and `report(ctx)` prints Task, Signatures, Normalized and Diagnostics. `ctx.ok` is false when any finding is an error.
 
 - **Inputs are declared, not inferred.** Usage cannot tell a constant from a function that is not differentiated along x, so no inputs are inferred from where a symbol is used. An unknown with `inputs=None` is an error.
 - **Lower bound check.** If a derivative along axis a is applied directly to s (or to `Restrict(s, …)`), then a must be among s's declared inputs, or the problem is an error. Nested cases such as grad(u·v) give no requirement.
@@ -367,6 +371,12 @@ A syntactic scan of the constraints: which unknowns have a time derivative (`d(u
 - The declared inputs and the inferred shapes are printed first in the report, the way a type checker shows types.
 
 ### 6.4 structure
+
+As built so far (`analysis/structure.py`): `derivative_orders(expr)`, `constraint_orders(constraint)` and `unknown_orders(task)`, one dict `{coordinate: order}` per unknown and constraint. Orders add along the path to the function, each factor of a product axis counts, and a shift adds nothing.
+
+Also built: `linearity(expr, unknowns)` (`none`/`linear`/`affine`/`nonlinear`, from `OpSpec.linearity`) and `split(task)`, which returns an operator part and a source part per constraint of the normalized problem. Terms are signed and tagged. A constraint is `linear` when no operator term is nonlinear (a linear operator plus a source).
+
+- **Inherited batch axes (to do in this milestone).** An unknown that is coupled, through the coupling graph, to a varying function or set has a value per instance too, so it gets that batch axis. The signatures do not show this yet; it follows from the coupling graph.
 
 - **Derivative orders.** For each (constraint, unknown) pair, the maximum order per axis, accumulated through differential operators while walking the tree.
 - **Operator/source split.** Expand top-level sums. Terms that depend on unknowns form the operator part; the rest form the source part.
@@ -557,7 +567,7 @@ Suggestions
 | # | Content | Done when |
 |---|---|---|
 | M1 | Geometry, expressions, constraints, pretty printer | Poisson and heat fixtures build and print |
-| M2 | Task (roles, batch axes), validate, normalize, infer; signature report | golden tests for signatures and shapes pass |
+| M2 | Task (roles, batch axes), validate, normalize, infer; signature report (the axis pre-pass was dropped; signatures use `evaluated_on`) | golden tests for signatures and shapes pass |
 | M3 | structure: orders, operator/source split, linearity, coupling graph | Stokes coupling graph shows the saddle-point block |
 | M4 | classify: PDE type, BC kinds and counts, function spaces | wave, advection, Stokes and obstacle fixtures classified correctly |
 | M5 | Batch placement and batched reporting (parameter axes) | worked example (Section 8) reports the batch correctly |

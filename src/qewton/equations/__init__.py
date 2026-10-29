@@ -16,7 +16,10 @@ from qewton.equations.model.constraints import (
     PendingConstraint,
     Relation,
 )
+from qewton.equations.analysis.normalize import Normalized, normalize
 from qewton.equations.analysis.overview import Overview, overview
+from qewton.equations.analysis.pipeline import AnalysisContext, report, run_pipeline
+from qewton.equations.analysis.signatures import Signature, Signatures, signatures
 from qewton.equations.analysis.validate import validate
 from qewton.equations.model.task import Role, Task, TaskError
 from qewton.equations.expr.api import (
@@ -47,6 +50,7 @@ from qewton.equations.expr.nodes import (
     Shift,
     as_expr,
     children,
+    transform,
     walk,
 )
 from qewton.equations.expr.ops import OPS, OpSpec, ShapeError, register
@@ -90,14 +94,19 @@ __all__ = [
     "Role",
     "Severity",
     "Shift",
+    "Signature",
+    "Signatures",
     "Task",
     "TaskError",
+    "AnalysisContext",
     "Apply",
     "as_expr",
     "children",
+    "transform",
     "walk",
     "OpSpec",
     "OPS",
+    "Normalized",
     "Overview",
     "register",
     "ShapeError",
@@ -109,8 +118,12 @@ __all__ = [
     "infer_shapes",
     "integral",
     "mean",
+    "normalize",
     "overview",
+    "report",
+    "run_pipeline",
     "shift",
+    "signatures",
     "validate",
     "d",
     "dt",

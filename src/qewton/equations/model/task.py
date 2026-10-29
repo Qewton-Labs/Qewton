@@ -175,9 +175,11 @@ def _check_value(
             )
         return
     array = np.asarray(value)
+    expected = _declared_shape(symbol)
+    got = array.shape[1:] if varying else array.shape
+    if allowed and got == (expected or ()):
+        return  # one value of the function's shape: a constant, no mesh needed
     if not allowed:
-        expected = _declared_shape(symbol)
-        got = array.shape[1:] if varying else array.shape
         if expected is not None and got != expected:
             raise TaskError(
                 f"The value of {name} has shape {got}, but {name} is declared "

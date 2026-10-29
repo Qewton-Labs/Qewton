@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import ClassVar
 
 from qewton.config.variables import Variable
@@ -318,6 +318,33 @@ def children(expr: Expr) -> tuple[Expr, ...]:
     if isinstance(expr, Shift):
         return (expr.expr, expr.offset)
     return ()
+
+
+def transform(expr: Expr, rewrite: Callable[[Expr], Expr]) -> Expr:
+    """Rebuild `expr` bottom-up, applying `rewrite` to every node after its children.
+
+    A node whose children did not change is reused, so an unchanged tree comes back
+    as the same object.
+    """
+    if isinstance(expr, Apply):
+        args = tuple(
+            transform(arg, rewrite) if isinstance(arg, Expr) else arg for arg in expr.args
+        )
+        same = all(new is old for new, old in zip(args, expr.args))
+        node = expr if same else Apply(expr.op, args)
+    elif isinstance(expr, (Restrict, Integral)):
+        inner = transform(expr.expr, rewrite)
+        node = expr if inner is expr.expr else replace(expr, expr=inner)
+    elif isinstance(expr, Shift):
+        inner, offset = transform(expr.expr, rewrite), transform(expr.offset, rewrite)
+        node = (
+            expr
+            if inner is expr.expr and offset is expr.offset
+            else Shift(inner, expr.axis, offset)
+        )
+    else:
+        node = expr
+    return rewrite(node)
 
 
 def walk(expr: Expr) -> Iterator[Expr]:

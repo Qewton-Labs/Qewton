@@ -127,6 +127,11 @@ class TestValues:
         with pytest.raises(TaskError, match="not among its inputs"):
             p.task(fixed={nu: sin(Coord(symbol(p, "g").inputs, 0))})
 
+    def test_a_single_value_for_a_function_of_space_is_a_constant(self, p):
+        g = symbol(p, "g")
+        p.task(fixed={g: 0.0})
+        p.task(varying={g: np.ones(7)})
+
     def test_array_over_space_needs_a_mesh(self, p):
         g = symbol(p, "g")
         with pytest.raises(TaskError, match="give a mesh"):
