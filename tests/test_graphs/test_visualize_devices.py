@@ -22,7 +22,7 @@ from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.graphs.graphs import Graph
 from qewton.optim.base import EvaluationPhase
 from qewton.visualization.figure import Figure
-from qewton.visualization.plots.spec import SliderSpec, TimeSpec
+from qewton.visualization import SliderAxis, TimeAxis
 
 needs_gpu = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a GPU")
 
@@ -64,7 +64,7 @@ def _box():
 def _space_time():
     domain = Interval(T, 0.0, 2.0) * Rectangle(X, [0.0, 0.0], 1.0, 1.0)
     graph, model = _graph(RandomUniformSampler(domain, 10), T * X)
-    return graph, model, dict(controls=[TimeSpec(T)], max_vertex_distance=0.5)
+    return graph, model, dict(controls=[TimeAxis(T)], max_vertex_distance=0.5)
 
 
 def _product_sampler():
@@ -72,7 +72,7 @@ def _product_sampler():
         Rectangle(X, [0.0, 0.0], 1.0, 1.0), 7
     )
     graph, model = _graph(sampler, T * X)
-    return graph, model, dict(controls=[TimeSpec(T)], max_vertex_distance=0.5)
+    return graph, model, dict(controls=[TimeAxis(T)], max_vertex_distance=0.5)
 
 
 def _data_reference():
@@ -84,7 +84,7 @@ def _data_reference():
     points = np.asarray(reference_geometry.discretization_points)
     config = DataConfiguration(GeometryAxes(reference_geometry), FeatureAxes(U))
     return graph, model, dict(
-        reference=points[:, :1], reference_config=config, controls=[TimeSpec(T)]
+        reference=points[:, :1], reference_config=config, controls=[TimeAxis(T)]
     )
 
 
@@ -173,7 +173,7 @@ def test_data_reference_after_training_with_another_variable_order(model_device)
     config = DataConfiguration(GeometryAxes(reference_geometry), FeatureAxes(V))
     layout = pipeline.visualize(
         model.output_ports[0], reference=reference, reference_config=config,
-        controls=[SliderSpec(A)],
+        controls=[SliderAxis(A)],
     )
     assert len(layout.plots) == 3
     Figure(layout).draw()

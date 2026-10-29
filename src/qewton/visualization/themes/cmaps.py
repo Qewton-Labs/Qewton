@@ -1,7 +1,7 @@
 """Qewton's colormaps as typed objects.
 
 Available as ``qewton.viz.cmaps``. Two kinds can be passed as
-``ColorSpec(cmap=...)``:
+``ColorScale(cmap=...)``:
 
 - Roles - `sequential`, `diverging`, `cyclic`: the colormap of this kind
   that the current Theme uses. They are resolved at draw time against the

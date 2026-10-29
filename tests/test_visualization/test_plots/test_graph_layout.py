@@ -2,6 +2,7 @@ import pytest
 
 from qewton.graphs.graphs import Graph
 from qewton.visualization.plots.graph.layout import GraphLayout
+from qewton.visualization.plots.result import NodeCategory
 
 
 def _box_overlaps(a, b) -> bool:
@@ -84,19 +85,17 @@ class TestGraphLayoutCompute:
 
 
 class TestNodeCategory:
-    def test_generic_leaf_nodes_get_the_default_category(self, simple_graph):
+    def test_nodes_without_a_category_of_their_own_are_models(self, simple_graph):
         result = GraphLayout.compute(simple_graph, depth=0)
         source = next(n for n in result.nodes if n.label == "Source")
-        assert source.category == "default"
+        assert source.category is NodeCategory.MODEL
 
-    def test_graphnode_composites_get_the_graphnode_category(self, simple_graph):
+    def test_graphnode_composites_are_models(self, simple_graph):
         result = GraphLayout.compute(simple_graph, depth=0)
         fcn = next(n for n in result.nodes if n.label == "fcn")
-        assert fcn.category == "graphnode"
+        assert fcn.category is NodeCategory.MODEL
 
     def test_nested_graphnode_leaves_are_still_categorized_correctly(self, simple_graph):
-        """FunctionalLinear (inside an expanded Linear, inside FCN) must be
-        recognized via isinstance(GraphNode), not by name matching."""
         result = GraphLayout.compute(simple_graph, depth=2)
         functional_linear = next(n for n in result.nodes if n.label == "functional_linear")
-        assert functional_linear.category == "graphnode"
+        assert functional_linear.category is NodeCategory.MODEL

@@ -1,61 +1,51 @@
-# from .tuning.analyzer import TuningAnalyzer
-
-from .plots.base import Plot
-from .plots.spec import (
-    ControlSpec,
-    FixedSpec,
-    FacetSpec,
-    SliderSpec,
-    TimeSpec,
-    ColorSpec,
-    AxisSpec,
-    VectorSpec,
-    SelectorSpec,
-    Scale,
+from .scales import Scale, ColorScale, Reduce, VectorScale
+from .axes import (
+    PositionAxis,
+    Control,
+    ControlAxis,
+    SliderAxis,
+    TimeAxis,
+    FacetAxis,
+    OverlayAxis,
+    FixedAxis,
+    Selector,
 )
+from .plots.base import Plot, PointEncoding
 from .plots.result import (
-    GridResult,
-    ParametricGridResult,
-    PointCloudResult,
-    MeshResult,
-    VectorResult,
-    CurveResult,
-    PathResult,
-    ScatterResult,
-    TableResult,
+    Result,
+    HeatmapResult,
+    ImageResult,
+    SurfaceResult,
+    LineResult,
+    MarkerResult,
+    BarResult,
+    ArrowResult,
+    ParallelCoordinatesResult,
+    ParallelDimension,
+    NodeCategory,
     PortLayout,
     NodeLayout,
     ClusterBox,
     EdgeLayout,
     GraphLayoutResult,
 )
-from .plots.geometry import GeometryPlot
-from .plots.graph import GraphPlot
 from .plots.data import (
     DataPlot,
-    CoordTransform,
-    IdentityCoord,
-    ImagePlot,
-    SurfacePlot,
-    HeatmapPlot,
-    StructuredGridPlot,
-    EmbeddedGridPlot,
-    QuiverPlot,
-    MeshPlot,
-    MeshFieldPlot,
-    MeshSurfacePlot,
-    MeshVectorPlot,
-    PointCloudPlot,
-    LinePlot,
-    PathPlot,
-    ScatterPlot,
     BarPlot,
+    HeatmapPlot,
+    ImagePlot,
+    LinePlot,
+    ScatterPlot,
+    SurfacePlot,
+    VectorPlot,
 )
-from .plots.table import *
-from .layout import Layout, Overlay, Row, Column
+from .plots.geometry import GeometryPlot
+from .plots.graph import GraphPlot
+from .plots.table import TablePlot, TableScatter, TableHeatMap, ParallelCoordinatesPlot
+from .layout import Layout, Overlay, Row, Column, auto_layout
 from .auto import auto_plot
 from .renderers.base import Artist, Renderer
 from .applications import RenderApplication, DashApplication
 from .themes import Theme, DEFAULT_THEME, LIGHT_THEME, DARK_THEME, cmaps
-from .figure import Figure
+from .figure import Cell, Figure
 from .nodes import PlotNode

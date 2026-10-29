@@ -1,216 +1,201 @@
-"""Renderer-agnostic result dataclasses returned by ``Plot.evaluate()``.
+"""Renderer-neutral results returned by ``Plot.evaluate()``.
 
-Results of colorable plots have a ``color`` field, which
-:meth:`~qewton.visualization.plots.base.Plot.color_values` reads to train a
-shared :class:`~qewton.visualization.plots.spec.Scale`.
+A Result is one state of one drawn primitive, including how it is drawn;
+a renderer draws it with the artist for its class. The layout classes
+(:class:`NodeLayout` and the like) are parts of a
+:class:`GraphLayoutResult`.
 """
 
 from dataclasses import dataclass
+from enum import Enum
 
 import numpy as np
 
-
-@dataclass
-class GridResult:
-    """Result of a structured-grid plot (heatmap, surface, image).
-
-    Positions are implicit grid indices; axis titles come from the plot's
-    :class:`~qewton.visualization.plots.spec.AxisSpec`.
-
-    Args:
-        values: Grid values with the y dimension first and the x dimension
-            second.
-        color: Color values in the same orientation, or None.
-
-    See Also:
-        :class:`~qewton.visualization.plots.data.grid.StructuredGridPlot`
-    """
-
-    values: np.ndarray
-    color: np.ndarray | None = None
+from qewton.visualization.scales import ColorScale
 
 
-@dataclass
-class ParametricGridResult:
-    """Result of a structured grid drawn at explicit coordinates.
+@dataclass(kw_only=True)
+class Result:
+    """One state of one drawn primitive.
+
+    Positions have one column per position channel (x, y, z); `values`
+    are the values of the color channel, one per element.
 
     Args:
-        values: Grid values.
-        x: X coordinates of the grid. For an embedded grid, the x component of
-            the 3D position of each grid point.
-        y: Y coordinates of the grid. For an embedded grid, the y component of
-            the 3D position of each grid point.
-        z: Z coordinates of the grid. For an embedded grid, the z component of
-            the 3D position of each grid point.
-        color: Color values, or None.
-
-    See Also:
-        :class:`~qewton.visualization.plots.data.grid.EmbeddedGridPlot`,
-        :class:`~qewton.visualization.plots.table.heatmap.TableHeatMap`
+        label: Legend entry, or None for no entry.
+        color_index: Index of the categorical color of every element (one
+            per drawn copy of the figure) if no color channel is bound;
+            the renderer's theme gives the color.
+        color_scale: Maps `values` to colors if a color channel is bound,
+            else None.
+        color_title: Title of the colorbar.
+        opacity: Opacity of every element.
     """
 
-    values: np.ndarray
+    label: str | None = None
+    color_index: int = 0
+    color_scale: ColorScale | None = None
+    color_title: str | None = None
+    opacity: float = 1.0
+
+
+@dataclass(kw_only=True)
+class HeatmapResult(Result):
+    """Values on a rectilinear 2D grid, drawn as colored cells.
+
+    Args:
+        x: Coordinates along x, shape ``(nx,)``.
+        y: Coordinates along y, shape ``(ny,)``.
+        values: Shape ``(ny, nx)``.
+    """
+
     x: np.ndarray
     y: np.ndarray
-    z: np.ndarray
-    color: np.ndarray | None = None
+    values: np.ndarray
 
 
-@dataclass
-class PointCloudResult:
-    """Result of an unstructured point cloud plot.
+@dataclass(kw_only=True)
+class SurfaceResult(Result):
+    """Filled triangles, flat in 2D or a surface in 3D.
 
     Args:
-        positions: Point positions, shape ``(n_points, n_components)`` with 1,
-            2 or 3 components.
-        color: One color value per point, or None.
-
-    See Also:
-        :class:`~qewton.visualization.plots.data.points.PointCloudPlot`
+        positions: Shape ``(n_points, dim)``.
+        cells: Triangles as point indices, shape ``(n_cells, 3)``.
+        values: One value per point, or None for a uniform color.
+        show_edges: Whether the cell edges are drawn.
     """
 
     positions: np.ndarray
-    color: np.ndarray | None = None
+    cells: np.ndarray
+    values: np.ndarray | None = None
+    show_edges: bool = False
 
 
-@dataclass
-class MeshResult:
-    """Result of a mesh plot or a geometry plot.
+@dataclass(kw_only=True)
+class LineResult(Result):
+    """A line through points, colored along its length if `values` is set.
 
     Args:
-        vertices: Vertex positions, shape ``(n_vertices, dim)``.
-        cells: Cells to draw, as indices into `vertices`.
-        color: One color value per vertex, or None.
-
-    See Also:
-        :class:`~qewton.visualization.plots.data.mesh.MeshPlot`,
-        :class:`~qewton.visualization.plots.geometry.GeometryPlot`
+        positions: Shape ``(n_points, dim)``.
+        segments: Point index pairs to join, shape ``(n_segments, 2)``.
+        values: One value per point, or None for a uniform color.
+        width: Line width, or None for the theme's.
+        dash: Dash pattern, e.g. ``"dash"``, or None for a solid line.
     """
 
-    vertices: np.ndarray
-    cells: np.ndarray
-    color: np.ndarray | None = None
+    positions: np.ndarray
+    segments: np.ndarray
+    values: np.ndarray | None = None
+    width: float | None = None
+    dash: str | None = None
 
 
-@dataclass
-class VectorResult:
-    """Result of an arrow-field plot.
+@dataclass(kw_only=True)
+class MarkerResult(Result):
+    """A marker per point.
 
     Args:
-        positions: Arrow base positions, shape ``(n_arrows, dim)``.
-        vectors: Arrow vectors after normalization and scaling, same shape.
-        magnitude: Magnitude of each raw vector, before normalization and
-            scaling.
-        color: One color value per arrow (the magnitude by default), or None
-            for flat, uncolored arrows.
+        positions: Shape ``(n_points, dim)``.
+        values: One value per point, or None for a uniform color.
+        size: Marker size, or None for the theme's.
+        symbol: Marker symbol, or None for the default.
+    """
 
-    See Also:
-        :class:`~qewton.visualization.plots.data.grid.QuiverPlot`,
-        :class:`~qewton.visualization.plots.data.mesh.MeshVectorPlot`
+    positions: np.ndarray
+    values: np.ndarray | None = None
+    size: float | None = None
+    symbol: str | None = None
+
+
+@dataclass(kw_only=True)
+class BarResult(Result):
+    """A bar per point, from 0 to its height.
+
+    Args:
+        positions: Shape ``(n_points, 2)``: the position along x and the
+            height.
+        values: One value per bar, or None for a uniform color.
+    """
+
+    positions: np.ndarray
+    values: np.ndarray | None = None
+
+
+@dataclass(kw_only=True)
+class ImageResult(Result):
+    """Colors on a rectilinear 2D grid with uniform spacing.
+
+    Args:
+        x: Coordinates along x, shape ``(nx,)``.
+        y: Coordinates along y, shape ``(ny,)``.
+        colors: RGB or RGBA components in [0, 1], shape ``(ny, nx, 3)`` or
+            ``(ny, nx, 4)``.
+    """
+
+    x: np.ndarray
+    y: np.ndarray
+    colors: np.ndarray
+
+
+@dataclass(kw_only=True)
+class ArrowResult(Result):
+    """An arrow per point.
+
+    Args:
+        positions: Tails of the arrows, shape ``(n_points, dim)``.
+        vectors: The arrows in data units, shape ``(n_points, dim)``.
+        values: One value per arrow, or None for a uniform color.
     """
 
     positions: np.ndarray
     vectors: np.ndarray
-    magnitude: np.ndarray
-    color: np.ndarray | None = None
+    values: np.ndarray | None = None
 
 
-@dataclass
-class CurveResult:
-    """Result of a line plot: one curve's x and y values.
-
-    Args:
-        x: Curve x values.
-        y: Curve y values.
-
-    See Also:
-        :class:`~qewton.visualization.plots.data.curve.LinePlot`
-    """
-
-    x: np.ndarray
-    y: np.ndarray
-
-
-@dataclass
-class PathResult:
-    """Result of a path plot: an ordered sequence of positions in space.
+@dataclass(frozen=True)
+class ParallelDimension:
+    """One axis of a parallel coordinates plot.
 
     Args:
-        positions: Ordered positions, shape ``(n_points, dim)`` with dim 2 or
-            3.
-
-    See Also:
-        :class:`~qewton.visualization.plots.data.curve.PathPlot`
+        title: Axis title.
+        values: One value per drawn row, in drawn values (e.g. log10 of a
+            log column, codes of a categorical one).
+        range: Range of the axis, in drawn values.
+        ticks: Tick positions and labels, or None for automatic ticks.
     """
 
-    positions: np.ndarray
-
-
-@dataclass
-class ScatterResult:
-    """Result of a scatter plot: one point per sample.
-
-    Args:
-        x: X value of each sample.
-        y: Y value of each sample.
-        color: One color value per sample, or None.
-
-    See Also:
-        :class:`~qewton.visualization.plots.data.samples.ScatterPlot`,
-        :class:`~qewton.visualization.plots.table.scatter_table.TableScatter`
-    """
-
-    x: np.ndarray
-    y: np.ndarray
-    color: np.ndarray | None = None
-
-
-@dataclass
-class Column:
-    """One table column, as normalized by a table plot.
-
-    Args:
-        values: Column values; integer codes for a categorical column.
-        labels: Category labels indexed by code, set only for categorical
-            columns. Artists turn them into axis ticks.
-        log_scale: Whether a numeric column is drawn on a logarithmic axis.
-
-    See Also:
-        :class:`~qewton.visualization.plots.table.base.TablePlot`
-    """
-
+    title: str
     values: np.ndarray
-    labels: list[str] | None = None
-    log_scale: bool = False  # for numeric columns, not categorical ones
-
-    def __getitem__(self, mask) -> "Column":
-        """Return a new Column with the rows selected by `mask`.
-
-        `labels` and `log_scale` are kept.
-        """
-        return Column(
-            values=self.values[mask], labels=self.labels, log_scale=self.log_scale
-        )
-
-    def __len__(self) -> int:
-        """Return the number of rows."""
-        return len(self.values)
+    range: tuple[float, float]
+    ticks: tuple[list[float], list[str]] | None = None
 
 
-@dataclass
-class TableResult:
-    """Result of a table plot, e.g. a parallel coordinates plot.
+@dataclass(kw_only=True)
+class ParallelCoordinatesResult(Result):
+    """A line per row through one vertical axis per column.
 
     Args:
-        columns: The control-reduced columns by name.
-        color: One color value per row, or None.
-
-    See Also:
-        :class:`~qewton.visualization.plots.table.base.TablePlot`
+        dimensions: The axes, in order.
+        values: One value per row, or None for a uniform color.
     """
 
-    columns: dict[str, Column]
-    color: np.ndarray | None = None
+    dimensions: list[ParallelDimension]
+    values: np.ndarray | None = None
+
+
+class NodeCategory(Enum):
+    """What a node of a computation graph is, for its colors; the value
+    names its colors in the theme (``Theme.node_color_by_type``).
+
+    Attributes:
+        DATA: A data source, e.g. a data loader or sampler.
+        MODEL: A model, algorithm or any other node.
+        CONSTRAINT: A loss or residual.
+    """
+
+    DATA = "datanode"
+    MODEL = "graphnode"
+    CONSTRAINT = "constraint"
 
 
 @dataclass
@@ -249,8 +234,7 @@ class NodeLayout:
     Args:
         label: Node title.
         kind: Class name of the node, shown in hover text.
-        category: Coloring bucket used by the theme: ``"constraint"``,
-            ``"datanode"``, ``"graphnode"`` or ``"default"``.
+        category: What the node is, for its colors.
         x: Center x of the box.
         y: Center y of the box.
         width: Width of the box.
@@ -261,8 +245,8 @@ class NodeLayout:
     """
 
     label: str
-    kind: str  # type(node).__name__ - shown in hover text
-    category: str  # "constraint" | "datanode" | "graphnode" | "default" - what the theme colors by
+    kind: str
+    category: NodeCategory
     x: float
     y: float
     width: float
@@ -281,8 +265,8 @@ class ClusterBox:
 
     Args:
         label: Cluster title.
-        category: Coloring bucket, the same value the node would have as a
-            collapsed :class:`NodeLayout`.
+        category: What the composite is, as for a collapsed
+            :class:`NodeLayout`.
         x0: X coordinate of the first corner of the rectangle.
         y0: Y coordinate of the first corner of the rectangle.
         x1: X coordinate of the opposite corner of the rectangle.
@@ -298,7 +282,7 @@ class ClusterBox:
     """
 
     label: str
-    category: str
+    category: NodeCategory
     x0: float
     y0: float
     x1: float
@@ -337,8 +321,8 @@ class EdgeLayout:
     label: str = ""
 
 
-@dataclass
-class GraphLayoutResult:
+@dataclass(kw_only=True)
+class GraphLayoutResult(Result):
     """Renderer-agnostic layout of a graph, the result of a
     :class:`~qewton.visualization.plots.graph.GraphPlot`.
 
@@ -352,6 +336,10 @@ class GraphLayoutResult:
             expanded composites.
         edges: Every drawn edge.
         clusters: The outline of every expanded composite.
+        show_port_names: Whether the ports of multi-port nodes are named
+            next to the node title.
+        show_edge_labels: Whether edges are labeled with the axes of their
+            data configuration.
 
     See Also:
         :meth:`~qewton.visualization.plots.graph.layout.GraphLayout.compute`
@@ -361,3 +349,5 @@ class GraphLayoutResult:
     ports: list[PortLayout]
     edges: list[EdgeLayout]
     clusters: list[ClusterBox]
+    show_port_names: bool = False
+    show_edge_labels: bool = True

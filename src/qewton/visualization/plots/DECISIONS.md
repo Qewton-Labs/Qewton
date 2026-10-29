@@ -1,58 +1,48 @@
 # Plots: design decisions
 
-## Input families share everything below `evaluate()`
+Decisions of the plots component (P in
+[../REQUIREMENTS.md](../REQUIREMENTS.md)) that concern the subpackage only.
 
-Data, table, geometry and graph plots are separate subclasses of `Plot`
-because their inputs differ (a `DataConfiguration` describes tensor axes,
-which tables, geometries and graphs do not have). Specs, controls,
-`Scale`, `Figure` and artists are shared, so a new input family only
-implements `evaluate()`, `create_artist()` and its own control reduction.
+## One Result per drawn primitive (P1)
 
-## `evaluate()` returns renderer-neutral results
+Results describe primitives (cells, triangles, segments, markers, bars,
+arrows), not plot types: a heatmap on a mesh and a surface share
+`SurfaceResult`, so a renderer needs one artist per primitive and
+dimension, not per plot type.
 
-Plots return plain dataclasses (`result.py`) and make no drawing
-decisions; artists do all drawing. A new renderer only needs artists for
-the result types. Results of colorable plots have a `color` field, so
-`Plot.color_values()` trains a shared `Scale` for every family without
-per-plot code.
+## Plot types declare, the base class decides (P2)
 
-## Shared color scales cover all control states
+What a plot type draws is declared as class attributes (`results`, `dims`,
+`channels`, ...); binding checks, the result type and `supports()` are
+derived from them in `DataPlot`. A new plot type declares and implements
+`build()`; nothing else has to know it.
 
-`color_values()` evaluates a plot over every `SliderSpec` and `TimeSpec`
-state, so the color range stays fixed while scrubbing or playing instead
-of jumping between states. Without a shared range, plots with different
-value ranges would look identical side by side.
+## Point encoding instead of a fill flag (P7)
 
-## Vector autoscale uses the whole data
+A plot states how it shows values at the points of its domain (color,
+arrows, or not at all), not only whether it fills an area: two arrow
+fields hide each other as two heatmaps do, while arrows over a heatmap
+read well.
 
-With `VectorSpec(scale=None)`, the longest vector over all control states
-is drawn slightly shorter than the typical arrow spacing. Arrow lengths
-thus stay comparable while a slider moves, and neighboring arrows do not
-overlap. Subsampling and NaN dropping only choose which arrows are
-drawn; they never change what a drawn arrow encodes.
+## Table columns are not Variables (P6, C3)
 
-## Controls reduce data and geometry coordinates together
+Columns are named by strings, written as plain text, and chosen by
+Selectors of names. A control on a column draws the rows of one value,
+so a facet over a categorical column gives one cell per category. Log and
+categorical columns are drawn by log10 and codes, with ticks given per
+state, so switching the column switches the ticks.
 
-A control on a geometry dimension slices the data and the geometry's
-coordinates (`reduce_coordinates()`) in the same way, so drawn positions
-always match drawn values.
+## Parallel coordinates draw their own colorbar (P6, R1)
 
-## `SelectorSpec` wraps a role, not a dimension
+Parallel coordinates lay out their own axes, so they have no cell beside
+which a colorbar of the figure could sit; their color scale is trained by
+the figure but listed only under `scales`, and the artist draws the
+colorbar.
 
-A selector switches which quantity fills a role, so it is passed in place
-of a Variable and unwrapped by `PlotSpec.variable_or_axes`. All consumers
-read the selected candidate without knowing about selectors. It is never
-part of `controls`, because it does not reduce any dimension.
+## Graph layout without an external engine (GI4)
 
-## `title` and `label` are separate
-
-`title` is the panel heading, `label` the legend entry. They are kept
-apart so one plot's title cannot appear as another plot's legend entry
-in an overlay.
-
-## Graph layout without an external engine
-
-`GraphLayout` implements a simple layered layout (longest-path ranks plus
-barycenter ordering) instead of using graphviz, which would add a system
-binary dependency. Qewton graphs are mostly linear chains with a few
-composites, for which this is sufficient.
+`GraphLayout` implements a layered layout (longest-path ranks plus
+barycenter ordering) instead of graphviz, which would add a system
+binary. Qewton graphs are mostly chains with a few composites, for which
+this suffices. Node categories are an enum, assigned by an explicit table
+of node classes.

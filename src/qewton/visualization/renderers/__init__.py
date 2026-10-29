@@ -1,3 +1,4 @@
 from .plotly import PlotlyRenderer
 
-DEFAULT_RENDERER = PlotlyRenderer()
+#: Renderer class of a Figure created without a renderer.
+DEFAULT_RENDERER = PlotlyRenderer

@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import math
 from typing import Any
 from types import EllipsisType
 
@@ -41,6 +43,36 @@ class DataConfiguration(Serializable):
         assert (
             len([f for f in axes if isinstance(f, FeatureAxes)]) <= 1
         ), "A DataConfig can have at most one FeatureAxes."
+
+    def replace(self, axes: Axes, new_axes: list[Axes]) -> "DataConfiguration":
+        """A configuration with `axes` replaced by `new_axes`, describing
+        the same data reshaped: ``data.reshape(new.shape)``.
+
+        Args:
+            axes: Axes of this configuration.
+            new_axes: Axes with as many elements as `axes`, in row-major
+                order.
+
+        Returns:
+            DataConfiguration: The new configuration, with the same dtype.
+
+        Raises:
+            ValueError: If `axes` is not part of this configuration or the
+                number of elements differs.
+        """
+        if not any(a is axes for a in self.axes):
+            raise ValueError(f"{axes} is not part of the data configuration {self}.")
+
+        def size(axes_list):
+            return math.prod(d.size for a in axes_list for d in a.shape)
+
+        if size(new_axes) != size([axes]):
+            raise ValueError(
+                f"{axes} has {size([axes])} elements, the new axes have "
+                f"{size(new_axes)}."
+            )
+        replaced = [n for a in self.axes for n in (new_axes if a is axes else [a])]
+        return DataConfiguration(*replaced, dtype=self.dtype)
 
     @classmethod
     def empty(cls):
@@ -406,6 +438,71 @@ class DataConfiguration(Serializable):
 
         self.axes = tuple(new_axes_list)
         return changed_config
+
+    def axes_of(self, reference: Variable | Axes) -> Axes:
+        """Find the axes of this configuration that hold a reference.
+
+        Args:
+            reference: An Axes of this configuration, or a Variable (or a
+                part of one) of a GeometryAxes' geometry or of the
+                FeatureAxes.
+
+        Returns:
+            Axes: `reference` itself if it is an Axes, otherwise the
+                FeatureAxes or GeometryAxes whose variable contains it. A
+                Variable held by both, e.g. the coordinates of a geometry
+                given as data, lies in the FeatureAxes: the data holds its
+                values.
+
+        Raises:
+            ValueError: If no axes of this configuration hold `reference`.
+        """
+        if any(axes is reference for axes in self.axes):
+            return reference
+        if isinstance(reference, Variable):
+            candidates = sorted(self.axes, key=lambda a: not isinstance(a, FeatureAxes))
+            for axes in candidates:
+                if isinstance(axes, (GeometryAxes, FeatureAxes)):
+                    variable = axes.variables
+                    if variable is not None and reference in variable:
+                        return axes
+        name = reference.name if isinstance(reference, Variable) else reference
+        raise ValueError(
+            f"{name} is not part of the data: it holds {self.describe()}. Bind one "
+            "of these, e.g. a feature or the Variable of a geometry."
+        )
+
+    def describe(self) -> str:
+        """What the axes of this configuration hold, by name, e.g.
+        ``"batch axes (50), the geometry of t (50), the features u, p"``.
+
+        Returns:
+            str: One part per axes.
+        """
+        parts = []
+        for axes in self.axes:
+            sizes = ", ".join(str(d.size) for d in axes.shape) if not isinstance(
+                axes, EllipsisAxes
+            ) else "..."
+            if isinstance(axes, FeatureAxes):
+                variable = axes.variables
+                names = (
+                    ", ".join(q.name for q in variable.quantities)
+                    if variable is not None and not variable.is_empty
+                    else None
+                )
+                parts.append(f"the features {names}" if names else f"unnamed features ({sizes})")
+            elif isinstance(axes, GeometryAxes):
+                variable = axes.geometry.variable
+                named = variable is not None and not variable.is_empty and variable.name
+                parts.append(
+                    f"the geometry of {variable.name} ({sizes})"
+                    if named
+                    else f"a geometry without a Variable ({sizes})"
+                )
+            else:
+                parts.append(f"{type(axes).__name__.removesuffix('Axes').lower()} axes ({sizes})")
+        return ", ".join(parts)
 
     def get_variable_slice(self, variable: Variable) -> tuple:
         """Computes the slice indices to obtain the variables along

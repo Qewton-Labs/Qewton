@@ -1,72 +1,93 @@
+"""ParallelCoordinatesPlot: one axis per column, one line per row."""
+
 import numpy as np
 
-from qewton.visualization.plots.result import TableResult
-from qewton.visualization.plots.spec import ColorSpec, ControlSpec
+from qewton.visualization.axes import ControlAxis, Selector
+from qewton.visualization.plots.result import (
+    ParallelCoordinatesResult,
+    ParallelDimension,
+    Result,
+)
+from qewton.visualization.plots.color_channel import unique
 from qewton.visualization.plots.table.base import TablePlot
+from qewton.visualization.scales import ColorScale, Scale
 
 
 class ParallelCoordinatesPlot(TablePlot):
-    """One vertical axis per named column, one polyline per row - the
-    standard tool for inspecting hyperparameter tuning runs (which parameter
-    settings produced which metric values).
+    """One vertical axis per column, one line per row, e.g. the parameters
+    and metrics of the runs of a hyperparameter tuning. The plot lays out
+    its own axes (no position axes) and draws its own colorbar.
 
-    `axes` names which columns to draw, in order - typically the tunable
-    parameters followed by the metrics. `color` names one more column
-    (usually a metric) to color lines by; like every other family, it trains
-    a shared Scale if one is attached.
+    Args:
+        table, color, color_scale, log_columns, controls, title, label: As
+            for :class:`~qewton.visualization.plots.table.base.TablePlot`.
+        columns: The drawn columns, in order.
+        column_titles: Display name per column; the column name if
+            missing.
 
-    Row selection (e.g. keeping only the top-k runs by some metric) is not
-    part of this plot - filter `columns` before constructing it.
+    Attributes:
+        column_names (list of str): The drawn columns.
+        column_titles (dict): Display name per column.
     """
+
+    dim = 0
 
     def __init__(
         self,
-        columns,
-        axes: list[str],
-        color: ColorSpec | str | None = None,
-        labels: dict[str, str] | None = None,
-        controls: list[ControlSpec] | None = None,
-        log_axes: list[str] = [],
-        **kwargs,
-    ):
-        super().__init__(columns, controls=controls, **kwargs)
-        self.axes = list(axes)
-        missing = [key for key in self.axes if key not in self.columns]
-        if missing:
-            raise ValueError(
-                f"{missing} not found in columns (have {list(self.columns)})."
-            )
-        self.labels = labels or {}
-        self.log_axes = log_axes
-
-        self.color = (
-            (color if isinstance(color, ColorSpec) else ColorSpec(color))
-            if color is not None
-            else None
+        table,
+        *,
+        columns: list[str],
+        color: str | Selector | None = None,
+        color_scale: ColorScale | list[ColorScale] | None = None,
+        column_titles: dict[str, str] | None = None,
+        log_columns: tuple[str, ...] | list[str] = (),
+        controls: tuple[ControlAxis, ...] | list[ControlAxis] = (),
+        title: str | None = None,
+        label: str | None = None,
+    ) -> None:
+        super().__init__(
+            table,
+            color=color,
+            color_scale=color_scale,
+            log_columns=log_columns,
+            controls=controls,
+            title=title,
+            label=label,
         )
-        if self.color is not None and self.color.variable_or_axes not in self.columns:
-            raise ValueError(
-                f"color column {self.color.variable_or_axes!r} not found in "
-                f"columns (have {list(self.columns)})."
-            )
+        self._check_names(columns)
+        self.column_names = list(columns)
+        self.column_titles = dict(column_titles or {})
 
     @property
-    def embedding_dim(self) -> int | None:
-        return None  # go.Parcoords lays out its own axes - no cartesian x/y
+    def positions(self) -> dict:
+        return {}
 
-    def evaluate(self):
-        rows = self.apply_controls()
-        color = (
-            np.asarray(rows[self.color.variable_or_axes].values)
-            if self.color is not None
-            else None
-        )
-        for axes in self.log_axes:
-            rows[axes].log_scale = True
+    @property
+    def color_scales(self) -> list[ColorScale]:
+        """None: the plot draws its own colorbar, since its axes are not
+        position axes of a cell."""
+        return []
 
-        return TableResult(columns={key: rows[key] for key in self.axes}, color=color)
+    @property
+    def active_color_scales(self) -> list[ColorScale]:
+        return []
 
-    def create_artist(self, backend_figure, renderer, row=None, col=None):
-        return renderer.ParallelCoordinatesArtist.create(
-            backend_figure, self, row=row, col=col
-        )
+    @property
+    def scales(self) -> list[Scale]:
+        return unique(self._color_scales)
+
+    def build(self, rows: np.ndarray) -> Result:
+        """See :meth:`~qewton.visualization.plots.table.base.TablePlot.build`."""
+        every = np.ones(self.n_rows, dtype=bool)
+        dimensions = []
+        for name in self.column_names:
+            span = self.drawn_values(name, every)
+            dimensions.append(
+                ParallelDimension(
+                    title=self.column_titles.get(name, name),
+                    values=self.drawn_values(name, rows),
+                    range=(float(span.min()), float(span.max())),
+                    ticks=self.column_ticks(name),
+                )
+            )
+        return ParallelCoordinatesResult(dimensions=dimensions, values=self.color_values(rows))
