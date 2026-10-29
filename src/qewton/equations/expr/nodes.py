@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import ClassVar
 
 from qewton.config.variables import Variable
 from qewton.equations.expr.ops import OPS, OpSpec
-from qewton.equations.printable import Printable
+from qewton.equations.printing.printable import Printable
 from qewton.equations.geometry.coordinates import (
     check_coordinate,
     check_coordinate_product,
@@ -20,6 +22,10 @@ class Expr(Printable):
     This base is not a dataclass on purpose: a generated __eq__ here would be
     inherited by FunctionSymbol, which must compare by identity.
     """
+
+    # Checks run when an Apply or Shift is built. The analysis modules (shapes, axes)
+    # build on these nodes and so register themselves here instead of being imported.
+    checks: ClassVar[list[Callable[[Expr], object]]] = []
 
     def __add__(self, other):
         return Apply(OPS["add"], (self, as_expr(other)))
@@ -225,6 +231,54 @@ class Restrict(Expr):
 
 
 @dataclass(frozen=True)
+class Integral(Expr):
+    """The integral of `expr` over the set `over`, e.g. the mean of a pressure.
+
+    The result no longer depends on the coordinates of `over`, and keeps the shape of
+    `expr`. Which coordinates must be left over is checked by the validate pass.
+    """
+
+    expr: Expr
+    over: SetNode
+
+    def __post_init__(self):
+        if not isinstance(self.expr, Expr):
+            raise TypeError(f"Expected an expression, got {type(self.expr).__name__}.")
+        if not isinstance(self.over, SetNode):
+            raise TypeError(f"Expected a set, got {type(self.over).__name__}.")
+
+
+@dataclass(frozen=True)
+class Shift(Expr):
+    """`expr` evaluated at a shifted coordinate: u(t - 1), or u(x + (L, 0)).
+
+    `axis` is a coordinate and `offset` is how far it moves: a number for a
+    one-dimensional axis, a vector for a multi-component one. The offset is the same
+    everywhere, so it may be a constant or a constant function such as a delay tau,
+    but not depend on any coordinate. Delays and periodic conditions use this.
+    """
+
+    expr: Expr
+    axis: Variable
+    offset: Expr
+
+    def __post_init__(self):
+        if not isinstance(self.expr, Expr):
+            raise TypeError(f"Expected an expression, got {type(self.expr).__name__}.")
+        check_coordinate(self.axis)
+        object.__setattr__(self, "offset", as_expr(self.offset))
+        for node in walk(self.offset):
+            if isinstance(node, Coord) or (
+                isinstance(node, FunctionSymbol) and node.inputs is not None
+            ):
+                raise ValueError(
+                    "A shift offset must be constant: it cannot depend on a coordinate."
+                )
+        for check in Expr.checks:
+            check(self)
+
+
+@dataclass(frozen=True)
 class Apply(Expr):
     """An operator applied to its arguments, e.g. grad(u, x) or u + 1.
 
@@ -251,14 +305,18 @@ class Apply(Expr):
                 )
         if self.op.takes_axes:
             check_coordinate_product(self.args[arity])
+        for check in Expr.checks:
+            check(self)
 
 
 def children(expr: Expr) -> tuple[Expr, ...]:
     """The direct sub-expressions of `expr`. Coordinates and sets are excluded."""
     if isinstance(expr, Apply):
         return tuple(arg for arg in expr.args if isinstance(arg, Expr))
-    if isinstance(expr, Restrict):
+    if isinstance(expr, (Restrict, Integral)):
         return (expr.expr,)
+    if isinstance(expr, Shift):
+        return (expr.expr, expr.offset)
     return ()
 
 

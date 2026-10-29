@@ -10,27 +10,34 @@ from __future__ import annotations
 from functools import singledispatch
 
 from qewton.config.variables import Variable
-from qewton.equations.constraints import Constraint, PendingConstraint, Relation
+from qewton.equations.model.constraints import (
+    Constraint,
+    PendingConstraint,
+    Relation,
+)
 from qewton.equations.expr.nodes import (
     Apply,
     Const,
     Coord,
     Expr,
     FunctionSymbol,
+    Integral,
     Normal,
     Restrict,
+    Shift,
 )
 from qewton.equations.geometry.sets import (
     Boundary,
     Domain,
     Part,
     Partition,
+    Periodic,
     Product,
     SetNode,
     Slice,
 )
-from qewton.equations.model import Problem
-from qewton.equations.printable import Printable
+from qewton.equations.model.problem import Problem
+from qewton.equations.printing.printable import Printable
 
 # Precedence levels, loosest binding first.
 ADD, MUL, NEG, POW, ATOM = 1, 2, 3, 4, 5
@@ -171,11 +178,22 @@ def _leaf(expr: Expr) -> str:
     raise TypeError(f"Nothing to print for {type(expr).__name__}.")
 
 
+def _shifted(shift: Shift) -> str:
+    name, offset = shift.axis.name, shift.offset
+    if isinstance(offset, Const) and _is_negative(offset.value):
+        return f"{name} − {_const(-offset.value)}"
+    return f"{name} + {_operand(offset, ADD + 1)}"
+
+
 def _expr(expr: Expr) -> str:
     if isinstance(expr, Apply):
         return _apply(expr)
     if isinstance(expr, Restrict):
         return f"{_operand(expr.expr, ATOM)}|_{{{_set(expr.on)}}}"
+    if isinstance(expr, Shift):
+        return f"{_operand(expr.expr, ATOM)}({_shifted(expr)})"
+    if isinstance(expr, Integral):
+        return f"∫_{{{_set(expr.over)}}} {_operand(expr.expr, ATOM)}"
     return _leaf(expr)
 
 
@@ -198,9 +216,10 @@ def _set(s: SetNode) -> str:
 
 def _constraint(constraint: Constraint) -> str:
     label = f"{constraint.name}: " if constraint.name else ""
+    where = "globally" if constraint.on is None else f"on {_set(constraint.on)}"
     return (
         f"{label}{_expr(constraint.lhs)} {_RELATIONS[constraint.rel]} "
-        f"{_expr(constraint.rhs)} on {_set(constraint.on)}"
+        f"{_expr(constraint.rhs)} {where}"
     )
 
 
@@ -216,6 +235,14 @@ def _partition(partition: Partition) -> str:
     return f"{_set(partition.whole)} = {parts}"
 
 
+def _periodic(periodic: Periodic) -> str:
+    offset = _const(periodic.offset)
+    return (
+        f"{_set(periodic.second)} = {_set(periodic.first)} + {offset} "
+        f"along {periodic.axis.name}"
+    )
+
+
 def _problem(problem: Problem) -> str:
     lines = ["constraints:"]
     lines += [
@@ -225,6 +252,9 @@ def _problem(problem: Problem) -> str:
     if problem.partitions:
         lines.append("partitions:")
         lines += [f"  {_partition(partition)}" for partition in problem.partitions]
+    if problem.periodic:
+        lines.append("periodic:")
+        lines += [f"  {_periodic(declaration)}" for declaration in problem.periodic]
     if problem.time is not None:
         lines.append(f"time: {problem.time.name}")
     return "\n".join(lines)
@@ -245,6 +275,7 @@ pretty.register(SetNode, _set)
 pretty.register(Constraint, _constraint)
 pretty.register(PendingConstraint, _pending)
 pretty.register(Partition, _partition)
+pretty.register(Periodic, _periodic)
 pretty.register(Problem, _problem)
 pretty.register(Variable, _variable)
 Printable.printer = staticmethod(pretty)

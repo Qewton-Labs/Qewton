@@ -1,7 +1,7 @@
 import pytest
 
 from qewton.config.variables import Variable
-from qewton.equations.constraints import Eq
+from qewton.equations.model.constraints import Eq
 from qewton.equations.expr import api
 from qewton.equations.expr.nodes import FunctionSymbol, Normal, Restrict, walk
 from qewton.equations.geometry.sets import (
@@ -12,7 +12,7 @@ from qewton.equations.geometry.sets import (
     Product,
     Slice,
 )
-from qewton.equations.model import Problem
+from qewton.equations.model.problem import Problem
 
 x = Variable("x", dim=2)
 t = Variable("t", dim=1)
@@ -22,6 +22,7 @@ dO = Boundary(Omega)
 GD = Part("Gamma_D", dO)
 GN = Part("Gamma_N", dO)
 u = FunctionSymbol(Variable("u"), x)
+u_xt = FunctionSymbol(Variable("u"), x * t)
 f = FunctionSymbol(Variable("f"), None)
 g = FunctionSymbol(Variable("g"), x)
 h = FunctionSymbol(Variable("h"), x)
@@ -78,10 +79,10 @@ class TestDerivedQueries:
 
     def test_time_dependent_problem(self):
         heat = Problem(
-            (Eq(api.dt(u, t) - api.lap(u, x), f).on(Product((Omega, Interval))),),
+            (Eq(api.dt(u_xt, t) - api.lap(u_xt, x), f).on(Product((Omega, Interval))),),
             time=t,
         )
-        assert heat.symbols() == frozenset({u, f})
+        assert heat.symbols() == frozenset({u_xt, f})
         assert Product((Omega, Interval)) in heat.sets()
 
     def test_initial_condition_on_a_slice(self):
@@ -99,3 +100,16 @@ class TestWalk:
 
     def test_walk_of_a_leaf_is_the_leaf(self):
         assert list(walk(f)) == [f]
+
+
+def test_global_constraint_and_integral_sets():
+    from qewton.equations.model.constraints import Eq
+
+    from qewton.equations.expr.api import mean
+
+    omega = Domain("Omega", ambient=Variable("x", dim=2))
+    p = FunctionSymbol(Variable("p", dim=1), Variable("x", dim=2))
+    problem = Problem(constraints=(Eq(mean(p, omega), 0).on(None),))
+    assert problem.sets() == {omega}
+    assert problem.symbols() == {p}
+    assert "globally" in str(problem)

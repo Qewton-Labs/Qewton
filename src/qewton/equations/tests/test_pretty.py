@@ -1,7 +1,7 @@
 import pytest
 
 from qewton.config.variables import Variable
-from qewton.equations.constraints import Eq
+from qewton.equations.model.constraints import Eq
 from qewton.equations.expr import api
 from qewton.equations.expr.nodes import Const, Coord, FunctionSymbol, Normal, Restrict
 from qewton.equations.geometry.sets import (
@@ -12,8 +12,8 @@ from qewton.equations.geometry.sets import (
     Product,
     Slice,
 )
-from qewton.equations.model import Problem
-from qewton.equations.pretty import pretty
+from qewton.equations.model.problem import Problem
+from qewton.equations.printing.pretty import pretty
 
 x = Variable("x", dim=2)
 t = Variable("t", dim=1)
@@ -23,6 +23,7 @@ dO = Boundary(Omega)
 GD = Part("Gamma_D", dO)
 GN = Part("Gamma_N", dO)
 u = FunctionSymbol(Variable("u"), x)
+u_xt = FunctionSymbol(Variable("u"), x * t)
 v = FunctionSymbol(Variable("v"), x)
 f = FunctionSymbol(Variable("f"), None)
 nu = FunctionSymbol(Variable("nu"), None)
@@ -83,8 +84,8 @@ class TestOperators:
         assert pretty(-api.div(flux, x)) == "−∇_x·(nu·∇_x u)"
 
     def test_partial_derivative(self):
-        assert pretty(api.d(u, t)) == "∂u/∂t"
-        assert pretty(api.dt(u, t) - api.lap(u, x)) == "∂u/∂t − Δ_x u"
+        assert pretty(api.d(u_xt, t)) == "∂u/∂t"
+        assert pretty(api.dt(u_xt, t) - api.lap(u_xt, x)) == "∂u/∂t − Δ_x u"
 
     def test_functions_are_called_by_name(self):
         assert pretty(api.sin(u)) == "sin(u)"
@@ -133,7 +134,7 @@ class TestConstraintsAndProblems:
     def test_problem_lists_constraints_partitions_and_time(self):
         problem = Problem(
             constraints=(
-                Eq(api.dt(u, t) - api.lap(u, x), f).on(Product((Omega, Interval))),
+                Eq(api.dt(u_xt, t) - api.lap(u_xt, x), f).on(Product((Omega, Interval))),
             ),
             partitions=(Partition(dO, (GD, GN)),),
             time=t,

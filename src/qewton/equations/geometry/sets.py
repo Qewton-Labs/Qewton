@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from qewton.config.variables import Variable
 from qewton.equations.geometry.coordinates import check_coordinate
-from qewton.equations.printable import Printable
+from qewton.equations.printing.printable import Printable
 from qewton.geometries.base import Geometry
 from qewton.geometries.continuous.base import ContinuousGeometry
 from qewton.geometries.product import ProductGeometry
@@ -169,6 +169,54 @@ class Partition(Printable):
 
     whole: SetNode
     parts: tuple[Part, ...]
+
+
+@dataclass(frozen=True)
+class Periodic(Printable):
+    """Declares that `second` is `first` moved by `offset` along `axis`.
+
+    Use it for periodic boundary conditions: the two sets are the same place, so the
+    functions agree there. For a box [0, L] x [0, H] with Gamma_L at x_1 = 0 and
+    Gamma_R at x_1 = L, Periodic(Gamma_L, Gamma_R, x, (L, 0)) says
+    Gamma_R = Gamma_L + (L, 0).
+    The condition on the functions is still written as a constraint, with a shift.
+    `offset` is a number for a one-dimensional axis and a tuple otherwise.
+    """
+
+    first: SetNode
+    second: SetNode
+    axis: Variable
+    offset: float | tuple[float, ...]
+
+    def __post_init__(self):
+        _check_set(self.first)
+        _check_set(self.second)
+        check_coordinate(self.axis)
+        if self.first == self.second:
+            raise ValueError("A set cannot be periodic with itself.")
+        if self.first.axes != self.second.axes or self.first.codim != self.second.codim:
+            raise ValueError("Periodic sets must live in the same coordinates and codim.")
+        if self.axis not in self.first.axes:
+            raise ValueError(
+                f"The axis {self.axis.name!r} is not a coordinate of the sets."
+            )
+        offset = (
+            tuple(self.offset) if isinstance(self.offset, (list, tuple)) else self.offset
+        )
+        values = offset if isinstance(offset, tuple) else (offset,)
+        if not all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) for v in values
+        ):
+            raise TypeError(f"The offset must be numbers, got {self.offset!r}.")
+        expected = 1 if self.axis.dim == 1 else self.axis.dim
+        if len(values) != expected or (isinstance(offset, tuple) != (self.axis.dim != 1)):
+            raise ValueError(
+                f"The offset along {self.axis.name!r} needs {expected} number(s), "
+                f"got {self.offset!r}."
+            )
+        if not any(values):
+            raise ValueError("The offset must not be zero.")
+        object.__setattr__(self, "offset", offset)
 
 
 def is_subset(a: SetNode, b: SetNode) -> bool:

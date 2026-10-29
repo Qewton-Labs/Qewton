@@ -1,7 +1,7 @@
 import pytest
 
 from qewton.config.variables import Variable
-from qewton.equations.constraints import (
+from qewton.equations.model.constraints import (
     Complementary,
     Constraint,
     Eq,
@@ -70,3 +70,16 @@ class TestConstraintValidation:
     def test_set_must_be_a_set(self):
         with pytest.raises(TypeError):
             Constraint(u, Relation.EQ, Const(1.0), "Omega")
+
+
+class TestGlobalConstraint:
+    def test_none_means_global(self):
+        from qewton.equations.expr.api import mean
+
+        c = Eq(mean(u, Omega), 0).on(None)
+        assert c.on is None
+        assert str(c).endswith("globally")
+
+    def test_on_must_be_a_set_or_none(self):
+        with pytest.raises(TypeError):
+            Eq(u, 0).on("Omega")

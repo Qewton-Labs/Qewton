@@ -7,7 +7,7 @@ Omega = eq.Domain("Omega", ambient=x)
 """
 
 from qewton.config.variables import Variable
-from qewton.equations.constraints import (
+from qewton.equations.model.constraints import (
     Complementary,
     Constraint,
     Eq,
@@ -16,6 +16,9 @@ from qewton.equations.constraints import (
     PendingConstraint,
     Relation,
 )
+from qewton.equations.analysis.overview import Overview, overview
+from qewton.equations.analysis.validate import validate
+from qewton.equations.model.task import Role, Task, TaskError
 from qewton.equations.expr.api import (
     cos,
     curl,
@@ -26,7 +29,10 @@ from qewton.equations.expr.api import (
     exp,
     grad,
     inner,
+    integral,
     lap,
+    mean,
+    shift,
     sin,
 )
 from qewton.equations.expr.nodes import (
@@ -35,8 +41,10 @@ from qewton.equations.expr.nodes import (
     Coord,
     Expr,
     FunctionSymbol,
+    Integral,
     Normal,
     Restrict,
+    Shift,
     as_expr,
     children,
     walk,
@@ -47,14 +55,18 @@ from qewton.equations.geometry.sets import (
     Domain,
     Part,
     Partition,
+    Periodic,
     Product,
     SetNode,
     Slice,
     is_subset,
     set_from_geometry,
 )
-from qewton.equations.model import Problem
-from qewton.equations.pretty import pretty
+from qewton.equations.analysis.axes import AxisError, free_axes
+from qewton.equations.analysis.diagnostics import Diagnostic, Severity
+from qewton.equations.analysis.infer import Inference, infer_shapes
+from qewton.equations.model.problem import Problem
+from qewton.equations.printing.pretty import pretty
 
 __all__ = [
     "Variable",
@@ -71,18 +83,35 @@ __all__ = [
     "Const",
     "Normal",
     "Restrict",
+    "AxisError",
+    "Diagnostic",
+    "Inference",
+    "Integral",
+    "Role",
+    "Severity",
+    "Shift",
+    "Task",
+    "TaskError",
     "Apply",
     "as_expr",
     "children",
     "walk",
     "OpSpec",
     "OPS",
+    "Overview",
     "register",
     "ShapeError",
     "grad",
     "div",
     "curl",
     "lap",
+    "free_axes",
+    "infer_shapes",
+    "integral",
+    "mean",
+    "overview",
+    "shift",
+    "validate",
     "d",
     "dt",
     "dot",
@@ -95,6 +124,7 @@ __all__ = [
     "Boundary",
     "Part",
     "Partition",
+    "Periodic",
     "Product",
     "Slice",
     "is_subset",

@@ -8,7 +8,8 @@ Derivative axes are passed as they are and must be coordinates or products of th
 from __future__ import annotations
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.nodes import Apply, Expr, as_expr
+from qewton.equations.geometry.sets import SetNode
+from qewton.equations.expr.nodes import Apply, Expr, Integral, Shift, as_expr
 from qewton.equations.expr.ops import OPS
 
 
@@ -64,3 +65,17 @@ def curl(value: object, axes: Variable) -> Expr:
 
 def lap(value: object, axes: Variable) -> Expr:
     return _call_on_axes("lap", value, axes)
+
+
+def integral(value: object, over: SetNode) -> Expr:
+    return Integral(as_expr(value), over)
+
+
+def mean(value: object, over: SetNode) -> Expr:
+    """The average of `value` over `over`: the integral divided by the integral of 1."""
+    return integral(value, over) / integral(1, over)
+
+
+def shift(value: object, axis: Variable, offset: object) -> Expr:
+    """`value` evaluated at `axis + offset`, e.g. shift(u, t, -1) is u(t - 1)."""
+    return Shift(as_expr(value), axis, as_expr(offset))

@@ -20,7 +20,7 @@ Non-goals for now: writing our own assembler or mesher (weak forms go to UFL ins
 
 ## 2. Design principles
 
-1. **The model and the task are separate.** `Problem` contains only mathematics and no roles. `Task` assigns roles (unknown, fixed, batched, observed) to symbols and sets.
+1. **The model and the task are separate.** `Problem` contains only mathematics and no roles. `Task` assigns roles (unknown, fixed, varying) to symbols and sets.
 2. **A signature is not a role.** A function's inputs are always declared on the symbol, and its output shape is declared or inferred. Whether it is unknown belongs to the task. "Constant" is a function with `inputs=None`, not a role. Batch axes are added by the task (`batch_axes`), so the signature itself is geometric; reports show both.
 3. **Three layers with typed edges.** The layers are geometry (axes, sets), expressions (symbols, operators) and constraints. The edge types are: *uses*, *defined on*, *holds on*, *subset of*, *boundary of*.
 4. **Nodes are immutable; analysis results live in side tables.** Nodes are frozen dataclasses, so they are hashable and can be shared. Passes write their results into an `AnalysisContext` keyed by node. That way the same model can be analysed under different tasks without being mutated.
@@ -39,19 +39,25 @@ qewton/equations/
     │   ├── coordinates.py       # check_coordinate: a coordinate is a config Variable with an integer dim
     │   └── sets.py              # SetNode hierarchy, Partition, subset queries
     ├── expr/
-    │   ├── nodes.py             # Expr, FunctionSymbol, Coord, Const, Normal, Apply, Restrict
+    │   ├── nodes.py             # Expr, FunctionSymbol, Coord, Const, Normal, Apply, Restrict, Integral, Shift
     │   ├── ops.py               # OpSpec and the operator registry (grad, div, dt, ...)
-    │   ├── forms.py             # TestFunction, Measure, Integral
+    │   ├── forms.py             # TestFunction, Measure (weak forms, M8)
     │   └── api.py               # user-facing helpers: grad, div, curl, lap, d, dt, dot, inner, sin, cos, exp (Eq goes in constraints.py)
-    ├── constraints.py           # Relation, Constraint, PendingConstraint
-    ├── model.py                 # Problem
+    ├── model/
+    │   ├── constraints.py       # Relation, Constraint, PendingConstraint, Eq/Le/Ge/Complementary
+    │   └── problem.py           # Problem
+    ├── printing/
+    │   ├── pretty.py            # readable text for expressions, sets, constraints, problems (M1)
+    │   └── printable.py         # mixin: str() and notebook display through pretty
     ├── task.py                  # Task, Role
     ├── analysis/
     │   ├── context.py           # AnalysisContext, Fact, Suggestion, Diagnostic
     │   ├── pipeline.py          # run_pipeline(task)
     │   ├── validate.py
     │   ├── normalize.py
-    │   ├── infer.py             # signatures and shapes
+    │   ├── shapes.py            # shape_of, eager shape checks
+    │   ├── axes.py              # free_axes, eager axis checks, constraint axis check
+    │   ├── infer.py             # shape inference for undeclared outputs; signatures later
     │   ├── structure.py         # orders, operator/source split, linearity, coupling
     │   ├── classify.py          # PDE type, BC kinds, function spaces
     │   └── suggest.py           # method suggestions with rationale
@@ -62,8 +68,6 @@ qewton/equations/
     │   ├── losses.py            # constraints / weak forms → PINN, VPINN, Deep Ritz losses
     │   └── tensorize.py         # Problem + Task → heterogeneous graph tensors
     ├── report.py                # human-readable summary (M6)
-    ├── pretty.py                # readable text for expressions, sets, constraints, problems (M1)
-    ├── printable.py             # mixin: str() and notebook display through pretty
     ├── fixtures.py              # canonical problems: Poisson, heat, wave, advection, Stokes, obstacle
 src/qewton/equations/tests/      # all tests live under the equations folder
 src/qewton/equations/notebooks/  # notebooks; import everything as `import qewton.equations as eq`
@@ -170,10 +174,25 @@ class Apply(Expr):
     args: tuple[Expr | Variable, ...]   # expressions, then one coordinate product if the operator takes axes, e.g. grad(u, x)
 
 @dataclass(frozen=True)
-class Restrict(Expr):           # expr evaluated on a set (trace, time slice); lower-dimensionality is checked in M2
+class Restrict(Expr):           # expr evaluated on a set (trace, time slice); validate warns if the set has axes the expression lacks
     expr: Expr
     on: SetNode
+
+@dataclass(frozen=True)
+class Integral(Expr):           # ∫ expr over a set; keeps the shape, drops the coordinates of `over`
+    expr: Expr
+    over: SetNode
+
+@dataclass(frozen=True)
+class Shift(Expr):              # expr(axis + offset): delays and periodic conditions
+    expr: Expr
+    axis: Variable
+    offset: Expr                # constant: a number, a vector, or a constant function such as tau
 ```
+
+Helpers: `integral(u, S)`, `mean(u, S)` (= ∫u / ∫1) and `shift(u, t, -1)`. Shapes are checked eagerly: `Apply` and `Shift` when built, `Constraint` for equal sides. The check is skipped while a symbol's shape is undeclared (`dim=None`), and the infer pass covers those.
+
+Delay equations are `Eq(dt(u, t), shift(u, t, -1))`. They need history as initial data, i.e. a constraint on `Ω × [−τ, 0]` and not on a `Slice`; the classification will call them delay equations. State-dependent delays are out of scope, because the offset cannot depend on a coordinate. A distributed delay `∫_{t−τ}^{t}` needs sets with expression bounds, and is deferred.
 
 ```python
 Shape = tuple[int, ...]         # () scalar, (3,) vector, (3, 3) tensor
@@ -234,7 +253,7 @@ class Constraint:
     lhs: Expr
     rel: Relation
     rhs: Expr
-    on: SetNode                 # the "for all points in" set
+    on: SetNode | None          # the "for all points in" set; None is a global constraint (e.g. mean p = 0)
     name: str | None = None
 
 @dataclass(frozen=True)
@@ -250,11 +269,18 @@ def Eq(lhs, rhs) -> PendingConstraint: ...   # also Le, Ge and Complementary
 class Problem:
     constraints: tuple[Constraint, ...]
     partitions: tuple[Partition, ...] = ()
+    periodic: tuple[Periodic, ...] = ()   # Periodic(first, second, axis, offset): second = first + offset
     time: Variable | None = None    # the time coordinate; drives time lifting and time-derivative checks
-    # derived: symbols(), sets(); coordinates() comes in M2 with the leaf rules
+    # derived: symbols(), sets(), coordinates()
 ```
 
 `Problem` has no roles.
+
+`Periodic` is a declaration like `Partition`: it says two sets are the same place, shifted. The condition on the functions is still a constraint with a `shift`. The validate pass (M2) checks that the offsets agree.
+
+**Axis analysis** (`analysis/axes.py`). `free_axes(expr)` is the set of coordinates an expression varies with: the declared inputs of its functions, the coordinate of a `Coord`, minus the sliced coordinates of a `Restrict` and the coordinates of an `Integral`'s set. Checked eagerly: a derivative or `Shift` along a coordinate the operand does not depend on is an `AxisError` (the derivative would be zero). Checked when a `Problem` is built: both sides of a constraint use only the coordinates of the set it holds on (a slice fixes its coordinate), and a global constraint uses none. The declared time is the exception: a constraint without time that uses time-dependent functions is accepted, because normalisation lifts it to all times. `Problem.coordinates()` lists every coordinate the problem uses.
+
+Still waiting for later passes: a delay has history on an interval; a constraint's offset agrees with its `Periodic` declaration.
 
 ### 5.5 Task
 
@@ -262,15 +288,14 @@ class Problem:
 class Role(Enum):
     UNKNOWN = auto()    # solve for this
     FIXED = auto()      # one known value; can be precomputed or constant-folded
-    BATCHED = auto()    # known per instance; introduces a parameter axis
-    OBSERVED = auto()   # known on part of the domain (inverse problems)
+    VARYING = auto()    # known per instance; introduces a parameter (batch) axis
 
 @dataclass(frozen=True)
 class Task:
     problem: Problem
     roles: Mapping[FunctionSymbol | SetNode, Role]
     values: Mapping[FunctionSymbol | SetNode, object]   # Expr, array, mesh, samples
-    batch_axes: Mapping[FunctionSymbol | SetNode, Variable] # created automatically for BATCHED entries
+    batch_axes: Mapping[FunctionSymbol | SetNode, Variable] # created automatically for VARYING entries
 ```
 
 User-facing API:
@@ -278,10 +303,16 @@ User-facing API:
 ```python
 task = problem.task(unknown=[u],
                     fixed={f: sin(x[0]), Omega: mesh},
-                    batched={nu: nu_samples})
+                    varying={nu: nu_samples})
 ```
 
-Unknowns must be listed. Any other free symbol defaults to FIXED; if it has no value, that's a warning ("symbolic fixed").
+Unknowns must be listed. An unknown with `inputs=None` is allowed: it is a constant to be identified (inverse problems). Measurements are not a role: they are constraints such as `Eq(Restrict(u, sensors), data).on(sensors)`, with `data` a fixed function.
+
+Sets and roles: a set is fixed unless listed. It is listed when it needs a value (a mesh, which arrays over that set need), and it may be `varying` when the set itself changes per instance, e.g. a moving boundary (one mesh per instance, batch axis `p_<set>`). Sets derived from a varying set (its `Boundary`, its `Part`s, products with it) vary too, and so do the other parts of a partition when one part varies (a moving Dirichlet/Neumann split on a fixed boundary leaves `Omega` and its boundary fixed); `Task.varies(set)` answers. A set cannot be unknown.
+
+The per-instance role is called `varying`; the parameter axis it creates is still the "batch axis", and "batch lifting" keeps its name. Any other free symbol defaults to FIXED; if it has no value, that's a warning ("symbolic fixed").
+
+Implemented in `model/task.py` (`build_task`, reached through `Problem.task`). `Task.diagnostics` holds the warnings (symbolic fixed). Mistakes raise `TaskError` when the task is built: a function not in the problem, a function with two roles, an unknown with a value, a set given any role but fixed, an expression value that uses axes outside the function's inputs, a numeric value whose shape disagrees with the declared shape (for a batched one, the trailing shape), and an array over space without a mesh (`fixed={Omega: mesh}`). The parameter axis of a batched function is `Variable("p_<name>", dim=1)`, renamed if that clashes with a coordinate.
 
 ---
 
@@ -316,7 +347,8 @@ A syntactic scan of the constraints: which unknowns have a time derivative (`d(u
 
 - The axes of every constraint's set are known axes, and `Part`/`Boundary` chains are well-formed.
 - Every declared `Partition` is consistent.
-- Every unknown listed in the task appears in at least one constraint.
+- Every unknown listed in the task appears in at least one constraint (checked when the Task is built).
+- `validate(problem)` (`analysis/validate.py`) returns `Diagnostic`s: partitions, periodic offsets, delays with history, restrictions, shape conflicts (errors) and defaulted shapes (warnings).
 
 ### 6.2 normalize
 
@@ -331,7 +363,7 @@ A syntactic scan of the constraints: which unknowns have a time derivative (`d(u
 - **Lower bound check.** If a derivative along axis a is applied directly to s (or to `Restrict(s, …)`), then a must be among s's declared inputs, or the problem is an error. Nested cases such as grad(u·v) give no requirement.
 - **Data values.** A supplied value must agree with the declared inputs. A constant (`inputs=None`) cannot get a spatial array, and a numeric value with spatial inputs needs a geometry through `Task.values`. This is checked when the Task is built.
 - **Conflicts and unused inputs.** A declared output shape must agree with the inferred one. Declared inputs that no constraint needs are a warning.
-- **Shapes.** Compute them bottom-up with `OpSpec.shape_rule`. Unknown shapes are variables, unified across all occurrences until a fixpoint is reached. Anything still unresolved defaults to scalar with a warning.
+- **Shapes.** `shape_of` computes them bottom-up with `OpSpec.shape_rule` (M2, `shapes.py`). `infer_shapes(problem)` (`infer.py`) fills in symbols declared with `dim=None`: known shapes flow backwards through invertible operators (neg, d, lap, grad, div, and add, sub, mul, inner when the other operand is known), scalar-only operators force scalar arguments, and a scalar constant never decides a shape. When nothing more follows, the first undetermined symbol in order of appearance defaults to scalar and is reported in `Inference.defaulted` (a warning), then propagation continues. A final pass re-checks every constraint, so conflicts raise `ShapeError`. `dot` is not inverted, because it is ambiguous.
 - The declared inputs and the inferred shapes are printed first in the report, the way a type checker shows types.
 
 ### 6.4 structure
@@ -495,7 +527,7 @@ problem = Problem(
 
 task = problem.task(unknown=[u],
                     fixed={f: 1.0, g: 0.0, h: 0.0},
-                    batched={nu: nu_samples})
+                    varying={nu: nu_samples})
 ```
 
 Expected report:
@@ -530,7 +562,7 @@ Suggestions
 | M4 | classify: PDE type, BC kinds and counts, function spaces | wave, advection, Stokes and obstacle fixtures classified correctly |
 | M5 | Batch placement and batched reporting (parameter axes) | worked example (Section 8) reports the batch correctly |
 | M6 | suggest and report with rationale | every suggestion lists its evidence |
-| M7 | parametrized domains (reference maps), OBSERVED role | batched-domain fixture uses the pull-back |
+| M7 | parametrized domains (reference maps) | batched-domain fixture uses the pull-back |
 | M8 | weak_form: pairing, testing, integration by parts, boundary terms | Poisson, heat and Stokes weak forms match hand-derived ones |
 | M9 | UFL export | exported Poisson and Stokes problems solve in FEniCS or Firedrake and converge under refinement |
 | M10 | samplers and PINN / Deep Ritz losses | a Poisson PINN trains from the compiled loss alone |
@@ -551,6 +583,9 @@ Suggestions
 - `Domain` holds an optional continuous geometry, and its coordinate becomes the ambient. The geometry is excluded from equality. Meshes are bound in `Task.values`.
 - `set_from_geometry(geometry, name)` turns a continuous geometry into a `Domain`, and a `ProductGeometry` into a `Product` whose factors are named after their coordinates. Discrete geometries are rejected.
 - The `Literal` node is renamed `Const`.
+- Integrals, delays and periodic conditions are in scope: `Integral`, `Shift`, `Periodic` and global constraints (`on=None`). Periodicity is `Periodic` plus a shifted constraint.
+- Shapes are checked eagerly where every shape is known, and again by the infer pass for the rest.
+- Axes are checked the same way: derivatives and shifts when built, constraints when the `Problem` is built. Coordinates are told apart by their names, because a `Variable`'s `parent` is overwritten by every product it joins.
 
 The questions below are still open.
 

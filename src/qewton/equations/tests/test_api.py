@@ -2,14 +2,25 @@ import pytest
 
 from qewton.config.variables import Variable
 from qewton.equations.expr import api
-from qewton.equations.expr.nodes import Apply, Coord, Const, FunctionSymbol
+from qewton.equations.expr.nodes import (
+    Apply,
+    Coord,
+    Const,
+    FunctionSymbol,
+    Integral,
+    Shift,
+    children,
+)
 from qewton.equations.expr.ops import OPS
+from qewton.equations.geometry.sets import Domain
+from qewton.equations.analysis.shapes import shape_of
 
 x = Variable("x", dim=2)
 t = Variable("t", dim=1)
 y3 = Variable("y", dim=3)
 u = FunctionSymbol(Variable("u"), x)
 v = FunctionSymbol(Variable("v"), x)
+u_xt = FunctionSymbol(Variable("u"), x * t)
 w = FunctionSymbol(Variable("w", dim=3), y3)
 nu = FunctionSymbol(Variable("nu"), None)
 
@@ -19,7 +30,7 @@ class TestDerivatives:
         assert api.grad(u, x) == Apply(OPS["grad"], (u, x))
 
     def test_gradient_over_space_and_time(self):
-        assert api.grad(u, x * t) == Apply(OPS["grad"], (u, x * t))
+        assert api.grad(u_xt, x * t) == Apply(OPS["grad"], (u_xt, x * t))
 
     def test_divergence(self):
         assert api.div(v, x) == Apply(OPS["div"], (v, x))
@@ -31,10 +42,10 @@ class TestDerivatives:
         assert api.lap(u, x) == Apply(OPS["lap"], (u, x))
 
     def test_partial_derivative(self):
-        assert api.d(u, t) == Apply(OPS["d"], (u, t))
+        assert api.d(u_xt, t) == Apply(OPS["d"], (u_xt, t))
 
     def test_time_derivative_is_the_partial_derivative_along_time(self):
-        assert api.dt(u, t) == api.d(u, t)
+        assert api.dt(u_xt, t) == api.d(u_xt, t)
 
     def test_derivatives_need_their_axes(self):
         with pytest.raises(TypeError):
@@ -89,3 +100,73 @@ class TestWorkedExample:
         assert api.div(flux, x) == Apply(
             OPS["div"], (Apply(OPS["mul"], (nu, Apply(OPS["grad"], (u, x)))), x)
         )
+
+
+class TestIntegrals:
+    omega = Domain("Omega", ambient=x)
+    p = FunctionSymbol(Variable("p", dim=1), x)
+    q = FunctionSymbol(Variable("q", dim=2), x)
+
+    def test_integral_builds_and_prints(self):
+        assert str(api.integral(self.p, self.omega)) == "∫_{Omega} p"
+        assert str(api.integral(self.p * self.p, self.omega)) == "∫_{Omega} (p·p)"
+
+    def test_mean_is_integral_over_measure(self):
+        assert str(api.mean(self.p, self.omega)) == "∫_{Omega} p / ∫_{Omega} 1"
+
+    def test_integral_keeps_the_shape(self):
+        assert shape_of(api.integral(self.q, self.omega)) == (2,)
+
+    def test_integral_checks_its_types(self):
+        with pytest.raises(TypeError):
+            Integral(self.p, "Omega")
+        with pytest.raises(TypeError):
+            Integral(1.0, self.omega)
+
+    def test_children_is_the_integrand(self):
+        assert children(api.integral(self.q, self.omega)) == (self.q,)
+
+
+class TestShift:
+    u1 = FunctionSymbol(Variable("u", dim=1), x * t)
+    tau = FunctionSymbol(Variable("tau", dim=1), None)
+
+    def test_delay_prints_like_the_math(self):
+        assert str(api.shift(self.u1, t, -1)) == "u(t − 1)"
+        assert str(api.shift(self.u1, t, 2)) == "u(t + 2)"
+        assert str(api.shift(self.u1, t, self.tau)) == "u(t + tau)"
+
+    def test_vector_offset_for_periodicity(self):
+        assert str(api.shift(self.u1, x, (-1, 0))) == "u(x + (−1, 0))"
+
+    def test_delay_equation_builds(self):
+        from qewton.equations.model.constraints import Eq
+
+        eq = Eq(api.dt(self.u1, t), api.shift(self.u1, t, -1))
+        assert str(eq.lhs) == "∂u/∂t"
+
+    def test_offset_must_be_constant(self):
+        with pytest.raises(ValueError, match="constant"):
+            api.shift(self.u1, t, Coord(t, 0))
+        with pytest.raises(ValueError, match="constant"):
+            api.shift(self.u1, t, FunctionSymbol(Variable("s", dim=1), t))
+
+    def test_offset_shape_follows_the_axis(self):
+        from qewton.equations.expr.ops import ShapeError
+
+        with pytest.raises(ShapeError):
+            api.shift(self.u1, x, 1)
+        with pytest.raises(ShapeError):
+            api.shift(self.u1, t, (1, 2))
+        with pytest.raises(ShapeError):
+            api.shift(self.u1, x, (1, 2, 3))
+
+    def test_keeps_shape_and_children(self):
+        shifted = api.shift(self.u1, t, self.tau)
+        assert shape_of(shifted) == ()
+        assert children(shifted) == (self.u1, self.tau)
+        assert isinstance(shifted, Shift)
+
+    def test_axis_must_be_a_coordinate(self):
+        with pytest.raises(Exception):
+            api.shift(self.u1, Variable("u"), 1)

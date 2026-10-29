@@ -31,3 +31,33 @@ def check_coordinate_product(var: object) -> Variable:
     if any(leaf.dim != 1 for leaf in var.leaves):
         raise ValueError(f"{var.name!r} is not a coordinate or a product of coordinates.")
     return var
+
+
+def _is_atomic(var: Variable) -> bool:
+    """A single coordinate: no children, or only its own components x_1, x_2, ...
+
+    A product such as x * t has whole variables as children instead. The `parent`
+    attribute cannot tell the two apart, since a variable's parent is overwritten
+    by every product it is multiplied into.
+    """
+    names = [child.name for child in var.children]
+    return not names or names == [f"{var.name}_{i + 1}" for i in range(var.dim)]
+
+
+def root_of(var: Variable) -> Variable:
+    """The coordinate a component belongs to: x for x_1, and `var` itself otherwise."""
+    parent = var.parent
+    if parent is not None and _is_atomic(parent):
+        if any(child is var for child in parent.children):
+            return parent
+    return var
+
+
+def coordinate_factors(var: Variable) -> tuple[Variable, ...]:
+    """The coordinates a product is made of: (x, t) for x * t, and (x,) for x.
+
+    A component such as x_1 stands for its coordinate x.
+    """
+    if _is_atomic(var):
+        return (root_of(var),)
+    return tuple(factor for child in var.children for factor in coordinate_factors(child))

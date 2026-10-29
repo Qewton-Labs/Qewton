@@ -10,7 +10,9 @@ from collections.abc import Callable
 
 
 class Printable:
-    printer: Callable[[object], str] | None = None  # set by qewton.equations.pretty
+    printer: Callable[[object], str] | None = (
+        None  # set by qewton.equations.printing.pretty
+    )
 
     def __str__(self) -> str:
         printer = self.printer

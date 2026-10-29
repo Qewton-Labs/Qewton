@@ -14,7 +14,8 @@ from enum import Enum
 
 from qewton.equations.expr.nodes import Expr, as_expr
 from qewton.equations.geometry.sets import SetNode
-from qewton.equations.printable import Printable
+from qewton.equations.analysis.shapes import check_sides
+from qewton.equations.printing.printable import Printable
 
 
 class Relation(Enum):
@@ -26,12 +27,16 @@ class Relation(Enum):
 
 @dataclass(frozen=True)
 class Constraint(Printable):
-    """`lhs rel rhs`, required at every point of `on`."""
+    """`lhs rel rhs`, required at every point of `on`.
+
+    `on=None` is a global constraint, e.g. a zero mean of the pressure: it holds once,
+    and its sides must not depend on any coordinate.
+    """
 
     lhs: Expr
     rel: Relation
     rhs: Expr
-    on: SetNode
+    on: SetNode | None
     name: str | None = None
 
     def __post_init__(self):
@@ -39,8 +44,11 @@ class Constraint(Printable):
             raise TypeError("Both sides of a constraint must be expressions.")
         if not isinstance(self.rel, Relation):
             raise TypeError(f"Expected a Relation, got {self.rel!r}.")
-        if not isinstance(self.on, SetNode):
-            raise TypeError(f"A constraint holds on a set, got {type(self.on).__name__}.")
+        if self.on is not None and not isinstance(self.on, SetNode):
+            raise TypeError(
+                f"A constraint holds on a set or None, got {type(self.on).__name__}."
+            )
+        check_sides(self.lhs, self.rhs)
 
 
 @dataclass(frozen=True)
@@ -51,7 +59,7 @@ class PendingConstraint(Printable):
     rel: Relation
     rhs: Expr
 
-    def on(self, on: SetNode, name: str | None = None) -> Constraint:
+    def on(self, on: SetNode | None, name: str | None = None) -> Constraint:
         return Constraint(self.lhs, self.rel, self.rhs, on, name)
 
 
