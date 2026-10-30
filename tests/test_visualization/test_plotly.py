@@ -2,6 +2,8 @@
 where MathJax does not render (sliders, buttons, mathjax=False), plain
 text in Dash widgets."""
 
+import re
+
 import numpy as np
 import pytest
 
@@ -63,6 +65,11 @@ def _figure(mathjax):
     return Figure(plot, renderer=PlotlyRenderer(mathjax=mathjax))
 
 
+def _loads_mathjax(page: str) -> bool:
+    # Whether a page loads a MathJax script (MathJax 2 or 3, by version).
+    return re.search(r'<script[^>]*src="[^"]*mathjax', page, re.IGNORECASE) is not None
+
+
 class TestRenderer:
     def test_with_mathjax_titles_are_one_math_text(self):
         figure = _figure(mathjax=True)
@@ -97,10 +104,11 @@ class TestRenderer:
         with_mathjax.draw()
         without = _figure(mathjax=False)
         without.draw()
-        assert "MathJax.js" in with_mathjax.renderer.html(full_html=False)
-        assert "MathJax.js" not in without.renderer.html(full_html=False)
+        assert _loads_mathjax(with_mathjax.renderer.html(full_html=False))
+        assert not _loads_mathjax(without.renderer.html(full_html=False))
 
     def test_show_in_a_notebook_displays_html_with_mathjax(self, monkeypatch):
+        pytest.importorskip("IPython")  # present wherever a notebook runs
         from qewton.visualization.renderers import plotly as plotly_renderer
 
         shown = []
@@ -111,7 +119,7 @@ class TestRenderer:
         figure = _figure(mathjax=True)
         figure.show()
         (page,) = shown
-        assert "MathJax.js" in page
+        assert _loads_mathjax(page)
 
 
 class TestDash:
