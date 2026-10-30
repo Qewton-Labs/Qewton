@@ -183,12 +183,6 @@ class SplitVariables(Node[TensorType]):
 
         return updated_ports
 
-    def get_output_port(self, name: str | Variable):
-        # TODO Merge into general node?
-        if isinstance(name, Variable):
-            name = name.name
-        return super().get_output_port(name)
-
 
 class ConcatVariables(Node[TensorType]):
     """Concatenate variables node that combines multiple input tensors with different variables along a dimension.
