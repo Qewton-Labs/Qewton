@@ -20,6 +20,7 @@ import inspect
 import warnings
 
 from qewton.config.data_configurations import DataConfiguration
+from qewton.config.variables import Variable
 from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.base import EvaluationPhase
@@ -690,11 +691,17 @@ class Node(ABC, Serializable, Generic[TensorType]):
                     updated_ports.add(c_port)
         return updated_ports
 
-    def get_input_port(self, name: str) -> InputPort:
-        """Return the input port with the given name.
+    def get_input_port(self, name: str | Variable) -> InputPort:
+        """Returns the input port matching the given name.
 
         Args:
-            name: The name of the port.
+            name (str | Variable): The name we are looking for, either
+                as a string or as a Variable, in which case the variable's
+                name is used.
+
+        Raises:
+            ValueError: If no input port matching the given name is found
+                or the passed variable does not have a name set.
 
         Returns:
             InputPort: The port with this name.
@@ -702,23 +709,34 @@ class Node(ABC, Serializable, Generic[TensorType]):
         Raises:
             ValueError: If no input port has this name.
         """
+        if isinstance(name, Variable):
+            if name.name is None:
+                raise ValueError(f"The passed variable {name} does not have a name set")
+            name = name.name
         for port in self.input_ports:
             if port.name == name:
                 return port
         raise ValueError(f"No input port with name {name} found in node {self.name}.")
 
-    def get_output_port(self, name: str) -> OutputPort:
-        """Return the output port with the given name.
+    def get_output_port(self, name: str | Variable) -> OutputPort:
+        """Returns the output port matching the given name.
 
         Args:
-            name: The name of the port.
-
-        Returns:
-            OutputPort: The port with this name.
+            name (str | Variable): The name we are looking for, either
+                as a string or as a Variable, in which case the variable's
+                name is used.
 
         Raises:
-            ValueError: If no output port has this name.
+            ValueError: If no output port matching the given name is found
+                or the passed variable does not have a name set.
+
+        Returns:
+            OutputPort: The port matching the given name.
         """
+        if isinstance(name, Variable):
+            if name.name is None:
+                raise ValueError(f"The passed variable {name} does not have a name set")
+            name = name.name
         for port in self.output_ports:
             if port.name == name:
                 return port
