@@ -2,11 +2,12 @@
 parameters and objectives to choose from."""
 
 import numpy as np
-import pandas as pd
 import pytest
 
-from qewton.optim.tuner.results.analyzer import TuningAnalyzer
-from qewton.optim.tuner.results.tune_results import TuneResultCollector
+pd = pytest.importorskip("pandas")
+
+from qewton.optim.tuner.results.analyzer import TuningAnalyzer  # noqa: E402
+from qewton.optim.tuner.results.tune_results import TuneResultCollector  # noqa: E402
 from qewton.visualization import (
     FacetAxis,
     ParallelCoordinatesPlot,
