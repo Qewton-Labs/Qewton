@@ -5,7 +5,7 @@ colorbar placement."""
 import numpy as np
 from plotly.colors import sample_colorscale
 
-from qewton.visualization.scales import ColorScale
+from qewton.visualization.scales import ColorScale, color_range
 
 #: Number of value bins of artists drawing one color per trace.
 N_BINS = 32
@@ -22,23 +22,6 @@ def colorscale(scale: ColorScale, theme) -> str | list:
         str or list: A Plotly colorscale.
     """
     return theme.resolve_cmap(scale.cmap)
-
-
-def color_range(scale: ColorScale) -> tuple[float, float]:
-    """The trained range of a ColorScale in its transformed space (log10
-    for a log scale), widened if degenerate.
-
-    Args:
-        scale: The trained color scale.
-
-    Returns:
-        tuple of float: ``(lo, hi)`` with ``lo < hi``; ``(0, 1)`` without a
-            range.
-    """
-    if scale.range is None:
-        return 0.0, 1.0
-    lo, hi = (float(v) for v in scale.transform(np.asarray(scale.range)))
-    return (lo, hi) if hi > lo else (lo, lo + 1e-9)
 
 
 def bins(values: np.ndarray, scale: ColorScale, theme) -> tuple[np.ndarray, list[str]]:

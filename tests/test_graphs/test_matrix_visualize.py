@@ -5,7 +5,7 @@ output Variable (the port reference), and gives reference data on its own
 points. Every combination checks the same: the panels and their names,
 the shared color scale and the error panel's own one, the error computed
 from prediction and reference, the shared controls, and drawing with
-Plotly. Combinations that are not built (EXCLUSIONS) or raise (RAISES)
+every renderer. Combinations that are not built (EXCLUSIONS) or raise (RAISES)
 are listed with their reason.
 """
 
@@ -25,7 +25,7 @@ from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.geometries.discrete.point_cloud import PointCloud
 from qewton.graphs.graphs import Graph
 from qewton.visualization import Figure, Overlay, TimeAxis
-from qewton.visualization.renderers import PlotlyRenderer
+from qewton.visualization.renderers import MatplotlibRenderer, PlotlyRenderer
 
 T, X, U = Variable("t", 1), Variable("x", 2), Variable("u", 1)
 
@@ -133,10 +133,14 @@ def _reference(domain, kind, reference_model):
     return dict(reference=lambda points: points[..., :1] * 0.5 + 0.1)
 
 
+RENDERERS = {"plotly": PlotlyRenderer, "matplotlib": MatplotlibRenderer}
+
+
+@pytest.mark.parametrize("renderer_name", list(RENDERERS))
 @pytest.mark.parametrize("error", ERRORS)
 @pytest.mark.parametrize("reference", REFERENCES)
 @pytest.mark.parametrize("domain_name", list(DOMAINS))
-def test_visualize(domain_name, reference, error):
+def test_visualize(domain_name, reference, error, renderer_name):
     if (domain_name, reference) in EXCLUSIONS:
         pytest.skip(EXCLUSIONS[(domain_name, reference)])
     if reference == "none" and error is not None:
@@ -160,7 +164,7 @@ def test_visualize(domain_name, reference, error):
         _check_panels(layout, error)
     for plot in plots:
         assert plot.controls[: len(domain.controls)] == domain.controls
-    Figure(layout, renderer=PlotlyRenderer()).draw()
+    Figure(layout, renderer=RENDERERS[renderer_name]()).draw()
 
 
 def _check_panels(layout, error):

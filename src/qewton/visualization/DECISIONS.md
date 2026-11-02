@@ -97,8 +97,8 @@ side by side with shared position axes, so zoom and camera stay linked.
 Each control is either connected to a widget of an application, which
 sets its state and redraws, or embedded: the figure draws every state,
 the renderer takes a snapshot of each and writes what differs. `show()`
-and `save_html()` embed all controls; Dash connects sliders and selectors
-and embeds the rest.
+and `save_html()` embed all controls; an application connects the kinds
+it declares and embeds the rest.
 
 ### What can be embedded together (F3)
 
@@ -106,8 +106,8 @@ An embedded control axis rewrites all data of its plot at each step.
 Hence a plot embeds one control axis; next to it, one Selector drawn as
 every candidate of which the chosen one is shown. Without a control axis,
 several Selectors of different channels are embedded by their data, since
-their steps change different properties. Anything else keeps its current
-state and warns.
+their steps change different properties. Anything else, or what the
+renderer does not embed, keeps its current state and warns.
 
 ### A layout is composed once (F1, R1)
 
@@ -122,6 +122,12 @@ new figure.
 What is drawn (plots, results, layout) is separate from how it looks: the
 renderer owns the theme, the framework's figure and the artists. Results
 carry an index into the categorical palette rather than a color.
+
+### Renderers by available packages (R5)
+
+As for backends, renderers are imported if their package is installed,
+in order of priority. Matplotlib, a core dependency, comes last, so a
+default always exists. Applications import their packages when created.
 
 ## Graph integration
 

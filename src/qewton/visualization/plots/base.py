@@ -63,11 +63,16 @@ class Plot:
             distorted; empty if none.
         color_title (str or None): Name of what is bound to the color
             channel in the current states; None if nothing named is.
+        color_ticks (tuple or None): Ticks of the colorbar in the current
+            states, in the scale's transformed values: positions and
+            labels, e.g. the categories of a categorical color; None for
+            the scale's own ticks.
 
     Notes:
         Subclasses implement `dim` and :meth:`evaluate`, and may override
         `selectors`, `color_scales`, `active_color_scales`, `scales`,
-        `n_copies`, `scaled_channels`, `color_title`, :meth:`axis_title`,
+        `n_copies`, `scaled_channels`, `color_title`, `color_ticks`,
+        :meth:`axis_title`,
         :meth:`axis_ticks`, :meth:`channels_of` and :meth:`train_scales`.
     """
 
@@ -114,6 +119,10 @@ class Plot:
 
     @property
     def color_title(self) -> str | None:
+        return None
+
+    @property
+    def color_ticks(self) -> tuple[list[float], list[str]] | None:
         return None
 
     def axis_title(self, channel: str) -> str | None:

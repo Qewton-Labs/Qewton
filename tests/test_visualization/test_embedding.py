@@ -250,7 +250,7 @@ def test_two_controls_of_one_plot_combine(pair):
 def test_controls_overwriting_each_other_on_one_plot_embed_the_first(pair):
     plot, controls = _one_plot(pair)
     figure = Figure(plot)
-    with pytest.warns(UserWarning, match="cannot be embedded together"):
+    with pytest.warns(UserWarning, match="cannot be embedded"):
         figure.draw(embedded=controls)
     first, *_, skipped = controls
     replay = _Replay(figure)
@@ -349,7 +349,7 @@ class TestDash:
         plot = HeatmapPlot(
             data, config, position=X, color=U, controls=[SliderAxis(batch)]
         )
-        with pytest.raises(ValueError, match="PlotlyRenderer"):
+        with pytest.raises(TypeError, match="PlotlyRenderer"):
             DashApplication.create(Figure(plot, renderer=RecordingRenderer()))
 
 

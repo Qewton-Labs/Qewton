@@ -16,7 +16,7 @@ from qewton.visualization.layout import Layout, Overlay, Row, normalize
 from qewton.visualization.plots.base import Plot
 from qewton.visualization.renderers import DEFAULT_RENDERER
 from qewton.visualization.renderers.base import Renderer
-from qewton.visualization.scales import ColorScale
+from qewton.visualization.scales import ColorScale, color_range, log_ticks
 
 
 @dataclass(eq=False)
@@ -237,6 +237,25 @@ class Figure:
         }
         return titles.pop() if len(titles) == 1 else None
 
+    def color_ticks(self, scale: ColorScale) -> tuple[list[float], list[str]] | None:
+        """The colorbar ticks of `scale`, in its transformed values: the
+        ticks all plots drawing with it share in their current states
+        (e.g. categories), else those of a log scale (values at their
+        log10), else None for automatic ticks.
+
+        Args:
+            scale: A color scale of the figure.
+
+        Returns:
+            tuple or None: Positions and labels.
+        """
+        given = [p.color_ticks for p in self.plots if scale in p.active_color_scales]
+        if given and given[0] is not None and all(t == given[0] for t in given):
+            return given[0]
+        if scale.log:
+            return log_ticks(*color_range(scale))
+        return None
+
     # --- drawing -------------------------------------------------------------
 
     def draw(self, embedded: list[Control] = ()):
@@ -245,14 +264,18 @@ class Figure:
         Artists of an earlier call are updated, not recreated.
 
         Args:
-            embedded: Controls whose states the output holds. Controls the
-                renderer cannot embed are left out; of controls on one plot
-                that would overwrite each other, the first is embedded and
-                the others warn (a TimeAxis comes first, then SliderAxes,
-                then Selectors). A plot embeds one control axis; next to
-                it one Selector, drawn as every candidate of which the
-                chosen one is shown. Without one, it embeds several
-                Selectors of different channels, each by its data.
+            embedded: Controls whose states the output holds; facet,
+                overlay and fixed axes need no embedding. TimeAxes come
+                first, then SliderAxes, then Selectors. A control is
+                skipped with a warning if the renderer does not embed its
+                kind (:attr:`Renderer.embeddable
+                <qewton.visualization.renderers.base.Renderer.embeddable>`),
+                if the renderer's limit is reached (``max_embedded``), or
+                if it would overwrite an earlier one on a common plot. A
+                plot embeds one control axis; next to it one Selector,
+                drawn as every candidate of which the chosen one is shown.
+                Without one, it embeds several Selectors of different
+                channels, each by its data.
 
         Returns:
             object: The renderer's figure (:attr:`backend_figure`).
@@ -292,7 +315,11 @@ class Figure:
         for scale in scales:
             active = any(scale in p.active_color_scales for p in self.plots)
             self.renderer.draw_colorbar(
-                scale, self.color_title(scale), self.cells_of(scale), visible=active
+                scale,
+                self.color_title(scale),
+                self.color_ticks(scale),
+                self.cells_of(scale),
+                visible=active,
             )
         return keys
 
@@ -330,9 +357,10 @@ class Figure:
     # --- embedding -----------------------------------------------------------
 
     def _embeddable(self, requested) -> tuple[list[Control], set]:
-        # The requested controls the renderer embeds, in _EMBEDDINGS order,
-        # without those overwriting an earlier one on a common plot, and
-        # the selectors among them embedded by visibility.
+        # The requested controls the renderer embeds, in _EMBEDDINGS order:
+        # of a kind it embeds, up to its limit, without those overwriting
+        # an earlier one on a common plot; and the selectors among them
+        # embedded by visibility.
         kinds = list(_EMBEDDINGS)
         candidates = sorted(
             (c for c in requested if type(c) in _EMBEDDINGS),
@@ -340,7 +368,11 @@ class Figure:
         )
         accepted, skipped, by_visibility = [], [], set()
         for control in candidates:
-            if self._overwrites(control, accepted):
+            if (
+                type(control) not in self.renderer.embeddable
+                or len(accepted) == self.renderer.max_embedded
+                or self._overwrites(control, accepted)
+            ):
                 skipped.append(control)
                 continue
             accepted.append(control)
@@ -350,9 +382,10 @@ class Figure:
                 by_visibility.add(control)
         if skipped:
             warnings.warn(
-                f"{', '.join(c.name for c in skipped)} cannot be embedded together "
-                "with another control of the same kind on one plot; only the current "
-                "state is shown. Use a connected output, e.g. DashApplication.",
+                f"{', '.join(c.name for c in skipped)} cannot be embedded by "
+                f"{type(self.renderer).__name__} next to the other controls; only "
+                "the current state is shown. Use a connected output (an "
+                "application) to change them.",
                 stacklevel=3,
             )
         return accepted, by_visibility

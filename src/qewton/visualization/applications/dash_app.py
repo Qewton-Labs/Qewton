@@ -1,13 +1,16 @@
 """Interactive Dash application for a Figure."""
 
-from dash import Dash, dcc, html
-from dash.dependencies import Input, Output
-
-from qewton.visualization.applications.base import RenderApplication
+from qewton.visualization.applications.base import RenderApplication, require
 from qewton.visualization.axes import Control, Selector, SliderAxis
-from qewton.visualization.renderers.plotly import PlotlyRenderer
-from qewton.visualization.renderers.plotly import camera
-from qewton.visualization.renderers.plotly.text import as_plain
+from qewton.visualization.renderers.text import as_plain
+
+try:
+    from dash import Dash, dcc, html
+    from dash.dependencies import Input, Output
+
+    from qewton.visualization.renderers.plotly import PlotlyRenderer, camera
+except ImportError:  # optional packages; create() names the missing ones
+    pass
 
 
 def _control_id(index: int) -> str:
@@ -24,8 +27,16 @@ class DashApplication(RenderApplication):
         :class:`~qewton.visualization.applications.base.RenderApplication`
     """
 
-    @staticmethod
-    def create(figure):
+    connected = (SliderAxis, Selector)
+
+    @classmethod
+    def renderer_classes(cls) -> tuple[type, ...]:
+        """See :meth:`RenderApplication.renderer_classes
+        <qewton.visualization.applications.base.RenderApplication.renderer_classes>`."""
+        return (PlotlyRenderer,)
+
+    @classmethod
+    def create(cls, figure):
         """Build a Dash app displaying `figure`.
 
         Args:
@@ -35,18 +46,16 @@ class DashApplication(RenderApplication):
             dash.Dash: The application; start it with ``app.run()``.
 
         Raises:
-            ValueError: If the figure is not drawn by a PlotlyRenderer.
+            ImportError: If Dash or Plotly is not installed.
+            TypeError: If the figure is not drawn by a PlotlyRenderer.
         """
-        if not isinstance(figure.renderer, PlotlyRenderer):
-            raise ValueError(
-                "DashApplication shows Plotly figures; draw the figure with a "
-                f"PlotlyRenderer, not {type(figure.renderer).__name__}."
-            )
+        require(cls.__name__, "dash", "plotly")
+        cls.check_renderer(figure)
         app = Dash(__name__)
         if figure.title is not None:
             app.title = as_plain(figure.title)
-        controls = DashApplication.interactive_controls(figure)
-        embedded = DashApplication.embedded_controls(figure)
+        controls = cls.interactive_controls(figure)
+        embedded = cls.embedded_controls(figure)
         widgets = [
             dcc.Graph(
                 id="figure",
@@ -58,8 +67,8 @@ class DashApplication(RenderApplication):
             widgets.append(
                 html.Div(
                     [
-                        DashApplication.label(control, figure.renderer.mathjax),
-                        DashApplication.widget(control, _control_id(index)),
+                        cls.label(control, figure.renderer.mathjax),
+                        cls.widget(control, _control_id(index)),
                     ]
                 )
             )
@@ -79,52 +88,9 @@ class DashApplication(RenderApplication):
             [Input(_control_id(i), "value") for i in range(len(controls))],
         )
         def update(*states):
-            return DashApplication.update(figure, controls, states)
+            return cls.update(figure, controls, states)
 
         return app
-
-    @staticmethod
-    def interactive_controls(figure) -> list[Control]:
-        """The controls of `figure` that get a widget, in widget order.
-
-        Args:
-            figure (Figure): The figure.
-
-        Returns:
-            list of Control: Its SliderAxes and Selectors.
-        """
-        return [c for c in figure.controls if type(c) in _WIDGETS]
-
-    @staticmethod
-    def embedded_controls(figure) -> list[Control]:
-        """The controls of `figure` without a widget, embedded into the
-        drawn figure.
-
-        Args:
-            figure (Figure): The figure.
-
-        Returns:
-            list of Control: Every other control.
-        """
-        connected = DashApplication.interactive_controls(figure)
-        return [c for c in figure.controls if c not in connected]
-
-    @staticmethod
-    def update(figure, controls: list[Control], states) -> object:
-        """Set the states of `controls` and draw `figure` with the other
-        controls embedded, as the app's callback does.
-
-        Args:
-            figure (Figure): The figure.
-            controls: Its interactive controls.
-            states: One state per control.
-
-        Returns:
-            object: The redrawn backend figure.
-        """
-        for control, state in zip(controls, states):
-            control.state = int(state)
-        return figure.draw(embedded=DashApplication.embedded_controls(figure))
 
     @staticmethod
     def label(control: Control, mathjax: bool):

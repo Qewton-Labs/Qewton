@@ -31,7 +31,7 @@ from qewton.visualization import (
     VectorPlot,
     auto_layout,
 )
-from qewton.visualization.renderers import PlotlyRenderer
+from qewton.visualization.renderers import MatplotlibRenderer, PlotlyRenderer
 
 from recording_renderer import RecordingRenderer
 
@@ -98,7 +98,11 @@ LAYOUTS = {
     ),
 }
 
-RENDERERS = {"plotly": PlotlyRenderer, "recording": RecordingRenderer}
+RENDERERS = {
+    "plotly": PlotlyRenderer,
+    "matplotlib": MatplotlibRenderer,
+    "recording": RecordingRenderer,
+}
 
 
 @pytest.mark.parametrize("renderer_name", list(RENDERERS))
@@ -112,6 +116,10 @@ def test_layout(name, renderer_name):
     backend = figure.draw()
     if renderer_name == "recording":
         assert len(backend["artists"]) == n_artists
+    elif renderer_name == "matplotlib":
+        assert backend.get_suptitle() == "figure"
+        cells = [a for a in backend.axes if a.get_label().startswith("cell-")]
+        assert [a.get_title() for a in cells] == titles
     else:
         assert backend.layout.title.text == "figure"
         drawn_titles = [a.text for a in backend.layout.annotations]

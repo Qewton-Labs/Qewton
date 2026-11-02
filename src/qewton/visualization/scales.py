@@ -135,6 +135,23 @@ def log_ticks(lo: float, hi: float) -> tuple[list[float], list[str]]:
     return [float(np.log10(v)) for v in values], [f"{v:g}" for v in values]
 
 
+def color_range(scale: Scale) -> tuple[float, float]:
+    """The trained range of a scale in its transformed space (log10
+    for a log scale), widened if degenerate.
+
+    Args:
+        scale: The trained scale.
+
+    Returns:
+        tuple of float: ``(lo, hi)`` with ``lo < hi``; ``(0, 1)`` without a
+            range.
+    """
+    if scale.range is None:
+        return 0.0, 1.0
+    lo, hi = (float(v) for v in scale.transform(np.asarray(scale.range)))
+    return (lo, hi) if hi > lo else (lo, lo + 1e-9)
+
+
 class Reduce(Enum):
     """How a value with several components is reduced to one for a scalar
     channel such as color.

@@ -8,6 +8,7 @@ from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 from plotly.utils import PlotlyJSONEncoder
 
+from qewton.visualization.axes import Selector, SliderAxis, TimeAxis
 from qewton.visualization.plots.result import (
     ArrowResult,
     BarResult,
@@ -22,7 +23,6 @@ from qewton.visualization.plots.result import (
 from qewton.visualization.renderers.base import Renderer
 from qewton.visualization.renderers.plotly import camera
 from qewton.visualization.renderers.plotly.graph import NodeLinkArtist
-from qewton.visualization.scales import log_ticks
 from qewton.visualization.renderers.plotly.text import as_markup, as_math
 from qewton.visualization.themes import DEFAULT_THEME
 from qewton.visualization.themes.base import Theme
@@ -91,6 +91,8 @@ class PlotlyRenderer(Renderer):
         (ParallelCoordinatesResult, 0): ParallelCoordinatesArtist,
         (GraphLayoutResult, 2): NodeLinkArtist,
     }
+
+    embeddable = (TimeAxis, SliderAxis, Selector)
 
     def __init__(self, theme: Theme = DEFAULT_THEME, mathjax: bool = True) -> None:
         super().__init__(theme)
@@ -190,7 +192,7 @@ class PlotlyRenderer(Renderer):
                 groups.setdefault(id(self._first_cell_with(cell.axes["x"], "x")), []).append(scene)
         return [names for names in groups.values() if len(names) > 1]
 
-    def draw_colorbar(self, scale, title, cells, visible: bool = True) -> None:
+    def draw_colorbar(self, scale, title, ticks, cells, visible: bool = True) -> None:
         """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_colorbar`.
 
         The colorbar is an invisible one-point trace carrying the
@@ -203,9 +205,13 @@ class PlotlyRenderer(Renderer):
             colorbar_position(backend_figure, cell.row, cell.col),
             title=dict(text=self.text(title)),
         )
-        if scale.log:
-            tickvals, ticktext = log_ticks(lo, hi)
-            colorbar.update(tickvals=tickvals, ticktext=ticktext)
+        if ticks is not None:
+            positions, labels = ticks
+            colorbar.update(
+                tickvals=list(positions), ticktext=[self.text(t) for t in labels]
+            )
+        else:
+            colorbar.update(tickvals=None, ticktext=None)
         marker = dict(
             color=[lo],
             colorscale=colorscale(scale, self.theme),

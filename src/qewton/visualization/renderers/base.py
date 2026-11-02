@@ -20,6 +20,11 @@ class Renderer:
     Attributes:
         artists (dict): ``{(Result class, dim): Artist class}`` (class
             attribute).
+        embeddable (tuple of type): Kinds of control a self-contained
+            output embeds (class attribute); the Figure leaves the others
+            in their current state, with a warning.
+        max_embedded (int or None): Most controls embedded per output
+            (class attribute); None for no limit.
         theme (Theme): The theme.
         figure (Figure or None): The figure drawn; None before
             :meth:`setup`.
@@ -32,6 +37,8 @@ class Renderer:
     """
 
     artists: dict = {}
+    embeddable: tuple[type, ...] = ()
+    max_embedded: int | None = None
 
     def __init__(self, theme: Theme = DEFAULT_THEME) -> None:
         self.theme = theme
@@ -135,13 +142,16 @@ class Renderer:
         """
         raise NotImplementedError
 
-    def draw_colorbar(self, scale, title, cells, visible: bool = True) -> None:
+    def draw_colorbar(self, scale, title, ticks, cells, visible: bool = True) -> None:
         """Draw or update the one colorbar of a ColorScale, next to the
-        rightmost of `cells`.
+        rightmost of `cells`; it is drawn in the scale's transformed values
+        (log10 for a log scale).
 
         Args:
             scale (ColorScale): The trained color scale.
             title (str or None): Title of the colorbar.
+            ticks (tuple or None): Tick positions in transformed values
+                and their labels; None for automatic ticks.
             cells (list of Cell): The cells using `scale`.
             visible: Whether the colorbar is shown.
         """
