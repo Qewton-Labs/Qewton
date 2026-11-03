@@ -20,6 +20,19 @@ from qewton.equations.analysis.normalize import Normalized, normalize
 from qewton.equations.analysis.overview import Overview, overview
 from qewton.equations.analysis.pipeline import AnalysisContext, report, run_pipeline
 from qewton.equations.analysis.signatures import Signature, Signatures, signatures
+from qewton.equations.analysis.structure import (
+    BatchPlacement,
+    Linearity,
+    Split,
+    Term,
+    batch_placement,
+    constraint_orders,
+    decoupled_axes,
+    derivative_orders,
+    linearity,
+    split,
+    unknown_orders,
+)
 from qewton.equations.analysis.validate import validate
 from qewton.equations.model.task import Role, Task, TaskError
 from qewton.equations.expr.api import (
@@ -49,7 +62,6 @@ from qewton.equations.expr.nodes import (
     Restrict,
     Shift,
     as_expr,
-    children,
     transform,
     walk,
 )
@@ -68,6 +80,19 @@ from qewton.equations.geometry.sets import (
 )
 from qewton.equations.analysis.axes import AxisError, free_axes
 from qewton.equations.analysis.diagnostics import Diagnostic, Severity
+from qewton.equations.analysis.coupling import (
+    CouplingBlock,
+    CouplingGraph,
+    EquationNode,
+    UnknownNode,
+    coupling_graph,
+)
+from qewton.equations.analysis.batch_axes import inherited_batch_axes
+from qewton.equations.analysis.coupling_diagram import (
+    CouplingDiagram,
+    coupling_diagram,
+    plot_coupling,
+)
 from qewton.equations.analysis.infer import Inference, infer_shapes
 from qewton.equations.model.problem import Problem
 from qewton.equations.printing.pretty import pretty
@@ -96,12 +121,19 @@ __all__ = [
     "Shift",
     "Signature",
     "Signatures",
+    "BatchPlacement",
+    "CouplingBlock",
+    "CouplingGraph",
+    "EquationNode",
+    "Linearity",
+    "Split",
+    "Term",
+    "UnknownNode",
     "Task",
     "TaskError",
     "AnalysisContext",
     "Apply",
     "as_expr",
-    "children",
     "transform",
     "walk",
     "OpSpec",
@@ -119,16 +151,28 @@ __all__ = [
     "integral",
     "mean",
     "normalize",
+    "batch_placement",
+    "coupling_graph",
+    "coupling_diagram",
+    "CouplingDiagram",
+    "plot_coupling",
+    "constraint_orders",
+    "decoupled_axes",
+    "derivative_orders",
+    "linearity",
     "overview",
     "report",
     "run_pipeline",
     "shift",
     "signatures",
+    "split",
+    "unknown_orders",
     "validate",
     "d",
     "dt",
     "dot",
     "inner",
+    "inherited_batch_axes",
     "sin",
     "cos",
     "exp",

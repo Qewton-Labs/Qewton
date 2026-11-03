@@ -1,7 +1,8 @@
-"""The PDE problem: constraints, boundary partitions and the time variable.
+"""The underlying mathematical problem: constraints,
+boundary partitions and the variables.
 
-A Problem is mathematics only. It assigns no roles (unknown, fixed, varying); that
-is the Task's job.
+A Problem is mathematics only. It assigns no roles (unknown, fixed, varying);
+that is the Task's job.
 """
 
 from __future__ import annotations
@@ -9,24 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.axes import check_constraint_axes, free_axes
+from qewton.equations.analysis.axes import check_constraint_axes
 from qewton.equations.model.constraints import Constraint
-from qewton.equations.expr.nodes import (
-    Apply,
-    Coord,
-    Expr,
-    FunctionSymbol,
-    Integral,
-    Normal,
-    Restrict,
-    Shift,
-    walk,
-)
-from qewton.equations.geometry.coordinates import (
-    check_coordinate,
-    coordinate_factors,
-    root_of,
-)
+from qewton.equations.expr.nodes import Expr, FunctionSymbol, walk
+from qewton.equations.geometry.coordinates import check_coordinate, root_of
 from qewton.equations.geometry.sets import Partition, Periodic, SetNode
 from qewton.equations.model.task import Task, build_task
 from qewton.equations.printing.printable import Printable
@@ -76,7 +63,6 @@ class Problem(Printable):
 
     def overview(self):
         """The coordinates, sets and functions of this problem; print it to read it."""
-        # Imported here: the analysis package imports the model, not the other way.
         # pylint: disable-next=import-outside-toplevel,cyclic-import
         from qewton.equations.analysis.overview import overview
 
@@ -100,16 +86,11 @@ class Problem(Printable):
 
     def sets(self) -> frozenset[SetNode]:
         """Every set the problem refers to: where constraints hold, where expressions are
-        restricted or normals taken, and the boundary partition."""
+        restricted, integrated or normals taken, and the partitions and periodic pairs."""
         found = {c.on for c in self.constraints if c.on is not None}
         for side in self._sides():
             for node in walk(side):
-                if isinstance(node, Restrict):
-                    found.add(node.on)
-                elif isinstance(node, Integral):
-                    found.add(node.over)
-                elif isinstance(node, Normal):
-                    found.add(node.of)
+                found.update(node.sets())
         for partition in self.partitions:
             found.add(partition.whole)
             found.update(partition.parts)
@@ -123,14 +104,7 @@ class Problem(Printable):
         found: set[Variable] = {axis for s in self.sets() for axis in s.axes}
         for side in self._sides():
             for node in walk(side):
-                if isinstance(node, FunctionSymbol):
-                    found |= free_axes(node)
-                elif isinstance(node, Coord):
-                    found.add(root_of(node.variable))
-                elif isinstance(node, Shift):
-                    found.add(root_of(node.axis))
-                elif isinstance(node, Apply) and node.op.takes_axes:
-                    found.update(coordinate_factors(node.args[node.op.arity]))
+                found.update(node.coordinates())
         if self.time is not None:
             found.add(root_of(self.time))
         return frozenset(found)

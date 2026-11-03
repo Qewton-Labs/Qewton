@@ -12,7 +12,9 @@ from qewton.equations import (
     shift,
 )
 from qewton.equations.analysis.structure import (
+    batch_placement,
     constraint_orders,
+    decoupled_axes,
     derivative_orders,
     linearity,
     split,
@@ -172,7 +174,7 @@ def test_a_constraint_without_an_unknown_has_no_operator():
 
 
 def test_a_nonlinear_term_makes_the_constraint_nonlinear():
-    from qewton.equations import Domain, Eq, Problem
+    from qewton.equations import Domain, Eq, Problem, Product
 
     omega = Domain("Omega", ambient=x)
     q = FunctionSymbol(Variable("q", dim=1), x)
@@ -181,3 +183,145 @@ def test_a_nonlinear_term_makes_the_constraint_nonlinear():
     assert result.linearity == "nonlinear"
     assert [t.linearity for t in result.operator] == ["linear", "nonlinear"]
     assert [t.linearity for t in result.source] == ["none"]
+
+
+def test_a_varying_constant_coefficient_is_affine_in_the_operator():
+    p = poisson()
+    by_name = {s.variable.name: s for s in p.symbols()}
+    task = p.task(
+        unknown=[by_name["u"]],
+        fixed={by_name[n]: 1.0 for n in ("f", "g", "h")},
+        varying={by_name["nu"]: [1.0, 2.0]},
+    )
+    placements = batch_placement(task)
+    assert [
+        (p.constraint_index, p.symbol.variable.name, p.part, p.affine) for p in placements
+    ] == [
+        (0, "nu", "operator", True),
+        (2, "nu", "operator", True),
+    ]
+
+
+def test_a_varying_source_enters_only_the_source_part():
+    p = poisson()
+    by_name = {s.variable.name: s for s in p.symbols()}
+    task = p.task(
+        unknown=[by_name["u"]],
+        fixed={by_name[n]: 1.0 for n in ("g", "h", "nu")},
+        varying={by_name["f"]: [1.0, 2.0]},
+    )
+    placements = batch_placement(task)
+    assert [
+        (p.constraint_index, p.symbol.variable.name, p.part, p.affine) for p in placements
+    ] == [(0, "f", "source", True)]
+
+
+def test_a_spatially_varying_coefficient_is_not_affine_when_differentiated():
+    from qewton.equations import Domain, Eq, Problem
+
+    omega = Domain("Omega", ambient=x)
+    q = FunctionSymbol(Variable("q", dim=1), x)
+    coefficient = FunctionSymbol(Variable("coefficient", dim=1), x)
+    source = FunctionSymbol(Variable("source", dim=1), None)
+    problem = Problem(
+        constraints=(Eq(-div(coefficient * grad(q, x), x), source).on(omega),)
+    )
+    task = problem.task(
+        unknown=[q], varying={coefficient: [1.0, 2.0]}, fixed={source: 1.0}
+    )
+    (placement,) = batch_placement(task)
+    assert placement.part == "operator"
+    assert not placement.affine
+
+
+def test_a_spatial_coefficient_not_under_a_derivative_is_affine():
+    from qewton.equations import Domain, Eq, Problem
+
+    omega = Domain("Omega", ambient=x)
+    q = FunctionSymbol(Variable("q", dim=1), x)
+    coefficient = FunctionSymbol(Variable("coefficient", dim=1), x)
+    source = FunctionSymbol(Variable("source", dim=1), None)
+    problem = Problem(constraints=(Eq(-coefficient * lap(q, x), source).on(omega),))
+    task = problem.task(
+        unknown=[q], varying={coefficient: [1.0, 2.0]}, fixed={source: 1.0}
+    )
+    (placement,) = batch_placement(task)
+    assert placement.part == "operator"
+    assert placement.affine
+
+
+def test_varying_sets_have_no_expression_batch_placement():
+    p = poisson()
+    by_name = {s.variable.name: s for s in p.symbols()}
+    omega = p.constraints[0].on
+    task = p.task(
+        unknown=[by_name["u"]],
+        fixed={s: 1.0 for s in p.symbols() if s is not by_name["u"]},
+        varying={omega: object()},
+    )
+    assert batch_placement(task) == ()
+
+
+def test_axes_without_unknown_derivatives_are_reported_as_decoupled():
+    from qewton.equations import Domain, Eq, Problem, Product
+
+    time = Variable("t", dim=1)
+    space = Variable("x", dim=1)
+    omega = Domain("Omega", ambient=space)
+    interval = Domain("I", ambient=time)
+    q = FunctionSymbol(Variable("q", dim=1), space * time)
+    source = FunctionSymbol(Variable("source", dim=1), space * time)
+    problem = Problem((Eq(q, source).on(Product((omega, interval))),))
+    task = problem.task(unknown=[q], fixed={source: 1.0})
+
+    assert set(decoupled_axes(task)) == {space, time}
+
+
+def test_differential_axes_are_not_reported_as_decoupled():
+    from qewton.equations import Domain, Eq, Problem
+
+    omega = Domain("Omega", ambient=x)
+    q = FunctionSymbol(Variable("q", dim=1), x * t)
+    source = FunctionSymbol(Variable("source", dim=1), x * t)
+    problem = Problem((Eq(dt(q, t) + lap(q, x), source).on(omega),), time=t)
+    task = problem.task(unknown=[q], fixed={source: 1.0})
+
+    assert decoupled_axes(task) == ()
+
+
+def test_coordinate_without_a_derivative_remains_decoupled():
+    from qewton.equations import Domain, Eq, Problem
+
+    omega = Domain("Omega", ambient=x)
+    q = FunctionSymbol(Variable("q", dim=1), x * t)
+    source = FunctionSymbol(Variable("source", dim=1), x * t)
+    problem = Problem((Eq(dt(q, t), source).on(omega),), time=t)
+    task = problem.task(unknown=[q], fixed={source: 1.0})
+
+    assert decoupled_axes(task) == (x,)
+
+
+def test_integrals_and_shifts_prevent_false_pointwise_decoupling():
+    from qewton.equations import Domain, Eq, Problem, integral
+
+    omega = Domain("Omega", ambient=x)
+    q = FunctionSymbol(Variable("q", dim=1), x)
+    problem = Problem((Eq(integral(q, omega), 0).on(None),))
+    task = problem.task(unknown=[q])
+    assert decoupled_axes(task) == ()
+
+    from qewton.equations import shift
+
+    delayed = Problem((Eq(shift(q, x, (1.0, 0.0)), q).on(omega),))
+    assert decoupled_axes(delayed.task(unknown=[q])) == ()
+
+
+def test_only_axes_declared_on_unknowns_are_considered():
+    from qewton.equations import Domain, Eq, Problem
+
+    omega = Domain("Omega", ambient=x)
+    q = FunctionSymbol(Variable("q", dim=1), None)
+    source = FunctionSymbol(Variable("source", dim=1), x)
+    problem = Problem((Eq(q, source).on(omega),))
+
+    assert decoupled_axes(problem.task(unknown=[q], fixed={source: 1.0})) == ()

@@ -204,7 +204,7 @@ class Signature:
     domain: SetNode | None = None           # inferred: smallest set on which it is evaluated
 ```
 
-As built (`analysis/signatures.py`) the signature is richer and `signatures(task)` returns one per function: `Signature(symbol, axes, batch, shape, evaluated_on, role, shape_assumed)`. `axes` are the declared inputs in order, `batch` is the function's own parameter axis if it is varying, and `evaluated_on` replaces the single `domain`: the sets where the function is evaluated (constraint sets after normalizing, narrowed by restrictions and integrals), none inside another. A single smallest set would need set unions, which the plan avoids. A function that is merely coupled to a varying one does not get the batch axis yet; that comes with the coupling graph (M3). The one warning is for a declared input that no constraint the function appears in can use, e.g. `q(x, t)` in a constraint on `Omega` when no interval exists to lift it onto.
+As built (`analysis/signatures.py`) the signature is richer and `signatures(task)` returns one per function: `Signature(symbol, axes, batch, shape, evaluated_on, role, shape_assumed, inherited_batch)`. `axes` are the declared inputs in order, `batch` is the function's own parameter axis if it is varying, and `inherited_batch` lists axes propagated to an unknown through coupled constraints. `evaluated_on` replaces the single `domain`: the sets where the function is evaluated (constraint sets after normalizing, narrowed by restrictions and integrals), none inside another. A single smallest set would need set unions, which the plan avoids. The one warning is for a declared input that no constraint the function appears in can use, e.g. `q(x, t)` in a constraint on `Omega` when no interval exists to lift it onto.
 
 ### 5.3 Operator registry
 
@@ -374,16 +374,17 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 
 As built so far (`analysis/structure.py`): `derivative_orders(expr)`, `constraint_orders(constraint)` and `unknown_orders(task)`, one dict `{coordinate: order}` per unknown and constraint. Orders add along the path to the function, each factor of a product axis counts, and a shift adds nothing.
 
-Also built: `linearity(expr, unknowns)` (`none`/`linear`/`affine`/`nonlinear`, from `OpSpec.linearity`) and `split(task)`, which returns an operator part and a source part per constraint of the normalized problem. Terms are signed and tagged. A constraint is `linear` when no operator term is nonlinear (a linear operator plus a source).
+Also built: `decoupled_axes(task)`, which reports declared unknown input axes with no unknown derivative or nonlocal integral/shift coupling. These are candidate pointwise directions. `linearity(expr, unknowns)` (`none`/`linear`/`affine`/`nonlinear`, from `OpSpec.linearity`) and `split(task)`, which returns an operator part and a source part per constraint of the normalized problem. Terms are signed and tagged. A constraint is `linear` when no operator term is nonlinear (a linear operator plus a source). `batch_placement(task)` reports each varying function in the operator/source parts and whether it is affine there: the parameter must occur linearly and not be differentiated along one of its declared input axes. Thus `div(nu * grad(u, x), x)` is affine in spatially constant `nu`, but not in `nu(x)`. Varying sets affect geometry and do not appear in this expression-level report.
 
-- **Inherited batch axes (to do in this milestone).** An unknown that is coupled, through the coupling graph, to a varying function or set has a value per instance too, so it gets that batch axis. The signatures do not show this yet; it follows from the coupling graph.
+- **Inherited batch axes.** `inherited_batch_axes(task)` propagates a varying function or set axis across constraints sharing unknowns. Set dependencies include products, boundaries, and sibling parts of a partition; sets used by restrictions and integrals are considered too. `Signature.inherited_batch` displays the result separately from a symbol's own varying axis.
 
 - **Derivative orders.** For each (constraint, unknown) pair, the maximum order per axis, accumulated through differential operators while walking the tree.
 - **Operator/source split.** Expand top-level sums. Terms that depend on unknowns form the operator part; the rest form the source part.
 - **Linearity.** Classify each term as linear, affine or nonlinear in the unknowns, using `OpSpec.linearity`.
 - **Batch placement.** Record whether each batched symbol appears in the operator part or only in the source part, and whether it enters affinely (term = θ(μ) · term′, where term′ does not depend on μ). A symbol with no spatial axes can be pulled out of `div`, `grad` and `lap`. That rule is what makes `div(nu * grad(u, x), x)` affine, so the structure pass must state it explicitly.
-- **Coupling graph.** A bipartite graph between scalar equations and scalar unknowns (a vector constraint or unknown contributes one node per component). Maximum matching gives a structural well-posedness check; strongly connected components or a Dulmage–Mendelsohn decomposition give the block-triangular order. networkx provides the matching and the SCCs. A Dulmage–Mendelsohn decomposition is built from those two, not from one library call.
-- **Decoupled axes.** If no derivative of any unknown along axis a appears anywhere, the problem decouples along a: pointwise in space, quasi-static in time, or parallel over a batch.
+- **Coupling graph.** `analysis/coupling.py` builds a bipartite graph between scalar equation components and scalar unknown components. Edges mean an unknown occurs in a constraint. Since expressions do not yet select vector components, vector equations are conservatively connected to every component of each occurring unknown. A deterministic augmenting-path maximum matching reports unmatched rows and columns; it is a structural count/coupling check, not a well-posedness proof. Matched equation/unknown pairs induce a directed dependency graph whose strongly connected components are returned in topological order. Unmatched nodes are not included in blocks. This avoids adding a graph dependency. The Stokes fixture omits boundary conditions and exists to demonstrate the velocity-pressure saddle-point block.
+- **Coupling diagram.** `coupling_diagram(task)` (data in `analysis/coupling_diagram.py`) extends the graph with data functions (fixed/varying), the sets each equation is posed on and each unknown is defined on, and the coordinates the sets live in; `plot_coupling(task)` draws it in five columns (equations, unknowns, data, sets, coordinates).
+- **Decoupled axes.** `decoupled_axes(task)` reports coordinates declared on unknowns with no unknown derivative, integral coupling, or shift along them. These are candidate pointwise directions (including quasi-static time); batch parallelism is reported separately in M5.
 
 ### 6.5 classify
 
@@ -568,9 +569,9 @@ Suggestions
 |---|---|---|
 | M1 | Geometry, expressions, constraints, pretty printer | Poisson and heat fixtures build and print |
 | M2 | Task (roles, batch axes), validate, normalize, infer; signature report (the axis pre-pass was dropped; signatures use `evaluated_on`) | golden tests for signatures and shapes pass |
-| M3 | structure: orders, operator/source split, linearity, coupling graph | Stokes coupling graph shows the saddle-point block |
+| M3 | structure: orders, split, linearity, batch placement, coupling graph, inherited batches, decoupled axes | Stokes graph shows the saddle-point block; signatures propagate batch axes; pointwise directions are detected |
 | M4 | classify: PDE type, BC kinds and counts, function spaces | wave, advection, Stokes and obstacle fixtures classified correctly |
-| M5 | Batch placement and batched reporting (parameter axes) | worked example (Section 8) reports the batch correctly |
+| M5 | Batched reporting (parameter axes; batch placement is in M3) | worked example (Section 8) reports the batch correctly |
 | M6 | suggest and report with rationale | every suggestion lists its evidence |
 | M7 | parametrized domains (reference maps) | batched-domain fixture uses the pull-back |
 | M8 | weak_form: pairing, testing, integration by parts, boundary terms | Poisson, heat and Stokes weak forms match hand-derived ones |
@@ -602,7 +603,7 @@ The questions below are still open.
 - Several batched symbols: zip them onto one shared P, or form a product P₁ × P₂? Proposal: zip by default, with an explicit `grid=` option for products.
 - Checking sign and definiteness for "elliptic": do it symbolically (e.g. with sympy), or assume it and only flag?
 - Closure: an explicit `Closure` set node, or implicit in the subset queries?
-- Lateral boundary: ∂(Ω × I) is not ∂Ω × I. Normalise boundaries of products into products of factors.
+- Decided: ∂(Ω × I) is not ∂Ω × I, so a boundary of a product stays a boundary of the product (no normalisation into factors).
 - Interoperability: export to sympy for simplification, or to UFL for FEM backends?
 - Resolved: `Variable` gets no `kind`. The problem declares its time variable (see §5.1).
 - Resolved: function inputs are always declared. `inputs=None` means constant, and nothing about inputs is inferred from usage.
@@ -612,6 +613,16 @@ The questions below are still open.
 - Natural BCs written as ∂ₙu although the operator's flux is ν∂ₙu: fix automatically by multiplying with the coefficient, or always ask?
 - Trained models depend on the vocabulary ids. How should new operators be handled without retraining: a reserved "unknown op" id, or op embeddings computed from features such as order and linearity?
 - Which function encoder for data functions: values at fixed sensor points, Fourier coefficients, or a small neural field?
+
+**Noted for later (from the M3 review):**
+- **Component indexing.** Expressions cannot select components of a vector function, so a vector equation is connected to every component of each unknown, and the coupling graph and matching are coarser than they should be (Stokes momentum). Layer 1: an `Index(expr, i)` node (`u[0]`) that removes a leading shape axis, with a shape rule and printer support. It would make the coupling edges exact and can come before M4. Layer 2: named index sets, a `Sum(expr, j, N)` node and constraint families (`v_i = Σ_j a_i b_j` for i = 1..3), with free-index tracking and a choice between expanding to scalar equations and keeping the indexed form. Do this only if symbolic sums over N are needed; until then a Python loop over layer 1 can unroll families.
+- **Printing of `dot`:** `a·b` or `⟨a,b⟩`?
+- **Tests layout:** mirror the source subfolders (`tests/expr/`, `tests/analysis/`, ...)?
+- **Affine versus linear for a constraint:** only terms can be affine today. A constraint with a nonzero source is called `linear`. Should it be `affine`?
+- **Coupled functions and roles:** a function coupled to a varying one is not marked varying in its `role`, only through `inherited_batch`.
+- **Coupling diagram:** data functions are not linked to sets or coordinates in the picture (a fixed `f(x)` may depend on x). Edges that skip a column pass behind nodes; curved edges or dropping equation-to-set edges are options if it gets too busy.
+- **Deferred analysis features:** symbolic periods, batch lifting, distributed and state-dependent delays, partition coverage, mesh-versus-set checks.
+- **Fixtures to add:** wave, advection, obstacle.
 
 ---
 

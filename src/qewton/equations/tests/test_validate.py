@@ -195,3 +195,21 @@ class TestShapes:
         problem = Problem((Eq(b, 0).on(Omega), Eq(a, c).on(Omega), Eq(a, d).on(Omega)))
         found = validate(problem)
         assert found[0].severity is Severity.ERROR
+
+
+class TestSlices:
+    omega = Domain("Omega", ambient=Variable("x", dim=2))
+    x = omega.ambient
+    u = FunctionSymbol(Variable("u", dim=1), x * t)
+
+    def test_a_time_slice_of_a_time_dependent_function_is_fine(self):
+        start = Product((self.omega, Slice(t, 0.0)))
+        problem = Problem((Eq(Restrict(self.u, start), 0).on(start),), time=t)
+        assert not any("slice" in m for m in messages(problem))
+
+    def test_a_slice_of_a_coordinate_no_function_has_is_flagged(self):
+        s = Variable("s", dim=1)
+        start = Product((self.omega, Slice(s, 0.0)))
+        problem = Problem((Eq(self.u, 0).on(start),), time=t)
+        found = messages(problem, Severity.WARNING)
+        assert any("slice of s" in m and "no function" in m for m in found)

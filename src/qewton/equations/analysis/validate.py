@@ -8,6 +8,7 @@ raising, so several findings arrive together:
 - partitions: parts belong to the whole, are distinct, and each has a constraint;
 - periodic declarations: a constraint relates the two sets, with the declared offset;
 - delays: a shift back in time needs history on an interval, not on a slice;
+- slices: a slice fixes a coordinate that the constraint's functions depend on;
 - restrictions: the expression depends on the axes of the set it is restricted to;
 - shapes: conflicts are errors, and symbols whose shape had to be guessed are warned.
 """
@@ -23,9 +24,9 @@ from qewton.equations.analysis.diagnostics import (
     warning,
 )
 from qewton.equations.analysis.infer import infer_shapes
-from qewton.equations.expr.nodes import Const, Expr, Restrict, Shift, walk
+from qewton.equations.expr.nodes import Const, Expr, FunctionSymbol, Restrict, Shift, walk
 from qewton.equations.expr.ops import ShapeError
-from qewton.equations.geometry.coordinates import root_of
+from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
 
@@ -38,6 +39,7 @@ def validate(problem: Problem) -> tuple[Diagnostic, ...]:
         *_partitions(problem),
         *_periodic(problem),
         *_delays(problem),
+        *_slices(problem),
         *_restrictions(problem),
         *_shapes(problem),
     ]
@@ -141,6 +143,29 @@ def _delays(problem: Problem) -> Found:
 
 def _is_advance(shift: Shift) -> bool:
     return isinstance(shift.offset, Const) and shift.offset.value > 0
+
+
+def _slices(problem: Problem) -> Found:
+    for constraint in problem.constraints:
+        if constraint.on is None:
+            continue
+        coordinates = {
+            root_of(axis)
+            for side in (constraint.lhs, constraint.rhs)
+            for node in walk(side)
+            if isinstance(node, FunctionSymbol) and node.inputs is not None
+            for axis in coordinate_factors(node.inputs)
+        }
+        if not coordinates:
+            continue
+        for axis in sorted(
+            sliced_axes(constraint.on) - coordinates, key=lambda a: a.name
+        ):
+            yield warning(
+                f"The slice of {axis.name} in {constraint.on} fixes a coordinate that "
+                "no function of the constraint depends on.",
+                constraint,
+            )
 
 
 def _restrictions(problem: Problem) -> Found:

@@ -9,7 +9,6 @@ from qewton.equations.expr.nodes import (
     FunctionSymbol,
     Integral,
     Shift,
-    children,
 )
 from qewton.equations.expr.ops import OPS
 from qewton.equations.geometry.sets import Domain
@@ -124,7 +123,7 @@ class TestIntegrals:
             Integral(1.0, self.omega)
 
     def test_children_is_the_integrand(self):
-        assert children(api.integral(self.q, self.omega)) == (self.q,)
+        assert api.integral(self.q, self.omega).children() == (self.q,)
 
 
 class TestShift:
@@ -164,7 +163,7 @@ class TestShift:
     def test_keeps_shape_and_children(self):
         shifted = api.shift(self.u1, t, self.tau)
         assert shape_of(shifted) == ()
-        assert children(shifted) == (self.u1, self.tau)
+        assert shifted.children() == (self.u1, self.tau)
         assert isinstance(shifted, Shift)
 
     def test_axis_must_be_a_coordinate(self):

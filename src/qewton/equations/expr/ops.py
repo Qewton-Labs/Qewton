@@ -52,6 +52,9 @@ def register(spec: OpSpec) -> OpSpec:
     return spec
 
 
+###
+# Functions for shape rules of operators.
+###
 def _elementwise(shapes: tuple[Shape, ...], _axes: Variable | None) -> Shape:
     first, second = shapes
     if first == second:
@@ -104,17 +107,19 @@ def _inner(shapes: tuple[Shape, ...], _axes: Variable | None) -> Shape:
 
 
 def _partial(shapes: tuple[Shape, ...], axes: Variable | None) -> Shape:
-    if axes.dim != 1:
+    if axes is not None and axes.dim != 1:
         raise ShapeError("d needs a single coordinate; use grad for several.")
     return shapes[0]
 
 
 def _grad(shapes: tuple[Shape, ...], axes: Variable | None) -> Shape:
-    return shapes[0] + (axes.dim,)
+    return shapes[0] + (axes.dim,)  # type: ignore
 
 
 def _div(shapes: tuple[Shape, ...], axes: Variable | None) -> Shape:
     shape = shapes[0]
+    if axes is None:
+        raise ShapeError("div needs a coordinate axis.")
     if not shape or shape[-1] != axes.dim:
         raise ShapeError(
             f"div needs a last axis of length {axes.dim}, got shape {shape}."
@@ -123,6 +128,8 @@ def _div(shapes: tuple[Shape, ...], axes: Variable | None) -> Shape:
 
 
 def _curl(shapes: tuple[Shape, ...], axes: Variable | None) -> Shape:
+    if axes is None:
+        raise ShapeError("curl needs a coordinate axis.")
     if shapes[0] != (3,) or axes.dim != 3:
         raise ShapeError("curl needs a 3-vector and three coordinates.")
     return (3,)

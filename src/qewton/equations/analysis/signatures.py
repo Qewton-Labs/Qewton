@@ -21,6 +21,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 from qewton.config.variables import Variable
+from qewton.equations.analysis.batch_axes import inherited_batch_axes
 from qewton.equations.analysis.diagnostics import Diagnostic, warning
 from qewton.equations.analysis.infer import infer_shapes
 from qewton.equations.analysis.normalize import normalize
@@ -44,10 +45,11 @@ class Signature:
     """One function's type.
 
     `axes` are the declared input coordinates in order, `batch` is the parameter axis
-    of a varying function (or None), `shape` is the output shape, `evaluated_on` the
-    sets the function is evaluated on, none of them inside another, and `role` comes
-    from the task. `shape_assumed` is True when the shape was not declared and had to
-    be taken as scalar.
+    of a varying function (or None), and `inherited_batch` lists axes propagated to an
+    unknown through coupled constraints. `shape` is the output shape, `evaluated_on`
+    the sets the function is evaluated on, none of them inside another, and `role`
+    comes from the task. `shape_assumed` is True when the shape was not declared and
+    had to be taken as scalar.
     """
 
     symbol: FunctionSymbol
@@ -57,19 +59,26 @@ class Signature:
     evaluated_on: tuple[SetNode, ...]
     role: Role
     shape_assumed: bool = False
+    inherited_batch: tuple[Variable, ...] = ()
 
     def __str__(self) -> str:
         inputs = [a.name for a in self.axes]
         if self.batch is not None:
             inputs.append(self.batch.name)
+        inputs.extend(axis.name for axis in self.inherited_batch)
         domain = " × ".join(inputs) if inputs else "·"
         shape = f"ℝ^{self.shape}" if self.shape else "ℝ"
         assumed = " (assumed)" if self.shape_assumed else ""
+        inherited = (
+            f"; inherits {', '.join(a.name for a in self.inherited_batch)}"
+            if self.inherited_batch
+            else ""
+        )
         sets = ", ".join(str(s) for s in self.evaluated_on)
         where = f"  on {sets}" if sets else ""
         return (
             f"{self.symbol.variable.name} : {domain} → {shape}{assumed}"
-            f"  [{self.role.value}]{where}"
+            f"  [{self.role.value}{inherited}]{where}"
         )
 
 
@@ -135,6 +144,7 @@ def signatures(task: Task) -> Signatures:
     """
     problem = normalize(task.problem).problem
     inference = infer_shapes(problem)
+    inherited = inherited_batch_axes(task)
 
     evaluated: dict[FunctionSymbol, set[SetNode]] = {}
     seen_with: dict[FunctionSymbol, set[Variable]] = {}
@@ -158,6 +168,7 @@ def signatures(task: Task) -> Signatures:
             _outermost(evaluated.get(symbol, set())),
             task.roles[symbol],
             symbol in inference.defaulted,
+            inherited.get(symbol, ()),
         )
         if symbol in evaluated:
             unused = [a for a in axes if root_of(a) not in seen_with.get(symbol, set())]

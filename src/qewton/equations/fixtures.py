@@ -107,3 +107,22 @@ def periodic_poisson(length: float = 2.0) -> Problem:
         ),
         periodic=(Periodic(left, right, x, offset),),
     )
+
+
+def stokes() -> Problem:
+    """The bulk steady Stokes equations; boundary conditions are omitted.
+
+    This fixture isolates the saddle-point coupling: momentum couples velocity and
+    pressure, while incompressibility couples only velocity.
+    """
+    x = Variable("x", dim=2)
+    omega = Domain("Omega", ambient=x)
+    velocity = FunctionSymbol(Variable("u", dim=2), x)
+    pressure = FunctionSymbol(Variable("p", dim=1), x)
+    force = FunctionSymbol(Variable("f", dim=2), x)
+    return Problem(
+        constraints=(
+            Eq(-lap(velocity, x) + grad(pressure, x), force).on(omega),
+            Eq(div(velocity, x), 0).on(omega),
+        )
+    )

@@ -1,4 +1,6 @@
-"""Coordinates: config Variables with a positive integer dimension."""
+"""Coordinates are given by qewton.Variables with a positive
+integer dimension. This file just contains helper functions for
+working with them."""
 
 from __future__ import annotations
 
@@ -40,6 +42,8 @@ def _is_atomic(var: Variable) -> bool:
     attribute cannot tell the two apart, since a variable's parent is overwritten
     by every product it is multiplied into.
     """
+    if isinstance(var.dim, tuple) or var.dim is None:
+        return False
     names = [child.name for child in var.children]
     return not names or names == [f"{var.name}_{i + 1}" for i in range(var.dim)]
 

@@ -5,7 +5,8 @@ order of the function along each coordinate, e.g. {x: 2, t: 1} for the heat equa
 Block 2: the operator/source split and linearity. Each constraint is cut into signed
 terms at its top-level sums. A term that contains an unknown belongs to the operator
 part, the others to the source part. Every term is labelled by how it depends on the
-unknowns. Later blocks add batch placement and the coupling graph.
+unknowns. Batch placement and decoupled coordinate axes are included here; the scalar
+coupling graph is in `analysis/coupling.py`.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from qewton.config.variables import Variable
+from qewton.equations.analysis.axes import free_axes
 from qewton.equations.analysis.normalize import normalize
 from qewton.equations.expr.nodes import (
     Apply,
@@ -24,12 +26,11 @@ from qewton.equations.expr.nodes import (
     Integral,
     Restrict,
     Shift,
-    children,
     walk,
 )
-from qewton.equations.geometry.coordinates import coordinate_factors
+from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.model.constraints import Constraint
-from qewton.equations.model.task import Task
+from qewton.equations.model.task import Role, Task
 
 Orders = dict[Variable, int]
 
@@ -58,7 +59,7 @@ def _collect(expr: Expr, above: Orders, found: dict[FunctionSymbol, Orders]) -> 
         inner = dict(above)
         for axis in coordinate_factors(expr.args[expr.op.arity]):
             inner[axis] = inner.get(axis, 0) + expr.op.order
-    for child in children(expr):
+    for child in expr.children():
         _collect(child, inner, found)
 
 
@@ -83,6 +84,67 @@ def unknown_orders(task: Task) -> tuple[dict[FunctionSymbol, Orders], ...]:
         {s: o for s, o in constraint_orders(c).items() if s in unknowns}
         for c in task.problem.constraints
     )
+
+
+def decoupled_axes(task: Task) -> tuple[Variable, ...]:
+    """Axes along which unknowns have no differential or nonlocal coupling.
+
+    These are candidate independent directions: the equations can be solved pointwise
+    along such coordinates. An integral over an axis or a shift along it couples
+    different points even without a derivative, so those axes are excluded.
+    """
+    unknowns = frozenset(task.unknowns)
+    if not unknowns:
+        return ()
+    problem = normalize(task.problem).problem
+    axes = {
+        root_of(axis)
+        for symbol in unknowns
+        if symbol.inputs is not None
+        for axis in coordinate_factors(symbol.inputs)
+    }
+    differentiated: set[Variable] = set()
+    nonlocal_axes: set[Variable] = set()
+    for constraint in problem.constraints:
+        for side in (constraint.lhs, constraint.rhs):
+            differentiated.update(_differentiated_axes(side, unknowns))
+            nonlocal_axes.update(_nonlocal_axes(side, unknowns))
+    return tuple(sorted(axes - differentiated - nonlocal_axes, key=lambda a: a.name))
+
+
+def _contains_unknown(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> bool:
+    return any(node in unknowns for node in walk(expr))
+
+
+def _differentiated_axes(
+    expr: Expr, unknowns: frozenset[FunctionSymbol]
+) -> set[Variable]:
+    return {
+        root_of(axis)
+        for node in walk(expr)
+        if isinstance(node, Apply)
+        and node.op.takes_axes
+        and _contains_unknown(node.args[0], unknowns)
+        for axis in coordinate_factors(node.args[node.op.arity])
+    }
+
+
+def _nonlocal_axes(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> set[Variable]:
+    coupled = set()
+    for node in walk(expr):
+        if isinstance(node, Integral):
+            symbols = {
+                child
+                for child in walk(node.expr)
+                if isinstance(child, FunctionSymbol) and child in unknowns
+            }
+            for symbol in symbols:
+                coupled.update(
+                    root_of(axis) for axis in free_axes(symbol) & node.over.axes
+                )
+        elif isinstance(node, Shift) and _contains_unknown(node.expr, unknowns):
+            coupled.add(root_of(node.axis))
+    return coupled
 
 
 Linearity = Literal["none", "linear", "affine", "nonlinear"]
@@ -124,7 +186,7 @@ def linearity(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> Linearity:
 
 
 def _apply_linearity(expr: Apply, unknowns: frozenset[FunctionSymbol]) -> Linearity:
-    parts = [linearity(arg, unknowns) for arg in children(expr)]
+    parts = [linearity(arg, unknowns) for arg in expr.children()]
     involved = [part for part in parts if part != "none"]
     kind = expr.op.linearity
     if not involved:
@@ -210,3 +272,83 @@ def split(task: Task) -> tuple[Split, ...]:
     return tuple(
         split_constraint(c, unknowns) for c in normalize(task.problem).problem.constraints
     )
+
+
+@dataclass(frozen=True)
+class BatchPlacement:
+    """Where one varying function enters one normalized constraint."""
+
+    constraint_index: int
+    symbol: FunctionSymbol
+    part: Literal["operator", "source"]
+    affine: bool
+
+
+def _contains(expr: Expr, symbol: FunctionSymbol) -> bool:
+    return any(node is symbol for node in walk(expr))
+
+
+def _differentiates(expr: Expr, symbol: FunctionSymbol) -> bool:
+    """Whether a derivative acts on a varying symbol along one of its input axes."""
+    if symbol.inputs is None:
+        return False
+    symbol_axes = set(coordinate_factors(symbol.inputs))
+    for node in walk(expr):
+        if not isinstance(node, Apply) or not node.op.takes_axes:
+            continue
+        argument = node.args[0]
+        axes = node.args[node.op.arity]
+        if _contains(argument, symbol) and symbol_axes.intersection(
+            coordinate_factors(axes)
+        ):
+            return True
+    return False
+
+
+def _affine_in(expr: Expr, symbol: FunctionSymbol) -> bool:
+    """Whether `expr` separates as the varying symbol times a term independent of it."""
+    return linearity(expr, frozenset({symbol})) != "nonlinear" and not _differentiates(
+        expr, symbol
+    )
+
+
+def batch_placement(task: Task) -> tuple[BatchPlacement, ...]:
+    """Locate varying functions in the operator/source terms of each constraint.
+
+    One result is returned per (constraint, varying function, part). A symbol can
+    occur in both parts or in several terms of one part. In that case `affine` is true
+    only if all its terms in that part separate from the rest of the expression.
+
+    Varying sets are not listed: they change the constraint's geometry rather than
+    appearing as expression symbols. A varying function differentiated along one of
+    its declared input axes is not separable. Thus `div(nu * grad(u, x), x)` is affine
+    in `nu` when `nu` is spatially constant, but not when `nu` depends on `x`.
+    """
+    symbols = tuple(
+        sorted(
+            (
+                symbol
+                for symbol, role in task.roles.items()
+                if isinstance(symbol, FunctionSymbol) and role is Role.VARYING
+            ),
+            key=lambda symbol: symbol.variable.name,
+        )
+    )
+    results = []
+    for index, constraint_split in enumerate(split(task)):
+        for symbol in symbols:
+            for name, terms in (
+                ("operator", constraint_split.operator),
+                ("source", constraint_split.source),
+            ):
+                uses = [term.expr for term in terms if _contains(term.expr, symbol)]
+                if uses:
+                    results.append(
+                        BatchPlacement(
+                            index,
+                            symbol,
+                            name,
+                            all(_affine_in(expr, symbol) for expr in uses),
+                        )
+                    )
+    return tuple(results)

@@ -1,4 +1,12 @@
-"""Sets on which constraints hold: domains, boundaries, parts, products and slices."""
+"""Sets on which constraints hold: domains, boundaries, parts,
+products and slices.
+
+Essentially just a wrapper around the domains, that represent the
+connections more symbolic.
+
+TODO: A direct connection to the underlying geometry and boundaries
+might be added later.
+"""
 
 from __future__ import annotations
 
@@ -24,7 +32,11 @@ class SetNode(Printable, ABC):
     @property
     @abstractmethod
     def codim(self) -> int:
-        """How many dimensions the set is below its coordinates. 0 for an open set."""
+        """How many dimensions the set is below its coordinates.
+        0 is just the full-dimensional set.
+        1 is a co-dimension-one set, e.g., a boundary.
+        and so on...
+        """
 
 
 def _check_set(obj: object) -> SetNode:
@@ -40,7 +52,7 @@ class Domain(SetNode):
     Give either `ambient`, the coordinate, or a continuous `geometry`, whose
     coordinate then becomes `ambient`. The geometry is left out of equality and
     hashing: the same named set is the same set however it is discretized.
-    Meshes are bound in the Task, not here.
+    Meshes/Geometries are bound in the Task, not here.
     """
 
     name: str
@@ -69,7 +81,7 @@ class Domain(SetNode):
 
     @property
     def axes(self) -> frozenset[Variable]:
-        return frozenset({self.ambient})
+        return frozenset({self.ambient})  # type: ignore
 
     @property
     def codim(self) -> int:
@@ -127,7 +139,7 @@ class Product(SetNode):
             _check_set(factor)
             shared = seen & factor.axes
             if shared:
-                names = sorted(v.name for v in shared)
+                names = list(v.name for v in shared)
                 raise ValueError(f"Product factors share coordinates {names}.")
             seen |= factor.axes
 
@@ -252,12 +264,16 @@ def set_from_geometry(geometry: Geometry, name: str | None = None) -> SetNode:
             raise ValueError(
                 "A product has no name. Its factors are named after their coordinates."
             )
-        return Product(
-            tuple(
-                Domain(factor.variable.name, geometry=factor)
-                for factor in geometry.factors
-            )
-        )
+        domain_list = []
+        for factor in geometry.factors:
+            if not isinstance(factor, ContinuousGeometry):
+                raise TypeError("All factors of a product must be continuous geometries.")
+            if factor.variable.name is None:
+                raise ValueError("Each factor must have a variable name.")
+            domain_list.append(Domain(factor.variable.name, geometry=factor))
+        return Product(tuple(domain_list))
     if name is None:
         raise ValueError("A continuous geometry needs a name for its domain.")
+    if not isinstance(geometry, ContinuousGeometry):
+        raise ValueError("Only continuous geometries can be converted to a Domain.")
     return Domain(name, geometry=geometry)
