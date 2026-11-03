@@ -1,6 +1,6 @@
 """Readable text for expressions, sets, constraints and problems.
 
-    pretty(-api.div(nu * api.grad(u, x), x))  gives  "−∇_x·(nu·∇_x u)"
+    pretty(-api.div(nu * api.grad(u, x), x))  gives  "-∇_x·(nu·∇_x u)"
 
 Operators are printed by precedence, so parentheses appear only where they are needed.
 """
@@ -69,7 +69,7 @@ _SUPERSCRIPT = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
 
 
 def _number(value: float) -> str:
-    return f"{value:g}".replace("-", "−")
+    return f"{value:g}".replace("-", "-")
 
 
 def _const(value: float | tuple) -> str:
@@ -101,8 +101,8 @@ def _operand(expr: Expr, minimum: int) -> str:
 def _component(coord: Coord) -> str:
     var = coord.variable
     if var.dim == 1:
-        return var.name
-    return var.name + str(coord.component + 1).translate(_SUBSCRIPT)
+        return str(var.name)
+    return str(var.name) + str(coord.component + 1).translate(_SUBSCRIPT)
 
 
 def _sum(args: tuple) -> str:
@@ -166,9 +166,11 @@ def _apply(expr: Apply) -> str:
     return f"{name}({', '.join(_expr(arg) for arg in args)})"
 
 
-def _leaf(expr: Expr) -> str:
+def _leaf(expr: Expr | Variable) -> str:
+    if isinstance(expr, Variable):
+        return str(expr.name)
     if isinstance(expr, FunctionSymbol):
-        return expr.name
+        return str(expr.name)
     if isinstance(expr, Coord):
         return _component(expr)
     if isinstance(expr, Const):
@@ -181,11 +183,11 @@ def _leaf(expr: Expr) -> str:
 def _shifted(shift: Shift) -> str:
     name, offset = shift.axis.name, shift.offset
     if isinstance(offset, Const) and _is_negative(offset.value):
-        return f"{name} − {_const(-offset.value)}"
+        return f"{name} - {_const(-offset.value)}"  # type: ignore
     return f"{name} + {_operand(offset, ADD + 1)}"
 
 
-def _expr(expr: Expr) -> str:
+def _expr(expr: Expr | Variable) -> str:
     if isinstance(expr, Apply):
         return _apply(expr)
     if isinstance(expr, Restrict):
@@ -261,7 +263,7 @@ def _problem(problem: Problem) -> str:
 
 
 def _variable(var: Variable) -> str:
-    return var.name
+    return str(var.name)
 
 
 @singledispatch
