@@ -30,6 +30,11 @@ class Result:
             else None.
         color_title: Title of the colorbar.
         opacity: Opacity of every element.
+
+    Attributes:
+        legend_entry (bool): Whether a legend tells it apart: it has a
+            label and one color of the theme, not colors of its values
+            (their colorbar tells those apart) or of its data (an image).
     """
 
     label: str | None = None
@@ -37,6 +42,10 @@ class Result:
     color_scale: ColorScale | None = None
     color_title: str | None = None
     opacity: float = 1.0
+
+    @property
+    def legend_entry(self) -> bool:
+        return self.label is not None and self.color_scale is None
 
 
 @dataclass(kw_only=True)
@@ -135,6 +144,10 @@ class ImageResult(Result):
     x: np.ndarray
     y: np.ndarray
     colors: np.ndarray
+
+    @property
+    def legend_entry(self) -> bool:
+        return False
 
 
 @dataclass(kw_only=True)

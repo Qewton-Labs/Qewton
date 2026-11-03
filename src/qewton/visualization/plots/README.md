@@ -12,8 +12,10 @@ copy. They never draw; a renderer's artists draw the Results (see the
 plot that lays out its own axes), `controls`, `selectors`,
 `channels_of(selector)`, `color_scales` (with a colorbar of the figure),
 `active_color_scales`, `scales` (all to reset before training),
-`n_copies`, `scaled_channels`, `point_encoding`, `axis_title(channel)`,
-`axis_ticks(channel)` and `color_title`.
+`n_copies`, `scaled_channels`, `point_encoding`, `margin` (beside the
+drawn ranges; 0 for a plot ending at its domain), `axis_title(channel)`,
+`axis_ticks(channel)`, `color_title` and `color_ticks(scale)` (of a
+scale in every state).
 
 ## Families
 
@@ -51,7 +53,8 @@ plot that lays out its own axes), `controls`, `selectors`,
 | `GraphLayoutResult` | node cards, ports, edges, clusters | `GraphPlot` |
 
 Every Result carries its legend entry, the index of its categorical
-color, its color scale and title, and its opacity.
+color, its color scale and title, and its opacity; `legend_entry` tells
+whether a legend tells it apart (a label and one color of the theme).
 
 `color_channel.py` holds the color scales of a color binding, shared by
 data and table plots.

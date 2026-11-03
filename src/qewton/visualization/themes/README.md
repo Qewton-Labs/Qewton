@@ -7,14 +7,18 @@ Colors, fonts and colormaps of Qewton figures.
   categorical palette, the colormap for each role, and node card colors
   and geometry for computation-graph plots. A renderer draws in its theme,
   e.g. `PlotlyRenderer(theme=DARK_THEME)`. `LIGHT_THEME` (default,
-  `DEFAULT_THEME`) and
-  `DARK_THEME` are predefined; custom themes override fields,
-  e.g. `Theme(font_size_title=16)`. Sizes are in pixels and colors CSS
-  strings; a renderer converts them.
+  `DEFAULT_THEME`) and `DARK_THEME` are predefined; custom themes
+  override fields, e.g. `Theme(font_size_title=16)`. Sizes are in pixels and colors CSS
+  strings; a renderer converts them. `plot_width` and `plot_height` give
+  the box a plot area fits into. The presets use ink for data only: axis
+  lines left and bottom (`axis_box=False`), no grid or zero line, legends
+  and colorbars without a box (`show_grid`, `show_zero_line`,
+  `legend_box`).
 - **`cmaps`** (`cmaps.py`, also `qewton.viz.cmaps`): colormaps
   for `ColorScale(cmap=...)`:
   - roles `cmaps.sequential`, `cmaps.diverging`, `cmaps.cyclic`, resolved
-    against the figure's theme at draw time;
+    against the figure's theme at draw time, and `cmaps.categorical`, the
+    theme's palette as one band per category;
   - concrete colormaps such as `cmaps.meadow`, `cmaps.dusk`,
     `cmaps.redblue`, `cmaps.phase` and single-hue `cmaps.reds`,
     `cmaps.blues`, ..., the same in every theme;
@@ -22,8 +26,9 @@ Colors, fonts and colormaps of Qewton figures.
     `"Viridis"` or Matplotlib's `"viridis"`, or a colorscale list) is
     passed to the renderer unchanged.
 
-  Without a cmap, a ColorScale uses the sequential role.
-  `Theme.resolve_cmap()` performs this resolution.
+  Without a cmap, a ColorScale uses the categorical role if it is
+  categorical, else the sequential one. `Theme.resolve_cmap(cmap, steps=)`
+  performs this resolution, in equal bands with `steps`.
 - **`palette`** (`palette.py`): the raw color values - seven color
   families with four shades each, chrome tokens per theme, node card
   colors, the categorical order, and the colorscales built from them.

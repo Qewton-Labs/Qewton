@@ -34,6 +34,7 @@ class ImagePlot(DataPlot):
     results = {(Structure.GRID, 2): ImageResult}
     dims = (2,)
     point_encoding = PointEncoding.COLOR
+    margin = 0.0
     domain_positions = True
     color_mapped = False
 

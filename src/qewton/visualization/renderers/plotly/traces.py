@@ -1,6 +1,5 @@
 """Building blocks of Plotly traces shared by the primitive artists and
-the renderer: color mapping, value bins, segment and triangle coordinates,
-colorbar placement."""
+the renderer: value bins, segment and triangle coordinates."""
 
 import numpy as np
 from plotly.colors import sample_colorscale
@@ -9,19 +8,6 @@ from qewton.visualization.scales import ColorScale, color_range
 
 #: Number of value bins of artists drawing one color per trace.
 N_BINS = 32
-
-
-def colorscale(scale: ColorScale, theme) -> str | list:
-    """The Plotly colorscale of a ColorScale, resolved against a theme.
-
-    Args:
-        scale: The color scale.
-        theme (Theme): The theme resolving colormap roles.
-
-    Returns:
-        str or list: A Plotly colorscale.
-    """
-    return theme.resolve_cmap(scale.cmap)
 
 
 def bins(values: np.ndarray, scale: ColorScale, theme) -> tuple[np.ndarray, list[str]]:
@@ -42,7 +28,7 @@ def bins(values: np.ndarray, scale: ColorScale, theme) -> tuple[np.ndarray, list
     index = np.clip(np.digitize(transformed, edges[1:-1]), 0, N_BINS - 1)
     index = np.where(np.isnan(transformed), -1, index)
     centers = (edges[:-1] + edges[1:]) / 2
-    colors = sample_colorscale(colorscale(scale, theme), list((centers - lo) / (hi - lo)))
+    colors = sample_colorscale(scale.colorscale(theme), list((centers - lo) / (hi - lo)))
     return index, colors
 
 
@@ -83,39 +69,3 @@ def triangle_coordinates(positions: np.ndarray, cells: np.ndarray) -> tuple[list
         separated = np.concatenate([corners, np.full((len(corners), 1), np.nan)], axis=1)
         columns.append([None if np.isnan(v) else float(v) for v in separated.ravel()])
     return columns[0], columns[1]
-
-
-def colorbar_position(backend_figure, row: int, col: int) -> dict:
-    """Position and size of a colorbar right of a grid cell: centered in the
-    gap to the next cell (or just right of the last column), as tall as the
-    cell.
-
-    Args:
-        backend_figure (plotly.graph_objects.Figure): A figure built with
-            ``make_subplots``.
-        row: Grid row of the cell, 1-indexed.
-        col: Grid column of the cell, 1-indexed.
-
-    Returns:
-        dict: Plotly colorbar attributes.
-    """
-    x0, x1, y0, y1 = _cell_domain(backend_figure, row, col)
-    next_domain = _cell_domain(backend_figure, row, col + 1)
-    x = (x1 + next_domain[0]) / 2 if next_domain is not None else x1 + 0.02
-    return dict(x=x, y=(y0 + y1) / 2, len=y1 - y0, thickness=14, thicknessmode="pixels")
-
-
-def _cell_domain(
-    backend_figure, row: int, col: int
-) -> tuple[float, float, float, float] | None:
-    # Paper coordinates (x0, x1, y0, y1) of a grid cell, None if empty.
-    try:
-        subplot = backend_figure.get_subplot(row, col)
-    except (ValueError, KeyError):
-        return None
-    if subplot is None:
-        return None
-    domain = getattr(subplot, "domain", None)  # a 3D scene has a domain
-    if domain is not None:
-        return (*domain.x, *domain.y)
-    return (*subplot.xaxis.domain, *subplot.yaxis.domain)

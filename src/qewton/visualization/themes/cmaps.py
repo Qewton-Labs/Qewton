@@ -3,8 +3,9 @@
 Available as ``qewton.viz.cmaps``. Two kinds can be passed as
 ``ColorScale(cmap=...)``:
 
-- Roles - `sequential`, `diverging`, `cyclic`: the colormap of this kind
-  that the current Theme uses. They are resolved at draw time against the
+- Roles - `sequential`, `diverging`, `cyclic`, `categorical`: the
+  colormap of this kind that the current Theme uses; `categorical` is the
+  Theme's palette, one color per category in the order plots are colored. They are resolved at draw time against the
   Figure's theme
   (:meth:`~qewton.visualization.themes.base.Theme.resolve_cmap`), so
   switching the theme switches every plot that uses a role.
@@ -51,8 +52,9 @@ class ColormapRole(Colormap):
     """A kind of colormap, resolved against the Theme at draw time.
 
     Args:
-        name: ``"sequential"``, ``"diverging"`` or ``"cyclic"``; the role
-            resolves to the Theme field ``<name>_cmap``.
+        name: ``"sequential"``, ``"diverging"`` or ``"cyclic"``, resolving
+            to the Theme field ``<name>_cmap``, or ``"categorical"``,
+            resolving to its ``primary_color_palette``.
     """
 
     name: str
@@ -99,8 +101,9 @@ class QewtonColormap(Colormap):
 sequential = ColormapRole("sequential")
 diverging = ColormapRole("diverging")
 cyclic = ColormapRole("cyclic")
+categorical = ColormapRole("categorical")
 
-ROLES = (sequential, diverging, cyclic)
+ROLES = (sequential, diverging, cyclic, categorical)
 
 # Concrete multi-hue colormaps
 meadow = QewtonColormap.from_stops("meadow", QEWTON_MEADOW)  # viridis-like
@@ -125,7 +128,7 @@ browns = QewtonColormap.from_stops("browns", QEWTON_SEQUENTIAL["brown"])
 
 __all__ = [
     "Colormap", "ColormapRole", "QewtonColormap", "ROLES",
-    "sequential", "diverging", "cyclic",
+    "sequential", "diverging", "cyclic", "categorical",
     "meadow", "dusk", "redblue", "orangeviolet_paper", "phase", "spectrum",
     "reds", "oranges", "yellows", "greens", "blues", "violets", "browns",
 ]

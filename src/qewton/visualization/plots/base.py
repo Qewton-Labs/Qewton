@@ -55,6 +55,10 @@ class Plot:
         color_index (int): Index of the first categorical color of the
             plot; set by the Figure so plots and their copies get distinct
             colors.
+        margin (float): Fraction of the span of the position axes added on
+            both sides of their drawn range, so no mark is clipped; 0 for
+            plots ending at their domain (e.g. a heatmap). A class
+            attribute, or a property where it depends on the plot.
         dim (int): Number of position components drawn: 2 or 3, or 0 for a
             plot that lays out its own axes (e.g. parallel coordinates).
         n_copies (int): Number of Results :meth:`evaluate` returns.
@@ -63,20 +67,17 @@ class Plot:
             distorted; empty if none.
         color_title (str or None): Name of what is bound to the color
             channel in the current states; None if nothing named is.
-        color_ticks (tuple or None): Ticks of the colorbar in the current
-            states, in the scale's transformed values: positions and
-            labels, e.g. the categories of a categorical color; None for
-            the scale's own ticks.
 
     Notes:
         Subclasses implement `dim` and :meth:`evaluate`, and may override
         `selectors`, `color_scales`, `active_color_scales`, `scales`,
-        `n_copies`, `scaled_channels`, `color_title`, `color_ticks`,
+        `margin`, `n_copies`, `scaled_channels`, `color_title`, :meth:`color_ticks`,
         :meth:`axis_title`,
         :meth:`axis_ticks`, :meth:`channels_of` and :meth:`train_scales`.
     """
 
     point_encoding: PointEncoding | None = None
+    margin: float = 0.04
 
     def __init__(
         self,
@@ -121,8 +122,18 @@ class Plot:
     def color_title(self) -> str | None:
         return None
 
-    @property
-    def color_ticks(self) -> tuple[list[float], list[str]] | None:
+    def color_ticks(self, scale: ColorScale) -> tuple[list[float], list[str]] | None:
+        """The ticks the plot gives the colorbar of one of its scales, in
+        its transformed values, in every state (also while another scale
+        of the plot is shown), e.g. the categories of a categorical color.
+
+        Args:
+            scale: One of `color_scales`.
+
+        Returns:
+            tuple or None: Positions and labels; None for the scale's own
+                ticks.
+        """
         return None
 
     def axis_title(self, channel: str) -> str | None:

@@ -34,6 +34,8 @@ from qewton.visualization import (
     VectorPlot,
 )
 from qewton.visualization.renderers import MatplotlibRenderer, PlotlyRenderer
+from qewton.visualization.renderers.matplotlib.primitives import colorbar_axes
+from qewton.visualization.scales import log_ticks
 
 from recording_renderer import RecordingRenderer
 
@@ -138,8 +140,8 @@ PLOTS = {
     "parallel": _parallel,
 }
 
-#: Plots that draw their own colorbar, not one of the figure.
-OWN_COLORBAR = {"parallel"}
+#: Plots Matplotlib does not draw.
+NOT_IN_MATPLOTLIB = {"parallel"}
 
 
 def _values(plot_name, data, candidate=0):
@@ -168,11 +170,10 @@ def test_color_scale(plot_name, scale_name):
     plot, data = PLOTS[plot_name](U, make_scale(), 0.0)
     backend = Figure(plot, renderer=RecordingRenderer()).draw()
     assert plot.color_scale.range == pytest.approx(expected_range(_values(plot_name, data)))
-    n_colorbars = 0 if plot_name in OWN_COLORBAR else 1
-    assert len(backend["colorbars"]) == n_colorbars
+    assert len(backend["colorbars"]) == 1
     if scale_name == "log":
-        _check_log_ticks(plot, plot_name)
-        if plot_name not in OWN_COLORBAR:
+        _check_log_ticks(plot)
+        if plot_name not in NOT_IN_MATPLOTLIB:
             _check_log_ticks_matplotlib(plot)
 
 
@@ -181,20 +182,19 @@ def _check_log_ticks_matplotlib(plot):
     # within the range.
     renderer = MatplotlibRenderer()
     backend = Figure(plot, renderer=renderer).draw()
-    (colorbar_axes,) = [a for a in backend.axes if not a.get_label().startswith("cell-")]
-    ticks = colorbar_axes.get_yticks()
-    labels = [t.get_text() for t in colorbar_axes.get_yticklabels()]
+    (bar,) = colorbar_axes(backend)
+    ticks = bar.get_yticks()
+    labels = [t.get_text() for t in bar.get_yticklabels()]
     assert 10 ** np.asarray(ticks) == pytest.approx([float(t) for t in labels])
     lo, hi = plot.color_scale.range
     assert np.all((10**ticks >= lo * 0.999) & (10**ticks <= hi * 1.001))
 
 
-def _check_log_ticks(plot, plot_name):
+def _check_log_ticks(plot):
     # Ticks of a log scale are labeled by values within the range.
-    figure = Figure(plot, renderer=PlotlyRenderer())
-    backend = figure.draw()
-    trace = backend.data[0] if plot_name in OWN_COLORBAR else backend.data[-1]
-    colorbar = trace.line.colorbar if plot_name in OWN_COLORBAR else trace.marker.colorbar
+    renderer = PlotlyRenderer()
+    Figure(plot, renderer=renderer).draw()
+    colorbar = renderer.colorbar(plot.color_scale)
     values = 10 ** np.asarray(colorbar.tickvals)
     assert values == pytest.approx([float(t) for t in colorbar.ticktext])
     lo, hi = plot.color_scale.range
@@ -211,7 +211,7 @@ def test_a_shared_scale_spans_both_plots_with_one_colorbar(plot_name):
         [_values(plot_name, data).ravel(), _values(plot_name, more).ravel()]
     )
     assert scale.range == pytest.approx((values.min(), values.max()))
-    assert len(backend["colorbars"]) == (0 if plot_name in OWN_COLORBAR else 1)
+    assert len(backend["colorbars"]) == 1
 
 
 #: Selector variant: (color_scale argument, distinct scales, shared range).
@@ -230,13 +230,12 @@ def test_scales_of_a_selector(plot_name, variant):
     plot, data = PLOTS[plot_name](selector, make(), 0.0)
     selector = plot.selectors[-1]
     backend = Figure(plot, renderer=RecordingRenderer()).draw()
-    assert len(plot.color_scales or plot.scales) == n_scales
+    assert len(plot.color_scales) == n_scales
     if shared:
         both = np.concatenate([_values(plot_name, data, 0).ravel(), _values(plot_name, data, 1).ravel()])
         assert plot.color_scale.range == pytest.approx((both.min(), both.max()))
-    if plot_name not in OWN_COLORBAR:
-        shown = [visible for *_, visible in backend["colorbars"].values()]
-        assert shown.count(True) == 1 and len(shown) == n_scales
+    shown = [visible for *_, visible in backend["colorbars"].values()]
+    assert shown.count(True) == 1 and len(shown) == n_scales
 
 
 def test_a_list_must_give_one_scale_per_candidate():
@@ -269,9 +268,10 @@ def test_position_axis_scale(variant):
     backend = Figure(overlay, renderer=PlotlyRenderer()).draw()
     assert check(scale.range, data[..., 0])
     assert backend.layout.yaxis.type == ("log" if scale.log else "linear")
-    (axes,) = Figure(overlay, renderer=MatplotlibRenderer()).draw().axes
+    figure = Figure(overlay, renderer=MatplotlibRenderer())
+    (axes,) = figure.draw().axes
     assert axes.get_yscale() == ("log" if scale.log else "linear")
-    assert axes.get_ylim() == pytest.approx(scale.range)
+    assert axes.get_ylim() == pytest.approx(figure.cells[0].axis_range("y"))
 
 
 def test_a_shared_position_scale_spans_both_overlays():
@@ -321,44 +321,63 @@ def _field():
     return HeatmapPlot(data, config, position=X, color=U, controls=[SliderAxis(batch)])
 
 
-#: Plot: (factory, channels drawn to one scale, Plotly aspect).
+#: Plot: (factory, channels drawn to one scale, fixed 2D aspect, 3D box).
+#: A height is as tall as the plane is wide; values against values get a
+#: cube.
 TO_SCALE = {
-    "a field over a plane": (_field, ("x", "y"), "scaleanchor"),
-    "a path through a vector": (_path, ("x", "y"), "scaleanchor"),
-    "a value over time": (_graph_over_time, (), None),
-    "a height over a plane": (_surface_over_plane, ("x", "y"), "manual"),
-    "points of a volume": (_volume_points, ("x", "y", "z"), "data"),
-    "values against values": (_values_in_3d, (), "cube"),
+    "a field over a plane": (_field, ("x", "y"), True, None),
+    "a path through a vector": (_path, ("x", "y"), True, None),
+    "a value over time": (_graph_over_time, (), False, None),
+    "a height over a plane": (_surface_over_plane, ("x", "y"), False, (1, 1, 1)),
+    "points of a volume": (_volume_points, ("x", "y", "z"), False, (1, 1, 1)),
+    "values against values": (_values_in_3d, (), False, (1, 1, 1)),
 }
 
 
 @pytest.mark.parametrize("name", list(TO_SCALE))
 def test_channels_drawn_to_one_scale(name):
-    make, channels, aspect = TO_SCALE[name]
+    make, channels, fixed, box = TO_SCALE[name]
     plot = make()
     assert plot.scaled_channels == channels
-    _check_aspect_matplotlib(plot, aspect)
     figure = Figure(plot, renderer=PlotlyRenderer())
     backend = figure.draw()
+    (cell,) = figure.cells
+    assert (cell.aspect is not None) == fixed
+    assert cell.box_aspect == (pytest.approx(box) if box is not None else None)
     if plot.dim == 2:
-        anchored = backend.layout.yaxis.scaleanchor is not None
-        assert anchored == (aspect == "scaleanchor")
-        return
-    scene = backend.layout.scene
-    assert scene.aspectmode == aspect
-    if aspect == "manual":
-        ratio = scene.aspectratio
-        assert ratio.z == 1.0  # the height is as tall as the plane is wide
-        assert ratio.x == pytest.approx(1.0) and ratio.y == pytest.approx(1.0)
+        assert (backend.layout.yaxis.scaleanchor is not None) == fixed
+    else:
+        assert tuple(backend.layout.scene.aspectratio[c] for c in "xyz") == pytest.approx(box)
+    _check_aspect_matplotlib(plot, fixed, box)
 
 
-def _check_aspect_matplotlib(plot, aspect):
-    # 2D: equal units or free; 3D: a box shaped like the scaled spans, a
-    # channel of its own as tall as the widest.
+def _check_aspect_matplotlib(plot, fixed, box):
     backend = Figure(plot, renderer=MatplotlibRenderer()).draw()
     (axes,) = [a for a in backend.axes if a.get_label().startswith("cell-")]
     if plot.dim == 2:
-        assert (axes.get_aspect() == 1.0) == (aspect == "scaleanchor")
+        assert (axes.get_aspect() == 1.0) == fixed
         return
-    box = np.asarray(axes.get_box_aspect())
-    assert box / box.max() == pytest.approx(np.ones(3))
+    drawn = np.asarray(axes.get_box_aspect())
+    assert drawn / drawn.max() == pytest.approx(np.asarray(box) / max(box))
+
+
+# --- log ticks -----------------------------------------------------------------
+
+
+#: Range: the labels of its log ticks, at most six.
+LOG_TICKS = {
+    "a decade": ((1, 10), ["1", "2", "5", "10"]),
+    "less than a decade": ((2, 5), ["2", "3", "4", "5"]),
+    "two decades": ((0.01, 1), ["0.01", "0.03", "0.1", "0.3", "1"]),
+    "three decades": ((1e-4, 0.1), ["0.0001", "0.001", "0.01", "0.1"]),
+    "within three decades": ((1.2e-4, 0.07), ["0.0003", "0.001", "0.003", "0.01", "0.03"]),
+    "many decades": ((1, 1e10), ["1", "100", "10000", "1e+06", "1e+08", "1e+10"]),
+}
+
+
+@pytest.mark.parametrize("name", list(LOG_TICKS))
+def test_log_ticks(name):
+    (lo, hi), labels = LOG_TICKS[name]
+    positions, drawn = log_ticks(np.log10(lo), np.log10(hi))
+    assert drawn == labels
+    assert positions == pytest.approx([np.log10(float(label)) for label in labels])

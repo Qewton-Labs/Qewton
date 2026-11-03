@@ -23,7 +23,9 @@ Plotly gives filled 2D scatters and lines one color per trace. Filled
 triangles, colored lines and arrows are therefore grouped into a fixed
 number of value bins, one trace each; the number of traces never changes
 between states, so trace indices stay valid. Colorbars are drawn by the
-renderer on invisible carrier traces, one per color scale.
+renderer on carrier traces that draw nothing else, one per color scale;
+a cell laying out its own axes takes only domain traces, so its carrier
+is a parallel coordinates trace with one hidden axis.
 
 ## Plotly: no transitions, no autoplay (R2)
 
@@ -35,29 +37,33 @@ playing on load would use Plotly's default transitions.
 ## Plotly: math only where Plotly renders it (R4)
 
 Plotly renders math only through MathJax, only for a text that is math
-as a whole, and never in slider labels or dropdown buttons. With MathJax,
-a text naming a Variable is written as one math text (plain parts as
-`\text`); slider labels and buttons get Plotly's markup (italics, sub-
-and superscripts). Notebook frontends load no MathJax for Plotly's own
+as a whole, and never in slider labels, dropdown buttons or 3D scenes,
+which are drawn by WebGL. With MathJax, a text naming a Variable is
+written as one math text (plain parts as `\text`); slider labels,
+buttons and scene axis titles get Plotly's markup (italics, sub- and
+superscripts). Notebook frontends load no MathJax for Plotly's own
 output, so `show()` displays HTML that loads it.
 
 ## Plotly: linked views (F5)
 
-Cells sharing position axes are linked by Plotly's `matches`. Plotly
-forbids an axis in both a `matches` and a `scaleanchor` constraint, so
-only the first cell of a group is drawn to scale and the others follow
-it. 3D scenes have no linking of their own: a script in HTML outputs and
-a clientside callback in Dash pass a camera change on to the scenes of
-its group. Embedded states never set a camera or range, and `uirevision`
+Cells sharing position axes are linked by Plotly's `matches`. Cells of
+equal units are drawn to scale by their sizes. A cell with axes of its
+own also keeps the scale on zooming (`scaleanchor`, shrinking the plot
+area rather than widening a range); cells sharing an axis get no
+`scaleanchor`, since Plotly then draws the ticks of the matched axes
+displaced. 3D scenes have no linking of their own: a script in HTML
+outputs and a clientside callback in Dash pass a camera change on to the
+scenes of its group. Embedded states never set a camera or range, and `uirevision`
 keeps the viewer's view when Dash redraws.
 
 ## Plotly: graph plots use shapes and a fixed pixel scale (GI4)
 
 `NodeLinkArtist` draws cards, wires and labels as layout shapes and
 annotations in the axes of its cell, with three invisible hover traces,
-so the trace count does not grow with the graph. Cards are sized in data
-units but fonts in points, so a figure of one graph cell is sized from
-`theme.graph_px_per_unit`.
+so the trace count does not grow with the graph. Its hidden axes, y
+reversed (the layout grows downward), are its own; the figure's layout
+sizes its cell. Cards are sized in data units but label offsets in
+pixels, by `theme.graph_px_per_unit`.
 
 ## Renderers declare what they embed (R6, F3)
 
@@ -101,3 +107,44 @@ A frame applies a snapshot to the existing artists, so frames and the
 static figure are drawn by the same code. The animation is built only
 when an output is written, and the current state is restored afterwards.
 The player has no labels of its own, hence the title.
+
+## Plotly: a pixel layout without margins (F7, F8)
+
+`make_subplots` spaces cells by fixed fractions that know nothing of tick
+labels, titles or colorbars, and Plotly widens its margins for what it
+draws outside the plot areas, shrinking the paper under places computed
+for it (with ticks displaced from their axes). The figure is therefore
+sized in pixels with fixed margins of 0, and every cell, title, colorbar,
+legend and embedded control is placed by the renderer; a colorbar has no
+padding within its length, so it is as tall as its plot area. A trace
+laying out its own axes (parallel coordinates) gets its cell as domain.
+
+## Plotly: legends set once (F9)
+
+Artists draw no legend entry and updates keep the legend properties, so
+`draw_legend` sets them once and embedding or an application's updates
+leave them: all traces of a label share a `legendgroup` (a click toggles
+every copy), the first trace of its first artist shows the entry.
+
+## Plotly: scene cameras farther away (R8)
+
+Plotly's default camera fits the box to the scene, so its tick labels and
+titles are clipped at the edges; the camera is set farther once, when
+the scene is created, so a viewer's rotation is kept.
+
+## Matplotlib: colorbars inside their cell's Axes (F7, F8)
+
+Colorbars of Matplotlib's layout are sized relative to their Axes, so they
+change with the figure and miss a fixed aspect's plot area. A colorbar is
+therefore an Axes inside its cell's, right of the plot area at a fixed
+thickness: as tall as the plot area whatever its size; constrained layout
+keeps room for it as for the Axes' labels. The figure is sized from the
+estimated room, so drawing costs no rendering.
+
+## Matplotlib: characters cmr10 lacks as math (T3)
+
+Matplotlib's bundled Computer Modern (`cmr10`) is TeX-encoded: at a few
+ASCII characters (`_ < > | { } \`) it holds other glyphs, which no font
+fallback replaces. In plain text these are written as mathtext, whose
+Computer Modern holds them.
+

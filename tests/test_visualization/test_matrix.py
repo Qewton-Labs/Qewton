@@ -209,15 +209,31 @@ def _check_connected(figure, renderer_name, control, control_object):
         warnings.simplefilter("always")
         application.create(figure)
         widgets = application.interactive_controls(figure)
+        laid_out = _layout_of(figure, renderer_name)
         if control in ("slider", "time", "selector"):
             if type(control_object) in application.connected:
                 assert widgets == [control_object]
                 for state in control_object.states:
                     application.update(figure, widgets, [state])
+                    assert _layout_of(figure, renderer_name) == laid_out
             else:
                 assert widgets == []
                 assert len(figure.backend_figure.frames) == len(control_object.states)
     assert not [w for w in caught if issubclass(w.category, UserWarning)]
+
+
+def _layout_of(figure, renderer_name):
+    # What an update keeps: the figure's size, the places of its colorbars
+    # and its legends.
+    backend = figure.backend_figure
+    legends = [list(entries) for entries, _ in figure.legends()]
+    if renderer_name == "matplotlib":
+        return tuple(backend.get_size_inches()), legends
+    bars = [
+        (bar.x, bar.y, bar.len)
+        for bar in (figure.renderer.colorbar(s) for s in figure.color_scales)
+    ]
+    return (backend.layout.width, backend.layout.height), bars, legends
 
 
 @pytest.mark.parametrize(

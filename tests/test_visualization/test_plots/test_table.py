@@ -157,5 +157,5 @@ class TestParallelCoordinates:
     def test_a_linear_color_is_not_transformed(self):
         runs = _runs()
         plot = ParallelCoordinatesPlot(runs, columns=["loss"], color="loss")
-        (trace,) = Figure(plot, renderer=PlotlyRenderer()).draw().data
+        trace, _colorbar = Figure(plot, renderer=PlotlyRenderer()).draw().data
         np.testing.assert_allclose(trace.line.color, runs["loss"])

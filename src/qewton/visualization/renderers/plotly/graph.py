@@ -26,8 +26,7 @@ class NodeLinkArtist(Artist):
     labels.
 
     The axes of the cell are hidden; y is reversed (layout y grows
-    downward). A figure of this one cell without explicit size is sized
-    from ``theme.graph_px_per_unit`` and the layout extent.
+    downward).
 
     Args:
         trace_indices: Indices of the node, port and edge hover traces.
@@ -111,22 +110,13 @@ class NodeLinkArtist(Artist):
 
     @classmethod
     def _set_axes(cls, backend_figure, result, cell, theme) -> None:
-        # Hidden axes around the layout, y reversed and to scale; a figure
-        # of this one cell is sized from the layout.
+        # Hidden axes around the layout, y reversed and to scale; the
+        # figure's layout sizes the cell.
         x0, x1, y0, y1 = cls._layout_bounds(result)
         backend_figure.update_xaxes(visible=False, range=[x0, x1], row=cell.row, col=cell.col)
         backend_figure.update_yaxes(
             visible=False, range=[y1, y0], scaleanchor="x", row=cell.row, col=cell.col
         )
-        layout = backend_figure.layout
-        n_cells = len(list(backend_figure.select_xaxes())) + len(
-            list(backend_figure.select_scenes())
-        )
-        if n_cells == 1 and layout.width is None and layout.height is None:
-            px = theme.graph_px_per_unit
-            backend_figure.update_layout(
-                width=max(400, (x1 - x0) * px), height=max(300, (y1 - y0) * px)
-            )
 
     #: Data-unit padding around every node/cluster's own bounding box when
     #: computing the figure's axis range - just enough that a card's own

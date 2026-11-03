@@ -54,6 +54,10 @@ _SYMBOLS = {
 _EDGE_WIDTH = 0.5
 
 
+#: The label of a colorbar's Axes.
+COLORBAR_LABEL = "colorbar"
+
+
 def cell_label(cell) -> str:
     """The label of a cell's Axes, by which artists find them.
 
@@ -78,6 +82,22 @@ def axes_of(backend_figure, cell) -> Axes:
     """
     label = cell_label(cell)
     return next(ax for ax in backend_figure.axes if ax.get_label() == label)
+
+
+def colorbar_axes(backend_figure, cell=None) -> list[Axes]:
+    """The Axes of the colorbars beside a cell's plot area, in a figure
+    built by the renderer; Axes inside the cell's.
+
+    Args:
+        backend_figure (matplotlib.figure.Figure): The figure.
+        cell (Cell, optional): The cell; None for those of every cell.
+
+    Returns:
+        list of matplotlib.axes.Axes: Their Axes, left to right.
+    """
+    cells = [axes_of(backend_figure, cell)] if cell is not None else backend_figure.axes
+    bars = [b for axes in cells for b in axes.child_axes if b.get_label() == COLORBAR_LABEL]
+    return sorted(bars, key=lambda b: b.get_position().x0)
 
 
 class MatplotlibArtist(Artist):
@@ -164,13 +184,13 @@ def _colors(result, theme, values=None):
         return color(theme.get_color(result.color_index))
     scale = result.color_scale
     values = result.values if values is None else values
-    return colormap(theme.resolve_cmap(scale.cmap))(norm(scale)(mapped(values, scale)))
+    return colormap(scale.colorscale(theme))(norm(scale)(mapped(values, scale)))
 
 
 def _mapping(result, theme) -> dict:
     # Keyword arguments of a collection colored by the result's scale.
     scale = result.color_scale
-    return dict(cmap=colormap(theme.resolve_cmap(scale.cmap)), norm=norm(scale))
+    return dict(cmap=colormap(scale.colorscale(theme)), norm=norm(scale))
 
 
 class HeatmapArtist(MatplotlibArtist):

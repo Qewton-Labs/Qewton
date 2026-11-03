@@ -11,6 +11,9 @@ import warnings
 
 import numpy as np
 import pytest
+from matplotlib.colors import to_rgb
+from matplotlib.collections import QuadMesh
+from plotly.colors import sample_colorscale, unlabel_rgb
 
 from qewton.visualization import (
     DashApplication,
@@ -31,6 +34,8 @@ from qewton.visualization.plots.result import (
     ParallelCoordinatesResult,
 )
 from qewton.visualization.renderers import MatplotlibRenderer, PlotlyRenderer
+from qewton.visualization.renderers.matplotlib.primitives import colorbar_axes
+from qewton.visualization.themes import LIGHT_THEME
 
 from recording_renderer import RecordingRenderer
 
@@ -202,12 +207,33 @@ def _drawn(result) -> np.ndarray:
 def _colorbar_labels(backend, renderer_name) -> list[str]:
     if renderer_name == "plotly":
         return list(backend.data[-1].marker.colorbar.ticktext)
-    (colorbar,) = [a for a in backend.axes if not a.get_label().startswith("cell-")]
+    (colorbar,) = colorbar_axes(backend)
     return [t.get_text() for t in colorbar.get_yticklabels()]
 
 
+def _colorbar_colors(backend, renderer_name, codes) -> list[tuple]:
+    # The RGB colors of the colorbar at the given codes.
+    if renderer_name == "plotly":
+        marker = backend.data[-1].marker
+        positions = [(c - marker.cmin) / (marker.cmax - marker.cmin) for c in codes]
+        colors = sample_colorscale([list(s) for s in marker.colorscale], positions)
+        return [tuple(round(v / 255, 3) for v in unlabel_rgb(c)) for c in colors]
+    (colorbar,) = colorbar_axes(backend)
+    (solids,) = [c for c in colorbar.collections if isinstance(c, QuadMesh)]
+    rgba = solids.cmap(solids.norm(np.asarray(codes, dtype=float)))
+    return [tuple(round(float(v), 3) for v in c[:3]) for c in rgba]
+
+
 @pytest.mark.parametrize("renderer_name", ["plotly", "matplotlib"])
-def test_a_categorical_color_column_labels_its_colorbar_by_category(renderer_name):
+def test_a_categorical_color_column_gets_a_band_per_category(renderer_name):
+    # Labeled by name, in the palette's colors in the order plots are
+    # colored; the band edges lie between the codes.
     plot = TableScatter(_runs(), x="lr", y="loss", color="optimizer")
     backend = Figure(plot, renderer=RENDERERS[renderer_name]()).draw()
+    assert plot.color_scale.categorical
     assert _colorbar_labels(backend, renderer_name) == ["adam", "lbfgs", "sgd"]
+    palette = [
+        tuple(round(v, 3) for v in to_rgb(c)) for c in LIGHT_THEME.primary_color_palette[:3]
+    ]
+    assert _colorbar_colors(backend, renderer_name, [0, 1, 2]) == palette
+    assert _colorbar_colors(backend, renderer_name, [0.45, 1.45]) == palette[:2]

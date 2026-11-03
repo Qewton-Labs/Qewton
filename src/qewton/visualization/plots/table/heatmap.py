@@ -31,6 +31,7 @@ class TableHeatMap(TablePlot):
 
     dim = 2
     point_encoding = PointEncoding.COLOR
+    margin = 0.0
 
     def __init__(
         self,

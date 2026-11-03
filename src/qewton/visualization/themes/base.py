@@ -30,14 +30,22 @@ class Theme:
         font_family: Font stack for all figure text (Latin Modern by
             default). For TeX-rendered math, wrap a title or label in
             ``$...$``.
-        font_size_title: Font size of titles in points.
-        font_size_axes: Font size of axis titles in points.
-        font_size_labels: Font size of labels in points.
+        font_size_title: Font size of the figure title in pixels.
+        font_size_axes: Font size of axis, cell and colorbar titles in
+            pixels.
+        font_size_labels: Font size of tick labels and legend entries in
+            pixels.
+        plot_width: Width of the box a plot area fits into, in pixels.
+        plot_height: Height of the box a plot area fits into, in pixels.
         show_grid: Whether axis gridlines are drawn.
+        show_zero_line: Whether a line is drawn at 0 on a 2D axis whose
+            range holds it.
         show_legend: Whether legends are shown.
+        legend_box: Whether a legend is framed.
         show_axis_line: Whether axis lines with outward ticks are drawn.
         axis_box: Whether the axis lines are mirrored to all four sides of
-            the plot area.
+            the plot area, and colorbars are framed; without, the axis
+            lines are left and bottom only.
         marker_size: Default marker size of data marks.
         line_width: Default line width of data marks.
         opacity_default: Default opacity of data marks.
@@ -77,8 +85,8 @@ class Theme:
         card_title_font_size: Font size of card titles in points.
         card_title_font_family: Font stack of card titles.
         card_edge_formula_size: Font size of port labels, in points.
-        graph_px_per_unit: Pixels per graph-layout data unit used to size a
-            graph plot's figure when no explicit width/height is set.
+        graph_px_per_unit: Pixels per graph-layout data unit by which the
+            labels of ports are kept clear of their notches.
 
     See Also:
         :mod:`qewton.visualization.themes.cmaps`
@@ -92,16 +100,22 @@ class Theme:
 
     # Typography - a Latin Modern stack, falling back to a generic serif.
     font_family: str = "Latin Modern Roman, CMU Serif, Georgia, serif"
-    font_size_title: int = 20
+    font_size_title: int = 16
     font_size_axes: int = 14
     font_size_labels: int = 12
 
-    show_grid: bool = False
-    show_legend: bool = True
+    # The box a plot area fits into; the figure size follows from it.
+    plot_width: int = 400
+    plot_height: int = 320
 
-    # Axis frame - a pgfplots-style box with outward ticks.
+    # Data-ink: no ink without data - no frame, grid or zero line, legends
+    # without a box; axis lines left and bottom with outward ticks.
+    show_grid: bool = False
+    show_zero_line: bool = False
+    show_legend: bool = True
+    legend_box: bool = False
     show_axis_line: bool = True
-    axis_box: bool = True
+    axis_box: bool = False
 
     # Plot-specific
     marker_size: int = 6
@@ -149,8 +163,7 @@ class Theme:
     # Fonts available in browsers and in kaleido (save_png()/save_svg()).
     card_title_font_family: str = "Arial, Helvetica, sans-serif"
     card_edge_formula_size: int = 8  # port-label annotation font size, in points
-    # Card sizes are in data units but fonts in points, so the pixel size
-    # per data unit is fixed (used by NodeLinkArtist.create()).
+    # Card sizes are in data units but label offsets in pixels.
     graph_px_per_unit: float = 110.0
 
     @classmethod
@@ -180,21 +193,26 @@ class Theme:
             diverging_cmap=cmaps.orangeviolet_paper,
         )
 
-    def resolve_cmap(self, cmap=None):
+    def resolve_cmap(self, cmap=None, steps: int | None = None):
         """Resolve a ColorScale's `cmap` to a renderer-ready colormap.
 
         Args:
             cmap (Colormap | str | list | None): None or a
                 :class:`~qewton.visualization.themes.cmaps.ColormapRole`
                 resolves to this theme's field for that role (None means
-                sequential). A
+                sequential; ``cmaps.categorical`` means the palette). A
                 :class:`~qewton.visualization.themes.cmaps.QewtonColormap`
                 becomes its colorscale list. Anything else, e.g. a
                 renderer's colormap name or colorscale list, is returned
                 unchanged.
+            steps: Number of equal bands, e.g. one per category: the
+                palette's first colors (cycling), or a colormap sampled at
+                the band centers. None: the palette in one band per color,
+                a colormap continuous.
 
         Returns:
-            str | list: The renderer-native colormap.
+            str | list: The renderer-native colormap: ``[position, color]``
+                stops, two per band for bands.
 
         Raises:
             ValueError: If this theme's field for the requested role is
@@ -202,6 +220,9 @@ class Theme:
         """
         if cmap is None:
             cmap = cmaps.sequential
+        if cmap == cmaps.categorical:
+            palette = self.primary_color_palette
+            return _bands([palette[i % len(palette)] for i in range(steps or len(palette))])
         if isinstance(cmap, cmaps.ColormapRole):
             resolved = getattr(self, f"{cmap.name}_cmap")
             if isinstance(resolved, cmaps.ColormapRole):
@@ -211,7 +232,8 @@ class Theme:
                 )
             cmap = resolved
         if isinstance(cmap, cmaps.QewtonColormap):
-            return [list(stop) for stop in cmap.colorscale]
+            stops = [list(stop) for stop in cmap.colorscale]
+            return stops if steps is None else _bands(_sampled(stops, steps))
         return cmap
 
     def get_color(self, index: int) -> str:
@@ -225,3 +247,28 @@ class Theme:
         """
         palette = self.primary_color_palette
         return palette[index % len(palette)]
+
+
+#: Width of the edge between two bands, as a fraction of the colormap.
+_EDGE = 1e-9
+
+
+def _bands(colors: list[str]) -> list[list]:
+    # Stops of one equal band per color, with a sharp edge between bands;
+    # positions increase strictly, as samplers interpolating between stops
+    # require.
+    n = len(colors)
+    stops = []
+    for i, c in enumerate(colors):
+        stops += [[i / n + (_EDGE if i else 0.0), c], [(i + 1) / n, c]]
+    return stops
+
+
+def _sampled(stops: list[list], steps: int) -> list[str]:
+    # The colors of the stops nearest to the centers of `steps` bands.
+    positions = [float(p) for p, _ in stops]
+    centers = [(i + 0.5) / steps for i in range(steps)]
+    return [
+        stops[min(range(len(stops)), key=lambda k: abs(positions[k] - c))][1]
+        for c in centers
+    ]

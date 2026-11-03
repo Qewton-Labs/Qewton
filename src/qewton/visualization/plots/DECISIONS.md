@@ -32,13 +32,6 @@ so a facet over a categorical column gives one cell per category. Log and
 categorical columns are drawn by log10 and codes, with ticks given per
 state, so switching the column switches the ticks.
 
-## Parallel coordinates draw their own colorbar (P6, R1)
-
-Parallel coordinates lay out their own axes, so they have no cell beside
-which a colorbar of the figure could sit; their color scale is trained by
-the figure but listed only under `scales`, and the artist draws the
-colorbar.
-
 ## Graph layout without an external engine (GI4)
 
 `GraphLayout` implements a layered layout (longest-path ranks plus

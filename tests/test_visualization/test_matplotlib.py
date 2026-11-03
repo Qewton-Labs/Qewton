@@ -129,26 +129,28 @@ def test_an_unknown_colormap_name_raises():
 
 # --- texts ----------------------------------------------------------------------
 
-#: Text: (as written, whether mathtext renders it).
+#: Text: (as written, as shown, whether mathtext renders its math). Plain
+#: characters cmr10 holds other glyphs at are written as math.
 TEXTS = {
-    "plain": ("loss", True),
-    "math": ("$x_1$", True),
-    "mixed": ("$t$ = 0.5", True),
-    "odd dollars": ("costs $ 5", True),
-    "unknown command": (r"$\unknowncommand$ = 1", False),
+    "plain": ("loss", "loss", True),
+    "math": ("$x_1$", "$x_1$", True),
+    "mixed": ("$t$ = 0.5", "$t$ = 0.5", True),
+    "odd dollars": ("costs $ 5", "costs $ 5", True),
+    "underscore": ("heatmap_single", r"heatmap$\_$single", True),
+    "brackets": ("{a} < |b|", r"$\{$a$\}$ $<$ $|$b$|$", True),
+    "underscore next to math": ("$u$_max", r"$u$$\_$max", True),
+    "unknown command": (r"$\unknowncommand$ = 1", r"unknowncommand = 1", False),
 }
 
 
 @pytest.mark.parametrize("name", list(TEXTS))
 def test_texts_are_mathtext_or_plain(name):
-    text, renders = TEXTS[name]
+    text, expected, renders = TEXTS[name]
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         shown = as_mathtext(text)
-    assert (shown == text) == renders
+    assert shown == expected
     assert bool(caught) == (not renders)
-    if not renders:
-        assert "$" not in shown
 
 
 def test_usetex_needs_latex(monkeypatch):

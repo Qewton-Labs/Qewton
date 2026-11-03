@@ -142,18 +142,44 @@ class Renderer:
         """
         raise NotImplementedError
 
-    def draw_colorbar(self, scale, title, ticks, cells, visible: bool = True) -> None:
-        """Draw or update the one colorbar of a ColorScale, next to the
-        rightmost of `cells`; it is drawn in the scale's transformed values
-        (log10 for a log scale).
+    def draw_colorbar(self, scale, title, ticks, cell, slot: int, visible: bool = True) -> None:
+        """Draw or update the one colorbar of a ColorScale, beside a cell's
+        plot area; it is drawn in the scale's transformed values (log10 for
+        a log scale).
 
         Args:
             scale (ColorScale): The trained color scale.
             title (str or None): Title of the colorbar.
             ticks (tuple or None): Tick positions in transformed values
                 and their labels; None for automatic ticks.
-            cells (list of Cell): The cells using `scale`.
+            cell (Cell): The cell it stands beside
+                (:meth:`Figure.colorbar_cell
+                <qewton.visualization.figure.Figure.colorbar_cell>`).
+            slot: Its place beside the cell, from the plot area
+                (:meth:`Figure.colorbar_slot
+                <qewton.visualization.figure.Figure.colorbar_slot>`).
             visible: Whether the colorbar is shown.
+        """
+        raise NotImplementedError
+
+    def draw_legend(self, entries: dict, cell) -> None:
+        """Draw one legend of the figure, beside a cell's plot area and
+        its colorbars: one entry per label (as written by the renderer's
+        text), for the artists drawing it.
+
+        Args:
+            entries: ``{label: keys}``, in order (see :meth:`Figure.legends
+                <qewton.visualization.figure.Figure.legends>`).
+            cell (Cell): The cell it stands beside.
+        """
+        raise NotImplementedError
+
+    def draw_layout(self) -> None:
+        """Size the backend figure and place its cells, titles, colorbars
+        and embedded controls, once everything is drawn in every embedded
+        state: every plot area gets its size from :meth:`Figure.plot_sizes
+        <qewton.visualization.figure.Figure.plot_sizes>`, and nothing
+        overlaps it.
         """
         raise NotImplementedError
 
@@ -281,3 +307,21 @@ class Artist:
             visible: Whether it is shown.
         """
         raise NotImplementedError
+
+
+def notebook_html(element: str) -> str:
+    """HTML showing a figure's element in a notebook at its own size and
+    resolution: in a box that scrolls horizontally where the figure is
+    wider than the output, as notebooks scale images down to fit it.
+
+    Args:
+        element: The figure's HTML element.
+
+    Returns:
+        str: The HTML.
+    """
+    return (
+        '<div class="qewton-figure" style="overflow-x: auto; max-width: 100%;">'
+        "<style>.qewton-figure img { max-width: none !important; }</style>"
+        f"{element}</div>"
+    )

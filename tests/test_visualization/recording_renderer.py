@@ -68,13 +68,22 @@ class RecordingRenderer(Renderer):
             for channel, axis in cell.axes.items()
         }
 
-    def draw_colorbar(self, scale, title, ticks, cells, visible=True):
+    def draw_colorbar(self, scale, title, ticks, cell, slot, visible=True):
         self.backend_figure["colorbars"][id(scale)] = (
             title,
             scale.range,
-            [(c.row, c.col) for c in cells],
+            (cell.row, cell.col),
+            slot,
             visible,
         )
+
+    def draw_legend(self, entries, cell):
+        self.backend_figure.setdefault("legends", []).append(
+            ({label: list(keys) for label, keys in entries.items()}, (cell.row, cell.col))
+        )
+
+    def draw_layout(self):
+        self.backend_figure["plot_sizes"] = self.figure.plot_sizes()
 
     def clear_embeddings(self):
         self.backend_figure["embedded"] = {}

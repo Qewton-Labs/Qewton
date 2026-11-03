@@ -144,18 +144,28 @@ def _encode(value) -> str:
 
 
 def _shown(figure_json: dict) -> tuple[list[str], dict]:
-    # The visible traces (as JSON, in any order) and the axis layout.
+    # The visible traces (as JSON, in any order) and the axis layout,
+    # without the places of cells and colorbars: an output with embedded
+    # controls is laid out with room for them.
     traces = sorted(
-        _encode({k: v for k, v in t.items() if k not in ("visible", "uid")})
+        _encode(_unplaced({k: v for k, v in t.items() if k not in ("visible", "uid")}))
         for t in figure_json["data"]
         if t.get("visible", True) is not False
     )
     axes = {
-        k: _encode(v)
+        k: _encode({key: value for key, value in v.items() if key != "domain"})
         for k, v in figure_json["layout"].items()
         if k.startswith(("xaxis", "yaxis", "scene"))
     }
     return traces, axes
+
+
+def _unplaced(trace: dict) -> dict:
+    colorbar = trace.get("marker", {}).get("colorbar")
+    if colorbar is None:
+        return trace
+    unplaced = {k: v for k, v in colorbar.items() if k not in ("x", "y", "len")}
+    return {**trace, "marker": {**trace["marker"], "colorbar": unplaced}}
 
 
 def _check_states(figure: Figure, embedded, actions) -> None:

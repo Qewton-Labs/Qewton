@@ -44,8 +44,13 @@ def color(css: str):
     return tuple(p / 255 for p in parts[:3]) + tuple(parts[3:])
 
 
+#: Pixels per inch of the theme's sizes, as in a browser.
+PIXELS_PER_INCH = 96
+
+
 def points(pixels: float) -> float:
-    """A theme size in pixels as points, at 96 pixels per inch.
+    """A theme size in pixels as points (72 per inch), at
+    :data:`PIXELS_PER_INCH`.
 
     Args:
         pixels: Size in pixels.
@@ -53,7 +58,7 @@ def points(pixels: float) -> float:
     Returns:
         float: Size in points.
     """
-    return pixels * 0.75
+    return pixels * 72 / PIXELS_PER_INCH
 
 
 def fonts(font_family: str) -> dict:
@@ -115,10 +120,10 @@ def rc_params(theme, usetex: bool = False) -> dict:
         "figure.titlesize": points(theme.font_size_title),
         "axes.titlesize": points(theme.font_size_axes),
         "axes.labelsize": points(theme.font_size_axes),
-        "xtick.labelsize": points(theme.font_size_axes),
-        "ytick.labelsize": points(theme.font_size_axes),
+        "xtick.labelsize": points(theme.font_size_labels),
+        "ytick.labelsize": points(theme.font_size_labels),
         "legend.fontsize": points(theme.font_size_labels),
-        "legend.frameon": theme.show_axis_line,
+        "legend.frameon": theme.legend_box,
         "legend.edgecolor": line,
         "legend.facecolor": background,
         "mathtext.fontset": "cm",

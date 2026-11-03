@@ -57,8 +57,10 @@ class WidgetApplication(RenderApplication):
             figure (Figure): The figure to show.
 
         Returns:
-            ipywidgets.VBox: The canvas above one row per control; display
-                it as the last expression of a notebook cell.
+            ipywidgets.VBox: The canvas, at the figure's size in a box
+                scrolling where it is wider than the output, above one row
+                per control; display it as the last expression of a
+                notebook cell.
 
         Raises:
             ImportError: If ipywidgets or ipympl is not installed.
@@ -82,7 +84,9 @@ class WidgetApplication(RenderApplication):
 
         for value in values:
             value.observe(update, names="value")
-        return widgets.VBox([canvas, *rows])
+        # At the figure's own size, scrolling where it is wider.
+        box = widgets.Box([canvas], layout=widgets.Layout(overflow="auto"))
+        return widgets.VBox([box, *rows])
 
     @staticmethod
     def widget(control: Control) -> tuple:

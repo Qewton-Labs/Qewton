@@ -72,6 +72,12 @@ class GeometryPlot(Plot):
         return PointEncoding.COLOR if self.geometry.topological_dim >= 2 else None
 
     @property
+    def margin(self) -> float:
+        # Points get a margin; curves, surfaces and volumes end at the
+        # geometry.
+        return Plot.margin if self.geometry.topological_dim == 0 else 0.0
+
+    @property
     def scaled_channels(self) -> tuple[str, ...]:
         return POSITION_CHANNELS[: self.dim]
 
