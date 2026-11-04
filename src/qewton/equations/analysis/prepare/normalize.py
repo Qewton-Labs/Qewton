@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from qewton.equations.analysis.checks.axes import free_axes, set_free_axes
+from qewton.equations.analysis.checks.axes import free_axes, set_free_axes, sliced_axes
 from qewton.equations.analysis.checks.diagnostics import Diagnostic, info, warning
 from qewton.equations.expr.nodes import Apply, Const, Expr, transform
 from qewton.equations.expr.ops import OPS
@@ -56,7 +56,10 @@ def _time_domains(problem: Problem) -> list[Domain]:
 
 
 def _needs_lift(constraint: Constraint, time) -> bool:
-    held_on = frozenset() if constraint.on is None else set_free_axes(constraint.on)
+    held_on = frozenset()
+    if constraint.on is not None:
+        # A slice fixes the time, so the constraint already holds at one time only.
+        held_on = set_free_axes(constraint.on) | sliced_axes(constraint.on)
     used = free_axes(constraint.lhs) | free_axes(constraint.rhs)
     return time in used and time not in held_on
 

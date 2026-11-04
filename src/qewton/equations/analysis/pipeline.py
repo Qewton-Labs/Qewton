@@ -17,6 +17,8 @@ from qewton.equations.analysis.checks.diagnostics import Diagnostic, Severity, e
 from qewton.equations.analysis.prepare.normalize import normalize
 from qewton.equations.analysis.prepare.signatures import Signatures, signatures
 from qewton.equations.analysis.prepare.validate import validate
+from qewton.equations.analysis.structure.batching import batching
+from qewton.equations.analysis.suggest import RULES, findings
 from qewton.equations.model.problem import Problem
 from qewton.equations.model.task import Task
 
@@ -63,12 +65,21 @@ def _section(title: str, lines: list[str]) -> list[str]:
 
 
 def report(ctx: AnalysisContext) -> str:
-    """A readable summary: the task, the signatures and the findings."""
+    """A readable summary: the task, signatures, batching, classification, suggestions
+    and the findings."""
     lines: list[str] = []
     task_lines = str(ctx.task).splitlines()
     lines += _section("Task", task_lines or ["(no roles given)"])
     lines += _section("Signatures", str(ctx.signatures).splitlines())
     lines += _section("Normalized", str(ctx.problem).splitlines())
+    batch = batching(ctx.task)
+    if batch:
+        lines += _section("Batching", str(batch).splitlines())
+    if ctx.ok and ctx.task.unknowns:
+        found = findings(ctx.task)
+        lines += _section("Classification", str(found.classification).splitlines())
+        suggestions = tuple(s for run in RULES for s in run(found))
+        lines += _section("Suggestions", [str(s) for s in suggestions] or ["none"])
     if ctx.diagnostics:
         lines += _section("Diagnostics", [str(d) for d in ctx.diagnostics])
     else:

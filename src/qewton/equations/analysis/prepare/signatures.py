@@ -33,6 +33,7 @@ from qewton.equations.expr.nodes import (
 )
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.geometry.sets import Product, SetNode, is_subset
+from qewton.equations.model.problem import Problem
 from qewton.equations.model.task import Role, Task
 
 Shape = tuple[int, ...]
@@ -130,6 +131,17 @@ def _outermost(sets: set[SetNode]) -> tuple[SetNode, ...]:
     return tuple(sorted(kept, key=lambda s: (s.codim, str(s))))
 
 
+def evaluation_sets(problem: Problem) -> dict[FunctionSymbol, set[SetNode]]:
+    """Every set each function is evaluated on, including sets inside larger ones."""
+    evaluated: dict[FunctionSymbol, set[SetNode]] = {}
+    for constraint in problem.constraints:
+        for side in (constraint.lhs, constraint.rhs):
+            for symbol, where in _occurrences(side, constraint.on):
+                if where is not None:
+                    evaluated.setdefault(symbol, set()).add(where)
+    return evaluated
+
+
 def signatures(task: Task) -> Signatures:
     """The signature of every function of the task's problem.
 
@@ -140,15 +152,10 @@ def signatures(task: Task) -> Signatures:
     inference = infer_shapes(problem)
     inherited = inherited_batch_axes(task)
 
-    evaluated: dict[FunctionSymbol, set[SetNode]] = {}
-    seen_with: dict[FunctionSymbol, set[Variable]] = {}
-    for constraint in problem.constraints:
-        for side in (constraint.lhs, constraint.rhs):
-            for symbol, where in _occurrences(side, constraint.on):
-                if where is None:
-                    continue
-                evaluated.setdefault(symbol, set()).add(where)
-                seen_with.setdefault(symbol, set()).update(where.axes)
+    evaluated = evaluation_sets(problem)
+    seen_with = {
+        s: frozenset().union(*(w.axes for w in sets)) for s, sets in evaluated.items()
+    }
 
     table: dict[FunctionSymbol, Signature] = {}
     found: list[Diagnostic] = []
@@ -165,7 +172,7 @@ def signatures(task: Task) -> Signatures:
             inherited.get(symbol, ()),
         )
         if symbol in evaluated:
-            unused = [a for a in axes if root_of(a) not in seen_with.get(symbol, set())]
+            unused = [a for a in axes if root_of(a) not in seen_with[symbol]]
             if unused:
                 names = ", ".join(str(a.name) for a in unused)
                 found.append(

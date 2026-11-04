@@ -23,8 +23,15 @@ from qewton.equations.analysis.classify.equations import PdeType
 from qewton.equations.analysis.classify.facts import Fact
 from qewton.equations.analysis.classify.spaces import FunctionSpace
 from qewton.equations.analysis.overview import Overview, overview
+from qewton.equations.analysis.suggest import Suggestion, suggest
 from qewton.equations.analysis.pipeline import AnalysisContext, report, run_pipeline
 from qewton.equations.analysis.prepare.signatures import Signature, Signatures, signatures
+from qewton.equations.analysis.structure.batching import (
+    BatchEntry,
+    BatchMode,
+    Batching,
+    batching,
+)
 from qewton.equations.analysis.structure.structure import (
     BatchPlacement,
     Split,
@@ -168,7 +175,13 @@ __all__ = [
     "integral",
     "mean",
     "normalize",
+    "BatchEntry",
+    "BatchMode",
+    "Batching",
+    "Suggestion",
+    "suggest",
     "batch_placement",
+    "batching",
     "coupling_graph",
     "coupling_diagram",
     "CouplingDiagram",

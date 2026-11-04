@@ -64,6 +64,7 @@ qewton/equations/
     │   ├── structure/           # what the equations look like
     │   │   ├── structure.py     # orders, operator/source split, linearity, batch placement
     │   │   ├── batch_axes.py    # inherited batch axes
+    │   │   ├── batching.py      # one entry per parameter axis: mode, placement, reach
     │   │   └── coupling.py      # coupling graph, matching, blocks
     │   ├── pipeline.py          # run_pipeline(task)
     │   ├── overview.py
@@ -74,7 +75,7 @@ qewton/equations/
     │   │   ├── spaces.py        # first-guess function spaces
     │   │   ├── facts.py         # Fact(rule, subject, value, why, constraints)
     │   │   └── classify.py      # classify(task) -> Classification
-    │   └── suggest.py           # (M6) method suggestions with rationale
+    │   └── suggest.py           # method suggestions with rationale (M6)
     ├── compile/
     │   ├── weak_form.py         # strong form → WeakProblem
     │   ├── ufl_export.py        # WeakProblem → UFL (FEniCS / Firedrake)
@@ -400,6 +401,8 @@ Also built: `decoupled_axes(task)`, which reports declared unknown input axes wi
 - **Coupling diagram.** `coupling_diagram(task)` (data in `printing/coupling_diagram.py`) extends the graph with data functions (fixed/varying), the sets each equation is posed on and each unknown is defined on, and the coordinates the sets live in; `plot_coupling(task)` draws it in five columns (equations, unknowns, data, sets, coordinates).
 - **Decoupled axes.** `decoupled_axes(task)` reports coordinates declared on unknowns with no unknown derivative, integral coupling, or shift along them. These are candidate pointwise directions (including quasi-static time); batch parallelism is reported separately in M5.
 
+Batched reporting (M5): `batching(task)` returns one `BatchEntry` per parameter axis, with a `BatchMode` (source only, operator affine, operator not separable, geometry, unused), the constraints it occurs in, and the unknowns that depend on it. `report(ctx)` prints a Batching section when the task has batch axes. Instances are always independent, since a parameter axis appears in no expression. What to do with a mode (factor the operator once, reduced basis) is a suggestion and stays in M6.
+
 ### 6.5 classify
 
 Built (M4): `classify(task)` returns a `Classification` of `Fact`s, each with its rule and reason, plus warnings. The notes below say what was implemented and where it is deliberately rough.
@@ -422,6 +425,8 @@ Built (M4): `classify(task)` returns a `Classification` of `Fact`s, each with it
 - **Function spaces** per unknown, from the weak form (§7.1), not from which operators appear. Integration by parts decides: p in ∇p·v only needs L², so Stokes has u ∈ H¹ and p ∈ L². The operator-based rule below is only a first guess: grad gives H¹, div only gives H(div), curl gives H(curl), none gives L².
 
 ### 6.6 suggest
+
+Built (M6): `analysis/suggest.py` holds a registry `RULES` of functions `Findings -> Suggestion`, added with `@rule`. `Findings` bundles the task, its classification, its batching and the coupling facts. Each `Suggestion(rule, method, why, evidence)` carries the facts it came from, and `report()` prints them in a Suggestions section. Rules: one per block type (elliptic, parabolic, transport, wave, saddle point, ODE), algebraic, nonlinear operator (Newton), inequality (active set), time decoupled (sequence of stationary solves) and one per batch mode. Not built: the row "task asks to generalise to unseen parameters", because the task has no such flag. The suggestions are heuristics and do not look at signs or coefficients.
 
 A rule table: conditions on facts produce a `Suggestion(method, evidence)`.
 
@@ -593,8 +598,8 @@ Suggestions
 | M2 | Task (roles, batch axes), validate, normalize, infer; signature report (the axis pre-pass was dropped; signatures use `evaluated_on`) | golden tests for signatures and shapes pass |
 | M3 | structure: orders, split, linearity, batch placement, coupling graph, inherited batches, decoupled axes | Stokes graph shows the saddle-point block; signatures propagate batch axes; pointwise directions are detected |
 | M4 ✅ | classify: PDE type, BC kinds and counts, function spaces | wave, advection, Stokes and obstacle fixtures classified correctly |
-| M5 | Batched reporting (parameter axes; batch placement is in M3) | worked example (Section 8) reports the batch correctly |
-| M6 | suggest and report with rationale | every suggestion lists its evidence |
+| M5 ✅ | Batched reporting (parameter axes; batch placement is in M3) | worked example (Section 8) reports the batch correctly |
+| M6 ✅ | suggest and report with rationale | every suggestion lists its evidence |
 | M7 | parametrized domains (reference maps) | batched-domain fixture uses the pull-back |
 | M8 | weak_form: pairing, testing, integration by parts, boundary terms | Poisson, heat and Stokes weak forms match hand-derived ones |
 | M9 | UFL export | exported Poisson and Stokes problems solve in FEniCS or Firedrake and converge under refinement |

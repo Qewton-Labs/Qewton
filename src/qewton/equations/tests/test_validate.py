@@ -213,3 +213,15 @@ class TestSlices:
         problem = Problem((Eq(self.u, 0).on(start),), time=t)
         found = messages(problem, Severity.WARNING)
         assert any("slice of s" in m and "no function" in m for m in found)
+
+
+def test_a_derivative_along_an_undeclared_time_axis_is_warned():
+    x, t = Variable("x", dim=2), Variable("t", dim=1)
+    u = FunctionSymbol(Variable("u", dim=1), x * t)
+    on = Domain("Omega", ambient=x) * Domain("I", ambient=t)
+    eq = Eq(dt(u, t) - lap(u, x), 0).on(on)
+    messages = [d.message for d in validate(Problem((eq,)))]
+    assert any("no time variable" in m for m in messages)
+    assert not any(
+        "no time variable" in d.message for d in validate(Problem((eq,), time=t))
+    )

@@ -7,6 +7,7 @@ raising, so several findings arrive together:
 
 - partitions: parts belong to the whole, are distinct, and each has a constraint;
 - periodic declarations: a constraint relates the two sets, with the declared offset;
+- time: a derivative along a lone coordinate of a product, but no declared time;
 - delays: a shift back in time needs history on an interval, not on a slice;
 - slices: a slice fixes a coordinate that the constraint's functions depend on;
 - restrictions: the expression depends on the axes of the set it is restricted to;
@@ -24,7 +25,15 @@ from qewton.equations.analysis.checks.diagnostics import (
     warning,
 )
 from qewton.equations.analysis.prepare.infer import infer_shapes
-from qewton.equations.expr.nodes import Const, Expr, FunctionSymbol, Restrict, Shift, walk
+from qewton.equations.expr.nodes import (
+    Apply,
+    Const,
+    Expr,
+    FunctionSymbol,
+    Restrict,
+    Shift,
+    walk,
+)
 from qewton.equations.expr.ops import ShapeError
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.geometry.sets import Interface, Product, SetNode
@@ -40,6 +49,7 @@ def validate(problem: Problem) -> tuple[Diagnostic, ...]:
         *_partitions(problem),
         *_periodic(problem),
         *_interfaces(problem),
+        *_time_declared(problem),
         *_delays(problem),
         *_slices(problem),
         *_restrictions(problem),
@@ -132,6 +142,29 @@ def _negated(offset: object) -> object:
     if isinstance(offset, tuple):
         return tuple(-v for v in offset)
     return -offset  # type: ignore[operator]
+
+
+def _time_declared(problem: Problem) -> Found:
+    """Without `time`, a derivative along t counts as a spatial one in `classify`."""
+    if problem.time is not None:
+        return
+    reported: set[str] = set()
+    for constraint, node in _nodes(problem):
+        if not (isinstance(node, Apply) and node.op.name == "d"):
+            continue
+        axis = node.args[-1]
+        if (
+            isinstance(constraint.on, Product)
+            and getattr(axis, "dim", None) == 1
+            and axis.name not in reported
+        ):
+            reported.add(axis.name)
+            yield warning(
+                f"{node} differentiates along {axis.name}, but the problem has no time "
+                f"variable. If {axis.name} is time, pass time={axis.name} to Problem; "
+                "otherwise it is classified as a spatial axis.",
+                constraint,
+            )
 
 
 def _delays(problem: Problem) -> Found:

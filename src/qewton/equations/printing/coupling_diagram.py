@@ -13,7 +13,7 @@ draws it with matplotlib. Five columns, left to right:
 
 Edge kinds: `occurs` (equation to data function), `contains` (equation to unknown
 component, `matched` if the matching pairs them), `posed` (equation to set), `on`
-(unknown to a set it is defined on) and `in` (set to coordinate).
+(unknown or data function to a set it is evaluated on) and `in` (set to coordinate).
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from qewton.equations.analysis.structure.batch_axes import (
 )
 from qewton.equations.analysis.structure.coupling import coupling_graph
 from qewton.equations.analysis.prepare.normalize import normalize
-from qewton.equations.analysis.prepare.signatures import signatures
+from qewton.equations.analysis.prepare.signatures import evaluation_sets
 from qewton.equations.geometry.sets import Product, Slice
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.model.task import Role, Task
@@ -113,11 +113,19 @@ def coupling_diagram(task: Task) -> CouplingDiagram:
             ("unknowns", str(unknown)),
             (equation, unknown) in graph.matching,
         )
+    evaluated = evaluation_sets(normalize(task.problem).problem)
     for unknown in graph.unknowns:
         roles[("unknowns", str(unknown))] = "unknown"
-        for domain in signatures(task).table[unknown.symbol].evaluated_on:
+    for symbol, sets in evaluated.items():
+        left: list[Node] = [
+            ("unknowns", str(u)) for u in graph.unknowns if u.symbol == symbol
+        ] or [("data", str(symbol.variable.name))]
+        if left[0][0] == "data" and left[0][1] not in columns["data"]:
+            continue
+        for domain in sorted(sets, key=str):
             domains[str(domain)] = domain
-            add("on", ("unknowns", str(unknown)), ("sets", str(domain)))
+            for node in left:
+                add("on", node, ("sets", str(domain)))
     for label in columns["sets"]:
         for axis in _set_coordinates(domains[label]):
             add("in", ("sets", label), ("coordinates", axis))

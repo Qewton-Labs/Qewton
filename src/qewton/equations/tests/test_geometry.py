@@ -174,3 +174,22 @@ class TestSetFromGeometry:
     def test_non_continuous_factor_is_rejected(self):
         with pytest.raises(TypeError):
             set_from_geometry(unit_square * Geometry(variable=t))
+
+
+class TestProductSyntax:
+    def test_varargs_sequence_and_star_build_the_same_product(self):
+        x, t = Variable("x", dim=2), Variable("t", dim=1)
+        omega, interval = Domain("Omega", ambient=x), Domain("I", ambient=t)
+        expected = Product((omega, interval))
+        assert Product(omega, interval) == expected
+        assert omega * interval == expected
+
+    def test_products_are_flattened(self):
+        x, y, t = (Variable(n, dim=1) for n in "xyt")
+        a, b, c = (Domain(n, ambient=v) for n, v in (("A", x), ("B", y), ("C", t)))
+        assert (a * b) * c == a * (b * c) == Product(a, b, c)
+        assert len((a * b * c).factors) == 3
+
+    def test_star_with_a_non_set_is_a_type_error(self):
+        with pytest.raises(TypeError):
+            Domain("A", ambient=Variable("x", dim=1)) * 2

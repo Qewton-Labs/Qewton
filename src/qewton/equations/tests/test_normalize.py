@@ -213,3 +213,17 @@ class TestCanonicalForms:
     def test_fixtures_still_validate_after_normalizing(self):
         for make in (poisson, heat, neumann_poisson, delay, periodic_poisson):
             assert errors(validate(normalize(make()).problem)) == ()
+
+
+def test_an_initial_condition_on_a_slice_is_not_lifted():
+    x, t = Variable("x", dim=2), Variable("t", dim=1)
+    u = FunctionSymbol(Variable("u", dim=1), x * t)
+    omega, interval = Domain("Omega", ambient=x), Domain("I", ambient=t)
+    initial = omega * Slice(t, 0.0)
+    problem = Problem(
+        (Eq(dt(u, t) - lap(u, x), 0).on(omega * interval), Eq(u, 0).on(initial)),
+        time=t,
+    )
+    result = normalize(problem)
+    assert result.problem.constraints[1].on == initial
+    assert not result.diagnostics

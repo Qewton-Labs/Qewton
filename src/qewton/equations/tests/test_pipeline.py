@@ -47,6 +47,21 @@ Normalized
     3. dot((nu·∇_x u)|_{Gamma_N}, n_{∂Omega}) − h = 0 on Gamma_N
   partitions:
     ∂Omega = Gamma_D ⊔ Gamma_N
+Classification
+  equations:
+    −∇_x·(nu·∇_x u) − f = 0 on Omega: elliptic  (highest time order 0, highest space order 2)
+  blocks:
+    u: elliptic  (dominant type of equations 1)
+  conditions:
+    u|_{Gamma_D} − g = 0 on Gamma_D: Dirichlet  (the unknown terms contain Dirichlet data)
+    dot((nu·∇_x u)|_{Gamma_N}, n_{∂Omega}) − h = 0 on Gamma_N: Neumann  (the unknown terms contain Neumann data)
+  counts:
+    Gamma_D: (1, 1)  (1 given, 1 needed)
+    Gamma_N: (1, 1)  (1 given, 1 needed)
+  function spaces:
+    u: H1  (derivatives left after moving half the equation order to the test function)
+Suggestions
+  continuous Lagrange FEM; CG with multigrid, or a direct solver  <- elliptic block
 Diagnostics
   none"""
 

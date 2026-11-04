@@ -11,6 +11,7 @@ might be added later.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from qewton.config.variables import Variable
@@ -37,6 +38,11 @@ class SetNode(Printable, ABC):
         1 is a co-dimension-one set, e.g., a boundary.
         and so on...
         """
+
+    def __mul__(self, other: object) -> SetNode:
+        if not isinstance(other, SetNode):
+            return NotImplemented
+        return Product(self, other)
 
 
 def _check_set(obj: object) -> SetNode:
@@ -161,11 +167,25 @@ class Interface(SetNode):
         return self.first.codim + 1
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class Product(SetNode):
-    """A product of sets on disjoint coordinates, e.g. Omega x I."""
+    """A product of sets on disjoint coordinates, e.g. Omega x I.
+
+    Write `Product(Omega, I)`, `Product((Omega, I))` or `Omega * I`. Nested products
+    are flattened, so `(A * B) * C == Product(A, B, C)`.
+    """
 
     factors: tuple[SetNode, ...]
+
+    def __init__(self, *factors: SetNode | Iterable[SetNode]):
+        if len(factors) == 1 and isinstance(factors[0], (tuple, list)):
+            factors = tuple(factors[0])
+        flat: list[SetNode] = []
+        for factor in factors:
+            _check_set(factor)
+            flat.extend(factor.factors if isinstance(factor, Product) else (factor,))
+        object.__setattr__(self, "factors", tuple(flat))
+        self.__post_init__()
 
     def __post_init__(self):
         if not self.factors:
