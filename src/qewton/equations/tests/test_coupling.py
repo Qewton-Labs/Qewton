@@ -1,5 +1,5 @@
 from qewton.equations import Domain, Eq, FunctionSymbol, Problem, Variable
-from qewton.equations.analysis.coupling import coupling_graph
+from qewton.equations.analysis.structure.coupling import coupling_graph
 from qewton.equations.fixtures import poisson, stokes
 
 

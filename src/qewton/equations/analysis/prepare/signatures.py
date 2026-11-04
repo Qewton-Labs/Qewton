@@ -6,13 +6,13 @@ its batch axis if it varies, its output shape, and the sets it is evaluated on.
     u : x → ℝ        on Omega, Gamma_D, Gamma_N
     nu : P → ℝ       varying, constant in x
 
-Inputs are declared, never inferred. The analysis adds only what it can know: the
-shape (see `infer_shapes`), the sets, and a warning for an input that no constraint
-makes use of.
+Inputs are declared, never inferred. The analysis adds only what it can know:
+the shape (see `infer_shapes`), the sets, and a warning for an input
+that no constraint makes use of.
 
-A function that is coupled to a varying one (u depends on a varying nu, so u has a
-value per instance too) is not marked here. That is a statement about the coupling of
-the equations, which comes with the structure analysis.
+A function that is coupled to a varying one (u depends on a varying nu, so u
+has a value per instance too) is not marked here. That is a statement
+about the coupling of the equations, which comes with the structure analysis.
 """
 
 from __future__ import annotations
@@ -21,17 +21,15 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.batch_axes import inherited_batch_axes
-from qewton.equations.analysis.diagnostics import Diagnostic, warning
-from qewton.equations.analysis.infer import infer_shapes
-from qewton.equations.analysis.normalize import normalize
+from qewton.equations.analysis.structure.batch_axes import inherited_batch_axes
+from qewton.equations.analysis.checks.diagnostics import Diagnostic, warning
+from qewton.equations.analysis.prepare.infer import infer_shapes
+from qewton.equations.analysis.prepare.normalize import normalize
 from qewton.equations.expr.nodes import (
-    Apply,
     Expr,
     FunctionSymbol,
     Integral,
     Restrict,
-    Shift,
 )
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.geometry.sets import Product, SetNode, is_subset
@@ -62,15 +60,15 @@ class Signature:
     inherited_batch: tuple[Variable, ...] = ()
 
     def __str__(self) -> str:
-        inputs = [a.name for a in self.axes]
+        inputs = [str(a.name) for a in self.axes]
         if self.batch is not None:
-            inputs.append(self.batch.name)
-        inputs.extend(axis.name for axis in self.inherited_batch)
+            inputs.append(str(self.batch.name))
+        inputs.extend(str(axis.name) for axis in self.inherited_batch)
         domain = " × ".join(inputs) if inputs else "·"
         shape = f"ℝ^{self.shape}" if self.shape else "ℝ"
         assumed = " (assumed)" if self.shape_assumed else ""
         inherited = (
-            f"; inherits {', '.join(a.name for a in self.inherited_batch)}"
+            f"; inherits {', '.join(str(a.name) for a in self.inherited_batch)}"
             if self.inherited_batch
             else ""
         )
@@ -122,13 +120,9 @@ def _occurrences(expr: Expr, where: SetNode | None):
         yield from _occurrences(expr.expr, _narrowed(where, expr.on))
     elif isinstance(expr, Integral):
         yield from _occurrences(expr.expr, expr.over)
-    elif isinstance(expr, Shift):
-        yield from _occurrences(expr.expr, where)
-        yield from _occurrences(expr.offset, where)
-    elif isinstance(expr, Apply):
-        for arg in expr.args:
-            if isinstance(arg, Expr):
-                yield from _occurrences(arg, where)
+    else:
+        for child in expr.children():
+            yield from _occurrences(child, where)
 
 
 def _outermost(sets: set[SetNode]) -> tuple[SetNode, ...]:
@@ -158,7 +152,7 @@ def signatures(task: Task) -> Signatures:
 
     table: dict[FunctionSymbol, Signature] = {}
     found: list[Diagnostic] = []
-    for symbol in sorted(inference.shapes, key=lambda s: s.variable.name):
+    for symbol in sorted(inference.shapes, key=lambda s: str(s.variable.name)):
         axes = () if symbol.inputs is None else coordinate_factors(symbol.inputs)
         table[symbol] = Signature(
             symbol,
@@ -173,7 +167,7 @@ def signatures(task: Task) -> Signatures:
         if symbol in evaluated:
             unused = [a for a in axes if root_of(a) not in seen_with.get(symbol, set())]
             if unused:
-                names = ", ".join(a.name for a in unused)
+                names = ", ".join(str(a.name) for a in unused)
                 found.append(
                     warning(
                         f"{symbol.variable.name} is declared to depend on {names}, "

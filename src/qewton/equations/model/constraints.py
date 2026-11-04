@@ -14,7 +14,7 @@ from enum import Enum
 
 from qewton.equations.expr.nodes import Expr, as_expr
 from qewton.equations.geometry.sets import SetNode
-from qewton.equations.analysis.shapes import check_sides
+from qewton.equations.analysis.checks.shapes import check_sides
 from qewton.equations.printing.printable import Printable
 
 

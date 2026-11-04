@@ -21,6 +21,7 @@ from qewton.equations.expr.nodes import (
     Coord,
     Expr,
     FunctionSymbol,
+    Index,
     Integral,
     Normal,
     Restrict,
@@ -69,7 +70,7 @@ _SUPERSCRIPT = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
 
 
 def _number(value: float) -> str:
-    return f"{value:g}".replace("-", "-")
+    return f"{value:g}".replace("-", "\u2212")
 
 
 def _const(value: float | tuple) -> str:
@@ -183,20 +184,43 @@ def _leaf(expr: Expr | Variable) -> str:
 def _shifted(shift: Shift) -> str:
     name, offset = shift.axis.name, shift.offset
     if isinstance(offset, Const) and _is_negative(offset.value):
-        return f"{name} - {_const(-offset.value)}"  # type: ignore
+        return f"{name} \u2212 {_const(-offset.value)}"  # type: ignore
     return f"{name} + {_operand(offset, ADD + 1)}"
 
 
+def _indexed(expr: Index) -> str:
+    """`A[0, 1]` for a chain of indices, `u[0]` for one."""
+    indices = []
+    while isinstance(expr, Index):
+        indices.append(str(expr.index))
+        expr = expr.expr
+    return f"{_operand(expr, ATOM)}[{', '.join(reversed(indices))}]"
+
+
+def _restricted(expr: Restrict) -> str:
+    return f"{_operand(expr.expr, ATOM)}|_{{{_set(expr.on)}}}"
+
+
+def _shift_text(expr: Shift) -> str:
+    return f"{_operand(expr.expr, ATOM)}({_shifted(expr)})"
+
+
+def _integral(expr: Integral) -> str:
+    return f"∫_{{{_set(expr.over)}}} {_operand(expr.expr, ATOM)}"
+
+
+_PRINTERS = {
+    Apply: _apply,
+    Index: _indexed,
+    Restrict: _restricted,
+    Shift: _shift_text,
+    Integral: _integral,
+}
+
+
 def _expr(expr: Expr | Variable) -> str:
-    if isinstance(expr, Apply):
-        return _apply(expr)
-    if isinstance(expr, Restrict):
-        return f"{_operand(expr.expr, ATOM)}|_{{{_set(expr.on)}}}"
-    if isinstance(expr, Shift):
-        return f"{_operand(expr.expr, ATOM)}({_shifted(expr)})"
-    if isinstance(expr, Integral):
-        return f"∫_{{{_set(expr.over)}}} {_operand(expr.expr, ATOM)}"
-    return _leaf(expr)
+    printer = _PRINTERS.get(type(expr))
+    return printer(expr) if printer else _leaf(expr)
 
 
 def _factor(factor: SetNode) -> str:

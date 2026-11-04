@@ -20,10 +20,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from qewton.equations.analysis.batch_axes import _evaluation_sets, _function_symbols
-from qewton.equations.analysis.coupling import coupling_graph
-from qewton.equations.analysis.normalize import normalize
-from qewton.equations.analysis.signatures import signatures
+from qewton.equations.analysis.structure.batch_axes import (
+    _evaluation_sets,
+    _function_symbols,
+)
+from qewton.equations.analysis.structure.coupling import coupling_graph
+from qewton.equations.analysis.prepare.normalize import normalize
+from qewton.equations.analysis.prepare.signatures import signatures
 from qewton.equations.geometry.sets import Product, Slice
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.model.task import Role, Task
@@ -53,9 +56,11 @@ class CouplingDiagram:
 
 def _data_nodes(task: Task, constraint, roles: dict[Node, str]) -> list[Node]:
     found = []
-    for symbol in sorted(_function_symbols(constraint), key=lambda s: s.variable.name):
+    for symbol in sorted(
+        _function_symbols(constraint), key=lambda s: str(s.variable.name)
+    ):
         if task.roles[symbol] is not Role.UNKNOWN:
-            node = ("data", symbol.variable.name)
+            node = ("data", str(symbol.variable.name))
             roles[node] = task.roles[symbol].value
             found.append(node)
     return found
@@ -73,7 +78,7 @@ def _set_coordinates(domain) -> list[str]:
         found = [root_of(axis).name for axis in coordinate_factors(domain.ambient)]
     else:
         found = []
-    return list(dict.fromkeys(found))
+    return list(dict.fromkeys([str(f) for f in found]))
 
 
 def coupling_diagram(task: Task) -> CouplingDiagram:

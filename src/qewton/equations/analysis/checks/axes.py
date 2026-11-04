@@ -25,6 +25,7 @@ from qewton.equations.expr.nodes import (
     Coord,
     Expr,
     FunctionSymbol,
+    Index,
     Integral,
     Normal,
     Restrict,
@@ -48,7 +49,7 @@ class AxisError(ValueError):
 
 
 def _names(axes: Axes) -> str:
-    return "{" + ", ".join(sorted(axis.name for axis in axes)) + "}"
+    return "{" + ", ".join(sorted(str(axis.name) for axis in axes)) + "}"
 
 
 def sliced_axes(s: SetNode) -> Axes:
@@ -105,6 +106,11 @@ def _(expr: Integral) -> Axes:
 
 
 @free_axes.register
+def _(expr: Index) -> Axes:
+    return free_axes(expr.expr)
+
+
+@free_axes.register
 def _(expr: Shift) -> Axes:
     operand = free_axes(expr.expr)
     axis = root_of(expr.axis)
@@ -124,7 +130,11 @@ def _(expr: Apply) -> Axes:
     operands = expr.args[: expr.op.arity]
     result: Axes = frozenset().union(*(free_axes(arg) for arg in operands))
     if expr.op.takes_axes:
-        missing = frozenset(coordinate_factors(expr.args[expr.op.arity])) - result
+        expr_variables = expr.args[expr.op.arity]
+        assert isinstance(
+            expr_variables, Variable
+        ), f"Expected a Variable, got {type(expr_variables)}"
+        missing = frozenset(coordinate_factors(expr_variables)) - result
         if missing:
             raise AxisError(
                 f"Cannot differentiate along {_names(missing)} in {expr}: the operand "

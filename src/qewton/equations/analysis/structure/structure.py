@@ -13,22 +13,25 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from functools import singledispatch
 from typing import Literal
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.axes import free_axes
-from qewton.equations.analysis.normalize import normalize
+from qewton.equations.analysis.checks.axes import free_axes
+from qewton.equations.analysis.prepare.normalize import normalize
 from qewton.equations.expr.nodes import (
     Apply,
     Const,
     Expr,
     FunctionSymbol,
+    Index,
     Integral,
     Restrict,
     Shift,
     walk,
 )
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
+from qewton.equations.expr.ops import Linearity
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.task import Role, Task
 
@@ -57,7 +60,7 @@ def _collect(expr: Expr, above: Orders, found: dict[FunctionSymbol, Orders]) -> 
     inner = above
     if isinstance(expr, Apply) and expr.op.takes_axes:
         inner = dict(above)
-        for axis in coordinate_factors(expr.args[expr.op.arity]):
+        for axis in coordinate_factors(expr.args[expr.op.arity]):  # type: ignore
             inner[axis] = inner.get(axis, 0) + expr.op.order
     for child in expr.children():
         _collect(child, inner, found)
@@ -109,7 +112,7 @@ def decoupled_axes(task: Task) -> tuple[Variable, ...]:
         for side in (constraint.lhs, constraint.rhs):
             differentiated.update(_differentiated_axes(side, unknowns))
             nonlocal_axes.update(_nonlocal_axes(side, unknowns))
-    return tuple(sorted(axes - differentiated - nonlocal_axes, key=lambda a: a.name))
+    return tuple(sorted(axes - differentiated - nonlocal_axes, key=lambda a: str(a.name)))
 
 
 def _contains_unknown(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> bool:
@@ -124,8 +127,8 @@ def _differentiated_axes(
         for node in walk(expr)
         if isinstance(node, Apply)
         and node.op.takes_axes
-        and _contains_unknown(node.args[0], unknowns)
-        for axis in coordinate_factors(node.args[node.op.arity])
+        and _contains_unknown(node.args[0], unknowns)  # type: ignore
+        for axis in coordinate_factors(node.args[node.op.arity])  # type: ignore
     }
 
 
@@ -147,59 +150,43 @@ def _nonlocal_axes(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> set[Varia
     return coupled
 
 
-Linearity = Literal["none", "linear", "affine", "nonlinear"]
-
-
-def _combine(first: Linearity, second: Linearity) -> Linearity:
-    """The dependence of a sum of two expressions."""
-    if "nonlinear" in (first, second):
-        return "nonlinear"
-    if first == "none":
-        return second
-    if second == "none":
-        return first
-    return "linear" if first == second == "linear" else "affine"
-
-
-def linearity(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> Linearity:
+@singledispatch
+def linearity(_expr: Expr, _unknowns: frozenset[FunctionSymbol]) -> Linearity:
     """How `expr` depends on the unknowns.
-
-    - "none": no unknown occurs.
-    - "linear": a linear function of the unknowns, e.g. nu * grad(u).
-    - "affine": linear plus something that does not depend on them, e.g. u + 1.
-    - "nonlinear": anything else, e.g. u * u or sin(u).
 
     This follows `OpSpec.linearity`: a multilinear operator stays linear when only one
     argument contains unknowns, and is nonlinear when both do. Restrictions, integrals
     and shifts of an expression keep its dependence, but a shift offset that contains
     an unknown makes the term nonlinear.
     """
-    if isinstance(expr, FunctionSymbol):
-        return "linear" if expr in unknowns else "none"
-    if isinstance(expr, (Shift, Restrict, Integral)):
-        if isinstance(expr, Shift) and linearity(expr.offset, unknowns) != "none":
-            return "nonlinear"
-        return linearity(expr.expr, unknowns)
-    if isinstance(expr, Apply):
-        return _apply_linearity(expr, unknowns)
-    return "none"
+    return Linearity.NONE
 
 
-def _apply_linearity(expr: Apply, unknowns: frozenset[FunctionSymbol]) -> Linearity:
+@linearity.register
+def _(expr: FunctionSymbol, unknowns: frozenset[FunctionSymbol]) -> Linearity:
+    return Linearity.LINEAR if expr in unknowns else Linearity.NONE
+
+
+@linearity.register(Restrict)
+@linearity.register(Integral)
+@linearity.register(Index)
+def _(
+    expr: Restrict | Integral | Index, unknowns: frozenset[FunctionSymbol]
+) -> Linearity:
+    return linearity(expr.expr, unknowns)
+
+
+@linearity.register
+def _(expr: Shift, unknowns: frozenset[FunctionSymbol]) -> Linearity:
+    if linearity(expr.offset, unknowns) is not Linearity.NONE:
+        return Linearity.NONLINEAR
+    return linearity(expr.expr, unknowns)
+
+
+@linearity.register
+def _(expr: Apply, unknowns: frozenset[FunctionSymbol]) -> Linearity:
     parts = [linearity(arg, unknowns) for arg in expr.children()]
-    involved = [part for part in parts if part != "none"]
-    kind = expr.op.linearity
-    if not involved:
-        return "none"
-    if kind == "nonlinear" or (kind == "multilinear" and len(involved) > 1):
-        return "nonlinear"
-    if kind == "multilinear":
-        return involved[0]
-    result: Linearity = "none"
-    for part in parts:
-        result = _combine(result, part)
-    # A term without unknowns next to one with is a constant offset.
-    return "affine" if "none" in parts and result == "linear" else result
+    return expr.op.linearity.of_result(parts)
 
 
 @dataclass(frozen=True)
@@ -219,7 +206,7 @@ class Split:
     """A constraint cut into an operator part and a source part.
 
     `operator` holds the terms that contain an unknown, `source` the others.
-    `linearity` is "none" without unknowns, "nonlinear" if any term is, and "linear"
+    `linearity` is NONE without unknowns, NONLINEAR if any term is, and LINEAR
     otherwise (in the sense of a linear PDE: a linear operator plus a source).
     """
 
@@ -229,13 +216,13 @@ class Split:
     @property
     def linearity(self) -> Linearity:
         if not self.operator:
-            return "none"
-        if any(term.linearity == "nonlinear" for term in self.operator):
-            return "nonlinear"
-        return "linear"
+            return Linearity.NONE
+        if any(term.linearity is Linearity.NONLINEAR for term in self.operator):
+            return Linearity.NONLINEAR
+        return Linearity.LINEAR
 
 
-def _terms(expr: Expr, sign: int = 1) -> Iterator[tuple[Expr, int]]:
+def _terms(expr: Expr | Variable, sign: int = 1) -> Iterator[tuple[Expr | Variable, int]]:
     """Cut `expr` at its top-level sums, keeping track of the sign."""
     if isinstance(expr, Apply) and expr.op.name == "neg":
         yield from _terms(expr.args[0], -sign)
@@ -260,8 +247,8 @@ def split_constraint(
     for expr, sign in pieces:
         if isinstance(expr, Const) and expr.value == 0:
             continue
-        term = Term(expr, sign, linearity(expr, unknowns))
-        has_unknown = any(node in unknowns for node in walk(expr))
+        term = Term(expr, sign, linearity(expr, unknowns))  # type: ignore
+        has_unknown = any(node in unknowns for node in walk(expr))  # type: ignore
         (operator if has_unknown else source).append(term)
     return Split(tuple(operator), tuple(source))
 
@@ -298,8 +285,8 @@ def _differentiates(expr: Expr, symbol: FunctionSymbol) -> bool:
             continue
         argument = node.args[0]
         axes = node.args[node.op.arity]
-        if _contains(argument, symbol) and symbol_axes.intersection(
-            coordinate_factors(axes)
+        if _contains(argument, symbol) and symbol_axes.intersection(  # type: ignore
+            coordinate_factors(axes)  # type: ignore
         ):
             return True
     return False
@@ -307,9 +294,9 @@ def _differentiates(expr: Expr, symbol: FunctionSymbol) -> bool:
 
 def _affine_in(expr: Expr, symbol: FunctionSymbol) -> bool:
     """Whether `expr` separates as the varying symbol times a term independent of it."""
-    return linearity(expr, frozenset({symbol})) != "nonlinear" and not _differentiates(
-        expr, symbol
-    )
+    return linearity(
+        expr, frozenset({symbol})
+    ) is not Linearity.NONLINEAR and not _differentiates(expr, symbol)
 
 
 def batch_placement(task: Task) -> tuple[BatchPlacement, ...]:
@@ -331,7 +318,7 @@ def batch_placement(task: Task) -> tuple[BatchPlacement, ...]:
                 for symbol, role in task.roles.items()
                 if isinstance(symbol, FunctionSymbol) and role is Role.VARYING
             ),
-            key=lambda symbol: symbol.variable.name,
+            key=lambda symbol: str(symbol.variable.name),
         )
     )
     results = []
@@ -347,7 +334,7 @@ def batch_placement(task: Task) -> tuple[BatchPlacement, ...]:
                         BatchPlacement(
                             index,
                             symbol,
-                            name,
+                            name,  # type: ignore
                             all(_affine_in(expr, symbol) for expr in uses),
                         )
                     )

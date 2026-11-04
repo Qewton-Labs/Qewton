@@ -17,13 +17,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from qewton.equations.analysis.axes import free_axes, set_free_axes, sliced_axes
-from qewton.equations.analysis.diagnostics import (
+from qewton.equations.analysis.checks.axes import free_axes, set_free_axes, sliced_axes
+from qewton.equations.analysis.checks.diagnostics import (
     Diagnostic,
     error,
     warning,
 )
-from qewton.equations.analysis.infer import infer_shapes
+from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.expr.nodes import Const, Expr, FunctionSymbol, Restrict, Shift, walk
 from qewton.equations.expr.ops import ShapeError
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
@@ -117,7 +117,7 @@ def _delays(problem: Problem) -> Found:
         if isinstance(node, Shift) and root_of(node.axis) == time
     ]
     for constraint, shift in shifts:
-        if isinstance(shift.offset, Const) and shift.offset.value > 0:
+        if _is_advance(shift):
             yield warning(
                 f"{shift} looks ahead in time: it is an advance, not a delay.", constraint
             )
@@ -142,7 +142,12 @@ def _delays(problem: Problem) -> Found:
 
 
 def _is_advance(shift: Shift) -> bool:
-    return isinstance(shift.offset, Const) and shift.offset.value > 0
+    offset = shift.offset
+    return (
+        isinstance(offset, Const)
+        and isinstance(offset.value, (int, float))
+        and offset.value > 0
+    )
 
 
 def _slices(problem: Problem) -> Found:
@@ -159,7 +164,7 @@ def _slices(problem: Problem) -> Found:
         if not coordinates:
             continue
         for axis in sorted(
-            sliced_axes(constraint.on) - coordinates, key=lambda a: a.name
+            sliced_axes(constraint.on) - coordinates, key=lambda a: str(a.name)
         ):
             yield warning(
                 f"The slice of {axis.name} in {constraint.on} fixes a coordinate that "
@@ -175,7 +180,7 @@ def _restrictions(problem: Problem) -> Found:
         target = node.on
         missing = target.axes - free_axes(node.expr)
         if missing:
-            names = ", ".join(sorted(axis.name for axis in missing))
+            names = ", ".join(sorted(str(axis.name) for axis in missing))
             yield warning(
                 f"{node.expr} does not depend on {names}, so restricting it to "
                 f"{target} has no effect.",

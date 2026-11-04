@@ -47,20 +47,28 @@ qewton/equations/
     │   ├── constraints.py       # Relation, Constraint, PendingConstraint, Eq/Le/Ge/Complementary
     │   └── problem.py           # Problem
     ├── printing/
+    │   ├── coupling_diagram.py  # coupling diagram data and matplotlib drawing
     │   ├── pretty.py            # readable text for expressions, sets, constraints, problems (M1)
     │   └── printable.py         # mixin: str() and notebook display through pretty
     ├── task.py                  # Task, Role
     ├── analysis/
-    │   ├── context.py           # AnalysisContext, Fact, Suggestion, Diagnostic
+    │   ├── checks/              # used while building objects (model/ imports these)
+    │   │   ├── shapes.py        # shape_of, eager shape checks
+    │   │   ├── axes.py          # free_axes, eager axis checks, constraint axis check
+    │   │   └── diagnostics.py   # Diagnostic
+    │   ├── prepare/             # make a problem ready to analyse
+    │   │   ├── validate.py
+    │   │   ├── normalize.py
+    │   │   ├── infer.py         # shape inference for undeclared outputs
+    │   │   └── signatures.py
+    │   ├── structure/           # what the equations look like
+    │   │   ├── structure.py     # orders, operator/source split, linearity, batch placement
+    │   │   ├── batch_axes.py    # inherited batch axes
+    │   │   └── coupling.py      # coupling graph, matching, blocks
     │   ├── pipeline.py          # run_pipeline(task)
-    │   ├── validate.py
-    │   ├── normalize.py
-    │   ├── shapes.py            # shape_of, eager shape checks
-    │   ├── axes.py              # free_axes, eager axis checks, constraint axis check
-    │   ├── infer.py             # shape inference for undeclared outputs; signatures later
-    │   ├── structure.py         # orders, operator/source split, linearity, coupling
-    │   ├── classify.py          # PDE type, BC kinds, function spaces
-    │   └── suggest.py           # method suggestions with rationale
+    │   ├── overview.py
+    │   ├── classify.py          # (M4) PDE type, BC kinds, function spaces
+    │   └── suggest.py           # (M6) method suggestions with rationale
     ├── compile/
     │   ├── weak_form.py         # strong form → WeakProblem
     │   ├── ufl_export.py        # WeakProblem → UFL (FEniCS / Firedrake)
@@ -204,7 +212,7 @@ class Signature:
     domain: SetNode | None = None           # inferred: smallest set on which it is evaluated
 ```
 
-As built (`analysis/signatures.py`) the signature is richer and `signatures(task)` returns one per function: `Signature(symbol, axes, batch, shape, evaluated_on, role, shape_assumed, inherited_batch)`. `axes` are the declared inputs in order, `batch` is the function's own parameter axis if it is varying, and `inherited_batch` lists axes propagated to an unknown through coupled constraints. `evaluated_on` replaces the single `domain`: the sets where the function is evaluated (constraint sets after normalizing, narrowed by restrictions and integrals), none inside another. A single smallest set would need set unions, which the plan avoids. The one warning is for a declared input that no constraint the function appears in can use, e.g. `q(x, t)` in a constraint on `Omega` when no interval exists to lift it onto.
+As built (`analysis/prepare/signatures.py`) the signature is richer and `signatures(task)` returns one per function: `Signature(symbol, axes, batch, shape, evaluated_on, role, shape_assumed, inherited_batch)`. `axes` are the declared inputs in order, `batch` is the function's own parameter axis if it is varying, and `inherited_batch` lists axes propagated to an unknown through coupled constraints. `evaluated_on` replaces the single `domain`: the sets where the function is evaluated (constraint sets after normalizing, narrowed by restrictions and integrals), none inside another. A single smallest set would need set unions, which the plan avoids. The one warning is for a declared input that no constraint the function appears in can use, e.g. `q(x, t)` in a constraint on `Omega` when no interval exists to lift it onto.
 
 ### 5.3 Operator registry
 
@@ -280,7 +288,7 @@ class Problem:
 
 `Periodic` is a declaration like `Partition`: it says two sets are the same place, shifted. The condition on the functions is still a constraint with a `shift`. The validate pass (M2) checks that the offsets agree.
 
-**Axis analysis** (`analysis/axes.py`). `free_axes(expr)` is the set of coordinates an expression varies with: the declared inputs of its functions, the coordinate of a `Coord`, minus the sliced coordinates of a `Restrict` and the coordinates of an `Integral`'s set. Checked eagerly: a derivative or `Shift` along a coordinate the operand does not depend on is an `AxisError` (the derivative would be zero). Checked when a `Problem` is built: both sides of a constraint use only the coordinates of the set it holds on (a slice fixes its coordinate), and a global constraint uses none. The declared time is the exception: a constraint without time that uses time-dependent functions is accepted, because normalisation lifts it to all times. `Problem.coordinates()` lists every coordinate the problem uses.
+**Axis analysis** (`analysis/checks/axes.py`). `free_axes(expr)` is the set of coordinates an expression varies with: the declared inputs of its functions, the coordinate of a `Coord`, minus the sliced coordinates of a `Restrict` and the coordinates of an `Integral`'s set. Checked eagerly: a derivative or `Shift` along a coordinate the operand does not depend on is an `AxisError` (the derivative would be zero). Checked when a `Problem` is built: both sides of a constraint use only the coordinates of the set it holds on (a slice fixes its coordinate), and a global constraint uses none. The declared time is the exception: a constraint without time that uses time-dependent functions is accepted, because normalisation lifts it to all times. `Problem.coordinates()` lists every coordinate the problem uses.
 
 Still waiting for later passes: a delay has history on an interval; a constraint's offset agrees with its `Periodic` declaration.
 
@@ -343,19 +351,19 @@ class AnalysisContext:
 
 ### 6.0 axis pre-pass
 
-Not a separate pass. It was meant to find the functions that depend on time, so that time lifting could run before inference. `free_axes` (`analysis/axes.py`) already answers that for every expression, with no inference, so time lifting uses it directly. Whether a function has a time *derivative* (evolution versus a time-parametrised stationary problem) is a question for structure and classification (M3, M4), which compute derivative orders anyway.
+Not a separate pass. It was meant to find the functions that depend on time, so that time lifting could run before inference. `free_axes` (`analysis/checks/axes.py`) already answers that for every expression, with no inference, so time lifting uses it directly. Whether a function has a time *derivative* (evolution versus a time-parametrised stationary problem) is a question for structure and classification (M3, M4), which compute derivative orders anyway.
 
 ### 6.1 validate
 
 - The axes of every constraint's set are known axes, and `Part`/`Boundary` chains are well-formed.
 - Every declared `Partition` is consistent.
 - Every unknown listed in the task appears in at least one constraint (checked when the Task is built).
-- `validate(problem)` (`analysis/validate.py`) returns `Diagnostic`s: partitions, periodic offsets, delays with history, restrictions, shape conflicts (errors) and defaulted shapes (warnings).
+- `validate(problem)` (`analysis/prepare/validate.py`) returns `Diagnostic`s: partitions, periodic offsets, delays with history, restrictions, shape conflicts (errors) and defaulted shapes (warnings).
 
 ### 6.2 normalize
 
-- Bring every constraint into the form `lhs − rhs REL 0` (`analysis/normalize.py`, done), keeping the original for display in `Normalized.origin`. A right side that is already zero stays, and a complementarity is not rewritten.
-- **Time lifting** (`analysis/normalize.py`, done). A constraint whose sides vary in time (`free_axes` contains t) but which holds on a set without time is rewritten to hold on S × I, and a global one to hold on I. Initial conditions are left alone, since `Restrict` to a slice already removed t. The interval is the one `Domain` on the time coordinate found in the problem; if there is none, or several, nothing is lifted and a warning says why. Each lift is an info diagnostic, and `Normalized.origin` keeps the original constraints for display. The `partitions` are not lifted: a lifted part `Gamma_D x I` is covered by its declaration of `Gamma_D`.
+- Bring every constraint into the form `lhs − rhs REL 0` (`analysis/prepare/normalize.py`, done), keeping the original for display in `Normalized.origin`. A right side that is already zero stays, and a complementarity is not rewritten.
+- **Time lifting** (`analysis/prepare/normalize.py`, done). A constraint whose sides vary in time (`free_axes` contains t) but which holds on a set without time is rewritten to hold on S × I, and a global one to hold on I. Initial conditions are left alone, since `Restrict` to a slice already removed t. The interval is the one `Domain` on the time coordinate found in the problem; if there is none, or several, nothing is lifted and a warning says why. Each lift is an info diagnostic, and `Normalized.origin` keeps the original constraints for display. The `partitions` are not lifted: a lifted part `Gamma_D x I` is covered by its declaration of `Gamma_D`.
 - **Batch lifting.** Constraints that involve a batched symbol get its parameter axis (× P).
 - Choose canonical forms (done): expand `lap(u, axes)` into `div(grad(u, axes), axes)`, so that −div(ν∇u) and −νΔu are analysed consistently. The rewrite uses the new generic `transform(expr, rewrite)` in `expr/nodes.py`, which rebuilds a tree bottom-up and reuses unchanged nodes.
 
@@ -372,7 +380,7 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 
 ### 6.4 structure
 
-As built so far (`analysis/structure.py`): `derivative_orders(expr)`, `constraint_orders(constraint)` and `unknown_orders(task)`, one dict `{coordinate: order}` per unknown and constraint. Orders add along the path to the function, each factor of a product axis counts, and a shift adds nothing.
+As built so far (`analysis/structure/structure.py`): `derivative_orders(expr)`, `constraint_orders(constraint)` and `unknown_orders(task)`, one dict `{coordinate: order}` per unknown and constraint. Orders add along the path to the function, each factor of a product axis counts, and a shift adds nothing.
 
 Also built: `decoupled_axes(task)`, which reports declared unknown input axes with no unknown derivative or nonlocal integral/shift coupling. These are candidate pointwise directions. `linearity(expr, unknowns)` (`none`/`linear`/`affine`/`nonlinear`, from `OpSpec.linearity`) and `split(task)`, which returns an operator part and a source part per constraint of the normalized problem. Terms are signed and tagged. A constraint is `linear` when no operator term is nonlinear (a linear operator plus a source). `batch_placement(task)` reports each varying function in the operator/source parts and whether it is affine there: the parameter must occur linearly and not be differentiated along one of its declared input axes. Thus `div(nu * grad(u, x), x)` is affine in spatially constant `nu`, but not in `nu(x)`. Varying sets affect geometry and do not appear in this expression-level report.
 
@@ -382,8 +390,8 @@ Also built: `decoupled_axes(task)`, which reports declared unknown input axes wi
 - **Operator/source split.** Expand top-level sums. Terms that depend on unknowns form the operator part; the rest form the source part.
 - **Linearity.** Classify each term as linear, affine or nonlinear in the unknowns, using `OpSpec.linearity`.
 - **Batch placement.** Record whether each batched symbol appears in the operator part or only in the source part, and whether it enters affinely (term = θ(μ) · term′, where term′ does not depend on μ). A symbol with no spatial axes can be pulled out of `div`, `grad` and `lap`. That rule is what makes `div(nu * grad(u, x), x)` affine, so the structure pass must state it explicitly.
-- **Coupling graph.** `analysis/coupling.py` builds a bipartite graph between scalar equation components and scalar unknown components. Edges mean an unknown occurs in a constraint. Since expressions do not yet select vector components, vector equations are conservatively connected to every component of each occurring unknown. A deterministic augmenting-path maximum matching reports unmatched rows and columns; it is a structural count/coupling check, not a well-posedness proof. Matched equation/unknown pairs induce a directed dependency graph whose strongly connected components are returned in topological order. Unmatched nodes are not included in blocks. This avoids adding a graph dependency. The Stokes fixture omits boundary conditions and exists to demonstrate the velocity-pressure saddle-point block.
-- **Coupling diagram.** `coupling_diagram(task)` (data in `analysis/coupling_diagram.py`) extends the graph with data functions (fixed/varying), the sets each equation is posed on and each unknown is defined on, and the coordinates the sets live in; `plot_coupling(task)` draws it in five columns (equations, unknowns, data, sets, coordinates).
+- **Coupling graph.** `analysis/structure/coupling.py` builds a bipartite graph between scalar equation components and scalar unknown components. Edges mean an unknown occurs in a constraint. Since expressions do not yet select vector components, vector equations are conservatively connected to every component of each occurring unknown. A deterministic augmenting-path maximum matching reports unmatched rows and columns; it is a structural count/coupling check, not a well-posedness proof. Matched equation/unknown pairs induce a directed dependency graph whose strongly connected components are returned in topological order. Unmatched nodes are not included in blocks. This avoids adding a graph dependency. The Stokes fixture omits boundary conditions and exists to demonstrate the velocity-pressure saddle-point block.
+- **Coupling diagram.** `coupling_diagram(task)` (data in `printing/coupling_diagram.py`) extends the graph with data functions (fixed/varying), the sets each equation is posed on and each unknown is defined on, and the coordinates the sets live in; `plot_coupling(task)` draws it in five columns (equations, unknowns, data, sets, coordinates).
 - **Decoupled axes.** `decoupled_axes(task)` reports coordinates declared on unknowns with no unknown derivative, integral coupling, or shift along them. These are candidate pointwise directions (including quasi-static time); batch parallelism is reported separately in M5.
 
 ### 6.5 classify
@@ -615,7 +623,7 @@ The questions below are still open.
 - Which function encoder for data functions: values at fixed sensor points, Fourier coefficients, or a small neural field?
 
 **Noted for later (from the M3 review):**
-- **Component indexing.** Expressions cannot select components of a vector function, so a vector equation is connected to every component of each unknown, and the coupling graph and matching are coarser than they should be (Stokes momentum). Layer 1: an `Index(expr, i)` node (`u[0]`) that removes a leading shape axis, with a shape rule and printer support. It would make the coupling edges exact and can come before M4. Layer 2: named index sets, a `Sum(expr, j, N)` node and constraint families (`v_i = Σ_j a_i b_j` for i = 1..3), with free-index tracking and a choice between expanding to scalar equations and keeping the indexed form. Do this only if symbolic sums over N are needed; until then a Python loop over layer 1 can unroll families.
+- **Component indexing.** Expressions cannot select components of a vector function, so a vector equation is connected to every component of each unknown, and the coupling graph and matching are coarser than they should be (Stokes momentum). Layer 1 (node built): `Index(expr, i)`, written `u[0]` or `A[0, 1]` (a chain, one axis at a time), removes the leading shape axis. Shape rule, free axes, printing, shape inference, signatures and linearity handle it. Still open: the coupling graph does not use it yet, so a component equation still connects to every component of each unknown. Exact edges need to know which operand components each result component depends on (componentwise operators pass the index through, `grad` and `div` do not), so this needs a per-operator rule. Layer 2: named index sets, a `Sum(expr, j, N)` node and constraint families (`v_i = Σ_j a_i b_j` for i = 1..3), with free-index tracking and a choice between expanding to scalar equations and keeping the indexed form. Do this only if symbolic sums over N are needed; until then a Python loop over layer 1 can unroll families.
 - **Printing of `dot`:** `a·b` or `⟨a,b⟩`?
 - **Tests layout:** mirror the source subfolders (`tests/expr/`, `tests/analysis/`, ...)?
 - **Affine versus linear for a constraint:** only terms can be affine today. A constraint with a nonzero source is called `linear`. Should it be `affine`?

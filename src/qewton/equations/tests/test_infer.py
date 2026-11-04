@@ -25,7 +25,7 @@ from qewton.equations.fixtures import (
     periodic_poisson,
     poisson,
 )
-from qewton.equations.analysis.infer import infer_shapes
+from qewton.equations.analysis.prepare.infer import infer_shapes
 
 x = Variable("x", dim=2)
 t = Variable("t", dim=1)

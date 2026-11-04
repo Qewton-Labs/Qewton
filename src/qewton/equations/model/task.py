@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.axes import free_axes
-from qewton.equations.analysis.diagnostics import Diagnostic, warning
-from qewton.equations.analysis.shapes import UnknownShapeError, shape_of
+from qewton.equations.analysis.checks.axes import free_axes
+from qewton.equations.analysis.checks.diagnostics import Diagnostic, warning
+from qewton.equations.analysis.checks.shapes import UnknownShapeError, shape_of
 from qewton.equations.expr.nodes import Expr, FunctionSymbol
 from qewton.equations.geometry.coordinates import root_of
 from qewton.equations.geometry.sets import Product, SetNode

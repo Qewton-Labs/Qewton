@@ -11,7 +11,7 @@ from qewton.equations import (
     lap,
     shift,
 )
-from qewton.equations.analysis.structure import (
+from qewton.equations.analysis.structure.structure import (
     batch_placement,
     constraint_orders,
     decoupled_axes,

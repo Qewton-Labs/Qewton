@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.axes import check_constraint_axes
+from qewton.equations.analysis.checks.axes import check_constraint_axes
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.expr.nodes import Expr, FunctionSymbol, walk
 from qewton.equations.geometry.coordinates import check_coordinate, root_of

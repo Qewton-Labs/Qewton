@@ -13,10 +13,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from qewton.equations.analysis.diagnostics import Diagnostic, Severity, errors
-from qewton.equations.analysis.normalize import normalize
-from qewton.equations.analysis.signatures import Signatures, signatures
-from qewton.equations.analysis.validate import validate
+from qewton.equations.analysis.checks.diagnostics import Diagnostic, Severity, errors
+from qewton.equations.analysis.prepare.normalize import normalize
+from qewton.equations.analysis.prepare.signatures import Signatures, signatures
+from qewton.equations.analysis.prepare.validate import validate
 from qewton.equations.model.problem import Problem
 from qewton.equations.model.task import Task
 

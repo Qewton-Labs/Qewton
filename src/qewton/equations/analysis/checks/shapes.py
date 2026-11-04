@@ -12,6 +12,7 @@ from qewton.equations.expr.nodes import (
     Coord,
     Expr,
     FunctionSymbol,
+    Index,
     Integral,
     Normal,
     Restrict,
@@ -22,6 +23,12 @@ from qewton.equations.expr.ops import Shape, ShapeError
 
 class UnknownShapeError(ShapeError):
     """Raised when a function symbol has no declared output shape."""
+
+
+def _axis_dim_return(axis) -> Shape:
+    if isinstance(axis.dim, tuple):
+        return axis.dim
+    return (axis.dim,) if axis.dim is not None else ()
 
 
 @singledispatch
@@ -54,7 +61,7 @@ def _(expr: Normal) -> Shape:
     if len(axes) != 1:
         raise ShapeError(f"A normal needs a single coordinate, got {len(axes)}.")
     (axis,) = axes
-    return (axis.dim,)
+    return _axis_dim_return(axis)
 
 
 @shape_of.register
@@ -67,9 +74,25 @@ def _(expr: Integral) -> Shape:
     return shape_of(expr.expr)
 
 
+def index_shape(expr: Index, operand: Shape) -> Shape:
+    """The shape of `expr` given the shape of the expression it indexes."""
+    if not operand:
+        raise ShapeError(f"Cannot take component {expr.index} of the scalar {expr.expr}.")
+    if expr.index >= operand[0]:
+        raise ShapeError(
+            f"Component {expr.index} is out of range for {expr.expr} of shape {operand}."
+        )
+    return operand[1:]
+
+
+@shape_of.register
+def _(expr: Index) -> Shape:
+    return index_shape(expr, shape_of(expr.expr))
+
+
 @shape_of.register
 def _(expr: Shift) -> Shape:
-    expected: Shape = () if expr.axis.dim == 1 else (expr.axis.dim,)
+    expected: Shape = () if expr.axis.dim == 1 else _axis_dim_return(expr.axis)
     offset = shape_of(expr.offset)
     if offset != expected:
         raise ShapeError(
@@ -88,7 +111,7 @@ def _(expr: Apply) -> Shape:
     shapes = tuple(shape_of(arg) for arg in expr.args[: op.arity])
     axes = expr.args[op.arity] if op.takes_axes else None
     try:
-        shape = op.shape_rule(shapes, axes)
+        shape = op.shape_rule(shapes, axes)  # type: ignore
     except ShapeError as error:
         raise ShapeError(f"In {expr}: {error}") from error
     # Cache on the frozen node so building deep trees stays linear.

@@ -120,6 +120,16 @@ class Expr(Printable):
     def __neg__(self):
         return Apply(OPS["neg"], (self,))
 
+    # Without this, Python would try to iterate over `u` through `__getitem__`.
+    __iter__ = None
+
+    def __getitem__(self, index: int | tuple[int, ...]) -> Expr:
+        """Components of a vector or tensor: `u[0]`, or `A[0, 1]` for `A[0][1]`."""
+        result = self
+        for position in index if isinstance(index, tuple) else (index,):
+            result = Index(result, position)
+        return result
+
 
 @dataclass(frozen=True, eq=False)
 class FunctionSymbol(Expr):
@@ -306,6 +316,37 @@ class Shift(Expr):
 
     def with_children(self, new: tuple[Expr, ...]) -> Expr:
         return Shift(new[0], self.axis, new[1])
+
+
+@dataclass(frozen=True)
+class Index(Expr):
+    """Component `index` of the first output axis of `expr`: u[0], or A[0][1].
+
+    It removes the leading axis of the shape, so a vector gives a scalar and a matrix
+    gives a row. The component must exist, which is checked once the shape is known.
+    Several axes are indexed one after another, and `A[0, 1]` builds that chain.
+    """
+
+    expr: Expr
+    index: int
+
+    def __post_init__(self):
+        if not isinstance(self.expr, Expr):
+            raise TypeError(f"Expected an expression, got {type(self.expr).__name__}.")
+        if isinstance(self.index, bool) or not isinstance(self.index, int):
+            raise TypeError(
+                f"Expected an integer index, got {type(self.index).__name__}."
+            )
+        if self.index < 0:
+            raise ValueError(f"Component indices count from 0, got {self.index}.")
+        for check in Expr.checks:
+            check(self)
+
+    def children(self) -> tuple[Expr, ...]:
+        return (self.expr,)
+
+    def with_children(self, new: tuple[Expr, ...]) -> Expr:
+        return replace(self, expr=new[0])
 
 
 @dataclass(frozen=True)

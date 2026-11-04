@@ -17,16 +17,18 @@ a ShapeError.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import singledispatch
 
-from qewton.equations.analysis.shapes import shape_of
+from qewton.equations.analysis.checks.shapes import index_shape, shape_of
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.expr.nodes import (
     Apply,
     Const,
     Expr,
     FunctionSymbol,
+    Index,
     Integral,
     Restrict,
     Shift,
@@ -60,6 +62,7 @@ def infer_shapes(problem: Problem) -> Inference:
         ]
         if not pending:
             break
+        _reject_indexed(problem, pending[0])
         env[pending[0]] = ()
         defaulted.append(pending[0])
     for constraint in problem.constraints:
@@ -69,6 +72,26 @@ def infer_shapes(problem: Problem) -> Inference:
         for symbol in _symbols_in_order(problem)
     }
     return Inference(shapes, tuple(defaulted))
+
+
+def _reject_indexed(problem: Problem, symbol: FunctionSymbol) -> None:
+    """A component does not say how many components there are, so it cannot default."""
+    for constraint in problem.constraints:
+        for side in (constraint.lhs, constraint.rhs):
+            for node in walk(side):
+                if isinstance(node, Index) and node.expr == symbol:
+                    raise ShapeError(
+                        f"The output shape of {symbol.name!r} cannot be inferred from "
+                        f"{node}; declare it, e.g. Variable({symbol.name!r}, dim=2)."
+                    )
+
+
+def shape_with(expr: Expr, shapes: Mapping[FunctionSymbol, Shape]) -> Shape:
+    """The shape of `expr` when the output shape of every function is given."""
+    shape = _partial(expr, dict(shapes))
+    if shape is None:
+        raise ShapeError(f"The shape of {expr} is not determined by the given shapes.")
+    return shape
 
 
 def _symbols_in_order(problem: Problem) -> list[FunctionSymbol]:
@@ -107,46 +130,71 @@ def _scalar_const(expr: Expr, shape: Shape) -> bool:
     return isinstance(expr, Const) and shape == ()
 
 
-def _demand(node: Expr, env: Env) -> None:
-    """Shapes that an operator needs whatever its result is."""
-    if isinstance(node, Apply) and node.op.name in _SCALAR_ARGUMENTS:
+@singledispatch
+def _demand(_node: Expr, _env: Env) -> None:
+    """Shapes that a node needs whatever its result is."""
+
+
+@_demand.register
+def _(node: Apply, env: Env) -> None:
+    if node.op.scalar_args:
         for arg in node.args[: node.op.arity]:
             _back(arg, (), env)
-    elif isinstance(node, Shift):
-        _back(node.offset, () if node.axis.dim == 1 else (node.axis.dim,), env)
 
 
-_SCALAR_ARGUMENTS = {"pow", "exp", "sin", "cos"}
+@_demand.register
+def _(node: Shift, env: Env) -> None:
+    _back(node.offset, _offset_shape(node), env)
 
 
-def _partial(expr: Expr, env: Env) -> Shape | None:
+def _offset_shape(shift: Shift) -> Shape:
+    if isinstance(shift.axis.dim, tuple):
+        return shift.axis.dim
+    return () if shift.axis.dim == 1 or not shift.axis.dim else (shift.axis.dim,)
+
+
+@singledispatch
+def _partial(expr: Expr, _env: Env) -> Shape | None:
     """The shape of `expr` from declared and inferred shapes, or None if unknown."""
-    if isinstance(expr, FunctionSymbol):
-        return expr.shape if expr.shape is not None else env.get(expr)
-    if isinstance(expr, (Restrict, Integral)):
-        return _partial(expr.expr, env)
-    if isinstance(expr, Shift):
-        _check_offset(expr, env)
-        return _partial(expr.expr, env)
-    if isinstance(expr, Apply):
-        return _partial_apply(expr, env)
     return shape_of(expr)
 
 
-def _check_offset(shift: Shift, env: Env) -> None:
-    offset = _partial(shift.offset, env)
-    expected: Shape = () if shift.axis.dim == 1 else (shift.axis.dim,)
+@_partial.register
+def _(expr: FunctionSymbol, env: Env) -> Shape | None:
+    return expr.shape if expr.shape is not None else env.get(expr)
+
+
+@_partial.register(Restrict)
+@_partial.register(Integral)
+def _(expr: Restrict | Integral, env: Env) -> Shape | None:
+    return _partial(expr.expr, env)
+
+
+@_partial.register
+def _(expr: Index, env: Env) -> Shape | None:
+    operand = _partial(expr.expr, env)
+    if operand is None:
+        return None
+    return index_shape(expr, operand)
+
+
+@_partial.register
+def _(expr: Shift, env: Env) -> Shape | None:
+    offset = _partial(expr.offset, env)
+    expected = _offset_shape(expr)
     if offset is not None and offset != expected:
-        raise ShapeError(f"In {shift}: the offset needs shape {expected}, got {offset}.")
+        raise ShapeError(f"In {expr}: the offset needs shape {expected}, got {offset}.")
+    return _partial(expr.expr, env)
 
 
-def _partial_apply(expr: Apply, env: Env) -> Shape | None:
+@_partial.register
+def _(expr: Apply, env: Env) -> Shape | None:
     shapes = tuple(_partial(arg, env) for arg in expr.args[: expr.op.arity])
     if any(shape is None for shape in shapes):
         return None
     axes = expr.args[expr.op.arity] if expr.op.takes_axes else None
     try:
-        return expr.op.shape_rule(shapes, axes)
+        return expr.op.shape_rule(shapes, axes)  # type: ignore
     except ShapeError as error:
         raise ShapeError(f"In {expr}: {error}") from error
 
@@ -160,86 +208,55 @@ def _assign(symbol: FunctionSymbol, shape: Shape, env: Env) -> None:
         )
 
 
-def _back(expr: Expr, target: Shape, env: Env) -> None:
+@singledispatch
+def _back(_expr: Expr, _target: Shape, _env: Env) -> None:
     """Record what `expr` having shape `target` says about the symbols inside it."""
-    if isinstance(expr, FunctionSymbol):
-        _assign(expr, target, env)
-    elif isinstance(expr, (Restrict, Integral, Shift)):
-        _back(expr.expr, target, env)
-    elif isinstance(expr, Apply) and expr.op.name in _BACKWARD:
-        _BACKWARD[expr.op.name](expr, target, env)
 
 
-def _back_same(expr: Apply, target: Shape, env: Env) -> None:
-    _back(expr.args[0], target, env)
+@_back.register
+def _(expr: FunctionSymbol, target: Shape, env: Env) -> None:
+    _assign(expr, target, env)
 
 
-def _back_grad(expr: Apply, target: Shape, env: Env) -> None:
-    dim = expr.args[1].dim
-    if not target or target[-1] != dim:
-        raise ShapeError(
-            f"In {expr}: a gradient along {dim} ends in {dim}, got {target}."
-        )
-    _back(expr.args[0], target[:-1], env)
+@_back.register(Restrict)
+@_back.register(Integral)
+@_back.register(Shift)
+def _(expr: Restrict | Integral | Shift, target: Shape, env: Env) -> None:
+    _back(expr.expr, target, env)
 
 
-def _back_div(expr: Apply, target: Shape, env: Env) -> None:
-    _back(expr.args[0], target + (expr.args[1].dim,), env)
+@_back.register
+def _(expr: Apply, target: Shape, env: Env) -> None:
+    rule = expr.op.back_rule
+    if rule is None:
+        return
+    args = expr.args[: expr.op.arity]
+    axes = expr.args[expr.op.arity] if expr.op.takes_axes else None
+    try:
+        rule(args, axes, target, _Solver(env))  # type: ignore
+    except ShapeError as error:
+        raise ShapeError(f"In {expr}: {error}") from error
 
 
-def _back_sum(expr: Apply, target: Shape, env: Env) -> None:
-    # With the other side scalar, or a scalar result, the unknown side is the result.
-    # Otherwise it could be a broadcast scalar, so nothing is decided.
-    for arg, other in _each_with_other(expr):
-        shape = _partial(other, env)
-        if (
-            shape is not None
-            and _partial(arg, env) is None
-            and (shape == () or target == ())
-        ):
-            _back(arg, target, env)
+@dataclass(frozen=True)
+class _Solver:
+    """The view of shape inference that operator back rules get."""
 
+    env: Env
 
-def _back_product(expr: Apply, target: Shape, env: Env) -> None:
-    # One factor is a scalar: the unknown one is the result if the other is scalar,
-    # and a scalar if the other is not.
-    for arg, other in _each_with_other(expr):
-        shape = _partial(other, env)
-        if shape is not None and _partial(arg, env) is None:
-            _back(arg, target if shape == () else (), env)
+    def known(self, expr: Expr) -> Shape | None:
+        return _partial(expr, self.env)
 
-
-def _back_inner(expr: Apply, _target: Shape, env: Env) -> None:
-    for arg, other in _each_with_other(expr):
-        shape = _partial(other, env)
-        if shape is not None and _partial(arg, env) is None:
-            _back(arg, shape, env)
-
-
-def _each_with_other(expr: Apply) -> tuple[tuple[Expr, Expr], tuple[Expr, Expr]]:
-    first, second = expr.args[:2]
-    return (first, second), (second, first)
-
-
-_BACKWARD: dict[str, Callable[[Apply, Shape, Env], None]] = {
-    "neg": _back_same,
-    "d": _back_same,
-    "lap": _back_same,
-    "grad": _back_grad,
-    "div": _back_div,
-    "add": _back_sum,
-    "sub": _back_sum,
-    "mul": _back_product,
-    "inner": _back_inner,
-}
+    def back(self, expr: Expr, target: Shape) -> None:
+        _back(expr, target, self.env)
 
 
 def _check(constraint: Constraint, env: Env) -> None:
     left, right = _partial(constraint.lhs, env), _partial(constraint.rhs, env)
     if (
         left == right
-        or _scalar_const(constraint.lhs, left)
-        or _scalar_const(constraint.rhs, right)
+        or _scalar_const(constraint.lhs, left)  # type: ignore
+        or _scalar_const(constraint.rhs, right)  # type: ignore
     ):
         return
     raise ShapeError(f"In {constraint}: the sides have shapes {left} and {right}.")

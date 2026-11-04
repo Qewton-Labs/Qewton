@@ -20,7 +20,7 @@ from qewton.equations import (
     shift,
     validate,
 )
-from qewton.equations.analysis.diagnostics import Diagnostic, errors
+from qewton.equations.analysis.checks.diagnostics import Diagnostic, errors
 from qewton.equations.fixtures import (
     delay,
     heat,

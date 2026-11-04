@@ -5,19 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import prod
 
-from qewton.equations.analysis.infer import infer_shapes
-from qewton.equations.analysis.normalize import normalize
-from qewton.equations.analysis.shapes import shape_of
-from qewton.equations.expr.nodes import (
-    Apply,
-    Const,
-    Expr,
-    FunctionSymbol,
-    Integral,
-    Restrict,
-    Shift,
-    walk,
-)
+from qewton.equations.analysis.prepare.infer import infer_shapes, shape_with
+from qewton.equations.analysis.prepare.normalize import normalize
+from qewton.equations.expr.nodes import Const, FunctionSymbol, walk
 from qewton.equations.expr.ops import ShapeError
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.task import Task
@@ -78,25 +68,11 @@ class CouplingGraph:
         return len(self.matching) == len(self.equations) == len(self.unknowns)
 
 
-def _shape(expr: Expr, shapes: dict[FunctionSymbol, Shape]) -> Shape:
-    if isinstance(expr, FunctionSymbol):
-        return shapes[expr]
-    if isinstance(expr, Apply):
-        args = tuple(_shape(arg, shapes) for arg in expr.args[: expr.op.arity])
-        axes = expr.args[expr.op.arity] if expr.op.takes_axes else None
-        return expr.op.shape_rule(args, axes)
-    if isinstance(expr, (Restrict, Integral, Shift)):
-        if isinstance(expr, Shift):
-            _shape(expr.offset, shapes)
-        return _shape(expr.expr, shapes)
-    return shape_of(expr)
-
-
 def _constraint_shape(
     constraint: Constraint, shapes: dict[FunctionSymbol, Shape]
 ) -> Shape:
-    left = _shape(constraint.lhs, shapes)
-    right = _shape(constraint.rhs, shapes)
+    left = shape_with(constraint.lhs, shapes)
+    right = shape_with(constraint.rhs, shapes)
     if left == right:
         return left
     if left == () and isinstance(constraint.lhs, Const):

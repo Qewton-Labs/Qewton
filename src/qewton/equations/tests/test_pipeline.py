@@ -10,7 +10,7 @@ from qewton.equations import (
     report,
     run_pipeline,
 )
-from qewton.equations.analysis.diagnostics import Severity
+from qewton.equations.analysis.checks.diagnostics import Severity
 from qewton.equations.fixtures import (
     delay,
     heat,

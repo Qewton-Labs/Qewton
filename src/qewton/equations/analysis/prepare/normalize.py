@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from qewton.equations.analysis.axes import free_axes, set_free_axes
-from qewton.equations.analysis.diagnostics import Diagnostic, info, warning
+from qewton.equations.analysis.checks.axes import free_axes, set_free_axes
+from qewton.equations.analysis.checks.diagnostics import Diagnostic, info, warning
 from qewton.equations.expr.nodes import Apply, Const, Expr, transform
 from qewton.equations.expr.ops import OPS
 from qewton.equations.geometry.coordinates import root_of
@@ -41,6 +41,8 @@ class Normalized:
 
 def _time_domains(problem: Problem) -> list[Domain]:
     """The domains that live on the time coordinate alone, such as the interval I."""
+    if problem.time is None:
+        return []
     time = root_of(problem.time)
     found: set[Domain] = set()
     stack: list[SetNode] = list(problem.sets())

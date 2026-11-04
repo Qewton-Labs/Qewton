@@ -16,13 +16,12 @@ from qewton.equations.model.constraints import (
     PendingConstraint,
     Relation,
 )
-from qewton.equations.analysis.normalize import Normalized, normalize
+from qewton.equations.analysis.prepare.normalize import Normalized, normalize
 from qewton.equations.analysis.overview import Overview, overview
 from qewton.equations.analysis.pipeline import AnalysisContext, report, run_pipeline
-from qewton.equations.analysis.signatures import Signature, Signatures, signatures
-from qewton.equations.analysis.structure import (
+from qewton.equations.analysis.prepare.signatures import Signature, Signatures, signatures
+from qewton.equations.analysis.structure.structure import (
     BatchPlacement,
-    Linearity,
     Split,
     Term,
     batch_placement,
@@ -33,7 +32,7 @@ from qewton.equations.analysis.structure import (
     split,
     unknown_orders,
 )
-from qewton.equations.analysis.validate import validate
+from qewton.equations.analysis.prepare.validate import validate
 from qewton.equations.model.task import Role, Task, TaskError
 from qewton.equations.expr.api import (
     cos,
@@ -57,6 +56,7 @@ from qewton.equations.expr.nodes import (
     Coord,
     Expr,
     FunctionSymbol,
+    Index,
     Integral,
     Normal,
     Restrict,
@@ -65,7 +65,14 @@ from qewton.equations.expr.nodes import (
     transform,
     walk,
 )
-from qewton.equations.expr.ops import OPS, OpSpec, ShapeError, register
+from qewton.equations.expr.ops import (
+    OPS,
+    Linearity,
+    OpLinearity,
+    OpSpec,
+    ShapeError,
+    register,
+)
 from qewton.equations.geometry.sets import (
     Boundary,
     Domain,
@@ -78,22 +85,22 @@ from qewton.equations.geometry.sets import (
     is_subset,
     set_from_geometry,
 )
-from qewton.equations.analysis.axes import AxisError, free_axes
-from qewton.equations.analysis.diagnostics import Diagnostic, Severity
-from qewton.equations.analysis.coupling import (
+from qewton.equations.analysis.checks.axes import AxisError, free_axes
+from qewton.equations.analysis.checks.diagnostics import Diagnostic, Severity
+from qewton.equations.analysis.structure.coupling import (
     CouplingBlock,
     CouplingGraph,
     EquationNode,
     UnknownNode,
     coupling_graph,
 )
-from qewton.equations.analysis.batch_axes import inherited_batch_axes
-from qewton.equations.analysis.coupling_diagram import (
+from qewton.equations.analysis.structure.batch_axes import inherited_batch_axes
+from qewton.equations.printing.coupling_diagram import (
     CouplingDiagram,
     coupling_diagram,
     plot_coupling,
 )
-from qewton.equations.analysis.infer import Inference, infer_shapes
+from qewton.equations.analysis.prepare.infer import Inference, infer_shapes
 from qewton.equations.model.problem import Problem
 from qewton.equations.printing.pretty import pretty
 
@@ -115,6 +122,7 @@ __all__ = [
     "AxisError",
     "Diagnostic",
     "Inference",
+    "Index",
     "Integral",
     "Role",
     "Severity",
@@ -126,6 +134,7 @@ __all__ = [
     "CouplingGraph",
     "EquationNode",
     "Linearity",
+    "OpLinearity",
     "Split",
     "Term",
     "UnknownNode",

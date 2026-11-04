@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.normalize import normalize
+from qewton.equations.analysis.prepare.normalize import normalize
 from qewton.equations.expr.nodes import FunctionSymbol, walk
 from qewton.equations.geometry.sets import Product, SetNode
 from qewton.equations.model.constraints import Constraint
@@ -16,7 +16,7 @@ def _set_depends_on(node: SetNode, source: SetNode, task: Task) -> bool:
     if isinstance(node, Product):
         if any(_set_depends_on(factor, source, task) for factor in node.factors):
             return True
-    elif hasattr(node, "of") and _set_depends_on(node.of, source, task):
+    elif hasattr(node, "of") and _set_depends_on(node.of, source, task):  # type: ignore
         return True
     return any(
         node in partition.parts and source in partition.parts
@@ -125,7 +125,7 @@ def inherited_batch_axes(task: Task) -> dict[FunctionSymbol, tuple[Variable, ...
         for symbol in _connected(starts, adjacency):
             inherited[symbol].add(axis)
     return {
-        symbol: tuple(sorted(axes, key=lambda axis: axis.name))
+        symbol: tuple(sorted(axes, key=lambda axis: str(axis.name)))
         for symbol, axes in inherited.items()
         if axes
     }

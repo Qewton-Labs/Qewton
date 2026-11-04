@@ -1,4 +1,5 @@
-"""A summary of what a problem contains: coordinates, sets and functions."""
+"""A summary of what a problem contains: coordinates, sets and
+functions."""
 
 from __future__ import annotations
 
@@ -6,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.infer import infer_shapes
+from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.geometry.sets import Boundary, Domain, Part, Product, SetNode, Slice
@@ -53,7 +54,7 @@ class Overview:
 def _signature(symbol: FunctionSymbol) -> str:
     if symbol.inputs is None:
         return f"{symbol.variable.name}  (constant)"
-    axes = ", ".join(a.name for a in coordinate_factors(symbol.inputs))
+    axes = ", ".join(str(a.name) for a in coordinate_factors(symbol.inputs))
     return f"{symbol.variable.name}({axes})"
 
 
@@ -91,7 +92,7 @@ def overview(problem: Problem) -> Overview:
     inference = infer_shapes(problem)
     time = None if problem.time is None else root_of(problem.time)
     space = tuple(
-        sorted((a for a in problem.coordinates() if a != time), key=lambda a: a.name)
+        sorted((a for a in problem.coordinates() if a != time), key=lambda a: str(a.name))
     )
     sets = sorted(_with_factors(problem.sets()), key=lambda s: (s.codim, str(s)))
     functions = dict(sorted(inference.shapes.items(), key=lambda kv: str(kv[0])))
