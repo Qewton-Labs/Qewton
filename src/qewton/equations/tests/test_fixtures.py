@@ -46,3 +46,15 @@ def test_periodic_poisson_declares_the_identification():
     p = periodic_poisson()
     assert len(p.periodic) == 1
     assert "Gamma_R = Gamma_L + (2, 0) along x" in str(p)
+
+
+def test_wave_advection_obstacle_build_and_run_through_the_pipeline():
+    from qewton.equations import run_pipeline
+    from qewton.equations.fixtures import advection, obstacle, wave
+
+    for build, name in ((wave, "w"), (advection, "u"), (obstacle, "u")):
+        problem = build()
+        unknown = [s for s in problem.symbols() if s.variable.name == name]
+        assert run_pipeline(problem.task(unknown=unknown)).ok
+    assert len(wave().constraints) == 4
+    assert "⊥" in str(obstacle())

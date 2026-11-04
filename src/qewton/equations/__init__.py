@@ -17,6 +17,11 @@ from qewton.equations.model.constraints import (
     Relation,
 )
 from qewton.equations.analysis.prepare.normalize import Normalized, normalize
+from qewton.equations.analysis.classify.classify import Classification, classify
+from qewton.equations.analysis.classify.conditions import ConditionKind
+from qewton.equations.analysis.classify.equations import PdeType
+from qewton.equations.analysis.classify.facts import Fact
+from qewton.equations.analysis.classify.spaces import FunctionSpace
 from qewton.equations.analysis.overview import Overview, overview
 from qewton.equations.analysis.pipeline import AnalysisContext, report, run_pipeline
 from qewton.equations.analysis.prepare.signatures import Signature, Signatures, signatures
@@ -47,7 +52,9 @@ from qewton.equations.expr.api import (
     integral,
     lap,
     mean,
+    jump,
     shift,
+    trace,
     sin,
 )
 from qewton.equations.expr.nodes import (
@@ -76,6 +83,7 @@ from qewton.equations.expr.ops import (
 from qewton.equations.geometry.sets import (
     Boundary,
     Domain,
+    Interface,
     Part,
     Partition,
     Periodic,
@@ -165,6 +173,12 @@ __all__ = [
     "coupling_diagram",
     "CouplingDiagram",
     "plot_coupling",
+    "Classification",
+    "ConditionKind",
+    "Fact",
+    "FunctionSpace",
+    "PdeType",
+    "classify",
     "constraint_orders",
     "decoupled_axes",
     "derivative_orders",
@@ -188,6 +202,9 @@ __all__ = [
     "SetNode",
     "Domain",
     "Boundary",
+    "Interface",
+    "jump",
+    "trace",
     "Part",
     "Partition",
     "Periodic",

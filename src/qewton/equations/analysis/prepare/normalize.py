@@ -104,9 +104,7 @@ def _lift(problem: Problem) -> Normalized:
         else:
             constraints.append(constraint)
 
-    rewritten = Problem(
-        tuple(constraints), problem.partitions, problem.periodic, problem.time
-    )
+    rewritten = replace(problem, constraints=tuple(constraints))
     return Normalized(rewritten, problem.constraints, tuple(diagnostics))
 
 
@@ -146,10 +144,5 @@ def normalize(problem: Problem) -> Normalized:
     constraints = tuple(_canonical(c) for c in lifted.problem.constraints)
     if constraints == lifted.problem.constraints:
         return lifted
-    rewritten = Problem(
-        constraints,
-        problem.partitions,
-        problem.periodic,
-        problem.time,
-    )
+    rewritten = replace(problem, constraints=constraints)
     return Normalized(rewritten, problem.constraints, lifted.diagnostics)

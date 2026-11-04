@@ -10,7 +10,15 @@ from qewton.config.variables import Variable
 from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
-from qewton.equations.geometry.sets import Boundary, Domain, Part, Product, SetNode, Slice
+from qewton.equations.geometry.sets import (
+    Boundary,
+    Domain,
+    Interface,
+    Part,
+    Product,
+    SetNode,
+    Slice,
+)
 
 if TYPE_CHECKING:
     from qewton.equations.model.problem import Problem
@@ -71,6 +79,7 @@ def _describe_set(node: SetNode) -> str:
         Domain: lambda n: f"domain in {', '.join(sorted(a.name for a in n.axes))}",
         Boundary: lambda n: f"boundary of {n.of}",
         Part: lambda n: f"part of {n.of}",
+        Interface: lambda n: f"interface of {n.first.name} and {n.second.name}",
         Slice: lambda n: f"slice of {n.axis.name}",
         Product: lambda n: "product",
     }

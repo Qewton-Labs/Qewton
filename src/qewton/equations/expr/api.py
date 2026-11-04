@@ -8,8 +8,8 @@ Derivative axes are passed as they are and must be coordinates or products of th
 from __future__ import annotations
 
 from qewton.config.variables import Variable
-from qewton.equations.geometry.sets import SetNode
-from qewton.equations.expr.nodes import Apply, Expr, Integral, Shift, as_expr
+from qewton.equations.geometry.sets import Interface, SetNode
+from qewton.equations.expr.nodes import Apply, Expr, Integral, Restrict, Shift, as_expr
 from qewton.equations.expr.ops import OPS
 
 
@@ -74,6 +74,19 @@ def integral(value: object, over: SetNode) -> Expr:
 def mean(value: object, over: SetNode) -> Expr:
     """The average of `value` over `over`: the integral divided by the integral of 1."""
     return integral(value, over) / integral(1, over)
+
+
+def trace(value: object, interface: Interface, side: int) -> Expr:
+    """The trace of `value` on an interface from one side: 0 is `first`, 1 is `second`."""
+    if side not in (0, 1):
+        raise ValueError(f"The side of an interface is 0 or 1, got {side!r}.")
+    subdomain = (interface.first, interface.second)[side]
+    return Restrict(Restrict(as_expr(value), subdomain), interface)
+
+
+def jump(value: object, interface: Interface) -> Expr:
+    """The jump of `value` across an interface: its trace from `second` minus `first`."""
+    return trace(value, interface, 1) - trace(value, interface, 0)
 
 
 def shift(value: object, axis: Variable, offset: object) -> Expr:

@@ -14,7 +14,7 @@ from qewton.equations.analysis.checks.axes import check_constraint_axes
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.expr.nodes import Expr, FunctionSymbol, walk
 from qewton.equations.geometry.coordinates import check_coordinate, root_of
-from qewton.equations.geometry.sets import Partition, Periodic, SetNode
+from qewton.equations.geometry.sets import Interface, Partition, Periodic, SetNode
 from qewton.equations.model.task import Task, build_task
 from qewton.equations.printing.printable import Printable
 
@@ -25,12 +25,14 @@ class Problem(Printable):
     partitions: tuple[Partition, ...] = ()
     periodic: tuple[Periodic, ...] = ()
     time: Variable | None = None
+    interfaces: tuple[Interface, ...] = ()
 
     def __post_init__(self):
         # Frozen dataclass: store the sequences as tuples, so the problem hashes.
         object.__setattr__(self, "constraints", tuple(self.constraints))
         object.__setattr__(self, "partitions", tuple(self.partitions))
         object.__setattr__(self, "periodic", tuple(self.periodic))
+        object.__setattr__(self, "interfaces", tuple(self.interfaces))
         if not self.constraints:
             raise ValueError("A problem needs at least one constraint.")
         for constraint in self.constraints:
@@ -42,6 +44,9 @@ class Problem(Printable):
         for partition in self.partitions:
             if not isinstance(partition, Partition):
                 raise TypeError(f"Expected a Partition, got {type(partition).__name__}.")
+        for interface in self.interfaces:
+            if not isinstance(interface, Interface):
+                raise TypeError(f"Expected an Interface, got {type(interface).__name__}.")
         for declaration in self.periodic:
             if not isinstance(declaration, Periodic):
                 raise TypeError(f"Expected a Periodic, got {type(declaration).__name__}.")
@@ -86,7 +91,9 @@ class Problem(Printable):
 
     def sets(self) -> frozenset[SetNode]:
         """Every set the problem refers to: where constraints hold, where expressions are
-        restricted, integrated or normals taken, and the partitions and periodic pairs."""
+        restricted, integrated or normals taken, and the partitions, periodic pairs
+        and interfaces.
+        """
         found = {c.on for c in self.constraints if c.on is not None}
         for side in self._sides():
             for node in walk(side):
@@ -96,6 +103,7 @@ class Problem(Printable):
             found.update(partition.parts)
         for declaration in self.periodic:
             found.update((declaration.first, declaration.second))
+        found.update(self.interfaces)
         return frozenset(found)
 
     def coordinates(self) -> frozenset[Variable]:

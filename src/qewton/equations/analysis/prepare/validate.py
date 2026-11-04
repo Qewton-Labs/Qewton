@@ -27,6 +27,7 @@ from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.expr.nodes import Const, Expr, FunctionSymbol, Restrict, Shift, walk
 from qewton.equations.expr.ops import ShapeError
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
+from qewton.equations.geometry.sets import Interface, Product, SetNode
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
 
@@ -38,6 +39,7 @@ def validate(problem: Problem) -> tuple[Diagnostic, ...]:
     found = [
         *_partitions(problem),
         *_periodic(problem),
+        *_interfaces(problem),
         *_delays(problem),
         *_slices(problem),
         *_restrictions(problem),
@@ -67,6 +69,31 @@ def _partitions(problem: Problem) -> Found:
                 )
             elif part not in held_on:
                 yield warning(f"No constraint holds on {part}.", partition)
+
+
+def _interfaces(problem: Problem) -> Found:
+    wholes = {p.whole: set(p.parts) for p in problem.partitions}
+    for interface in problem.interfaces:
+        parts = wholes.get(interface.first.of, set())
+        if not {interface.first, interface.second} <= parts:
+            yield warning(
+                f"{interface.first} and {interface.second} are not both listed in a "
+                f"partition of {interface.first.of}.",
+                interface,
+            )
+    declared = set(problem.interfaces)
+    for constraint in problem.constraints:
+        for factor in _factors(constraint.on):
+            if isinstance(factor, Interface) and factor not in declared:
+                yield warning(
+                    f"{factor} is not declared in Problem(interfaces=...).", constraint
+                )
+
+
+def _factors(region: SetNode | None) -> tuple[SetNode, ...]:
+    if isinstance(region, Product):
+        return tuple(f for factor in region.factors for f in _factors(factor))
+    return () if region is None else (region,)
 
 
 def _periodic(problem: Problem) -> Found:

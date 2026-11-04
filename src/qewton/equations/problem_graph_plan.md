@@ -67,7 +67,13 @@ qewton/equations/
     │   │   └── coupling.py      # coupling graph, matching, blocks
     │   ├── pipeline.py          # run_pipeline(task)
     │   ├── overview.py
-    │   ├── classify.py          # (M4) PDE type, BC kinds, function spaces
+    │   ├── classify/            # what kind of problem it is (M4)
+    │   │   ├── rows.py          # constraints with region, orders, component counts
+    │   │   ├── equations.py     # PDE type per equation, block types, saddle points
+    │   │   ├── conditions.py    # BC kinds, condition counts, transport note
+    │   │   ├── spaces.py        # first-guess function spaces
+    │   │   ├── facts.py         # Fact(rule, subject, value, why, constraints)
+    │   │   └── classify.py      # classify(task) -> Classification
     │   └── suggest.py           # (M6) method suggestions with rationale
     ├── compile/
     │   ├── weak_form.py         # strong form → WeakProblem
@@ -396,6 +402,14 @@ Also built: `decoupled_axes(task)`, which reports declared unknown input axes wi
 
 ### 6.5 classify
 
+Built (M4): `classify(task)` returns a `Classification` of `Fact`s, each with its rule and reason, plus warnings. The notes below say what was implemented and where it is deliberately rough.
+
+- The PDE type rule uses the highest time order t and space order s per bulk equation (see the table in `classify/equations.py`). The sign of the leading terms is not checked. A coupled block takes the dominant type of its equations, or SADDLE_POINT when an unknown (the multiplier) is missing from fewer equations than the other unknowns have components.
+- Conditions are told apart by where they hold: a time slice or a delay history is INITIAL, a boundary or part is a boundary condition (Dirichlet, Neumann, Robin, or PERIODIC for the second set of a `Periodic`), no set is GLOBAL.
+- Counts are warnings, never errors (Stokes leaves its boundary conditions out on purpose). A periodic condition counts for both of its parts. Transport equations only get a note that inflow data is needed; the flow direction is not checked.
+- Subdomains and interfaces: a `Part` of a domain carries bulk equations, and `Interface(first, second)` is their common boundary (normal from first to second). A problem declares its interfaces with `Problem(interfaces=...)`. Write one-sided traces and jumps with `trace(u, gamma, side)` and `jump(u, gamma)`. Each declared interface needs as many value conditions (INTERFACE_VALUE) and flux conditions (INTERFACE_FLUX) as the second-order unknowns on its two sides have components, else a warning. Not checked: that the parts really touch, that the partition covers the domain with equations, and that the flux uses the matching coefficient.
+- Function spaces are the first guess described below, from the strong form. The weak form (M8) replaces them.
+
 - **PDE type** (heuristics, to be extended):
   - order 2 in space, no time derivative: elliptic candidate
   - order 1 in time, order 2 in space: parabolic
@@ -578,7 +592,7 @@ Suggestions
 | M1 | Geometry, expressions, constraints, pretty printer | Poisson and heat fixtures build and print |
 | M2 | Task (roles, batch axes), validate, normalize, infer; signature report (the axis pre-pass was dropped; signatures use `evaluated_on`) | golden tests for signatures and shapes pass |
 | M3 | structure: orders, split, linearity, batch placement, coupling graph, inherited batches, decoupled axes | Stokes graph shows the saddle-point block; signatures propagate batch axes; pointwise directions are detected |
-| M4 | classify: PDE type, BC kinds and counts, function spaces | wave, advection, Stokes and obstacle fixtures classified correctly |
+| M4 ✅ | classify: PDE type, BC kinds and counts, function spaces | wave, advection, Stokes and obstacle fixtures classified correctly |
 | M5 | Batched reporting (parameter axes; batch placement is in M3) | worked example (Section 8) reports the batch correctly |
 | M6 | suggest and report with rationale | every suggestion lists its evidence |
 | M7 | parametrized domains (reference maps) | batched-domain fixture uses the pull-back |

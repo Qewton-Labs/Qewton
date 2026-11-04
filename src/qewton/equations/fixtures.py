@@ -1,11 +1,12 @@
 """Canonical problems used in tests, notebooks and documentation."""
 
-from .model.constraints import Eq
-from .expr.api import div, dot, dt, grad, lap, mean, shift
+from .model.constraints import Complementary, Eq
+from .expr.api import div, dot, dt, grad, jump, lap, mean, shift, trace
 from .expr.nodes import FunctionSymbol, Normal, Restrict
 from .geometry.sets import (
     Boundary,
     Domain,
+    Interface,
     Part,
     Partition,
     Periodic,
@@ -125,4 +126,101 @@ def stokes() -> Problem:
             Eq(-lap(velocity, x) + grad(pressure, x), force).on(omega),
             Eq(div(velocity, x), 0).on(omega),
         )
+    )
+
+
+def wave() -> Problem:
+    """w_tt - c^2 lap w = f on Omega x I, Dirichlet on the boundary, w and w_t at 0."""
+    x = Variable("x", dim=2)
+    t = Variable("t", dim=1)
+    omega = Domain("Omega", ambient=x)
+    interval = Domain("I", ambient=t)
+    side = Product((Boundary(omega), interval))
+    initial = Product((omega, Slice(t, 0.0)))
+    w = FunctionSymbol(Variable("w", dim=1), x * t)
+    w0 = FunctionSymbol(Variable("w0"), x)
+    w1 = FunctionSymbol(Variable("w1"), x)
+    g = FunctionSymbol(Variable("g"), x * t)
+    c = FunctionSymbol(Variable("c"), None)
+    f = FunctionSymbol(Variable("f", dim=1), x * t)
+    return Problem(
+        constraints=(
+            Eq(dt(dt(w, t), t) - c**2 * lap(w, x), f).on(Product((omega, interval))),
+            Eq(Restrict(w, side), g).on(side),
+            Eq(Restrict(w, initial), w0).on(initial),
+            Eq(Restrict(dt(w, t), initial), w1).on(initial),
+        ),
+        time=t,
+    )
+
+
+def advection() -> Problem:
+    """u_t + a . grad u = 0 on Omega x I, with inflow data on Gamma_in and u0 at t = 0."""
+    x = Variable("x", dim=2)
+    t = Variable("t", dim=1)
+    omega = Domain("Omega", ambient=x)
+    interval = Domain("I", ambient=t)
+    inflow = Part("Gamma_in", Boundary(omega))
+    inflow_in_time = Product((inflow, interval))
+    initial = Product((omega, Slice(t, 0.0)))
+    u = FunctionSymbol(Variable("u", dim=1), x * t)
+    u0 = FunctionSymbol(Variable("u0"), x)
+    g = FunctionSymbol(Variable("g"), x * t)
+    a = FunctionSymbol(Variable("a", dim=2), None)
+    return Problem(
+        constraints=(
+            Eq(dt(u, t) + dot(a, grad(u, x)), 0).on(Product((omega, interval))),
+            Eq(Restrict(u, inflow_in_time), g).on(inflow_in_time),
+            Eq(Restrict(u, initial), u0).on(initial),
+        ),
+        time=t,
+    )
+
+
+def obstacle() -> Problem:
+    """-lap u - f >= 0, u - psi >= 0, and one of them is zero everywhere; u = g on the
+    boundary."""
+    x = Variable("x", dim=2)
+    omega = Domain("Omega", ambient=x)
+    d_omega = Boundary(omega)
+    u = FunctionSymbol(Variable("u", dim=1), x)
+    f = FunctionSymbol(Variable("f", dim=1), x)
+    psi = FunctionSymbol(Variable("psi", dim=1), x)
+    g = FunctionSymbol(Variable("g"), x)
+    return Problem(
+        constraints=(
+            Complementary(-lap(u, x) - f, u - psi).on(omega),
+            Eq(Restrict(u, d_omega), g).on(d_omega),
+        ),
+    )
+
+
+def transmission() -> Problem:
+    """-div(k grad u) = f with a different k on two subdomains, glued at an interface.
+
+    The transmission conditions say that u and the normal flux k grad u . n do not jump.
+    """
+    x = Variable("x", dim=2)
+    omega = Domain("Omega", ambient=x)
+    left, right = Part("Omega_1", omega), Part("Omega_2", omega)
+    gamma = Interface(left, right)
+    u = FunctionSymbol(Variable("u", dim=1), x)
+    f = FunctionSymbol(Variable("f", dim=1), x)
+    g = FunctionSymbol(Variable("g", dim=1), x)
+    k1 = FunctionSymbol(Variable("k1", dim=1), x)
+    k2 = FunctionSymbol(Variable("k2", dim=1), x)
+
+    def flux(k, side):
+        return dot(trace(k * grad(u, x), gamma, side), Normal(gamma))
+
+    return Problem(
+        constraints=(
+            Eq(-div(k1 * grad(u, x), x), f).on(left),
+            Eq(-div(k2 * grad(u, x), x), f).on(right),
+            Eq(jump(u, gamma), 0).on(gamma),
+            Eq(flux(k2, 1), flux(k1, 0)).on(gamma),
+            Eq(Restrict(u, Boundary(omega)), g).on(Boundary(omega)),
+        ),
+        partitions=(Partition(omega, (left, right)),),
+        interfaces=(gamma,),
     )

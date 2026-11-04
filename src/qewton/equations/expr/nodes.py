@@ -14,13 +14,15 @@ from qewton.equations.geometry.coordinates import (
     coordinate_factors,
     root_of,
 )
-from qewton.equations.geometry.sets import Boundary, Part, SetNode
+from qewton.equations.geometry.sets import Boundary, Interface, Part, SetNode
 from qewton.equations.printing.printable import Printable
 
 
 # Utility functions for expression tree nodes:
 def _is_boundary(of: SetNode) -> bool:
-    return isinstance(of, Boundary) or (isinstance(of, Part) and _is_boundary(of.of))
+    if isinstance(of, Part):
+        return _is_boundary(of.of)
+    return isinstance(of, (Boundary, Interface))
 
 
 def _check_output(variable: Variable) -> None:
@@ -221,13 +223,15 @@ class Const(Expr):
 
 @dataclass(frozen=True)
 class Normal(Expr):
-    """The outward unit normal of a boundary."""
+    """The outward unit normal of a boundary, or of an interface (first to second)."""
 
     of: SetNode
 
     def __post_init__(self):
         if not _is_boundary(self.of):
-            raise ValueError("A normal only exists on a boundary or a part of one.")
+            raise ValueError(
+                "A normal only exists on a boundary, a part of one, or an interface."
+            )
 
     def sets(self) -> tuple[SetNode, ...]:
         return (self.of,)
@@ -382,7 +386,7 @@ class Apply(Expr):
     def coordinates(self) -> tuple[Variable, ...]:
         if not self.op.takes_axes:
             return ()
-        return coordinate_factors(self.args[self.op.arity])
+        return coordinate_factors(self.args[self.op.arity])  # type: ignore
 
     def children(self) -> tuple[Expr, ...]:
         return tuple(arg for arg in self.args if isinstance(arg, Expr))

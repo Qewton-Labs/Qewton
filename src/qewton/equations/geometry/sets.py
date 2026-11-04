@@ -126,6 +126,42 @@ class Part(SetNode):
 
 
 @dataclass(frozen=True)
+class Interface(SetNode):
+    """The common boundary of two subdomains `first` and `second` of one domain.
+
+    It is one dimension below the domain, like a boundary. The normal of an interface
+    points from `first` into `second`. A problem declares its interfaces with
+    `Problem(interfaces=...)`, so that `classify` can tell when conditions are missing.
+    """
+
+    first: Part
+    second: Part
+
+    def __post_init__(self):
+        for side in (self.first, self.second):
+            if not isinstance(side, Part):
+                raise TypeError(
+                    f"An interface lies between two subdomains (parts), got {side!r}."
+                )
+        if self.first == self.second:
+            raise ValueError("An interface needs two different subdomains.")
+        if self.first.of != self.second.of:
+            raise ValueError("The two subdomains of an interface must share one parent.")
+        if isinstance(self.first.of, Boundary):
+            raise ValueError(
+                "Interfaces lie between subdomains, not between boundary parts."
+            )
+
+    @property
+    def axes(self) -> frozenset[Variable]:
+        return self.first.axes
+
+    @property
+    def codim(self) -> int:
+        return self.first.codim + 1
+
+
+@dataclass(frozen=True)
 class Product(SetNode):
     """A product of sets on disjoint coordinates, e.g. Omega x I."""
 

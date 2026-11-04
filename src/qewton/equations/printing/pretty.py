@@ -29,6 +29,7 @@ from qewton.equations.expr.nodes import (
 )
 from qewton.equations.geometry.sets import (
     Boundary,
+    Interface,
     Domain,
     Part,
     Partition,
@@ -233,6 +234,8 @@ def _set(s: SetNode) -> str:
     if isinstance(s, Boundary):
         inner = _set(s.of)
         return f"∂{inner}" if isinstance(s.of, (Domain, Part)) else f"∂({inner})"
+    if isinstance(s, Interface):
+        return f"{_set(s.first)} | {_set(s.second)}"
     if isinstance(s, Product):
         return " × ".join(_factor(factor) for factor in s.factors)
     if isinstance(s, Slice):
@@ -281,6 +284,9 @@ def _problem(problem: Problem) -> str:
     if problem.periodic:
         lines.append("periodic:")
         lines += [f"  {_periodic(declaration)}" for declaration in problem.periodic]
+    if problem.interfaces:
+        lines.append("interfaces:")
+        lines += [f"  {_set(interface)}" for interface in problem.interfaces]
     if problem.time is not None:
         lines.append(f"time: {problem.time.name}")
     return "\n".join(lines)

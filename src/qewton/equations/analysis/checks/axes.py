@@ -35,6 +35,7 @@ from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.geometry.sets import (
     Boundary,
+    Interface,
     Part,
     Product,
     SetNode,
@@ -60,6 +61,8 @@ def sliced_axes(s: SetNode) -> Axes:
         return frozenset().union(*(sliced_axes(factor) for factor in s.factors))
     if isinstance(s, (Boundary, Part)):
         return sliced_axes(s.of)
+    if isinstance(s, Interface):
+        return sliced_axes(s.first)
     return frozenset()
 
 
