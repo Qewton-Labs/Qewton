@@ -41,6 +41,16 @@ _RANK = {
     FunctionSpace.H1: 2,
     FunctionSpace.H2: 3,
 }
+
+# The highest spatial derivative order of a function in each space.
+_ALLOWED = {
+    FunctionSpace.L2: 0,
+    FunctionSpace.H_DIV: 1,
+    FunctionSpace.H_CURL: 1,
+    FunctionSpace.H1: 1,
+    FunctionSpace.H2: 2,
+}
+
 _BY_OPERATOR = {"div": FunctionSpace.H_DIV, "curl": FunctionSpace.H_CURL}
 
 

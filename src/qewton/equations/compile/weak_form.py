@@ -22,7 +22,11 @@ from qewton.equations.analysis.classify.rows import (
     rows,
     spatial_domain,
 )
-from qewton.equations.analysis.classify.spaces import FunctionSpace, function_spaces
+from qewton.equations.analysis.classify.spaces import (
+    FunctionSpace,
+    function_spaces,
+    _ALLOWED,
+)
 from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.analysis.prepare.normalize import normalize
 from qewton.equations.analysis.structure.structure import derivative_orders
@@ -37,15 +41,6 @@ from qewton.equations.geometry.sets import Boundary, Domain, Part, SetNode
 from qewton.equations.model.constraints import Constraint, Relation
 from qewton.equations.model.problem import Problem
 from qewton.equations.model.task import Task
-
-# The highest spatial derivative order of a function in each space.
-_ALLOWED = {
-    FunctionSpace.L2: 0,
-    FunctionSpace.H_DIV: 1,
-    FunctionSpace.H_CURL: 1,
-    FunctionSpace.H1: 1,
-    FunctionSpace.H2: 2,
-}
 
 
 def _dim(shape: Shape) -> int | tuple[int, ...]:
