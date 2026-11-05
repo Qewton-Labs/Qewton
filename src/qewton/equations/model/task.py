@@ -22,6 +22,7 @@ from qewton.equations.analysis.checks.shapes import UnknownShapeError, shape_of
 from qewton.equations.expr.nodes import Expr, FunctionSymbol
 from qewton.equations.geometry.coordinates import root_of
 from qewton.equations.geometry.sets import Product, SetNode
+from qewton.equations.model.observation import Observed
 
 if TYPE_CHECKING:
     from qewton.equations.model.problem import Problem
@@ -50,6 +51,9 @@ class Task:
     to instance (a moving boundary), list it as varying, with a mesh per instance. Sets
     derived from a varying set (its boundary, its parts, products with it) vary too,
     and so do the other parts of a partition when one part varies; `varies(set)` tells.
+
+    `observed` says which unknowns come with samples. It is not a role: an observed
+    function is still an unknown.
     """
 
     problem: Problem
@@ -57,6 +61,7 @@ class Task:
     values: Mapping[FunctionSymbol | SetNode, object]
     batch_axes: Mapping[FunctionSymbol | SetNode, Variable]
     diagnostics: tuple[Diagnostic, ...] = field(default=())
+    observed: Mapping[FunctionSymbol, Observed] = field(default_factory=dict)
 
     def with_role(self, role: Role) -> tuple[FunctionSymbol, ...]:
         """The functions that have this role, in order of name."""
@@ -113,6 +118,8 @@ class Task:
             lines.append(f"varying sets: {', '.join(sorted(sets))}")
         for owner, axis in self.batch_axes.items():
             lines.append(f"batch axis of {_name(owner)}: {axis.name}")
+        for symbol, data in sorted(self.observed.items(), key=lambda e: _name(e[0])):
+            lines.append(f"observed {_name(symbol)}: {data}")
         return "\n".join(lines)
 
 
@@ -304,12 +311,14 @@ def build_task(
     unknown=(),
     fixed=None,
     varying=None,
+    observed=None,
 ) -> Task:
     """Assign roles. Every function not listed is FIXED, and flagged if it has no value.
 
     Raises TaskError for a listed function that is not in the problem, for a function
     with two roles, for an unknown with a value, and for a value that does not fit
-    the function's declared inputs or shape.
+    the function's declared inputs or shape. `observed` maps unknowns to `Observed`;
+    anything else, or a set outside the function's inputs, raises a TaskError.
     """
     roles, values = _collect(
         problem,
@@ -329,7 +338,37 @@ def build_task(
 
     diagnostics = _fill_defaults(problem, roles, values)
     axes = _make_batch_axes(problem, roles)
-    return Task(problem, roles, values, axes, tuple(diagnostics))
+    data = _check_observed(problem, roles, observed)
+    return Task(problem, roles, values, axes, tuple(diagnostics), data)
+
+
+def _check_observed(problem: Problem, roles: dict, observed) -> dict:
+    if observed is None:
+        return {}
+    if not isinstance(observed, Mapping):
+        raise TypeError("`observed` must be a dict from unknown functions to Observed.")
+    for symbol, data in observed.items():
+        _check_key(problem, symbol, "observed")
+        if not isinstance(symbol, FunctionSymbol):
+            raise TypeError("`observed` needs functions as keys.")
+        if roles.get(symbol) is not Role.UNKNOWN:
+            raise TaskError(
+                f"`observed`: {symbol.variable.name} is not an unknown; "
+                "only unknowns have samples to learn from."
+            )
+        if not isinstance(data, Observed):
+            raise TypeError(
+                f"`observed` needs Observed values, got {type(data).__name__}."
+            )
+        if data.on is not None:
+            outside = {root_of(a) for a in data.on.axes} - free_axes(symbol)
+            if outside:
+                names = ", ".join(sorted(str(a.name) for a in outside))
+                raise TaskError(
+                    f"The samples of {symbol.variable.name} lie on {data.on}, which "
+                    f"uses {names}, not among the function's inputs."
+                )
+    return dict(observed)
 
 
 def _name(key: object) -> str:

@@ -27,6 +27,8 @@ from qewton.equations.analysis.structure.batching import (
     batching,
 )
 from qewton.equations.analysis.structure.structure import decoupled_axes, split
+from qewton.equations.analysis.training import TrainingMode, training_modes
+from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.expr.ops import Linearity
 from qewton.equations.model.constraints import Relation
 from qewton.equations.model.task import Task
@@ -54,6 +56,7 @@ class Findings:
     batching: Batching
     nonlinear: bool
     decoupled: tuple[str, ...]
+    training: dict[FunctionSymbol, TrainingMode]
 
     def blocks(self, kind: PdeType) -> tuple[Fact, ...]:
         return tuple(f for f in self.classification.blocks if f.value is kind)
@@ -209,11 +212,54 @@ def batched(found: Findings) -> Iterator[Suggestion]:
             )
 
 
+_TRAINING_METHODS = {
+    TrainingMode.PHYSICS_INFORMED: "physics-informed training (PINN, VPINN, Deep Ritz)",
+    TrainingMode.HYBRID: "residual loss plus a data misfit on the observed set",
+}
+
+
+def _training_method(task: Task, mode: TrainingMode) -> str:
+    if mode is not TrainingMode.DATA_DRIVEN:
+        method = _TRAINING_METHODS[mode]
+        return (
+            f"{method}, one network over the varying inputs"
+            if task.batch_axes
+            else method
+        )
+    if task.batch_axes:
+        return "supervised operator learning (FNO, DeepONet); equations optional"
+    return "supervised regression of a surrogate; equations optional"
+
+
+@rule
+def learning(found: Findings) -> Iterator[Suggestion]:
+    """Learning-based methods, once data or varying inputs make them relevant."""
+    task = found.task
+    if not (task.observed or task.batch_axes):
+        return
+    for symbol, mode in sorted(
+        found.training.items(), key=lambda e: str(e[0].variable.name)
+    ):
+        name = str(symbol.variable.name)
+        data = task.observed.get(symbol)
+        why = f"{name}: {mode.value}" + (f" ({data})" if data else ", no samples")
+        if data is not None and data.noisy:
+            why += "; noisy samples call for a regularized or robust misfit"
+        yield Suggestion(
+            f"learning_{mode.name.lower()}",
+            _training_method(task, mode),
+            why,
+            (Fact("training_mode", name, mode, why),),
+        )
+
+
 def findings(task: Task) -> Findings:
     """Collect what the rules need; the task must have unknowns."""
     nonlinear = any(s.linearity is Linearity.NONLINEAR for s in split(task))
     decoupled = tuple(str(a.name) for a in decoupled_axes(task))
-    return Findings(task, classify(task), batching(task), nonlinear, decoupled)
+    return Findings(
+        task, classify(task), batching(task), nonlinear, decoupled, training_modes(task)
+    )
 
 
 def suggest(task: Task) -> tuple[Suggestion, ...]:

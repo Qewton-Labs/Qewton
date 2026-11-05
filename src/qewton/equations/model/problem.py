@@ -59,12 +59,14 @@ class Problem(Printable):
         for constraint in self.constraints:
             check_constraint_axes(constraint, self.time)
 
-    def task(self, unknown=(), fixed=None, varying=None) -> Task:
+    def task(self, unknown=(), fixed=None, varying=None, observed=None) -> Task:
         """Assign roles to the functions of this problem; see `build_task`.
 
         problem.task(unknown=[u], fixed={f: 1.0, Omega: mesh}, varying={nu: samples})
+
+        Samples of an unknown go in `observed={u: Observed(on=..., samples=...)}`.
         """
-        return build_task(self, unknown, fixed, varying)
+        return build_task(self, unknown, fixed, varying, observed)
 
     def overview(self):
         """The coordinates, sets and functions of this problem; print it to read it."""

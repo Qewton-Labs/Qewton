@@ -45,6 +45,10 @@ from qewton.equations.analysis.structure.structure import (
     unknown_orders,
 )
 from qewton.equations.analysis.prepare.validate import validate
+from qewton.equations.analysis.training import TrainingMode, training_modes
+from qewton.equations.compile.forms import FormTerm, Measure, Residual, WeakProblem
+from qewton.equations.compile.weak_form import weak_form
+from qewton.equations.model.observation import Observed
 from qewton.equations.model.task import Role, Task, TaskError
 from qewton.equations.expr.api import (
     cos,
@@ -140,6 +144,14 @@ __all__ = [
     "Index",
     "Integral",
     "Role",
+    "Observed",
+    "TrainingMode",
+    "training_modes",
+    "FormTerm",
+    "Measure",
+    "Residual",
+    "WeakProblem",
+    "weak_form",
     "Severity",
     "Shift",
     "Signature",

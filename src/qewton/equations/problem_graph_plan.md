@@ -33,6 +33,10 @@ Non-goals for now: writing our own assembler or mesher (weak forms go to UFL ins
 
 M1–M6 import nothing numeric except `ContinuousGeometry`, used by `Domain` to couple a domain to its geometry. Meshes and everything else numeric stay out until M10. Reuse, if any, starts at M10.
 
+**Backend coupling (decided at M8).** The equations stay independent of any solver. A backend protocol for FEM libraries (`FormBackend`: the operator names of the `OPS` registry mapped to backend functions, plus hooks for function spaces, measures, Dirichlet conditions, assembly and solving) lives in `qewton/backends`, and `equations` imports it from there. M8 builds the `WeakProblem` only; the protocol, a printing fake backend and the FEniCSx backend follow in M9.
+
+**TODO: tighter coupling between `SetNode` and `Geometry`.** For now a mesh tag is looked up by name (`Part` name = tag name). A given mesh geometry should instead be linked to the `Domain`, `Boundary` and `Part` objects, so that tags, subdomains and interfaces come from the geometry and not from matching strings.
+
 ```
 qewton/equations/
     ├── geometry/
@@ -41,7 +45,6 @@ qewton/equations/
     ├── expr/
     │   ├── nodes.py             # Expr, FunctionSymbol, Coord, Const, Normal, Apply, Restrict, Integral, Shift
     │   ├── ops.py               # OpSpec and the operator registry (grad, div, dt, ...)
-    │   ├── forms.py             # TestFunction, Measure (weak forms, M8)
     │   └── api.py               # user-facing helpers: grad, div, curl, lap, d, dt, dot, inner, sin, cos, exp (Eq goes in constraints.py)
     ├── model/
     │   ├── constraints.py       # Relation, Constraint, PendingConstraint, Eq/Le/Ge/Complementary
@@ -77,7 +80,11 @@ qewton/equations/
     │   │   └── classify.py      # classify(task) -> Classification
     │   └── suggest.py           # method suggestions with rationale (M6)
     ├── compile/
-    │   ├── weak_form.py         # strong form → WeakProblem
+    │   ├── forms.py             # Measure, FormTerm, Residual, WeakProblem (M8)
+    │   ├── by_parts.py          # integration-by-parts rules per operator (M8)
+    │   ├── pairing.py           # equations ↔ test functions (M8)
+    │   ├── boundary.py          # boundary terms: essential, natural, Robin (M8)
+    │   ├── weak_form.py         # strong form → WeakProblem (M8)
     │   ├── ufl_export.py        # WeakProblem → UFL (FEniCS / Firedrake)
     │   ├── samplers.py          # SetNode → point sampler (interior, boundary parts, slices)
     │   ├── losses.py            # constraints / weak forms → PINN, VPINN, Deep Ritz losses
@@ -426,7 +433,7 @@ Built (M4): `classify(task)` returns a `Classification` of `Fact`s, each with it
 
 ### 6.6 suggest
 
-Built (M6): `analysis/suggest.py` holds a registry `RULES` of functions `Findings -> Suggestion`, added with `@rule`. `Findings` bundles the task, its classification, its batching and the coupling facts. Each `Suggestion(rule, method, why, evidence)` carries the facts it came from, and `report()` prints them in a Suggestions section. Rules: one per block type (elliptic, parabolic, transport, wave, saddle point, ODE), algebraic, nonlinear operator (Newton), inequality (active set), time decoupled (sequence of stationary solves) and one per batch mode. Not built: the row "task asks to generalise to unseen parameters", because the task has no such flag. The suggestions are heuristics and do not look at signs or coefficients.
+Built (M6): `analysis/suggest.py` holds a registry `RULES` of functions `Findings -> Suggestion`, added with `@rule`. `Findings` bundles the task, its classification, its batching and the coupling facts. Each `Suggestion(rule, method, why, evidence)` carries the facts it came from, and `report()` prints them in a Suggestions section. Rules: one per block type (elliptic, parabolic, transport, wave, saddle point, ODE), algebraic, nonlinear operator (Newton), inequality (active set), time decoupled (sequence of stationary solves) and one per batch mode. Learning (added after M6): `problem.task(..., observed={u: Observed(on=, samples=, noisy=)})` records samples of an unknown without changing its role. `analysis/training.py` derives a `TrainingMode` per unknown (physics informed: no samples; data driven: samples cover its full-dimensional sets; hybrid: partial), and the `learning` rule turns it into PINN, supervised operator learning or hybrid suggestions, but only when the task has samples or batch axes. Not built: the row "task asks to generalise to unseen parameters", because the task has no such flag. The suggestions are heuristics and do not look at signs or coefficients.
 
 A rule table: conditions on facts produce a `Suggestion(method, evidence)`.
 
@@ -455,6 +462,14 @@ Every `Fact` and `Suggestion` carries its evidence (the nodes involved and the r
 The strong-form `Problem` stays the single source of truth. Everything in this section is a compiler from (`Problem`, `Task`, `AnalysisContext`) to another representation. None of them modifies the model, and all of them reuse results of the analysis passes.
 
 ### 7.1 Weak formulation
+
+**As built (M8).** `weak_form(task) -> WeakProblem` in `compile/`. Differences from the sketch below:
+- No `TestFunction` node: a test function is a plain `FunctionSymbol` `v_<name>` (shape of the unknown, spatial inputs only), kept in `WeakProblem.tests`. The types `Measure`, `FormTerm(sign, integrand, measure)` and `Residual` are in `compile/forms.py`; there is no `Integral` node for the form.
+- Pairing (`pairing.py`) is a bipartite matching on component counts, preferring unknowns that appear in the equation; equations on subdomains of one domain with the same unknowns share a partner.
+- Integration by parts (`by_parts.py`) uses a rule per operator (`div`, `grad` with scalar operand) and cuts until every unknown is within the order of its first-guess space (`classify`). A scalar factor without unknowns moves onto the test function first; a constant one is pulled back out.
+- Boundary terms (`boundary.py`) are handled per region (partition part, periodic part, or the whole boundary): periodic parts cancel, Dirichlet on the paired unknown drops the term, Neumann and Robin substitute the flux when the condition contains it with one common sign ratio, anything else stays raw with a warning.
+- `essential`, `periodic` and `constraints` (initial, global) stay next to the form. The final spaces are read from the derivatives left in the form.
+- Not compiled yet, reported as errors: inequalities, interface conditions (and so integration by parts on subdomains), equations in time only. Not done: the energy functional `J`, the symmetry check, a mixed formulation, an explicit pairing override.
 
 New node types in `expr/forms.py`:
 
@@ -601,7 +616,7 @@ Suggestions
 | M5 ✅ | Batched reporting (parameter axes; batch placement is in M3) | worked example (Section 8) reports the batch correctly |
 | M6 ✅ | suggest and report with rationale | every suggestion lists its evidence |
 | M7 | parametrized domains (reference maps) | batched-domain fixture uses the pull-back |
-| M8 | weak_form: pairing, testing, integration by parts, boundary terms | Poisson, heat and Stokes weak forms match hand-derived ones |
+| M8 ✅ | weak_form: pairing, testing, integration by parts, boundary terms | Poisson, heat and Stokes weak forms match hand-derived ones |
 | M9 | UFL export | exported Poisson and Stokes problems solve in FEniCS or Firedrake and converge under refinement |
 | M10 | samplers and PINN / Deep Ritz losses | a Poisson PINN trains from the compiled loss alone |
 | M11 | tensorize | all fixtures convert to `HeteroData`; two equivalent formulations give identical graphs |

@@ -81,6 +81,20 @@ def _set_coordinates(domain) -> list[str]:
     return list(dict.fromkeys([str(f) for f in found]))
 
 
+def _evaluated_on(task: Task, graph, data: list[str]):
+    """(unknown component or data node, set) for every set a function is evaluated on."""
+    evaluated = evaluation_sets(normalize(task.problem).problem)
+    for symbol, sets in evaluated.items():
+        nodes: list[Node] = [
+            ("unknowns", str(u)) for u in graph.unknowns if u.symbol == symbol
+        ] or [("data", str(symbol.variable.name))]
+        if nodes[0][0] == "data" and nodes[0][1] not in data:
+            continue
+        for domain in sorted(sets, key=str):
+            for node in nodes:
+                yield node, domain
+
+
 def coupling_diagram(task: Task) -> CouplingDiagram:
     """The nodes and edges of the extended coupling graph of a task."""
     graph = coupling_graph(task)
@@ -113,19 +127,11 @@ def coupling_diagram(task: Task) -> CouplingDiagram:
             ("unknowns", str(unknown)),
             (equation, unknown) in graph.matching,
         )
-    evaluated = evaluation_sets(normalize(task.problem).problem)
     for unknown in graph.unknowns:
         roles[("unknowns", str(unknown))] = "unknown"
-    for symbol, sets in evaluated.items():
-        left: list[Node] = [
-            ("unknowns", str(u)) for u in graph.unknowns if u.symbol == symbol
-        ] or [("data", str(symbol.variable.name))]
-        if left[0][0] == "data" and left[0][1] not in columns["data"]:
-            continue
-        for domain in sorted(sets, key=str):
-            domains[str(domain)] = domain
-            for node in left:
-                add("on", node, ("sets", str(domain)))
+    for node, domain in _evaluated_on(task, graph, columns["data"]):
+        domains[str(domain)] = domain
+        add("on", node, ("sets", str(domain)))
     for label in columns["sets"]:
         for axis in _set_coordinates(domains[label]):
             add("in", ("sets", label), ("coordinates", axis))

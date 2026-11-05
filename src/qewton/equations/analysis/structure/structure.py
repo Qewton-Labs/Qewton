@@ -222,14 +222,16 @@ class Split:
         return Linearity.LINEAR
 
 
-def _terms(expr: Expr | Variable, sign: int = 1) -> Iterator[tuple[Expr | Variable, int]]:
+def signed_terms(
+    expr: Expr | Variable, sign: int = 1
+) -> Iterator[tuple[Expr | Variable, int]]:
     """Cut `expr` at its top-level sums, keeping track of the sign."""
     if isinstance(expr, Apply) and expr.op.name == "neg":
-        yield from _terms(expr.args[0], -sign)
+        yield from signed_terms(expr.args[0], -sign)
     elif isinstance(expr, Apply) and expr.op.name in ("add", "sub"):
-        yield from _terms(expr.args[0], sign)
+        yield from signed_terms(expr.args[0], sign)
         second = sign if expr.op.name == "add" else -sign
-        yield from _terms(expr.args[1], second)
+        yield from signed_terms(expr.args[1], second)
     else:
         yield expr, sign
 
@@ -242,7 +244,7 @@ def split_constraint(
     A term that is a zero constant is dropped. The sign of a right-hand term is
     flipped, so the terms read as `sum of terms rel 0`.
     """
-    pieces = list(_terms(constraint.lhs)) + list(_terms(constraint.rhs, -1))
+    pieces = list(signed_terms(constraint.lhs)) + list(signed_terms(constraint.rhs, -1))
     operator, source = [], []
     for expr, sign in pieces:
         if isinstance(expr, Const) and expr.value == 0:
