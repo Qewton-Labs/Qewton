@@ -4,6 +4,8 @@ import itertools
 import warnings
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from qewton.visualization.axes import (
     Control,
     FixedAxis,
@@ -36,6 +38,10 @@ class Cell:
         title (str or None): The overlay's title, followed by the facet
             states and the states of fixed axes, e.g. ``"u, t = 0.5"``.
         scaled_channels (tuple of str): The channels drawn to one scale.
+        aspect (float or None): Height over width of the plot area of a 2D
+            cell drawing x and y to one scale, else None.
+        box_aspect (tuple of float or None): Relative lengths of the x, y
+            and z sides of a 3D cell's box, else None.
     """
 
     row: int
@@ -56,6 +62,31 @@ class Cell:
         return self.overlay.scaled_channels
 
     @property
+    def aspect(self) -> float | None:
+        # The ratio of the spans of y and x (1 while a range is unknown).
+        if self.dim != 2 or not {"x", "y"} <= set(self.scaled_channels):
+            return None
+        spans = _spans(self.axes)
+        return spans["y"] / spans["x"] if spans is not None else 1.0
+
+    @property
+    def box_aspect(self) -> tuple[float, float, float] | None:
+        # The data's spans for the channels drawn to one scale; a channel
+        # of its own (e.g. a height over a plane) as long as the widest
+        # scaled one; a cube if fewer than two are scaled; None (automatic)
+        # while a range is unknown.
+        if self.dim != 3:
+            return None
+        spans = _spans(self.axes)
+        if spans is None:
+            return None
+        scaled = self.scaled_channels
+        if len(scaled) < 2:
+            return (1.0, 1.0, 1.0)
+        widest = max(spans[c] for c in scaled)
+        return tuple(spans[c] / widest if c in scaled else 1.0 for c in ("x", "y", "z"))
+
+    @property
     def title(self) -> str | None:
         parts = [self.overlay.title]
         parts += [
@@ -74,6 +105,28 @@ class Cell:
         """The title of a position axis; see
         :meth:`~qewton.visualization.layout.Overlay.axis_title`."""
         return self.overlay.axis_title(channel)
+
+    def axis_range(self, channel: str) -> tuple[float, float] | None:
+        """The drawn range of a position axis: its scale's range, widened
+        on both sides by the overlay's margin of its span (in log space for
+        a log scale).
+
+        Args:
+            channel: ``"x"``, ``"y"`` or ``"z"``.
+
+        Returns:
+            tuple of float or None: ``(lo, hi)``; None for a categorical
+                axis, without a range or for an empty one.
+        """
+        scale = self.axes[channel].scale
+        if scale.categorical or scale.range is None:
+            return None
+        lo, hi = scale.transform(np.asarray(scale.range))
+        if not hi > lo:
+            return None
+        pad = self.overlay.margin * (hi - lo)
+        lo, hi = scale.inverse([lo - pad, hi + pad])
+        return float(lo), float(hi)
 
     def axis_ticks(self, channel: str) -> tuple | None:
         """The ticks of a position axis; see
@@ -138,6 +191,7 @@ class Figure:
         self._embedded: list[Control] = []
         self._by_visibility: set = set()
         self._keys: set = set()
+        self._entries: dict = {}
         self.renderer.setup(self)
 
     @property
@@ -197,6 +251,61 @@ class Figure:
                         cells.append(Cell(row_index, col_index, overlay, states))
         return cells, (sum(heights), sum(widths))
 
+    def plot_sizes(self) -> tuple[list[float], list[float]]:
+        """The size of the plot areas, in pixels: the width of every grid
+        column and the height of every row. A cell of a fixed aspect fits
+        it into the theme's plot box (``plot_width`` x ``plot_height``),
+        any other fills the box; a column is as wide as its widest cell, a
+        row as tall as its tallest, an empty one takes no space. Follows
+        the trained scales.
+
+        Returns:
+            tuple: Column widths and row heights.
+        """
+        theme = self.renderer.theme
+        box_width, box_height = theme.plot_width, theme.plot_height
+        n_rows, n_cols = self.grid_shape
+        widths, heights = [0.0] * n_cols, [0.0] * n_rows
+        for cell in self.cells:
+            width, height = box_width, box_height
+            if cell.aspect is not None:
+                if cell.aspect > box_height / box_width:
+                    width = box_height / cell.aspect
+                else:
+                    height = box_width * cell.aspect
+            widths[cell.col - 1] = max(widths[cell.col - 1], width)
+            heights[cell.row - 1] = max(heights[cell.row - 1], height)
+        return widths, heights
+
+    def legends(self) -> list[tuple[dict, Cell]]:
+        """The legends of the figure as drawn last: the entries of every
+        cell are the labels of its visible Results with a legend entry
+        (:attr:`Result.legend_entry
+        <qewton.visualization.plots.result.Result.legend_entry>`), each
+        once, in drawing order; cells
+        of equal entries share one legend beside the last of them, as
+        cells of a color scale share its colorbar. Fewer than two entries
+        tell nothing apart and get none; nor does a theme without legends.
+
+        Returns:
+            list of tuple: Per legend, ``{label: keys}`` (the artists
+                drawing every entry, in all its cells) and the cell it
+                stands beside.
+        """
+        if not self.renderer.theme.show_legend:
+            return []
+        groups: dict = {}
+        for index, entries in self._entries.items():
+            if len(entries) >= 2:
+                groups.setdefault(tuple(entries), []).append(index)
+        legends = []
+        for labels, indices in groups.items():
+            entries = {
+                label: [k for i in indices for k in self._entries[i][label]] for label in labels
+            }
+            legends.append((entries, _last([self.cells[i] for i in indices])))
+        return legends
+
     def cell_at(self, row: int, col: int) -> Cell | None:
         """The cell at a grid position, or None for an empty position.
 
@@ -208,6 +317,40 @@ class Figure:
             Cell or None: The cell.
         """
         return next((c for c in self.cells if (c.row, c.col) == (row, col)), None)
+
+    def colorbar_cell(self, scale: ColorScale) -> Cell:
+        """The cell the colorbar of `scale` stands beside: the last of its
+        cells, rightmost, then topmost.
+
+        Args:
+            scale: A color scale of the figure.
+
+        Returns:
+            Cell: The cell.
+        """
+        return _last(self.cells_of(scale))
+
+    def colorbar_slot(self, scale: ColorScale) -> int:
+        """The place of the colorbar of `scale` beside its cell, counted
+        from the plot area: one per plot with a colorbar there, in drawing
+        order; the scales of one plot (e.g. of the candidates of a
+        Selector) are never shown together and share it.
+
+        Args:
+            scale: A color scale of the figure.
+
+        Returns:
+            int: The slot, from 0.
+        """
+        cell = self.colorbar_cell(scale)
+        owners = _unique(
+            self._owner(s) for s in self.color_scales if self.colorbar_cell(s) is cell
+        )
+        return next(i for i, owner in enumerate(owners) if owner is self._owner(scale))
+
+    def _owner(self, scale: ColorScale) -> Plot:
+        # The first plot drawing with `scale`.
+        return next(p for p in self.plots if scale in p.color_scales)
 
     def cells_of(self, scale: ColorScale) -> list[Cell]:
         """The cells with a plot using `scale`.
@@ -239,8 +382,8 @@ class Figure:
 
     def color_ticks(self, scale: ColorScale) -> tuple[list[float], list[str]] | None:
         """The colorbar ticks of `scale`, in its transformed values: the
-        ticks all plots drawing with it share in their current states
-        (e.g. categories), else those of a log scale (values at their
+        ticks all plots drawing with it give it (e.g. categories, also
+        while it is not shown), else those of a log scale (values at their
         log10), else None for automatic ticks.
 
         Args:
@@ -249,7 +392,7 @@ class Figure:
         Returns:
             tuple or None: Positions and labels.
         """
-        given = [p.color_ticks for p in self.plots if scale in p.active_color_scales]
+        given = [p.color_ticks(scale) for p in self.plots if scale in p.color_scales]
         if given and given[0] is not None and all(t == given[0] for t in given):
             return given[0]
         if scale.log:
@@ -259,9 +402,11 @@ class Figure:
     # --- drawing -------------------------------------------------------------
 
     def draw(self, embedded: list[Control] = ()):
-        """Train the scales and draw every plot, axis and colorbar in the
-        current states of the controls; embed the states of `embedded`.
-        Artists of an earlier call are updated, not recreated.
+        """Train the scales and draw every plot, axis, colorbar and legend
+        in the current states of the controls; embed the states of
+        `embedded`; then lay the figure out, with room for what every
+        embedded state shows. Artists of an earlier call are updated, not
+        recreated.
 
         Args:
             embedded: Controls whose states the output holds; facet,
@@ -282,10 +427,14 @@ class Figure:
         """
         self._embedded, self._by_visibility = self._embeddable(embedded)
         self._train_scales()
+        self._entries = {}
         self.redraw()
+        for entries, cell in self.legends():
+            self.renderer.draw_legend(entries, cell)
         self.renderer.clear_embeddings()
         for control in self._embedded:
             self._embed(control)
+        self.renderer.draw_layout()
         return self.backend_figure
 
     def redraw(self) -> None:
@@ -318,7 +467,8 @@ class Figure:
                 scale,
                 self.color_title(scale),
                 self.color_ticks(scale),
-                self.cells_of(scale),
+                self.colorbar_cell(scale),
+                self.colorbar_slot(scale),
                 visible=active,
             )
         return keys
@@ -335,8 +485,12 @@ class Figure:
                     selector.state = state
                 for copy, result in enumerate(plot.evaluate()):
                     key = (id(plot), index, copy, choice)
-                    self.renderer.draw(key, result, cell, visible=choice == current)
+                    visible = choice == current
+                    self.renderer.draw(key, result, cell, visible=visible)
                     keys.add(key)
+                    if visible and result.legend_entry:
+                        entries = self._entries.setdefault(index, {})
+                        entries.setdefault(result.label, []).append(key)
         finally:
             for selector, state in zip(selectors, current):
                 selector.state = state
@@ -526,3 +680,21 @@ def _unique(items) -> list:
         if not any(item is other for other in found):
             found.append(item)
     return found
+
+
+def _spans(axes: dict) -> dict[str, float] | None:
+    # The span of every position axis in its transformed values; None
+    # while a range is unknown.
+    spans = {}
+    for channel, axis in axes.items():
+        if axis.scale.range is None:
+            return None
+        lo, hi = axis.scale.transform(np.asarray(axis.scale.range))
+        spans[channel] = max(float(hi - lo), 1e-12)
+    return spans
+
+
+def _last(cells: list) -> "Cell":
+    # The cell beside which what several cells share stands: the
+    # rightmost, then topmost.
+    return max(cells, key=lambda c: (c.col, -c.row))

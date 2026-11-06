@@ -32,6 +32,7 @@ class HeatmapPlot(DataPlot):
     results = {(Structure.GRID, 2): HeatmapResult, (Structure.MESH, 2): SurfaceResult}
     dims = (2,)
     point_encoding = PointEncoding.COLOR
+    margin = 0.0
     domain_positions = True
 
     def __init__(

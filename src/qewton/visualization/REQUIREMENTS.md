@@ -92,6 +92,8 @@ Status: done, partial (with the gap named), open.
 | SC4 | A Selector gets one color scale per candidate by default, or a shared or given one per candidate. | G2, G3 | done |
 | SC5 | Arrows are scaled to lengths in data units by a VectorScale. | G1, G3 | done |
 | SC6 | Components of one reference (e.g. the coordinates of a geometry) are drawn to one scale; other channels scale independently. | G1, G10 | done |
+| SC7 | A raster or surface ends exactly at its domain; markers, lines and arrows get a margin, so no mark is clipped; bars start at zero. | G10 | done |
+| SC8 | A categorical color scale maps each category to one color of the theme's palette, in the order plots are colored, with a colorbar step per category labeled by its name; a categorical channel (e.g. a text column) gets one without being asked. | G3, G10 | done |
 
 ## auto_plot and auto_layout (`auto.py`, `layout.py`)
 
@@ -110,8 +112,12 @@ Status: done, partial (with the gap named), open.
 | F2 | Outputs: drawing, self-contained (shown inline, HTML, images, GIF) and connected (applications). | G5 | done |
 | F3 | A self-contained output embeds the states of the controls; controls that cannot be embedded together on one plot, or that the renderer does not embed, keep their current state, with a warning. | G2, G6 | done |
 | F4 | Embedding stays usable for large data. | G9 | partial: about 15 ms per embedded state |
-| F5 | Cells sharing their position axes zoom and rotate together; a control does not reset the view. | G4 | done (Plotly: not in its own notebook output; Matplotlib: 2D cells only) |
+| F5 | Cells sharing their position axes zoom and rotate together; a control does not reset the view. | G4 | done (Matplotlib: 2D cells only) |
 | F6 | Titles of cells, axes, colorbars and legends are derived from the references; colorbar ticks name categories and the values of log scales. | G3, G10 | done |
+| F7 | The size of a figure follows from its grid: every plot area gets the theme's plot size, a fixed aspect fitted into it without an empty band; the room beside it holds its axes, titles, colorbars and legends. | G10 | done (Matplotlib: a plot area may miss its size by a few pixels) |
+| F8 | Nothing overlaps a plot area: a colorbar stands right of the plot area of the last cell of its scale, as tall as it; a legend right of its colorbars, outside the plot areas. | G10 | done |
+| F9 | A legend appears only if it tells two entries or more apart (Plotly: and toggles them); marks colored by a colorbar or by their data have no entry; cells of equal entries share one legend. | G10 | done |
+| F10 | A figure is shown at its own size and resolution in every output, inline in a notebook too, where a figure wider than the output scrolls; updates of an application keep its layout. | G5, G10 | done |
 
 ## Renderers (`renderers/`)
 
@@ -120,10 +126,11 @@ Status: done, partial (with the gap named), open.
 | R1 | A renderer draws one figure in one framework and one theme; artists draw Results, one per Result class and number of positions. | G7, G10 | done |
 | R2 | A renderer embeds states by writing what differs between them. | G2, G9 | done |
 | R3 | Further renderers need no changes elsewhere. | G7 | done (Plotly, Matplotlib) |
-| R4 | Names of Variables are written in math mode where the framework renders it. | G10, S11 | done (Matplotlib: the mathtext subset, else plain text) |
+| R4 | Names of Variables are written in math mode where the framework renders it, elsewhere in its markup. | G10, S11 | done (Matplotlib: the mathtext subset, else plain text) |
 | R5 | The default renderer is the first installed one in order of priority; the library imports without optional packages, and a missing one is named. | G5, G7 | done |
 | R6 | A renderer declares which kinds of control it embeds and how many per output. | G6, G7 | done |
 | R7 | A renderer draws the Results its framework draws natively; any other raises an error naming the Result and the renderer. | G6, G11 | done (Matplotlib: no parallel coordinates and graphs) |
+| R8 | Axis titles and tick labels are never clipped, in 3D too; numbers are written at the precision their range needs; arrows have heads. | G10 | done |
 
 ## Applications (`applications/`)
 
@@ -137,6 +144,8 @@ Status: done, partial (with the gap named), open.
 | ID | Requirement | From | Status |
 |---|---|---|---|
 | T1 | A theme sets every visual setting; colormap roles resolve against it. | G10 | done |
+| T2 | The presets keep their colors and TeX-like type and use ink for data only: axis lines left and bottom with outward ticks, no frame, grid or zero line, legends and colorbars without a box; each is a theme field. | G10 | done |
+| T3 | Titles, axis titles and tick labels have one size each, across cells and renderers; every text renders in the theme's fonts or a fallback holding its characters. | G10 | done |
 
 ## Graph integration (`qewton.graphs`, `qewton.data`, `nodes.py`)
 

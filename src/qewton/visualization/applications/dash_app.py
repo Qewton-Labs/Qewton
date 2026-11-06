@@ -61,6 +61,8 @@ class DashApplication(RenderApplication):
                 id="figure",
                 figure=figure.draw(embedded=embedded),
                 mathjax=figure.renderer.mathjax,
+                # At the figure's own size; the page scrolls if it is wider.
+                responsive=False,
             )
         ]
         for index, control in enumerate(controls):

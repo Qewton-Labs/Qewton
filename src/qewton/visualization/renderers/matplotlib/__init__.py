@@ -7,10 +7,10 @@ import io
 import shutil
 
 import matplotlib
-import numpy as np
 from matplotlib.animation import FuncAnimation
 from matplotlib.cm import ScalarMappable
 from matplotlib.figure import Figure as MatplotlibFigure
+from matplotlib.layout_engine import ConstrainedLayoutEngine
 from matplotlib.ticker import MaxNLocator
 
 from qewton.visualization.axes import SliderAxis, TimeAxis
@@ -23,7 +23,8 @@ from qewton.visualization.plots.result import (
     MarkerResult,
     SurfaceResult,
 )
-from qewton.visualization.renderers.base import Renderer
+from qewton.visualization.renderers.base import Renderer, notebook_html
+from qewton.visualization.renderers import space
 from qewton.visualization.renderers.matplotlib.primitives import (
     Arrow2DArtist,
     Arrow3DArtist,
@@ -34,22 +35,24 @@ from qewton.visualization.renderers.matplotlib.primitives import (
     Line2DArtist,
     Line3DArtist,
     MarkerArtist,
+    COLORBAR_LABEL,
     SurfaceArtist,
     axes_of,
     cell_label,
 )
 from qewton.visualization.renderers.matplotlib.style import (
+    PIXELS_PER_INCH,
     color,
     colormap,
     norm,
+    points,
     rc_params,
 )
 from qewton.visualization.renderers.matplotlib.text import as_mathtext
+from qewton.visualization.scales import color_range
 from qewton.visualization.themes import DEFAULT_THEME
 from qewton.visualization.themes.base import Theme
 
-#: Size of one grid cell, in inches.
-_CELL_SIZE = (6.4, 4.8)
 
 #: Time each state of an embedded slider is shown when playing, in ms.
 _SLIDER_INTERVAL = 500
@@ -110,6 +113,8 @@ class MatplotlibRenderer(Renderer):
         self.usetex = usetex
         self.dpi = dpi
         self._colorbars: dict = {}
+        self._colorbar_room: dict = {}
+        self._legends: list = []
         self._shown: dict = {}
         self._axes_settings: dict = {}
         self._colorbar_settings: dict = {}
@@ -141,6 +146,7 @@ class MatplotlibRenderer(Renderer):
     def setup(self, figure) -> None:
         """See :meth:`~qewton.visualization.renderers.base.Renderer.setup`."""
         self._colorbars, self._shown = {}, {}
+        self._colorbar_room, self._legends = {}, []
         self._axes_settings, self._colorbar_settings = {}, {}
         self._embedded = None
         super().setup(figure)
@@ -168,11 +174,14 @@ class MatplotlibRenderer(Renderer):
         Cells sharing a position axis with an earlier 2D cell share its
         Matplotlib axis, so they zoom together."""
         n_rows, n_cols = figure.grid_shape
+        box = (self.theme.plot_width * n_cols, self.theme.plot_height * n_rows)
         with self.style():
             backend_figure = MatplotlibFigure(
-                figsize=(_CELL_SIZE[0] * n_cols, _CELL_SIZE[1] * n_rows),
+                figsize=tuple(b / PIXELS_PER_INCH for b in box),
                 dpi=self.dpi,
-                layout="constrained",
+                layout=ConstrainedLayoutEngine(
+                    w_pad=space.GAP / PIXELS_PER_INCH, h_pad=space.GAP / PIXELS_PER_INCH
+                ),
             )
             grid = backend_figure.add_gridspec(n_rows, n_cols)
             for cell in figure.cells:
@@ -190,16 +199,14 @@ class MatplotlibRenderer(Renderer):
                 )
                 if cell.dim == 3:
                     _style_scene(axes, self.theme)
+                elif self.theme.show_zero_line:
+                    _draw_zero_lines(axes, self.theme)
             if figure.title is not None:
                 backend_figure.suptitle(self.text(figure.title))
         return backend_figure
 
     def draw_axes(self, cell) -> None:
-        """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_axes`.
-
-        Also draws the cell's legend: one entry per visible labelled
-        artist, as in Plotly, except meshes, which Matplotlib has no entry
-        for."""
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_axes`."""
         settings = dict(
             title=self.text(cell.title) or "",
             channels={
@@ -213,10 +220,7 @@ class MatplotlibRenderer(Renderer):
 
     def _axis_settings(self, cell, channel: str, scale) -> dict:
         # Title, scale, range and ticks of one position axis.
-        limits = None
-        if scale.range is not None and not scale.categorical:
-            lo, hi = scale.range
-            limits = (lo, hi) if hi > lo else None
+        limits = cell.axis_range(channel)
         ticks = cell.axis_ticks(channel)
         if ticks is not None:
             positions, labels = ticks
@@ -249,42 +253,66 @@ class MatplotlibRenderer(Renderer):
                 axes.set_aspect(settings["aspect"])
             else:
                 axes.set_box_aspect(settings["aspect"], zoom=_SCENE_ZOOM)
-            self._draw_legend(axes)
 
-    def _draw_legend(self, axes) -> None:
-        pairs = [
-            (handle, label)
-            for handle, label in zip(*axes.get_legend_handles_labels())
-            if handle.get_visible()
-        ]
+    def draw_legend(self, entries: dict, cell) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_legend`.
+
+        Drawn by :meth:`draw_layout`, which knows its room: right of the
+        colorbars of its cell, with the symbol of the first artist of every
+        label that has one (meshes draw none, see ``_has_legend_entry``)."""
+        if not any(e.keys() == entries.keys() and c is cell for e, c in self._legends):
+            self._legends.append((dict(entries), cell))
+
+    def _create_legend(self, entries: dict, cell, offset: float, widths: list[float]) -> None:
+        # A legend of the cell's Axes, `offset` pixels right of its plot area.
+        handles, texts = [], []
+        for label, keys in entries.items():
+            text = self.text(label)
+            symbols = (
+                o for key in keys for o in self.artist_of(key).objects if o.get_label() == text
+            )
+            handle = next(symbols, None)
+            if handle is not None:
+                handles.append(handle)
+                texts.append(text)
+        axes = axes_of(self.backend_figure, cell)
         if axes.get_legend() is not None:
             axes.get_legend().remove()
-        if self.theme.show_legend and pairs:
-            axes.legend(*zip(*pairs))
+        if handles:
+            axes.legend(
+                handles,
+                texts,
+                loc="upper left",
+                bbox_to_anchor=(1 + offset / widths[cell.col - 1], 1.0),
+                borderaxespad=0.0,
+            )
 
-    def draw_colorbar(self, scale, title, ticks, cells, visible: bool = True) -> None:
+    def draw_colorbar(self, scale, title, ticks, cell, slot: int, visible: bool = True) -> None:
         """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_colorbar`.
 
-        The colorbar spans the Axes of `cells`."""
+        The colorbar is created by :meth:`draw_layout`, which knows its
+        room; until then its settings are kept."""
+        space.note_colorbar(
+            self._colorbar_room,
+            id(scale),
+            cell,
+            slot,
+            title,
+            ticks[1] if ticks is not None else space.tick_labels(*color_range(scale)),
+        )
         if ticks is not None:
             positions, labels = ticks
             ticks = (list(positions), [self.text(t) for t in labels])
         settings = dict(
             norm=norm(scale),
-            cmap=colormap(self.theme.resolve_cmap(scale.cmap)),
+            cmap=colormap(scale.colorscale(self.theme)),
             title=self.text(title) or "",
             ticks=ticks,
             visible=visible,
         )
-        if id(scale) not in self._colorbars:
-            with self.style():
-                axes = [axes_of(self.backend_figure, c) for c in cells]
-                mappable = ScalarMappable(settings["norm"], settings["cmap"])
-                self._colorbars[id(scale)] = self.backend_figure.colorbar(
-                    mappable, ax=axes
-                )
         self._colorbar_settings[id(scale)] = settings
-        self._apply_colorbar(id(scale), settings)
+        if id(scale) in self._colorbars:
+            self._apply_colorbar(id(scale), settings)
 
     def _apply_colorbar(self, scale_id: int, settings: dict) -> None:
         # A new norm resets the ticks to automatic ones.
@@ -292,10 +320,60 @@ class MatplotlibRenderer(Renderer):
             colorbar = self._colorbars[scale_id]
             colorbar.update_normal(ScalarMappable(settings["norm"], settings["cmap"]))
             colorbar.set_label(settings["title"])
+            colorbar.outline.set_visible(self.theme.axis_box)
             if settings["ticks"] is not None:
                 positions, labels = settings["ticks"]
                 colorbar.set_ticks(positions, labels=labels)
             colorbar.ax.set_visible(settings["visible"])
+
+    def draw_layout(self) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_layout`.
+
+        The figure is sized from the plot sizes and the estimated room
+        beside them (:mod:`~qewton.visualization.renderers.space`); the
+        grid's columns and rows get the plot sizes as ratios, and
+        constrained layout places everything when rendering, so a plot
+        area may miss its size by what the estimate misses. A colorbar is
+        an Axes inside its cell's, right of its plot area, so it is as tall
+        whatever its size. The figure title stands centered over the plot
+        areas.
+        """
+        backend_figure, figure, theme = self.backend_figure, self.figure, self.theme
+        legends = [(list(entries), cell) for entries, cell in self._legends]
+        room = space.grid(figure, self._colorbar_room, theme, legends)
+        columns = [l + w + r for l, w, r in zip(room["left"], room["widths"], room["right"])]
+        rows = [t + h + b for t, h, b in zip(room["top"], room["heights"], room["bottom"])]
+        # Constrained layout pads the figure's edges itself: no margin.
+        title = space.title_height(figure, theme)
+        width, height = sum(columns), title + sum(rows)
+        backend_figure.set_size_inches(width / PIXELS_PER_INCH, height / PIXELS_PER_INCH)
+        grid = axes_of(backend_figure, figure.cells[0]).get_subplotspec().get_gridspec()
+        # A ratio of 0 is no grid; an empty column or row stays negligible.
+        grid.set_width_ratios([max(w, 1e-3) for w in room["widths"]])
+        grid.set_height_ratios([max(h, 1e-3) for h in room["heights"]])
+        with self.style():
+            for key, offset in room["colorbars"].items():
+                if key not in self._colorbars:
+                    self._create_colorbar(key, offset, room["widths"])
+            for (entries, cell), offset in zip(self._legends, room["legends"]):
+                self._create_legend(entries, cell, offset, room["widths"])
+            if backend_figure.get_suptitle():
+                start, end = room["left"][0], sum(columns) - room["right"][-1]
+                backend_figure.suptitle(backend_figure.get_suptitle(), x=(start + end) / 2 / width)
+
+    def _create_colorbar(self, key, offset: float, widths: list[float]) -> None:
+        # Axes inside the cell's, `offset` pixels right of its plot area and
+        # as tall; constrained layout keeps room for them as for labels.
+        cell = self._colorbar_room[key]["cell"]
+        width = widths[cell.col - 1]
+        bar = axes_of(self.backend_figure, cell).inset_axes(
+            [1 + offset / width, 0.0, space.COLORBAR_THICKNESS / width, 1.0],
+            label=COLORBAR_LABEL,
+        )
+        settings = self._colorbar_settings[key]
+        mappable = ScalarMappable(settings["norm"], settings["cmap"])
+        self._colorbars[key] = self.backend_figure.colorbar(mappable, cax=bar)
+        self._apply_colorbar(key, settings)
 
     # --- embedded controls ---------------------------------------------------
 
@@ -378,12 +456,15 @@ class MatplotlibRenderer(Renderer):
     def show(self) -> None:
         """See :meth:`~qewton.visualization.renderers.base.Renderer.show`.
 
-        A notebook gets the figure as HTML; elsewhere it opens in a window
-        of Matplotlib's backend, animated if a control is embedded."""
+        A notebook gets the figure as :meth:`html` at its own size,
+        scrolling where it is wider than the output
+        (:func:`~qewton.visualization.renderers.base.notebook_html`);
+        elsewhere it opens in a window of Matplotlib's backend, animated if
+        a control is embedded."""
         if _in_notebook():
             from IPython.display import HTML, display
 
-            display(HTML(self.html(full_html=False)))
+            display(HTML(notebook_html(self.html(full_html=False))))
             return
         from matplotlib.backends import backend_registry
 
@@ -470,23 +551,19 @@ def _style_scene(axes, theme) -> None:
     axes.grid(theme.show_grid)
 
 
+def _draw_zero_lines(axes, theme) -> None:
+    # Lines at 0 below the data, in the grid color; outside the drawn
+    # range they are not seen.
+    for draw in (axes.axhline, axes.axvline):
+        draw(0.0, color=color(theme.grid_color), linewidth=points(1.0), zorder=0.5)
+
+
 def _aspect(cell):
-    # Equal units for the channels drawn to one scale: in 2D both or none;
-    # in 3D the box of the data's spans, a channel of its own as tall as
-    # the widest (None: automatic).
-    scaled = cell.scaled_channels
+    # Equal units in a 2D cell of a fixed aspect, else free; the box of a
+    # 3D cell (None: automatic).
     if cell.dim == 2:
-        return "equal" if {"x", "y"} <= set(scaled) else "auto"
-    spans = {}
-    for channel, axis in cell.axes.items():
-        if axis.scale.range is None:
-            return None
-        lo, hi = axis.scale.transform(np.asarray(axis.scale.range))
-        spans[channel] = max(float(hi - lo), 1e-12)
-    if len(scaled) < 2:
-        return (1.0, 1.0, 1.0)
-    widest = max(spans[c] for c in scaled)
-    return tuple(spans[c] / widest if c in scaled else 1.0 for c in ("x", "y", "z"))
+        return "equal" if cell.aspect is not None else "auto"
+    return cell.box_aspect
 
 
 def _in_notebook() -> bool:

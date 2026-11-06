@@ -14,12 +14,10 @@ import numpy as np
 from plotly import graph_objects as go
 
 from qewton.visualization.renderers.base import Artist
-from qewton.visualization.scales import log_ticks
 from qewton.visualization.renderers.plotly.traces import (
     N_BINS,
     bins,
     color_range,
-    colorscale,
     segment_coordinates,
     triangle_coordinates,
 )
@@ -68,7 +66,7 @@ class PlotlyArtist(Artist):
     def update(self, backend_figure, result, cell, theme) -> None:
         """See :meth:`~qewton.visualization.renderers.base.Artist.update`."""
         for index, trace in zip(self.trace_indices, self.traces(result, cell, theme)):
-            backend_figure.data[index].update(_without_axes(trace), overwrite=True)
+            backend_figure.data[index].update(_updatable(trace), overwrite=True)
 
     def set_visible(self, backend_figure, visible: bool) -> None:
         """See :meth:`~qewton.visualization.renderers.base.Artist.set_visible`."""
@@ -76,17 +74,18 @@ class PlotlyArtist(Artist):
             backend_figure.data[index].visible = visible
 
 
-def _without_axes(trace) -> dict:
-    # A trace's properties except its subplot binding, which stays as set
-    # when it was added.
+def _updatable(trace) -> dict:
+    # A trace's properties except its subplot binding and its legend, which
+    # stay as set when it was added and by the renderer's legend.
     properties = trace.to_plotly_json()
-    for key in ("type", "xaxis", "yaxis", "scene"):
+    for key in ("type", "xaxis", "yaxis", "scene", "showlegend", "legend", "legendgroup"):
         properties.pop(key, None)
     return properties
 
 
 def _legend(result) -> dict:
-    return dict(name=result.label, showlegend=result.label is not None)
+    # The name of an entry; the renderer shows it in its legend.
+    return dict(name=result.label, showlegend=False)
 
 
 def _hover_values(result, channels: str) -> dict:
@@ -109,7 +108,7 @@ def _mapped_colors(result, theme) -> dict:
     lo, hi = color_range(result.color_scale)
     return dict(
         color=result.color_scale.transform(result.values),
-        colorscale=colorscale(result.color_scale, theme),
+        colorscale=result.color_scale.colorscale(theme),
         cmin=lo,
         cmax=hi,
         showscale=False,
@@ -128,7 +127,7 @@ class HeatmapArtist(PlotlyArtist):
                 x=result.x,
                 y=result.y,
                 z=result.color_scale.transform(result.values),
-                colorscale=colorscale(result.color_scale, theme),
+                colorscale=result.color_scale.colorscale(theme),
                 zmin=lo,
                 zmax=hi,
                 showscale=False,
@@ -203,7 +202,7 @@ class SurfaceArtist(PlotlyArtist):
             lo, hi = color_range(result.color_scale)
             colors = dict(
                 intensity=result.color_scale.transform(result.values),
-                colorscale=colorscale(result.color_scale, theme),
+                colorscale=result.color_scale.colorscale(theme),
                 cmin=lo,
                 cmax=hi,
                 showscale=False,
@@ -285,7 +284,7 @@ class Line3DArtist(PlotlyArtist):
             lo, hi = color_range(result.color_scale)
             line.update(
                 color=result.color_scale.transform(per_point),
-                colorscale=colorscale(result.color_scale, theme),
+                colorscale=result.color_scale.colorscale(theme),
                 cmin=lo,
                 cmax=hi,
             )
@@ -356,7 +355,8 @@ class BarArtist(PlotlyArtist):
             go.Bar(
                 x=x,
                 y=y,
-                marker=_mapped_colors(result, theme),
+                # No outline: Plotly's template would draw one.
+                marker=dict(_mapped_colors(result, theme), line=dict(width=0)),
                 opacity=result.opacity,
                 **_legend(result),
             )
@@ -411,6 +411,14 @@ def _arrow_groups(result, theme) -> list[tuple[np.ndarray, str]]:
     return [(index == i, colors[i]) for i in range(N_BINS)]
 
 
+#: Format of numbers Plotly labels itself: three significant digits.
+_PRECISION = ".3~g"
+
+#: Size of an arrow head, relative to the theme's marker size: Plotly's
+#: arrow symbol is slender, and at the marker size hardly seen.
+_ARROW_HEAD = 1.6
+
+
 class Arrow2DArtist(PlotlyArtist):
     """Draws an ArrowResult in 2D: per value bin (one if uncolored) a line
     trace of the shafts with an arrow head marker at each tip."""
@@ -429,7 +437,7 @@ class Arrow2DArtist(PlotlyArtist):
             marker = dict(
                 symbol="arrow",
                 angleref="previous",
-                size=np.tile([0, theme.marker_size, 0], len(tails)),
+                size=np.tile([0, _ARROW_HEAD * theme.marker_size, 0], len(tails)),
                 color=color,
             )
             traces.append(
@@ -481,9 +489,8 @@ class Arrow3DArtist(PlotlyArtist):
 
 
 class ParallelCoordinatesArtist(PlotlyArtist):
-    """Draws a ParallelCoordinatesResult as a ``go.Parcoords``, with its
-    own colorbar: Plotly lays out the axes of parallel coordinates itself,
-    so a colorbar beside a cell does not apply."""
+    """Draws a ParallelCoordinatesResult as a ``go.Parcoords``; the
+    colorbar is the figure's, as for every other mark."""
 
     @classmethod
     def traces(cls, result, cell, theme) -> list:
@@ -496,6 +503,10 @@ class ParallelCoordinatesArtist(PlotlyArtist):
             if dimension.ticks is not None:
                 positions, labels = dimension.ticks
                 settings.update(tickvals=list(positions), ticktext=list(labels))
+            else:
+                # Numbers, also the ends of the range, at the precision
+                # they need rather than every digit.
+                settings.update(tickformat=_PRECISION)
             dimensions.append(settings)
         return [go.Parcoords(dimensions=dimensions, line=cls._line(result, theme))]
 
@@ -505,15 +516,10 @@ class ParallelCoordinatesArtist(PlotlyArtist):
         if scale is None:
             return dict(color=theme.get_color(result.color_index))
         lo, hi = color_range(scale)
-        colorbar = dict(title=dict(text=result.color_title))
-        if scale.log:
-            tickvals, ticktext = log_ticks(lo, hi)
-            colorbar.update(tickvals=tickvals, ticktext=ticktext)
         return dict(
             color=scale.transform(result.values),
-            colorscale=colorscale(scale, theme),
+            colorscale=scale.colorscale(theme),
             cmin=lo,
             cmax=hi,
-            showscale=True,
-            colorbar=colorbar,
+            showscale=False,
         )

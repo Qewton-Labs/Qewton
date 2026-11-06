@@ -8,15 +8,14 @@ from qewton.visualization.plots.result import (
     ParallelDimension,
     Result,
 )
-from qewton.visualization.plots.color_channel import unique
 from qewton.visualization.plots.table.base import TablePlot
-from qewton.visualization.scales import ColorScale, Scale
+from qewton.visualization.scales import ColorScale
 
 
 class ParallelCoordinatesPlot(TablePlot):
     """One vertical axis per column, one line per row, e.g. the parameters
     and metrics of the runs of a hyperparameter tuning. The plot lays out
-    its own axes (no position axes) and draws its own colorbar.
+    its own axes (no position axes).
 
     Args:
         table, color, color_scale, log_columns, controls, title, label: As
@@ -61,20 +60,6 @@ class ParallelCoordinatesPlot(TablePlot):
     @property
     def positions(self) -> dict:
         return {}
-
-    @property
-    def color_scales(self) -> list[ColorScale]:
-        """None: the plot draws its own colorbar, since its axes are not
-        position axes of a cell."""
-        return []
-
-    @property
-    def active_color_scales(self) -> list[ColorScale]:
-        return []
-
-    @property
-    def scales(self) -> list[Scale]:
-        return unique(self._color_scales)
 
     def build(self, rows: np.ndarray) -> Result:
         """See :meth:`~qewton.visualization.plots.table.base.TablePlot.build`."""

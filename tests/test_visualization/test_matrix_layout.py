@@ -237,8 +237,9 @@ def test_cells_sharing_an_axis_zoom_together():
     layout = Row(Overlay(_field("heatmap"), **shared), Overlay(_field("heatmap"), **shared))
     backend = Figure(layout, renderer=PlotlyRenderer()).draw()
     assert backend.layout.xaxis2.matches == "x" and backend.layout.yaxis2.matches == "y"
-    # The first cell is drawn to scale; Plotly forbids matches with scaleanchor.
-    assert backend.layout.yaxis.scaleanchor == "x"
+    # Drawn to scale by their sizes: Plotly displaces the ticks of matched
+    # axes with a scaleanchor.
+    assert backend.layout.yaxis.scaleanchor is None
     assert backend.layout.yaxis2.scaleanchor is None
 
 

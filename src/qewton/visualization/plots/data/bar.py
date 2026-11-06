@@ -8,7 +8,7 @@ from qewton.geometries.base import Structure
 from qewton.visualization.axes import ControlAxis, Selector
 from qewton.visualization.plots.data.base import DataPlot
 from qewton.visualization.plots.result import BarResult, Result
-from qewton.visualization.scales import ColorScale
+from qewton.visualization.scales import ColorScale, Scale
 
 
 class BarPlot(DataPlot):
@@ -57,6 +57,12 @@ class BarPlot(DataPlot):
             label=label,
             opacity=opacity,
         )
+
+    def train_scales(self, axes: dict[str, Scale]) -> None:
+        """See :meth:`~qewton.visualization.plots.base.Plot.train_scales`;
+        the y range also holds 0, where the bars start."""
+        super().train_scales(axes)
+        axes["y"].train([0.0])
 
     def build(
         self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray

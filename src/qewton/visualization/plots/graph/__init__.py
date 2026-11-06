@@ -45,6 +45,8 @@ class GraphPlot(Plot):
         self.show_port_names = show_port_names
         self.show_edge_labels = show_edge_labels
 
+    margin = 0.0
+
     @property
     def scaled_channels(self) -> tuple[str, ...]:
         return ("x", "y")

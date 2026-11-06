@@ -76,6 +76,10 @@ and labels by values. One instance shared by several plots gives one
 range and one colorbar; a Selector gets one color scale per candidate
 unless `color_scale=` gives a shared one or a list. Components of one
 reference, e.g. the coordinates of a geometry, are drawn to one scale.
+Drawn ranges end at the domain for rasters and surfaces and get a margin
+for marks; bars start at zero. `categorical=True` (given to text columns
+of a table) colors each category with the theme's palette, with a
+colorbar step per category.
 
 ## auto_plot and auto_layout
 
@@ -113,6 +117,14 @@ several Selectors of different channels. Controls that would overwrite
 each other, or that the renderer does not embed, keep their current
 state, with a warning. Cells sharing position axes zoom, pan and rotate
 together.
+
+The size of a figure follows from its plots: every plot area gets the
+theme's plot box (`plot_width` x `plot_height`), a fixed aspect fitted
+into it; titles, tick labels, colorbars and legends get room beside it. A
+colorbar stands right of the last cell of its scale, as tall as its plot
+area; a legend, only where it tells two entries or more apart, right of
+the last of the cells with these entries. Every output shows the figure at
+its size; inline in a notebook, a wider figure scrolls.
 
 ## Renderers
 

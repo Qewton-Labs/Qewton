@@ -45,6 +45,9 @@ class Overlay(Layout):
         facets (list of FacetAxis): The facet axes of its plots.
         scaled_channels (tuple of str): The channels every plot draws to
             one scale.
+        margin (float): The margin of the drawn position ranges: 0 if
+            any plot ends at its domain (e.g. arrows over a heatmap), else
+            the largest of its plots.
         title (str or None): Title of the cell.
     """
 
@@ -99,6 +102,11 @@ class Overlay(Layout):
             return ()
         common = set.intersection(*(set(p.scaled_channels) for p in self._plots))
         return tuple(c for c in POSITION_CHANNELS if c in common)
+
+    @property
+    def margin(self) -> float:
+        margins = [plot.margin for plot in self._plots]
+        return 0.0 if not margins or min(margins) == 0 else max(margins)
 
     @property
     def title(self) -> str | None:

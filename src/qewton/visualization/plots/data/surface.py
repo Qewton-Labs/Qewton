@@ -37,6 +37,7 @@ class SurfacePlot(DataPlot):
     }
     dims = (3,)
     point_encoding = PointEncoding.COLOR
+    margin = 0.0
 
     def __init__(
         self,

@@ -78,7 +78,8 @@ class TablePlot(Plot):
             for a uniform color.
         color_scale: As for
             :class:`~qewton.visualization.plots.data.base.DataPlot`; a new
-            scale of a log column is logarithmic.
+            scale of a log column is logarithmic, one of a categorical
+            column categorical (one color per category).
         log_columns: Numeric columns drawn on a log scale.
         controls: Control axes, each referencing a column.
         title, label: As for :class:`~qewton.visualization.plots.base.Plot`.
@@ -118,7 +119,12 @@ class TablePlot(Plot):
         self._check_log_columns()
         self._check_reference(color)
         self._color_scales = candidate_scales(
-            color, color_scale, lambda c: ColorScale(log=c in self.log_columns)
+            color,
+            color_scale,
+            lambda c: ColorScale(
+                log=c in self.log_columns,
+                categorical=self.columns[c].categories is not None,
+            ),
         )
         self._resolve_controls()
 
@@ -269,12 +275,16 @@ class TablePlot(Plot):
     def color_title(self) -> str | None:
         return title_of(self.current(self._color)) if self._color is not None else None
 
-    @property
-    def color_ticks(self) -> tuple[list[float], list[str]] | None:
-        """The categories of a categorical color column, at their codes;
-        None otherwise."""
-        name = self.current(self._color)
-        if name is None or self.columns[name].categories is None:
+    def color_ticks(self, scale: ColorScale) -> tuple[list[float], list[str]] | None:
+        """See :meth:`~qewton.visualization.plots.base.Plot.color_ticks`:
+        the categories of the categorical color column of `scale`, at their
+        codes; None for a numeric one, or a scale of several columns."""
+        candidates = self._color.candidates if isinstance(self._color, Selector) else [self._color]
+        names = {name for name, s in zip(candidates, self._color_scales) if s is scale}
+        if len(names) != 1:
+            return None
+        (name,) = names
+        if self.columns[name].categories is None:
             return None
         return self.column_ticks(name)
 

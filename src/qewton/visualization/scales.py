@@ -4,6 +4,8 @@ from enum import Enum, auto
 
 import numpy as np
 
+from qewton.visualization.themes import cmaps
+
 
 class Scale:
     """Maps data values to visual values (positions, colors, lengths).
@@ -108,11 +110,29 @@ class Scale:
         with np.errstate(divide="ignore", invalid="ignore"):
             return np.where(values > 0, np.log10(values), np.nan)
 
+    def inverse(self, values) -> np.ndarray:
+        """Map values of the scale's space back: the inverse of
+        :meth:`transform`.
+
+        Args:
+            values (array_like): Transformed values.
+
+        Returns:
+            numpy.ndarray: The values, as floats.
+        """
+        values = np.asarray(values, dtype=float)
+        return 10.0**values if self.log else values
+
+
+#: Most ticks of a log scale.
+_MAX_LOG_TICKS = 6
+
 
 def log_ticks(lo: float, hi: float) -> tuple[list[float], list[str]]:
-    """Ticks of a log scale: 1, 2 and 5 times powers of ten within
-    the range, all leading digits if that gives fewer than three, only the
-    powers of ten (thinned to at most eight) over many decades.
+    """Ticks of a log scale: all leading digits times powers of ten within
+    the range if 1, 2 and 5 give fewer than three; else the first of 1, 2
+    and 5, 1 and 3, or only the powers of ten (thinned) that gives at most
+    six, so the labels fit an axis of the theme's plot size.
 
     Args:
         lo, hi: The range in log10 space.
@@ -129,15 +149,18 @@ def log_ticks(lo: float, hi: float) -> tuple[list[float], list[str]]:
     values = within((1, 2, 5))
     if len(values) < 3:
         values = within(range(1, 10))
-    if len(values) > 8:
-        values = within((1,))
-        values = values[:: int(np.ceil(len(values) / 8))]
+    for mantissas in ((1, 3), (1,)):
+        if len(values) <= _MAX_LOG_TICKS:
+            break
+        values = within(mantissas)
+    values = values[:: int(np.ceil(len(values) / _MAX_LOG_TICKS))]
     return [float(np.log10(v)) for v in values], [f"{v:g}" for v in values]
 
 
 def color_range(scale: Scale) -> tuple[float, float]:
     """The trained range of a scale in its transformed space (log10
-    for a log scale), widened if degenerate.
+    for a log scale), widened if degenerate; a categorical scale spans its
+    codes ±0.5, so every category is the center of its band.
 
     Args:
         scale: The trained scale.
@@ -149,6 +172,8 @@ def color_range(scale: Scale) -> tuple[float, float]:
     if scale.range is None:
         return 0.0, 1.0
     lo, hi = (float(v) for v in scale.transform(np.asarray(scale.range)))
+    if scale.categorical:
+        return lo - 0.5, hi + 0.5
     return (lo, hi) if hi > lo else (lo, lo + 1e-9)
 
 
@@ -170,7 +195,8 @@ class ColorScale(Scale):
         cmap (ColormapRole or QewtonColormap or str or list, optional): A
             colormap role (e.g. ``cmaps.diverging``), resolved against the
             figure's theme, a qewton colormap, or a renderer-native
-            colormap. None uses the theme's sequential colormap.
+            colormap. None uses the theme's palette for a categorical
+            scale, else its sequential colormap.
         reduce: How a value with several components becomes one color
             value: :attr:`Reduce.MAGNITUDE` or the index of a component.
         vmin, vmax, log, symmetric, categorical: As for :class:`Scale`.
@@ -193,6 +219,23 @@ class ColorScale(Scale):
         super().__init__(vmin, vmax, log, symmetric, categorical)
         self.cmap = cmap
         self.reduce = reduce
+
+    def colorscale(self, theme):
+        """The colormap of this scale, resolved against a theme: one band
+        per category for a categorical scale (its codes, centered on
+        them), else continuous.
+
+        Args:
+            theme (Theme): The theme resolving colormap roles.
+
+        Returns:
+            str or list: See :meth:`~qewton.visualization.themes.base.Theme.resolve_cmap`.
+        """
+        if not self.categorical:
+            return theme.resolve_cmap(self.cmap)
+        lo, hi = color_range(self)
+        cmap = self.cmap if self.cmap is not None else cmaps.categorical
+        return theme.resolve_cmap(cmap, steps=max(int(round(hi - lo)), 1))
 
     def reduce_components(self, values: np.ndarray) -> np.ndarray:
         """Reduce values of shape ``(n, k)`` to one value per element.

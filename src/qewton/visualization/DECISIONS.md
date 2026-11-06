@@ -66,6 +66,21 @@ Channels bound to components of one reference (e.g. the coordinates of a
 geometry) are drawn to one scale, so geometries are not distorted; a
 value over a geometry (e.g. a height) scales on its own.
 
+### Margins by kind of plot (SC7)
+
+A plot declares the margin its marks need beside the trained range; a
+raster or surface needs none, as its domain is its extent. An overlay
+takes none if any of its plots ends at its domain (e.g. arrows over a
+heatmap), so the domain stays the frame.
+
+### Categories as a colormap role (SC8)
+
+A categorical scale resolves its colormap to bands, one per category,
+centered on the codes; the role `categorical` gives the palette plots are
+colored by, so categories read as copies of a plot would. The ticks of a
+categorical scale belong to its column, not to the state shown, so room
+for them is kept while another candidate of a Selector is shown.
+
 ## auto_plot and auto_layout
 
 ### Choice from declarations, explained when nothing fits (AU1, AU3)
@@ -108,6 +123,23 @@ every candidate of which the chosen one is shown. Without a control axis,
 several Selectors of different channels are embedded by their data, since
 their steps change different properties. Anything else, or what the
 renderer does not embed, keeps its current state and warns.
+
+### The figure decides, the renderer places (F7–F9)
+
+Which cell a colorbar stands beside, its place there (the scales of one
+plot share one, as a Selector shows one at a time), which Results get a
+legend entry and which cells share a legend are decided by the figure, so
+renderers agree and know no plots. The figure is laid out once every
+embedded state is drawn, with room for what any of them shows, so neither
+embedding nor an application's updates move anything.
+
+### Room is estimated, not measured (F7, F8)
+
+The room beside a plot area is estimated from the number of characters
+and the font sizes. Measuring texts costs a rendering per layout, which
+would make drawing several times slower; a plot area may miss its size
+by what the estimate misses, but a colorbar is attached to its plot area
+and as tall whatever its size.
 
 ### A layout is composed once (F1, R1)
 
