@@ -132,8 +132,11 @@ class Parallelogram(ContinuousGeometry[TensorType]):
 
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=triangles, device=device),
+            mesh=Mesh(
+                vertices=vertices, cells=triangles, device=device, backend=self.backend
+            ),
             discretization_of=self,
+            backend=self.backend,
         )
 
     def _move_data(self, device: Device | str) -> None:

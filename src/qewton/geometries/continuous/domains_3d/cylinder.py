@@ -195,8 +195,14 @@ class Cylinder(ContinuousGeometry[TensorType]):
 
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=all_vertices, cells=tetrahedra, device=device),
+            mesh=Mesh(
+                vertices=all_vertices,
+                cells=tetrahedra,
+                device=device,
+                backend=self.backend,
+            ),
             discretization_of=self,
+            backend=self.backend,
         )
 
     def ordering_vertices(self, vertices, a_original, b_original, c_original):
@@ -415,14 +421,8 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         phi_flat = phi_grid.flatten()[:n_points]
         z_flat = z_grid.flatten()[:n_points]
 
-        x = (
-            radius * self.backend.math.cos(phi_flat)
-            + center[0]
-        ).reshape(-1, 1)
-        y = (
-            radius * self.backend.math.sin(phi_flat)
-            + center[1]
-        ).reshape(-1, 1)
+        x = (radius * self.backend.math.cos(phi_flat) + center[0]).reshape(-1, 1)
+        y = (radius * self.backend.math.sin(phi_flat) + center[1]).reshape(-1, 1)
         z = self.backend.math.unsqueeze(z_flat, axis=-1)
 
         points = self.backend.math.concatenate([x, y, z], axis=-1)

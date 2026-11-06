@@ -63,7 +63,9 @@ class Interval(ContinuousGeometry[TensorType]):
         cells = [[i, i + 1] for i in range(len(vertices) - 1)]
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=cells, device=device),
+            mesh=Mesh(
+                vertices=vertices, cells=cells, device=device, backend=self.backend
+            ),
             discretization_of=self,
             backend=self.backend,
         )
@@ -101,7 +103,7 @@ class Interval(ContinuousGeometry[TensorType]):
     @property
     def boundary_right(self) -> IntervalSingleBoundaryPoint:
         """Returns only the right boundary value, useful for the definition
-        of end conditions. 
+        of end conditions.
         """
         return IntervalSingleBoundaryPoint(self, side=self.upper_bound, normal_vec=1)
 
@@ -133,6 +135,7 @@ class IntervalBoundary(ContinuousBoundaryGeometry[TensorType]):
                 vertices=[[self.geometry.lower_bound], [self.geometry.upper_bound]],
                 cells=[],
                 device=device,
+                backend=self.backend,
             ),
             discretization_of=self,
             backend=self.backend,
@@ -199,6 +202,7 @@ class IntervalSingleBoundaryPoint(ContinuousBoundaryGeometry[TensorType]):
                 vertices=[[self.side]],
                 cells=[],
                 device=device,
+                backend=self.backend,
             ),
             discretization_of=self,
             backend=self.backend,

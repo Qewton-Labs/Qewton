@@ -91,7 +91,9 @@ class Triangle(ContinuousGeometry[TensorType]):
         triangles = self.backend.build_tensor(triangles, dtype=Int32, device=device).reshape(-1, 3)  # type: ignore
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=triangles, device=device),
+            mesh=Mesh(
+                vertices=vertices, cells=triangles, device=device, backend=self.backend
+            ),
             discretization_of=self,
             backend=self.backend,
         )
@@ -299,9 +301,7 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         mids = [0.5 * (a + b) for a, b in edges]
         edge_vecs = [b - a for a, b in edges]
         # normals (perp) and ensure outward by checking centroid
-        centroid = (
-            origin + corner_1 + corner_2
-        ) / 3.0
+        centroid = (origin + corner_1 + corner_2) / 3.0
         normals = []
         for vec, mid in zip(edge_vecs, mids):
             n = self.backend.build_tensor([vec[1], -vec[0]])
@@ -316,9 +316,7 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
         # compute barycentric coords to decide which edge each point belongs to
         dir_1 = corner_1 - origin
         dir_2 = corner_2 - origin
-        bary_x, bary_y = self.geometry.solve_barycentric(
-            points - origin, dir_1, dir_2
-        )
+        bary_x, bary_y = self.geometry.solve_barycentric(points - origin, dir_1, dir_2)
         out = self.backend.math.zeros_like(points)
         # edge mapping: x==0 -> edge CA (index 2), y==0 -> edge AB (index 0),
         # x+y==1 -> edge BC (index 1)

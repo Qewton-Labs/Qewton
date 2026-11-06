@@ -182,8 +182,11 @@ class Box(ContinuousGeometry[TensorType]):
 
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=tetrahedra, device=device),
+            mesh=Mesh(
+                vertices=vertices, cells=tetrahedra, device=device, backend=self.backend
+            ),
             discretization_of=self,
+            backend=self.backend,
         )
 
 

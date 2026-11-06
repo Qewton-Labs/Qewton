@@ -47,13 +47,17 @@ class Circle(ContinuousGeometry[TensorType]):
 
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=triangles, device=device),
+            mesh=Mesh(
+                vertices=vertices, cells=triangles, device=device, backend=self.backend
+            ),
             discretization_of=self,
             backend=self.backend,
         )
 
     @classmethod
-    def triangulate_circle(cls, max_vertex_distance, radius, backend, device: Device = cpu):
+    def triangulate_circle(
+        cls, max_vertex_distance, radius, backend, device: Device = cpu
+    ):
         if max_vertex_distance is None:
             power_n = 4
             n = 16
@@ -114,11 +118,8 @@ class Circle(ContinuousGeometry[TensorType]):
     def contains(self, points):
         center = self._on(self.center, self._device_of(points))
         points = self.backend.build_tensor(points)
-        norm = self.backend.linalg.norm(points - center, order=2, axis=1).reshape(
-            -1, 1
-        )
+        norm = self.backend.linalg.norm(points - center, order=2, axis=1).reshape(-1, 1)
         return norm <= self.radius
-
 
     def bounding_box(self):
         bounds = []
@@ -175,9 +176,7 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
     def contains(self, points):
         center = self._on(self.geometry.center, self._device_of(points))
         points = self.backend.build_tensor(points)
-        norm = self.backend.linalg.norm(
-            points - center, order=2, axis=1
-        ).reshape(-1, 1)
+        norm = self.backend.linalg.norm(points - center, order=2, axis=1).reshape(-1, 1)
         return self.backend.math.isclose(
             norm, self.backend.build_tensor(self.geometry.radius, dtype=norm.dtype)
         )
