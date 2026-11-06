@@ -11,7 +11,6 @@ import numpy as np
 
 from qewton.graphs.nodes import NodeState
 from qewton.backends import Backend, DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
-from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
 
 from qewton.optim.base import EvaluationPhase
@@ -366,15 +365,6 @@ class DataLoader(DataNode[TensorType]):
 
     def cache(self, n_batches=-1):
         return
-
-    def get_output_port(self, name: str | Variable):
-        if isinstance(name, str):
-            return super().get_output_port(name)
-        if isinstance(name, Variable):
-            for port in self.output_ports:
-                if port.name == name.name:
-                    return port
-        raise ValueError(f"No output port with name {name} found in node {self.name}.")
 
     def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
         if phase == EvaluationPhase.TRAIN:

@@ -339,6 +339,7 @@ def test_channels_drawn_to_one_scale(name):
     make, channels, fixed, box = TO_SCALE[name]
     plot = make()
     assert plot.scaled_channels == channels
+    _check_aspect_matplotlib(plot, aspect)
     figure = Figure(plot, renderer=PlotlyRenderer())
     backend = figure.draw()
     (cell,) = figure.cells

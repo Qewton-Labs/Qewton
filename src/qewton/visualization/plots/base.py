@@ -67,6 +67,10 @@ class Plot:
             distorted; empty if none.
         color_title (str or None): Name of what is bound to the color
             channel in the current states; None if nothing named is.
+        color_ticks (tuple or None): Ticks of the colorbar in the current
+            states, in the scale's transformed values: positions and
+            labels, e.g. the categories of a categorical color; None for
+            the scale's own ticks.
 
     Notes:
         Subclasses implement `dim` and :meth:`evaluate`, and may override
