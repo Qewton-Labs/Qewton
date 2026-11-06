@@ -1,6 +1,12 @@
 from .base import Backend, TensorType, DeepLearningBackend, ComputingBackend
 from .numpy.base import NumPyBackend
 
+from .fem.base import FEMBackend
+from .fem.mesh import MeshBackend
+from .fem.function_space import FunctionSpaceBackend
+from .fem.solve import SolveBackend
+from .fem.form import FormBackend
+
 # internal hierarchy: if torch exists, we set it as the default backend,
 # otherwise if tensorflow exists, we set it as the default backend.
 _backend_found = False
