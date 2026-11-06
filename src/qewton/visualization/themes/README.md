@@ -9,7 +9,8 @@ Colors, fonts and colormaps of Qewton figures.
   e.g. `PlotlyRenderer(theme=DARK_THEME)`. `LIGHT_THEME` (default,
   `DEFAULT_THEME`) and
   `DARK_THEME` are predefined; custom themes override fields,
-  e.g. `Theme(font_size_title=16)`.
+  e.g. `Theme(font_size_title=16)`. Sizes are in pixels and colors CSS
+  strings; a renderer converts them.
 - **`cmaps`** (`cmaps.py`, also `qewton.viz.cmaps`): colormaps
   for `ColorScale(cmap=...)`:
   - roles `cmaps.sequential`, `cmaps.diverging`, `cmaps.cyclic`, resolved
@@ -17,7 +18,8 @@ Colors, fonts and colormaps of Qewton figures.
   - concrete colormaps such as `cmaps.meadow`, `cmaps.dusk`,
     `cmaps.redblue`, `cmaps.phase` and single-hue `cmaps.reds`,
     `cmaps.blues`, ..., the same in every theme;
-  - any other value (a string such as `"Viridis"` or a colorscale list) is
+  - any other value (a colormap name of the renderer, e.g. Plotly's
+    `"Viridis"` or Matplotlib's `"viridis"`, or a colorscale list) is
     passed to the renderer unchanged.
 
   Without a cmap, a ColorScale uses the sequential role.

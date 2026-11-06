@@ -4,8 +4,8 @@ Plotting for Qewton data, tables, geometries and computation graphs. A
 *plot* binds references into its input to the channels of one kind of
 mark; *controls* reduce the dimensions it does not draw; *scales* map
 values to positions, colors and arrow lengths. A *figure* arranges plots
-in cells and draws them with a *renderer* (Plotly by default), which owns
-the theme. Requirements: [REQUIREMENTS.md](REQUIREMENTS.md).
+in cells and draws them with a *renderer* (Plotly if installed, else
+Matplotlib), which owns the theme. Requirements: [REQUIREMENTS.md](REQUIREMENTS.md).
 
 ## Plots and bindings
 
@@ -106,22 +106,25 @@ cell.
 | `save_png()`, `save_svg()` | current states |
 | `save_gif()` | the animation of the `TimeAxis` |
 | `DashApplication.create()` | sliders and selectors connected to widgets, the rest embedded |
+| `WidgetApplication.create()` | sliders, animations and selectors connected to widgets |
 
 Per plot, one control axis is embedded; next to it one Selector, else
 several Selectors of different channels. Controls that would overwrite
-each other keep their current state, with a warning. Cells sharing
-position axes zoom, pan and rotate together.
+each other, or that the renderer does not embed, keep their current
+state, with a warning. Cells sharing position axes zoom, pan and rotate
+together.
 
 ## Renderers
 
-`PlotlyRenderer(theme=DEFAULT_THEME, mathjax=True)` draws one figure;
-names of Variables are rendered by MathJax. See
-[renderers/README.md](renderers/README.md).
+`PlotlyRenderer(theme=DEFAULT_THEME, mathjax=True)` and
+`MatplotlibRenderer(theme=DEFAULT_THEME, usetex=False, dpi=100)`; what
+each draws and embeds: [renderers/README.md](renderers/README.md).
 
 ## Applications
 
-`DashApplication.create(figure)` serves a figure drawn with Plotly as a
-Dash app; start it with `app.run()`.
+`DashApplication.create(figure)` serves a Plotly figure as a Dash app;
+start it with `app.run()`. `WidgetApplication.create(figure)` shows a
+Matplotlib figure in a notebook (needs `ipywidgets` and `ipympl`).
 
 ## Themes
 

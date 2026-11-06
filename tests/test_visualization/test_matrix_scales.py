@@ -33,7 +33,7 @@ from qewton.visualization import (
     TableScatter,
     VectorPlot,
 )
-from qewton.visualization.renderers import PlotlyRenderer
+from qewton.visualization.renderers import MatplotlibRenderer, PlotlyRenderer
 
 from recording_renderer import RecordingRenderer
 
@@ -172,6 +172,21 @@ def test_color_scale(plot_name, scale_name):
     assert len(backend["colorbars"]) == n_colorbars
     if scale_name == "log":
         _check_log_ticks(plot, plot_name)
+        if plot_name not in OWN_COLORBAR:
+            _check_log_ticks_matplotlib(plot)
+
+
+def _check_log_ticks_matplotlib(plot):
+    # The colorbar is drawn by log10 values, its ticks labeled by values
+    # within the range.
+    renderer = MatplotlibRenderer()
+    backend = Figure(plot, renderer=renderer).draw()
+    (colorbar_axes,) = [a for a in backend.axes if not a.get_label().startswith("cell-")]
+    ticks = colorbar_axes.get_yticks()
+    labels = [t.get_text() for t in colorbar_axes.get_yticklabels()]
+    assert 10 ** np.asarray(ticks) == pytest.approx([float(t) for t in labels])
+    lo, hi = plot.color_scale.range
+    assert np.all((10**ticks >= lo * 0.999) & (10**ticks <= hi * 1.001))
 
 
 def _check_log_ticks(plot, plot_name):
@@ -254,6 +269,9 @@ def test_position_axis_scale(variant):
     backend = Figure(overlay, renderer=PlotlyRenderer()).draw()
     assert check(scale.range, data[..., 0])
     assert backend.layout.yaxis.type == ("log" if scale.log else "linear")
+    (axes,) = Figure(overlay, renderer=MatplotlibRenderer()).draw().axes
+    assert axes.get_yscale() == ("log" if scale.log else "linear")
+    assert axes.get_ylim() == pytest.approx(scale.range)
 
 
 def test_a_shared_position_scale_spans_both_overlays():
@@ -319,6 +337,7 @@ def test_channels_drawn_to_one_scale(name):
     make, channels, aspect = TO_SCALE[name]
     plot = make()
     assert plot.scaled_channels == channels
+    _check_aspect_matplotlib(plot, aspect)
     figure = Figure(plot, renderer=PlotlyRenderer())
     backend = figure.draw()
     if plot.dim == 2:
@@ -331,3 +350,15 @@ def test_channels_drawn_to_one_scale(name):
         ratio = scene.aspectratio
         assert ratio.z == 1.0  # the height is as tall as the plane is wide
         assert ratio.x == pytest.approx(1.0) and ratio.y == pytest.approx(1.0)
+
+
+def _check_aspect_matplotlib(plot, aspect):
+    # 2D: equal units or free; 3D: a box shaped like the scaled spans, a
+    # channel of its own as tall as the widest.
+    backend = Figure(plot, renderer=MatplotlibRenderer()).draw()
+    (axes,) = [a for a in backend.axes if a.get_label().startswith("cell-")]
+    if plot.dim == 2:
+        assert (axes.get_aspect() == 1.0) == (aspect == "scaleanchor")
+        return
+    box = np.asarray(axes.get_box_aspect())
+    assert box / box.max() == pytest.approx(np.ones(3))

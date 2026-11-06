@@ -3,6 +3,7 @@ that a renderer needs nothing but Results, cells and its theme."""
 
 import json
 
+from qewton.visualization.axes import Selector, SliderAxis, TimeAxis
 from qewton.visualization.plots.result import (
     ArrowResult,
     BarResult,
@@ -56,6 +57,7 @@ class RecordingRenderer(Renderer):
         )
         for d in (2, 3)
     } | {(ParallelCoordinatesResult, 0): RecordingArtist, (GraphLayoutResult, 2): RecordingArtist}
+    embeddable = (TimeAxis, SliderAxis, Selector)
 
     def create_backend_figure(self, figure):
         return {"artists": [], "axes": {}, "colorbars": {}, "embedded": {}}
@@ -66,7 +68,7 @@ class RecordingRenderer(Renderer):
             for channel, axis in cell.axes.items()
         }
 
-    def draw_colorbar(self, scale, title, cells, visible=True):
+    def draw_colorbar(self, scale, title, ticks, cells, visible=True):
         self.backend_figure["colorbars"][id(scale)] = (
             title,
             scale.range,

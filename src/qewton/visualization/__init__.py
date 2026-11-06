@@ -45,7 +45,7 @@ from .plots.table import TablePlot, TableScatter, TableHeatMap, ParallelCoordina
 from .layout import Layout, Overlay, Row, Column, auto_layout
 from .auto import auto_plot
 from .renderers.base import Artist, Renderer
-from .applications import RenderApplication, DashApplication
+from .applications import RenderApplication, DashApplication, WidgetApplication
 from .themes import Theme, DEFAULT_THEME, LIGHT_THEME, DARK_THEME, cmaps
 from .figure import Cell, Figure
 from .nodes import PlotNode

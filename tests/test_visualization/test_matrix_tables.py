@@ -2,9 +2,9 @@
 
 A drawn column is numeric, logarithmic, categorical or boolean; a
 control steps through the values of a categorical or a numeric column, or
-a Selector chooses a column. TABLE gives the pairs that do not fit with
-their reason; every other combination draws, follows its control and
-embeds it.
+a Selector chooses a column. RAISES gives the pairs that do not fit with
+their reason, NOT_DRAWN the plots a renderer does not draw; every other
+combination draws, follows its control and embeds it.
 """
 
 import warnings
@@ -14,6 +14,7 @@ import pytest
 
 from qewton.visualization import (
     DashApplication,
+    WidgetApplication,
     FacetAxis,
     Figure,
     FixedAxis,
@@ -29,7 +30,7 @@ from qewton.visualization.plots.result import (
     MarkerResult,
     ParallelCoordinatesResult,
 )
-from qewton.visualization.renderers import PlotlyRenderer
+from qewton.visualization.renderers import MatplotlibRenderer, PlotlyRenderer
 
 from recording_renderer import RecordingRenderer
 
@@ -85,8 +86,27 @@ NOT_APPLICABLE = {
     ("parallel", "selector_x"): "parallel coordinates draw every listed column",
 }
 
+#: (plot, renderer) -> why the renderer does not draw the plot.
+NOT_DRAWN = {
+    ("parallel", "matplotlib"): "Matplotlib has no native parallel coordinates",
+}
+
+#: (renderer, control) -> why a self-contained output does not embed the
+#: control; it keeps its current state, with a warning.
+NOT_EMBEDDED = {
+    ("matplotlib", "selector_x"): "Matplotlib embeds one control axis as frames",
+    ("matplotlib", "selector_color"): "Matplotlib embeds one control axis as frames",
+}
+
+#: The application showing each renderer's figures as a connected output.
+APPLICATIONS = {"plotly": DashApplication, "matplotlib": WidgetApplication}
+
 OUTPUTS = ["draw", "self_contained", "connected"]
-RENDERERS = {"plotly": PlotlyRenderer, "recording": RecordingRenderer}
+RENDERERS = {
+    "plotly": PlotlyRenderer,
+    "matplotlib": MatplotlibRenderer,
+    "recording": RecordingRenderer,
+}
 
 
 def build(plot: str, column_kind: str, control: str):
@@ -118,7 +138,7 @@ def build(plot: str, column_kind: str, control: str):
 @pytest.mark.parametrize("plot_name", list(PLOTS))
 def test_table_matrix(plot_name, column_kind, control, output, renderer_name, tmp_path):
     if output == "connected" and renderer_name == "recording":
-        pytest.skip("a connected output (Dash) shows Plotly figures")
+        pytest.skip("an application shows the figures of a real renderer")
     if (plot_name, control) in NOT_APPLICABLE:
         pytest.skip(NOT_APPLICABLE[(plot_name, control)])
     if (plot_name, column_kind) in RAISES:
@@ -135,6 +155,10 @@ def test_table_matrix(plot_name, column_kind, control, output, renderer_name, tm
 
     figure = Figure(plot, renderer=RENDERERS[renderer_name]())
     assert len(figure.cells) == n_cells
+    if (plot_name, renderer_name) in NOT_DRAWN:
+        with pytest.raises(ValueError, match="cannot draw"):
+            figure.draw()
+        return
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         if output == "draw":
@@ -142,8 +166,10 @@ def test_table_matrix(plot_name, column_kind, control, output, renderer_name, tm
         elif output == "self_contained":
             figure.save_html(tmp_path / "table.html")
         else:
-            DashApplication.create(figure)
-    assert not [w for w in caught if issubclass(w.category, UserWarning)]
+            APPLICATIONS[renderer_name].create(figure)
+    warned = [w for w in caught if issubclass(w.category, UserWarning)]
+    not_embedded = output == "self_contained" and (renderer_name, control) in NOT_EMBEDDED
+    assert len(warned) == (1 if not_embedded else 0)
 
 
 def _check_follows_state(plot, control_object):
@@ -171,3 +197,17 @@ def _drawn(result) -> np.ndarray:
     if result.values is not None:
         arrays.append(result.values)
     return np.concatenate(arrays)
+
+
+def _colorbar_labels(backend, renderer_name) -> list[str]:
+    if renderer_name == "plotly":
+        return list(backend.data[-1].marker.colorbar.ticktext)
+    (colorbar,) = [a for a in backend.axes if not a.get_label().startswith("cell-")]
+    return [t.get_text() for t in colorbar.get_yticklabels()]
+
+
+@pytest.mark.parametrize("renderer_name", ["plotly", "matplotlib"])
+def test_a_categorical_color_column_labels_its_colorbar_by_category(renderer_name):
+    plot = TableScatter(_runs(), x="lr", y="loss", color="optimizer")
+    backend = Figure(plot, renderer=RENDERERS[renderer_name]()).draw()
+    assert _colorbar_labels(backend, renderer_name) == ["adam", "lbfgs", "sgd"]

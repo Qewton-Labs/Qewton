@@ -269,6 +269,15 @@ class TablePlot(Plot):
     def color_title(self) -> str | None:
         return title_of(self.current(self._color)) if self._color is not None else None
 
+    @property
+    def color_ticks(self) -> tuple[list[float], list[str]] | None:
+        """The categories of a categorical color column, at their codes;
+        None otherwise."""
+        name = self.current(self._color)
+        if name is None or self.columns[name].categories is None:
+            return None
+        return self.column_ticks(name)
+
     def channels_of(self, selector: Selector) -> tuple[str, ...]:
         """See :meth:`~qewton.visualization.plots.base.Plot.channels_of`."""
         channels = [c for c, r in self.positions.items() if r is selector]
