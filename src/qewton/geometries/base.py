@@ -2,9 +2,12 @@
 and :class:`BoundaryGeometry`."""
 
 from __future__ import annotations
+from enum import Enum, auto
 from types import EllipsisType
 import warnings
 from typing import Any, Generic
+
+import numpy as np
 
 from qewton.config.errors import DataConfigMismatchError
 from qewton.config.variables import Variable
@@ -65,6 +68,10 @@ class Geometry(Serializable, Generic[TensorType]):
         boundary (BoundaryGeometry): The boundary of this geometry. Created by
             :meth:`create_boundary` on first access and cached in
             ``boundary_object``.
+        factors (list of Geometry or None): The factor geometries of a
+            Cartesian product, in the order of its tensor axes (for a
+            discrete product, the first factor varies slowest); None for a
+            geometry that is no product.
 
     Notes:
         Subclasses should implement :meth:`create_boundary`,
@@ -535,6 +542,27 @@ class Geometry(Serializable, Generic[TensorType]):
         """
         self._user_volume = volume
 
+    @property
+    def factors(self) -> list[Geometry] | None:
+        return None
+
+    def subproduct(self, factors: list[Geometry]) -> Geometry:
+        """The product of some of this product's factors, of the same kind.
+
+        Args:
+            factors: At least two of `factors`, in their order.
+
+        Returns:
+            Geometry: The product of `factors`.
+
+        Raises:
+            ValueError: If this geometry is no product, or cannot build one
+                of some of its factors.
+        """
+        raise ValueError(
+            f"{type(self).__name__} cannot build a product of some of its factors."
+        )
+
     def _get_volume(self):
         raise NotImplementedError()
 
@@ -548,6 +576,38 @@ class Geometry(Serializable, Generic[TensorType]):
         if self._user_volume is None:
             return self._get_volume()
         return self._user_volume
+
+
+class Structure(Enum):
+    """How the points of a discrete geometry are connected.
+
+    Attributes:
+        POINTS: No connectivity, e.g. a point cloud.
+        MESH: Cells with explicit connectivity, e.g. a simplex mesh.
+        GRID: A rectilinear grid: one coordinate array per axis, aligned
+            with the coordinate axes.
+    """
+
+    POINTS = auto()
+    MESH = auto()
+    GRID = auto()
+
+
+def boundary_facets(cells: np.ndarray) -> np.ndarray:
+    """The facets of simplex cells that belong to one cell only.
+
+    Args:
+        cells: Point indices per cell, shape ``(n_cells, k)``.
+
+    Returns:
+        numpy.ndarray: Point indices per facet, shape ``(n_facets, k - 1)``.
+    """
+    k = cells.shape[1]
+    facets = np.concatenate([np.delete(cells, i, axis=1) for i in range(k)])
+    _, first, counts = np.unique(
+        np.sort(facets, axis=1), axis=0, return_index=True, return_counts=True
+    )
+    return facets[np.sort(first[counts == 1])]
 
 
 class DiscreteGeometry(Geometry[TensorType]):
@@ -567,11 +627,24 @@ class DiscreteGeometry(Geometry[TensorType]):
             discretizes, if known.
         discretization_points (TensorType or None): The discrete points of this
             geometry.
+        structure (Structure): How its points are connected.
+        topological_dim (int): Dimension of its cells: 0 for points, 1 for
+            curves, 2 for surfaces, 3 for volumes. `dim` is the number of
+            coordinates of a point, so a curve in the plane has
+            ``topological_dim`` 1 and ``dim`` 2.
+        cells (numpy.ndarray or None): Point indices per cell, shape
+            ``(n_cells, n_vertices)``; None for :attr:`Structure.POINTS`.
+        boundary_cells (numpy.ndarray): The facets of `cells` that belong
+            to one cell only, e.g. the triangles bounding a volume of
+            tetrahedra.
 
     Notes:
         Subclasses may implement
         :meth:`sample_random_uniform_from_discretization` and
-        :meth:`sample_grid_from_discretization`.
+        :meth:`sample_grid_from_discretization`. A discrete geometry is a
+        point set (:attr:`Structure.POINTS`) unless a subclass with cells
+        overrides `structure`, `topological_dim` and `cells`, and
+        :meth:`axis_coordinates` for :attr:`Structure.GRID`.
     """
 
     def __init__(
@@ -585,6 +658,49 @@ class DiscreteGeometry(Geometry[TensorType]):
         super().__init__(variable=variable, dim=dim, shape=shape, backend=backend)
         self.discretization_of: Geometry | None = None
         self.discretization_points = discretization_points
+
+    @property
+    def structure(self) -> Structure:
+        return Structure.POINTS
+
+    @property
+    def topological_dim(self) -> int:
+        return 0
+
+    @property
+    def cells(self) -> np.ndarray | None:
+        return None
+
+    @property
+    def boundary_cells(self) -> np.ndarray:
+        cells = self.cells
+        if cells is None:
+            raise ValueError(f"{type(self).__name__} has no cells and so no boundary.")
+        return boundary_facets(cells)
+
+    def coordinates(self) -> np.ndarray:
+        """Return the points as a numpy array on the CPU.
+
+        Returns:
+            numpy.ndarray: Shape ``(n_points, dim)``, in the order of the
+                geometry's axes in a DataConfiguration (row-major over
+                `shape`).
+        """
+        points = self.discretization_points
+        if not isinstance(points, np.ndarray):
+            points = self.backend.to_numpy(points)
+        return np.asarray(points).reshape(-1, points.shape[-1])
+
+    def axis_coordinates(self) -> list[np.ndarray]:
+        """Return the coordinates along each axis of a rectilinear grid.
+
+        Returns:
+            list of numpy.ndarray: One 1D array per axis of `shape`.
+
+        Raises:
+            ValueError: If `structure` is not :attr:`Structure.GRID`.
+        """
+        raise ValueError(f"{type(self).__name__} is not a rectilinear grid.")
 
     def bounding_box(self):
         """Compute the axis-aligned bounds of the geometry.

@@ -4,7 +4,14 @@
 from qewton.constraints.base import Constraint
 from qewton.data.dataloaders.base import DataNode
 from qewton.graphs.control_nodes.graph_node import GraphNode
-from qewton.visualization.plots.result import ClusterBox, EdgeLayout, GraphLayoutResult, NodeLayout, PortLayout
+from qewton.visualization.plots.result import (
+    ClusterBox,
+    EdgeLayout,
+    GraphLayoutResult,
+    NodeCategory,
+    NodeLayout,
+    PortLayout,
+)
 
 # Layout constants, in arbitrary but self-consistent units (not pixels).
 # Node width is fixed; the node title is drawn rotated by 90 degrees, so a
@@ -77,16 +84,20 @@ def _node_label(node) -> str:
     return node.name
 
 
-def _node_category(node) -> str:
-    """Coloring bucket of a node. Constraint is checked before GraphNode,
-    since some constraints (e.g. MSEConstraint) are also GraphNodes."""
-    if isinstance(node, Constraint):
-        return "constraint"
-    if isinstance(node, DataNode):
-        return "datanode"
-    if isinstance(node, GraphNode):
-        return "graphnode"
-    return "default"
+#: The category of the nodes of each class, checked in order: Constraint
+#: before GraphNode, since some constraints (e.g. MSEConstraint) are
+#: GraphNodes too. Any other node is a model.
+NODE_CATEGORIES = (
+    (Constraint, NodeCategory.CONSTRAINT),
+    (DataNode, NodeCategory.DATA),
+)
+
+
+def _node_category(node) -> NodeCategory:
+    return next(
+        (category for cls, category in NODE_CATEGORIES if isinstance(node, cls)),
+        NodeCategory.MODEL,
+    )
 
 
 def _node_size(node) -> tuple[float, float]:
@@ -190,7 +201,7 @@ def _reduce_crossings(graph_like, level_nodes, by_rank: dict[int, list], rank: d
                     yield node, edge.to_port.node
         # Skip connections do not affect ranks but usually span several,
         # so they are candidates too.
-        for edge in getattr(graph_like, "skip_connections", []):
+        for edge in graph_like.skip_connections:
             if edge.from_port.node in node_set and edge.to_port.node in node_set:
                 yield edge.from_port.node, edge.to_port.node
 
@@ -294,7 +305,7 @@ def _place_level(
             x = rank_x[r]
             y = offset_y + i * row_height
 
-            if isinstance(node, GraphNode) and remaining_depth > 0 and node._graph.sorted_nodes:
+            if isinstance(node, GraphNode) and remaining_depth > 0 and node.inner_graph.sorted_nodes:
                 _place_cluster(
                     node, x, y, remaining_depth, nodes_out, ports_out, clusters_out, port_anchor, levels_out
                 )
@@ -327,10 +338,10 @@ def _place_level(
 def _measure_node_width(node, remaining_depth) -> float:
     """Width a node occupies when placed, without placing anything. Must
     stay in sync with _place_cluster's width computation."""
-    if isinstance(node, GraphNode) and remaining_depth > 0 and node._graph.sorted_nodes:
+    if isinstance(node, GraphNode) and remaining_depth > 0 and node.inner_graph.sorted_nodes:
         gap_in = CLUSTER_GAP if node.input_ports else 0.0
         gap_out = CLUSTER_GAP if node.output_ports else 0.0
-        inner_width = _measure_level_width(node._graph, remaining_depth - 1)
+        inner_width = _measure_level_width(node.inner_graph, remaining_depth - 1)
         return gap_in + inner_width + gap_out + 2 * CLUSTER_MARGIN
     return _node_size(node)[0]
 
@@ -353,10 +364,10 @@ def _measure_level_width(graph_like, remaining_depth) -> float:
 def _measure_node_height(node, remaining_depth) -> float:
     """Height a node occupies when placed, without placing anything. Must
     stay in sync with _place_cluster's half_height computation."""
-    if isinstance(node, GraphNode) and remaining_depth > 0 and node._graph.sorted_nodes:
+    if isinstance(node, GraphNode) and remaining_depth > 0 and node.inner_graph.sorted_nodes:
         in_height = _port_stack_height(node.input_ports)
         out_height = _port_stack_height(node.output_ports)
-        inner_height = _measure_level_height(node._graph, remaining_depth - 1)
+        inner_height = _measure_level_height(node.inner_graph, remaining_depth - 1)
         return max(inner_height, in_height, out_height) + 2 * CLUSTER_MARGIN
     return _node_size(node)[1]
 
@@ -388,7 +399,7 @@ def _build_edges(graph_like, port_anchor, edges_out) -> None:
                     label=_edge_label(graph_like, node, edge),
                 )
             )
-    for edge in getattr(graph_like, "edges_from_outside", []):
+    for edge in graph_like.edges_from_outside:
         if edge.from_port in port_anchor and edge.to_port in port_anchor:
             edges_out.append(
                 EdgeLayout(
@@ -396,7 +407,7 @@ def _build_edges(graph_like, port_anchor, edges_out) -> None:
                     label=_edge_label(graph_like, edge.from_port.node, edge),
                 )
             )
-    for edge in getattr(graph_like, "skip_connections", []):
+    for edge in graph_like.skip_connections:
         if edge.from_port in port_anchor and edge.to_port in port_anchor:
             edges_out.append(EdgeLayout(points=[port_anchor[edge.from_port], port_anchor[edge.to_port]]))
 
@@ -415,7 +426,7 @@ def _place_cluster(
     cluster centered at (x, y), with the composite's own ports on the
     cluster boundary (inputs left, outputs right). Edges are built later,
     in pass 2."""
-    inner_graph = node._graph
+    inner_graph = node.inner_graph
     in_height = _port_stack_height(node.input_ports)
     out_height = _port_stack_height(node.output_ports)
 

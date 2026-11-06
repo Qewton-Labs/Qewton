@@ -11,9 +11,8 @@ from qewton.geometries.discrete.mesh_stats import mean_edge_length
 class PlaneSliceGeometry(GridGeometry[TensorType]):
     """A (k, N1, N2) structured grid of points covering a volumetric mesh's
     cross-section: a stack of `k` planes perpendicular to `normal`, offset
-    from the mesh's centroid along it. Feed a PlaneSliceGeometry and a
-    MeshInterpolationNode's output into EmbeddedGridPlot (visualization plan,
-    section 12).
+    from the mesh's centroid along it, e.g. the target of a
+    MeshInterpolationNode.
 
     A special case of GridGeometry, not a distinct concept: the grid points
     are computed from a mesh and a plane instead of given directly, and
@@ -42,7 +41,7 @@ class PlaneSliceGeometry(GridGeometry[TensorType]):
             components - (offset, then the two in-plane grid indices), e.g.
             `Variable("plane", 1) * Variable("u", 1) * Variable("v", 1)`.
             Naming and identity are entirely the caller's: whichever
-            component a SliderSpec/FixedSpec should later target (typically
+            component a control should later step through (typically
             the offset dimension), the caller builds it and keeps the
             reference. Validated by GridGeometry itself (point_grid.shape[-1]
             must equal grid_variable.dim).

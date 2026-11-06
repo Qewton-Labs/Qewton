@@ -34,8 +34,9 @@ if TYPE_CHECKING:
     # checking here and locally inside the methods that need them.
     from qewton.visualization.plots.base import Plot
     from qewton.visualization.plots.graph import GraphPlot
+    from qewton.visualization.axes import ControlAxis, Selector
     from qewton.visualization.layout import Layout
-    from qewton.visualization.plots.spec import Scale
+    from qewton.visualization.scales import ColorScale
 
 
 class Graph(Serializable):
@@ -937,8 +938,9 @@ class Graph(Serializable):
         max_vertex_distance: float | dict[Variable, float] = 0.05,
         device: Device | str | None = None,
         share_scale: bool = True,
-        scale: "Scale | None" = None,
-        controls=None,
+        color_scale: "ColorScale | None" = None,
+        controls: "list[ControlAxis]" = (),
+        default_control: "type[ControlAxis] | None" = None,
         variables: list[Variable] | None = None,
         prediction_config: DataConfiguration | None = None,
         reference_config: DataConfiguration | None = None,
@@ -996,25 +998,24 @@ class Graph(Serializable):
             share_scale: With `reference`, whether the reference and prediction
                 panels share one color scale. The error panel always has its
                 own scale.
-            scale: A fixed color scale for every slider state and animation
-                frame. With `reference`, it is shared by the reference and
-                prediction panels instead of the scale from `share_scale`; the
-                error panel keeps its own scale. None (default) leaves the
-                range to the plot.
-            controls (ControlSpec class or instance, dict, list, or None):
-                Controls for the axes not used by a plot role. A class or
-                instance applies to all such axes, a dict maps axes to a class
-                or instance, a list of ControlSpec instances is used as-is.
-                None (default) uses sliders. With `reference`, each control
-                instance is shared by all panels. On a product geometry, a
-                control may be bound to one of its 1-dimensional factor
-                Variables to step through that factor.
+            color_scale: The color scale of every plot, e.g.
+                ``ColorScale(vmin=0.0, vmax=1.0)`` for one fixed range. With
+                `reference`, it is shared by the reference and prediction
+                panels instead of the scale from `share_scale`; the error
+                panel keeps its own scale. None (default) gives each plot its
+                own.
+            controls: Control axes for chosen dimensions, e.g.
+                ``[TimeAxis(t)]``; a control on a 1D factor of a product
+                geometry steps through that factor. With `reference`, every
+                control is shared by all panels.
+            default_control: Control axis class for every other dimension
+                not drawn; None for auto_plot's default (a slider).
             variables: Narrows `port` (and `reference`, unless it already has
                 exactly this combination) to the slice of these Variables of a
                 composed FeatureAxes before plotting. With more than one
-                Variable, all panels share one dropdown to switch between them,
-                which requires them to have the same dimension. None (default)
-                uses the Variable of `port` as declared.
+                Variable, all plots share one Selector to switch between them,
+                which requires them to be scalars. None (default) uses the
+                Variable of `port` as declared.
             prediction_config: Used instead of the data configuration of `port`
                 in this graph to build the prediction plot and to check
                 `reference` against.
@@ -1026,20 +1027,20 @@ class Graph(Serializable):
                 :func:`~qewton.visualization.auto.auto_plot` for every plot.
 
         Returns:
-            Layout: Without `reference`, an ``Overlay`` of the plot for a
-                single port, or a ``Row`` of plots for a list of ports. With
-                `reference`, an ``Overlay`` of the reference, prediction and
-                error plots for curve-like plots, or a ``Row`` of them
-                otherwise. Show it with ``Figure(layout).show()``.
+            Layout: The plots (with `reference`: reference, prediction and
+                error) arranged by
+                :func:`~qewton.visualization.layout.auto_layout`; panels in one
+                Overlay are named by their legend entries, panels side by side
+                by their titles. Show it with ``Figure(layout).show()``.
 
         Raises:
             ValueError: If `reference` is given for a list of ports, plain
                 reference data is given without `reference_config`, the
                 Variables or shapes of prediction and reference do not match,
-                `error` is unknown, `scale` is given for plots without color,
-                or `controls` names an axis that takes no control.
+                `error` is unknown, or auto_plot raises.
         """
-        from qewton.visualization.layout import Overlay, Row
+        if default_control is not None:
+            plot_kwargs["default_control"] = default_control
 
         ports = port if isinstance(port, list) else [port]
 
@@ -1065,7 +1066,7 @@ class Graph(Serializable):
                 max_vertex_distance,
                 device,
                 share_scale,
-                scale,
+                color_scale,
                 controls,
                 variables,
                 prediction_config,
@@ -1076,7 +1077,7 @@ class Graph(Serializable):
 
         from qewton.data.dataloaders.sampler.point_sampler import discretization_mode
         from qewton.visualization.auto import auto_plot
-        from qewton.visualization.plots.spec import SelectorSpec
+        from qewton.visualization.layout import auto_layout
 
         nodes_to_run = self._nodes_needed_for({p.node for p in ports})
         if device is not None:
@@ -1094,31 +1095,59 @@ class Graph(Serializable):
                 sampled_geometry.to_numpy()
 
         combined_variable = Variable.compose(variables) if variables else None
-        controls_kwarg = {} if controls is None else {"controls": controls}
+        value = self._shared_value(variables)
         plots = []
         for p in ports:
             data = p.node.backend.to_numpy(p.value)
-            config = p.get_data_configuration(self)  # type: ignore
+            config = self._with_current_sizes(
+                p.get_data_configuration(self), samplers  # type: ignore
+            )
             if combined_variable is not None:
                 data, config = self._narrow_to_variable(data, config, combined_variable)
-            scale_kwarg = {} if scale is None else {"scale": scale}
             plots.append(
                 auto_plot(
                     data,
                     config,
                     plot_type,
-                    **controls_kwarg,
-                    **scale_kwarg,
+                    value=value,
+                    controls=controls,
+                    color_scale=color_scale,
                     **plot_kwargs,
                 )
             )
+        return auto_layout(plots)
 
-        if variables and len(variables) > 1:
-            shared_selector_spec = SelectorSpec(variables)
-            for plot in plots:
-                self._redirect_to_shared_variable(plot, variables, shared_selector_spec)
+    @staticmethod
+    def _with_current_sizes(config: DataConfiguration, samplers) -> DataConfiguration:
+        """`config` with the axes of the samplers' geometries sized to the
+        points they provide now, e.g. the vertices of a mesh in mesh mode
+        rather than the batch size the axes are declared with."""
+        from qewton.config.axes import GeometryAxes
 
-        return Overlay(plots[0]) if len(plots) == 1 else Row(*plots)
+        sampled = [g for sampler in samplers for g in sampler.sampled_geometries]
+
+        def current(axes):
+            if not any(
+                isinstance(axes, GeometryAxes) and axes.geometry is g for g in sampled
+            ):
+                return axes
+            n_points = len(axes.geometry.coordinates())
+            if axes.shape[0].size == n_points:
+                return axes
+            return GeometryAxes(axes.geometry, (n_points,))
+
+        resized = [current(axes) for axes in config.axes]
+        if all(new is old for new, old in zip(resized, config.axes)):
+            return config
+        return DataConfiguration(*resized, dtype=config.dtype)
+
+    @staticmethod
+    def _shared_value(variables: list[Variable] | None) -> "Selector | None":
+        """One Selector shared by every plot for several `variables`, so
+        choosing one switches every plot; None otherwise."""
+        from qewton.visualization.axes import Selector
+
+        return Selector(variables) if variables and len(variables) > 1 else None
 
     @staticmethod
     def _product_reference_geometry(geometry_axes: list, samplers) -> "Geometry":
@@ -1165,7 +1194,7 @@ class Graph(Serializable):
         max_vertex_distance: float | dict[Variable, float],
         device,
         share_scale: bool,
-        scale,
+        color_scale,
         controls,
         variables: list[Variable] | None,
         prediction_config: DataConfiguration | None,
@@ -1186,9 +1215,9 @@ class Graph(Serializable):
             active_discretization_mode,
             discretization_mode,
         )
-        from qewton.visualization.auto import auto_plot, is_curve_like
-        from qewton.visualization.layout import Overlay, Row
-        from qewton.visualization.plots.spec import ColorSpec, Scale, SelectorSpec
+        from qewton.visualization.auto import auto_plot
+        from qewton.visualization.layout import Overlay, auto_layout
+        from qewton.visualization.scales import ColorScale
         from qewton.visualization.themes import cmaps
 
         combined_variable = Variable.compose(variables) if variables else None
@@ -1221,6 +1250,7 @@ class Graph(Serializable):
                     sampled_geometry.to_numpy()
 
             pred_data = port.node.backend.to_numpy(port.value)
+            pred_config = self._with_current_sizes(pred_config, samplers)
             geometry_axes = pred_config.geometry_axes
             if geometry_axes is None:
                 raise ValueError(
@@ -1228,13 +1258,15 @@ class Graph(Serializable):
                     "reference needs the model's own evaluation points to "
                     "call itself at."
                 )
-            points = geometry_axes.geometry.discretization_points
-            points = (
-                points
-                if isinstance(points, np.ndarray)
-                else np.asarray(geometry_axes.geometry.backend.to_numpy(points))
+            # One GeometryAxes per factor (a product sampler): every
+            # combination of their points, in the order of the data.
+            geometry = (
+                self._product_reference_geometry(geometry_axes, samplers)
+                if isinstance(geometry_axes, list)
+                else geometry_axes.geometry
             )
-            ref_data = self._reference_to_numpy(reference(points), port)
+            ref_data = self._reference_to_numpy(reference(geometry.coordinates()), port)
+            ref_data = ref_data.reshape(*pred_data.shape[:-1], ref_data.shape[-1])
             ref_config = pred_config
         elif isinstance(reference, Port):
             ref_port = reference
@@ -1341,95 +1373,82 @@ class Graph(Serializable):
                 "at the same points."
             )
 
-        # A curve-like family uses "label" (an Overlay legend entry) to
-        # distinguish panels; every other family uses "title" (a Row panel
-        # heading) - probe once with auto_plot() to find out which. The probe
-        # gets the same controls as the panels, since they decide e.g. which
-        # factor of a space-time domain is drawn.
-        probe_kwargs = dict(plot_kwargs)
-        if controls is not None:
-            probe_kwargs["controls"] = controls
-        probe = auto_plot(ref_data, ref_config, plot_type, **probe_kwargs)
-        is_curve = is_curve_like(probe)
-        name_kwarg = "label" if is_curve else "title"
+        value = self._shared_value(variables)
+        reference_plot = auto_plot(
+            ref_data,
+            ref_config,
+            plot_type,
+            value=value,
+            controls=controls,
+            color_scale=color_scale,
+            **plot_kwargs,
+        )
+        # The controls of the reference, including the default ones, are
+        # shared by every panel that has their dimension: a Variable is one
+        # object everywhere, an axes only within one configuration (whether
+        # two configurations' batch axes are the same is not known).
+        def shared(config):
+            controls = [
+                c
+                for c in reference_plot.controls
+                if isinstance(c.variable_or_axes, Variable)
+                or any(a is c.variable_or_axes for a in config.axes)
+            ]
+            return dict(plot_type=plot_type, value=value, controls=controls)
 
-        def _named(name: str, shared_controls=None) -> dict:
-            kwargs = dict(plot_kwargs, **{name_kwarg: name})
-            if shared_controls is not None:
-                kwargs["controls"] = shared_controls
-            elif controls is not None:
-                kwargs["controls"] = controls
-            return kwargs
-
-        reference_plot = auto_plot(ref_data, ref_config, plot_type, **_named("Reference"))
-        # One resolved ControlSpec instance per surplus axis, shared across
-        # every panel from here on.
-        shared_controls = reference_plot.controls
+        # The reference's scale (None without color) is shared if asked for.
+        if share_scale or color_scale is not None:
+            color_scale = reference_plot.color_scale
         prediction_plot = auto_plot(
-            pred_data, pred_config, plot_type, **_named("Prediction", shared_controls)
+            pred_data,
+            pred_config,
+            color_scale=color_scale,
+            **shared(pred_config),
+            **plot_kwargs,
         )
         plots = [reference_plot, prediction_plot]
-
-        shared_selector_spec = (
-            SelectorSpec(variables) if variables and len(variables) > 1 else None
-        )
-        if shared_selector_spec is not None:
-            for plot in plots:
-                self._redirect_to_shared_variable(plot, variables, shared_selector_spec)
-
-        ref_color = getattr(reference_plot, "color", None)
-        pred_color = getattr(prediction_plot, "color", None)
-        has_colors = isinstance(ref_color, ColorSpec) and isinstance(
-            pred_color, ColorSpec
-        )
-        if scale is not None and not has_colors:
-            raise ValueError(
-                "scale= is not used, since the reference and prediction plots "
-                "have no color."
-            )
-        if has_colors and (share_scale or scale is not None):
-            shared_scale = scale if scale is not None else Scale()
-            ref_color.scale = shared_scale
-            pred_color.scale = shared_scale
+        names = ["Reference", "Prediction"]
 
         if error is not None:
             if error == "signed":
                 error_data = pred_data - ref_data
-                error_scale = Scale(symmetric=True)
-                diverging = True
+                error_scale = ColorScale(cmap=cmaps.diverging, symmetric=True)
             elif error == "absolute":
                 error_data = np.abs(pred_data - ref_data)
-                error_scale = Scale(vmin=0.0)
-                diverging = False
+                error_scale = ColorScale(vmin=0.0)
             elif error == "relative":
                 diff = pred_data - ref_data
                 threshold = 1e-8 * np.max(np.abs(ref_data))
                 with np.errstate(divide="ignore", invalid="ignore"):
                     error_data = diff / ref_data
                 error_data = np.where(np.abs(ref_data) < threshold, np.nan, error_data)
-                error_scale = Scale(symmetric=True)
-                diverging = True
+                error_scale = ColorScale(cmap=cmaps.diverging, symmetric=True)
             else:
                 raise ValueError(
                     'error must be "signed", "absolute", "relative", or '
                     f"None, got {error!r}."
                 )
-
-            error_plot = auto_plot(
-                error_data, ref_config, plot_type, **_named("Error", shared_controls)
-            )
-            if shared_selector_spec is not None:
-                self._redirect_to_shared_variable(
-                    error_plot, variables, shared_selector_spec
+            error_kwargs = {} if reference_plot.color_scale is None else {
+                "color_scale": error_scale
+            }
+            plots.append(
+                auto_plot(
+                    error_data,
+                    ref_config,
+                    **shared(ref_config),
+                    **error_kwargs,
+                    **plot_kwargs,
                 )
-            error_color = getattr(error_plot, "color", None)
-            if isinstance(error_color, ColorSpec):
-                error_color.scale = error_scale
-                if error_color.cmap is None and diverging:
-                    error_color.cmap = cmaps.diverging
-            plots.append(error_plot)
+            )
+            names.append("Error")
 
-        return Overlay(*plots) if is_curve else Row(*plots)
+        layout = auto_layout(plots)
+        for plot, name in zip(plots, names):
+            if isinstance(layout, Overlay):
+                plot.label = name
+            else:
+                plot.title = name
+        return layout
 
     @staticmethod
     def _narrow_to_variable(data, config: DataConfiguration, variable: Variable):
@@ -1471,20 +1490,6 @@ class Graph(Serializable):
                 f"{ref_variable!r} instead. Reuse the same Variable "
                 "instance building both configs; never match by name."
             )
-
-    @staticmethod
-    def _redirect_to_shared_variable(
-        plot: "Plot", variables: list[Variable], shared_spec
-    ) -> None:
-        """Points every PlotSpec attribute on `plot` that currently names
-        one of `variables` (e.g. its `color`/`vector`/`y`) at `shared_spec`
-        instead, so switching the shared SelectorSpec's state moves every
-        panel together."""
-        from qewton.visualization.plots.spec import PlotSpec
-
-        for value in vars(plot).values():
-            if isinstance(value, PlotSpec) and value.variable_or_axes in variables:
-                value.variable_or_axes = shared_spec
 
     def collect_trainable_parameters(self):
         """Collect the trainable parameters of all nodes in this graph.

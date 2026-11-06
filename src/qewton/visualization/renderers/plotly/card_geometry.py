@@ -135,8 +135,14 @@ def _round_poly(poly: list[tuple[float, float]]) -> list[tuple[float, float]]:
 
 
 def _poly_union_all(polys: list[list[tuple[float, float]]]) -> list[tuple[float, float]]:
-    from shapely.geometry import Polygon
-    from shapely.ops import unary_union
+    try:
+        from shapely.geometry import Polygon
+        from shapely.ops import unary_union
+    except ImportError as e:
+        raise ImportError(
+            "Drawing a GraphPlot with Plotly requires the optional 'shapely' "
+            "package: pip install shapely"
+        ) from e
 
     # buffer(0) repairs slightly invalid polygons (e.g. tightly packed
     # ports touching a corner arc), which would otherwise make the union
@@ -245,45 +251,6 @@ def darken_hex(hex_color: str, factor: float) -> str:
         return hex_color
     channels = [max(0, min(255, round(int(m.group(i), 16) * factor))) for i in (1, 2, 3)]
     return "#" + "".join(f"{c:02x}" for c in channels)
-
-
-def port_layout(n: int, card_h: float, corner_r: float, outer_r: float, min_gap: float, min_margin: float):
-    """Vertical port positions on a card edge.
-
-    Ports are spaced by at least `min_gap`, with at least `min_margin` to
-    the corner arcs; extra height is distributed evenly over all gaps and
-    both margins.
-
-    Args:
-        n: Number of ports.
-        card_h: Card height.
-        corner_r: Corner radius.
-        outer_r: Notch radius.
-        min_gap: Minimum gap between neighboring notches.
-        min_margin: Minimum margin between the outermost notches and the
-            corners.
-
-    Returns:
-        tuple: ``(centers, min_height)``, where ``centers`` (list of float)
-            holds the port center y-offsets from the card's top edge and
-            ``min_height`` (float) is the minimum card height for `n` ports.
-    """
-    if n <= 0:
-        return [], 2 * corner_r
-    usable = card_h - 2 * corner_r
-    min_usable = 2 * min_margin + n * 2 * outer_r + (max(0, n - 1) * min_gap)
-    min_height = 2 * corner_r + min_usable
-    extra = max(0.0, usable - min_usable)
-    slots = n + 1
-    extra_per_slot = extra / slots
-    margin = min_margin + extra_per_slot
-    gap = min_gap + extra_per_slot
-    cys = []
-    cy = corner_r + margin + outer_r
-    for _ in range(n):
-        cys.append(cy)
-        cy += 2 * outer_r + gap
-    return cys, min_height
 
 
 #: Largest sub-arc (radians) _bezier_arc_segments approximates with one

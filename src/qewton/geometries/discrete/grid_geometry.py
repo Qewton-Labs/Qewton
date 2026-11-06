@@ -1,11 +1,45 @@
 from __future__ import annotations
 
+import itertools
+
+import numpy as np
+
 from qewton.config.variables import Variable
-from qewton.geometries.base import Geometry, DiscreteGeometry
+from qewton.geometries.base import Geometry, DiscreteGeometry, Structure
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Bool
+
+
+def _grid_cells(shape: tuple[int, ...]) -> np.ndarray:
+    # Cells of a grid as simplices, indexing the points in row-major order:
+    # segments for one axis, two triangles per quad for two, six tetrahedra
+    # per hexahedron for three (along the paths from its first to its last
+    # corner, so neighbors share their faces).
+    index = np.arange(int(np.prod(shape))).reshape(shape)
+    if len(shape) == 1:
+        return np.stack([index[:-1], index[1:]], axis=1)
+    if len(shape) == 2:
+        a, b = index[:-1, :-1].ravel(), index[1:, :-1].ravel()
+        c, d = index[:-1, 1:].ravel(), index[1:, 1:].ravel()
+        return np.concatenate([np.stack([a, b, c], 1), np.stack([b, d, c], 1)])
+    if len(shape) == 3:
+
+        def corner(offset):
+            return index[
+                tuple(slice(o, n - 1 + o) for o, n in zip(offset, shape))
+            ].ravel()
+
+        tetrahedra = []
+        for order in itertools.permutations(range(3)):
+            offset, path = [0, 0, 0], [corner((0, 0, 0))]
+            for axis in order:
+                offset[axis] = 1
+                path.append(corner(offset))
+            tetrahedra.append(np.stack(path, axis=1))
+        return np.concatenate(tetrahedra)
+    raise NotImplementedError("Cells of grids with more than three axes are not supported.")
 
 
 class GridGeometry(DiscreteGeometry[TensorType]):
@@ -26,6 +60,15 @@ class GridGeometry(DiscreteGeometry[TensorType]):
             grid is a discretization of. Defaults to None.
         backend (type[ComputingBackend[TensorType]], optional):
             Defaults to DEFAULT_DL_BACKEND.
+
+    Attributes:
+        structure (Structure): :attr:`~qewton.geometries.base.Structure.GRID`
+            if every coordinate varies along exactly one grid axis
+            (rectilinear), otherwise
+            :attr:`~qewton.geometries.base.Structure.MESH`.
+        axis_components (tuple of int): For a rectilinear grid, the
+            coordinate component varying along each grid axis, e.g.
+            ``(1, 0)`` for a grid built with ``meshgrid(x, y)``.
     """
 
     def __init__(
@@ -77,6 +120,61 @@ class GridGeometry(DiscreteGeometry[TensorType]):
         self.point_filter = self.backend.to(self.point_filter, device=device)
         if self.cell_volumes is not None:
             self.cell_volumes = self.backend.to(self.cell_volumes, device=device)
+
+    @property
+    def structure(self) -> Structure:
+        # A grid aligned with the coordinate axes is rectilinear; any other
+        # (rotated, curved, embedded in a higher dimension) is drawn as the
+        # mesh of its cells.
+        return Structure.GRID if self._rectilinear() is not None else Structure.MESH
+
+    @property
+    def topological_dim(self) -> int:
+        return len(self.shape)
+
+    @property
+    def cells(self) -> np.ndarray:
+        return _grid_cells(tuple(self.shape))
+
+    @property
+    def axis_components(self) -> tuple[int, ...]:
+        return self._require_rectilinear()[0]
+
+    def axis_coordinates(self) -> list[np.ndarray]:
+        """See :meth:`~qewton.geometries.base.DiscreteGeometry.axis_coordinates`."""
+        return self._require_rectilinear()[1]
+
+    def _require_rectilinear(self) -> tuple[tuple[int, ...], list[np.ndarray]]:
+        rectilinear = self._rectilinear()
+        if rectilinear is None:
+            raise ValueError("The grid is not aligned with the coordinate axes.")
+        return rectilinear
+
+    def _rectilinear(self) -> tuple[tuple[int, ...], list[np.ndarray]] | None:
+        # Per grid axis the coordinate component varying along it and its
+        # values, if every component varies along exactly one grid axis;
+        # None otherwise.
+        points = np.asarray(self.backend.to_numpy(self.discretization_points))
+        n_axes = len(self.shape)
+        if points.shape[-1] != n_axes:
+            return None
+        components, coordinates = [], []
+        for axis in range(n_axes):
+            index = tuple(slice(None) if i == axis else 0 for i in range(n_axes))
+            line = points[index]  # (n_axis, n_components)
+            varying = [k for k in range(n_axes) if np.ptp(line[:, k]) > 0]
+            if len(varying) > 1 or (not varying and self.shape[axis] > 1):
+                return None
+            component = varying[0] if varying else axis
+            shape = [-1 if i == axis else 1 for i in range(n_axes)]
+            expanded = line[:, component].reshape(shape)
+            if not np.allclose(points[..., component], expanded):
+                return None
+            components.append(component)
+            coordinates.append(line[:, component])
+        if sorted(components) != list(range(n_axes)):
+            return None
+        return tuple(components), coordinates
 
     @classmethod
     def build_unit_grid(

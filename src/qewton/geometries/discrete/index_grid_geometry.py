@@ -16,8 +16,8 @@ class IndexGridGeometry(GridGeometry[TensorType]):
     Args:
         variable (Variable): The variable connected to this geometry. Its
             dim must equal len(shape). Build it composite
-            (Variable("i", 1) * Variable("j", 1)) if a SliderSpec or
-            FacetSpec should later target a single grid axis.
+            (Variable("i", 1) * Variable("j", 1)) if a control should
+            later step through a single grid axis.
         shape (tuple[int, ...]): Grid extent per axis.
         point_filter (TensorType | None, optional): A grid of boolean
             values of shape shape + (1,). True marks an included point,

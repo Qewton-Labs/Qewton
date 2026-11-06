@@ -8,8 +8,8 @@ from qewton.config.variables import Variable
 from qewton.data.dataloaders.base import DataLoader
 from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 from qewton.optim.base import EvaluationPhase
-from qewton.visualization.layout import Overlay, Row
-from qewton.visualization.plots.data.curve import LinePlot
+from qewton.visualization.layout import Row
+from qewton.visualization.plots.data import LinePlot
 
 
 def _dataset(n: int, variable: Variable, fill_value: float) -> ArrayLikeDataSet:
@@ -108,7 +108,7 @@ class TestDataNodeVisualize:
     """DataNode.visualize() - runs the node on its own (no Graph) and
     plots every output port."""
 
-    def test_overlays_all_curve_outputs(self):
+    def test_lines_of_different_quantities_are_placed_side_by_side(self):
         F = Variable("f", 1)
         U = Variable("u", 1)
         loader = DataLoader(
@@ -118,11 +118,11 @@ class TestDataNodeVisualize:
             shuffle_data=False,
         )
         layout = loader.visualize()
-        assert isinstance(layout, Overlay)
+        assert isinstance(layout, Row)
         assert len(layout.plots) == 2
         assert all(isinstance(p, LinePlot) for p in layout.plots)
 
-    def test_rows_mixed_curve_and_non_curve_outputs(self):
+    def test_a_line_and_a_scatter_are_placed_side_by_side(self):
         F = Variable("f", 1)
         XY = Variable("x", 1) * Variable("y", 1)
         datas = [torch.full((8, 1), 1.0), torch.rand(8, 2)]
@@ -148,7 +148,8 @@ class TestDataNodeVisualize:
             shuffle_data=False,
         )
         layout = loader.visualize(mode=EvaluationPhase.TEST)
-        values = np.asarray(layout.plots[0].evaluate().y)
+        (result,) = layout.plots[0].evaluate()
+        values = result.positions[:, 1]
         assert np.all(values == 9.0)
 
     def test_defaults_to_validation_mode(self):
@@ -162,22 +163,20 @@ class TestDataNodeVisualize:
         loader.visualize()
         assert loader.mode == EvaluationPhase.VALIDATION
 
-    def test_a_point_samplers_own_output_draws_as_a_point_cloud(self):
-        """A PointSampler is a DataNode too - its own output IS its
-        geometry's own coordinate Variable, so it draws as an uncolored
-        point cloud (a Row, not an Overlay, for dim>=2) rather than
-        crashing on auto_plot's usual quantity-vs-geometry dispatch."""
+    def test_a_point_samplers_own_output_draws_as_points(self):
+        """A PointSampler is a DataNode too; its output are the coordinates
+        of its geometry, drawn as uncolored points."""
         from qewton.data.dataloaders.sampler.grid_sampler import GridSampler
         from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
-        from qewton.visualization.plots.data.points import PointCloudPlot
+        from qewton.visualization import ScatterPlot
 
         X = Variable("x", 2)
         square = Rectangle(X, [0.0, 0.0], 1.0, 1.0)
         sampler = GridSampler(square, 20)
         layout = sampler.visualize()
-        assert isinstance(layout, Row)
-        assert isinstance(layout.plots[0], PointCloudPlot)
-        assert layout.plots[0].color is None
+        (plot,) = layout.plots
+        assert isinstance(plot, ScatterPlot)
+        assert plot.color_scale is None
 
     def test_a_mode_with_no_data_raises_a_clear_error_instead_of_crashing(self):
         """splitting_ratio=(1.0, 0.0, 0.0) reserves nothing for VALIDATION -

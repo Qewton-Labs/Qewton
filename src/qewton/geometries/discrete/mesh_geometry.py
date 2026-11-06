@@ -2,8 +2,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import numpy as np
+
 from qewton.config.variables import Variable
-from qewton.geometries.base import Geometry, DiscreteGeometry, BoundaryGeometry
+from qewton.geometries.base import Geometry, DiscreteGeometry, BoundaryGeometry, Structure
 from qewton.geometries.discrete.mesh import Mesh
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
@@ -88,6 +90,19 @@ class MeshGeometry(DiscreteGeometry[TensorType]):
         self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshGeometry:
         return self  # TODO: max_vertex_distance is currently ignored
+
+    @property
+    def structure(self) -> Structure:
+        return Structure.MESH
+
+    @property
+    def topological_dim(self) -> int:
+        # A simplex with k vertices has dimension k - 1.
+        return self.mesh.cells.shape[1] - 1
+
+    @property
+    def cells(self) -> np.ndarray:
+        return np.asarray(self.backend.to_numpy(self.mesh.cells))
 
     def bounding_box(self):
         bounding_box = []
