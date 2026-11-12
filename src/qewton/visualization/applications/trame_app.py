@@ -149,27 +149,11 @@ class ColorState:
     preset: int = 0
 
 
-class PolyDataBuffer:
-    """Geometry shown by a mapper, decoupled from the producing filter.
-
-    The mapper always refers to the same vtkPolyData instance, so the mapper
-    input never has to be re-connected at runtime. In addition, an empty filter
-    result is not forwarded: the previous geometry is kept and the caller can
-    simply hide the actor until the filter produces cells again.
-    """
-
-    def __init__(self):
-        self.data = vtkPolyData()
-
-    def update_from(self, algorithm):
-        """Pull `algorithm`; return True if it produced renderable geometry."""
-        algorithm.Update()
-        output = algorithm.GetOutput()
-        if output is None or output.GetNumberOfCells() == 0:
-            return False
-        self.data.ShallowCopy(output)
-        self.data.Modified()
-        return True
+def _update_and_has_cells(filter_):
+    """Pull `filter_`; return True if it produced renderable geometry."""
+    filter_.Update()
+    output = filter_.GetOutput()
+    return output is not None and output.GetNumberOfCells() > 0
 
 
 class Streamlines:
@@ -181,7 +165,6 @@ class Streamlines:
         self.tube: vtkTubeFilter | None = None
         self.tube_triangles: vtkTriangleFilter | None = None
         self.tube_clip: vtkClipPolyData | None = None
-        self.buffer: PolyDataBuffer | None = None
         self.seed_polydata = None
         self.vector_field = None
         self.seed_surface_id: int | None = None
@@ -215,10 +198,8 @@ class Streamlines:
         tube_clip.SetInputConnection(triangles.GetOutputPort())
         tube_clip.SetClipFunction(plane)
 
-        buffer = PolyDataBuffer()
-
         mapper = vtkPolyDataMapper()
-        mapper.SetInputData(buffer.data)
+        mapper.SetInputConnection(triangles.GetOutputPort())
         mapper.ScalarVisibilityOn()
         mapper.SetScalarModeToUsePointFieldData()
         mapper.SetColorModeToMapScalars()
@@ -233,17 +214,17 @@ class Streamlines:
         self.tube = tube
         self.tube_triangles = triangles
         self.tube_clip = tube_clip
-        self.buffer = buffer
         self.mapper = mapper
         self.actor = actor
 
     def refresh(self, clip_enabled, invert):
         """Re-pull the tube geometry, optionally clipped. Returns True if shown."""
-        if self.buffer is None or self.seed_polydata is None:
+        if self.mapper is None or self.seed_polydata is None:
             return False
         self.tube_clip.SetInsideOut(invert)
         source = self.tube_clip if clip_enabled else self.tube_triangles
-        return self.buffer.update_from(source)
+        self.mapper.SetInputConnection(source.GetOutputPort())
+        return _update_and_has_cells(source)
 
 
 class MeshClip:
@@ -262,9 +243,13 @@ class MeshClip:
     def set_enabled(self, enabled, invert=False):
         self.clip.SetInsideOut(invert)
         if enabled:
+            # Pull the filter first: the mapper can only bind its color array
+            # against an input that already carries the point data arrays.
+            self.clip.Update()
             self.item.mapper.SetInputConnection(self.clip.GetOutputPort())
         else:
             self.item.mapper.SetInputData(self.item.mesh)
+        self.item.mapper.Update()
 
 
 class ClipSlice:
@@ -273,7 +258,6 @@ class ClipSlice:
     def __init__(self):
         self.plane = vtkPlane()
         self.cutter: vtkCutter | None = None
-        self.buffer: PolyDataBuffer | None = None
         self.mapper: vtkPolyDataMapper | None = None
         self.actor: vtkActor | None = None
         self.mode = "off"
@@ -303,10 +287,8 @@ class ClipSlice:
         cutter.SetCutFunction(self.plane)
         cutter.GenerateTrianglesOn()
 
-        buffer = PolyDataBuffer()
-
         mapper = vtkPolyDataMapper()
-        mapper.SetInputData(buffer.data)
+        mapper.SetInputConnection(cutter.GetOutputPort())
         mapper.ScalarVisibilityOn()
         mapper.SetScalarModeToUsePointFieldData()
         mapper.SetColorModeToMapScalars()
@@ -317,14 +299,14 @@ class ClipSlice:
         actor.GetProperty().SetAmbient(0.3)
         actor.SetVisibility(False)
 
-        self.cutter, self.buffer, self.mapper, self.actor = cutter, buffer, mapper, actor
+        self.cutter, self.mapper, self.actor = cutter, mapper, actor
         return actor
 
     def refresh(self):
         """Re-pull the cut geometry. Returns True if the slice has geometry."""
-        if self.buffer is None:
+        if self.cutter is None:
             return False
-        return self.buffer.update_from(self.cutter)
+        return _update_and_has_cells(self.cutter)
 
     def set_plane(self, normal, offset):
         """`normal` in world coords, `offset` in [-1, 1] along the normal."""
@@ -730,17 +712,37 @@ class MeshScene:
         """Push the stored color state of a mesh into VTK and sync dependents."""
         item = self.vtk_meshes[mesh_id]
         state = self.color_states[mesh_id]
+        # vtkDataSetMapper delegates to an internal poly data mapper behind a
+        # geometry filter. Make sure the current input is resolved before the
+        # color array is selected, and flag the mapper afterwards so the local
+        # renderer re-serializes the scalar bindings together with the geometry.
+        item.mapper.Update()
         apply_color_state(item.mapper, state, item.mapper.GetLookupTable())
+        item.mapper.Modified()
         if mesh_id == 0:
             self.sync_derived_colors()
             self.update_scalar_bar()
+
+    def _apply_all_colors(self):
+        """Re-push every stored color state into VTK.
+
+        Must be called as the last step of any operation that changes a mapper
+        input: a mapper only resolves its color array against its *current*
+        input, so swapping the input invalidates the previously applied state.
+        """
+        for mesh_id in range(len(self.vtk_meshes)):
+            self._apply_colors(mesh_id)
 
     def sync_derived_colors(self):
         """Re-apply the volume mesh color state to slice + streamlines."""
         state = self.color_states[0]
         lut = self.volume_mesh.mapper.GetLookupTable()
-        apply_color_state(self.vtk_clip_slice.mapper, state, lut)
-        apply_color_state(self.vtk_streamlines.mapper, state, lut)
+        for mapper in (self.vtk_clip_slice.mapper, self.vtk_streamlines.mapper):
+            if mapper is None:
+                continue
+            mapper.Update()
+            apply_color_state(mapper, state, lut)
+            mapper.Modified()
 
     def update_scalar_bar(self):
         """Sync scalar bar title and LUT with the volume mesh color state."""
@@ -827,9 +829,10 @@ class MeshScene:
 
         sl.tracer.SetSourceData(seed_pd)
 
-        self.sync_derived_colors()
-
         sl.actor.SetVisibility(sl.refresh(cs.mode == "clip", cs.invert))
+
+        # refresh() may have re-connected the mapper input
+        self.sync_derived_colors()
         return (hint, new_actor)
 
     # -------------------------------------------------------------------------
@@ -868,11 +871,11 @@ class MeshScene:
 
         # slicing
         if cs.actor is not None:
-            if mode == "slice":
-                self.sync_derived_colors()
-                cs.actor.SetVisibility(cs.refresh())
-            else:
-                cs.actor.SetVisibility(False)
+            cs.actor.SetVisibility(cs.refresh() if mode == "slice" else False)
+
+        # Every mapper input swap above invalidated the color bindings, so the
+        # centralized color state is pushed again as the very last step.
+        self._apply_all_colors()
 
         return new_actor
 
