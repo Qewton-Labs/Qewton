@@ -455,7 +455,9 @@ class Flatten(Node[TensorType]):
     def forward(
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.backend.math.flatten(inp, self.start_dim, self.end_dim)
+        return self.backend.math.flatten(
+            inp, start_dim=self.start_dim, end_dim=self.end_dim
+        )
 
 
 class Unflatten(Node[TensorType]):

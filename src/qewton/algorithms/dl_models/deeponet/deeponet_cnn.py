@@ -176,6 +176,14 @@ class CNNDeepONet(DeepONet[TensorType]):
 
     def update_data_configs(self, updated_port, config_dict, dynamic_configs):
         ports = super().update_data_configs(updated_port, config_dict, dynamic_configs)
+        # Since the configs are defined in forward, the GraphNode does not propagate
+        # them into the inner graph -> pass the branch input shape on manually.
+        if len(self._input_ports) == 2 and updated_port == self._input_ports[0]:
+            branch_config_shape = dynamic_configs[updated_port].shape[1:]
+            if len(branch_config_shape) > 0 and all(
+                isinstance(dim, int) for dim in branch_config_shape
+            ):
+                self.branch_net.input_shape = branch_config_shape
         if len(self._input_ports) == 2 and updated_port == self._input_ports[1]:
             trunk_config_shape = dynamic_configs[updated_port].shape[1:]
             if len(trunk_config_shape) > 0 and all(

@@ -11,6 +11,7 @@ from qewton.config.axes import (
     AxesDim,
     EllipsisDim,
     FeatureAxes,
+    GeometryAxes,
     MinimumDim,
 )
 from qewton.graphs.nodes import InputPort, Port
@@ -690,30 +691,6 @@ class Std(ReductionNode[TensorType]):
 # region: Reshaping operations
 
 
-class Flatten(Node[TensorType]):
-    """Flatten node that reshapes input tensor to 2D by flattening dimensions between start_dim and end_dim.
-    Has one input port and one output port.
-    """
-
-    def __init__(
-        self,
-        start_dim: int = 0,
-        end_dim: int = -1,
-        backend=DEFAULT_DL_BACKEND,
-    ):
-        self.start_dim = start_dim
-        self.end_dim = end_dim
-        super().__init__(name=None, backend=backend)
-
-    # TODO: Make config connection
-    def forward(
-        self, x: Annotated[TensorType, DC.empty()]
-    ) -> Annotated[TensorType, DC.empty()]:
-        return self.backend.math.flatten(
-            x, start_dim=self.start_dim, end_dim=self.end_dim
-        )
-
-
 class Transpose(Node[TensorType]):
     """Transpose node that permutes the dimensions of the input tensor.
     Has one input port and one output port.
@@ -727,12 +704,97 @@ class Transpose(Node[TensorType]):
         self.perm = perm if perm is not None else [1, 0]
         super().__init__(name=None, backend=backend)
 
-    # TODO: Make config connection
-    def x_data_config(self):
-        return DC.empty()
+    def update_data_configs(
+        self, updated_port, config_dict, dynamic_configs: dict[Port, DC]
+    ):
+        port_config = dynamic_configs[updated_port]
+        port_config_was_updated = port_config.update_config(config_dict)
+        changed_ports = set()
+        if port_config_was_updated:
+            changed_ports.add(updated_port)
+            if isinstance(updated_port, InputPort):
+                new_config = self.remap_config(port_config, in_to_out=True)
+                other_port = self.output_ports[0]
+                other_config = dynamic_configs[other_port]
+            else:  # Output port was updated
+                new_config = self.remap_config(port_config, in_to_out=False)
+                other_port = self.input_ports[0]
+
+            # Now check if the config is changed:
+            other_config = dynamic_configs[other_port]
+            unify_config = other_config.unify_with(new_config)
+            if other_config.update_config(unify_config[0]):
+                changed_ports.add(other_port)
+
+        return changed_ports
+
+    def remap_config(self, config: DC, in_to_out: bool) -> DC:
+        # Implement the remapping logic for the configuration here
+        # The data config needs to be remapped based on the index permutation
+        if in_to_out:
+            remapping = self.perm
+        else:
+            remapping = [0] * len(self.perm)
+            for i, p in enumerate(self.perm):
+                remapping[p] = i
+        # Remap and assume mapping only happens inside a axes dimension,
+        # or over a whole axes (e.g. Batch and Features are changed)
+        # Work on a copy, so that no Axes/AxesDim objects are shared between ports.
+        no_info_config = DC(EllipsisAxes(), dtype=config.dtype)
+
+        # Flatten the config into (axes, dim) pairs, one per tensor dimension.
+        flat_dims: list[tuple] = []
+        for axes in config.axes:
+            if isinstance(axes, EllipsisAxes):
+                # Unknown number of dimensions -> can not index into the shape
+                return no_info_config
+            for dim in axes.shape:
+                if isinstance(dim, EllipsisDim):
+                    return no_info_config
+                flat_dims.append((axes, dim))
+
+        if len(flat_dims) != len(remapping):
+            raise DataConfigMismatchError(
+                f"Transpose with permutation {self.perm} expects "
+                f"{len(self.perm)} dimensions, but got config {config} "
+                f"with {len(flat_dims)} dimensions."
+            )
+
+        permuted = [flat_dims[r] for r in remapping]
+
+        # Group consecutive dimensions that belong to the same axes object.
+        groups: list[tuple] = []  # (axes, [dims])
+        for axes, dim in permuted:
+            if groups and groups[-1][0] is axes:
+                groups[-1][1].append(dim)
+            else:
+                groups.append((axes, [dim]))
+
+        # Every axes has to stay contiguous; if a permutation splits an axes
+        # (e.g. interleaves Batch and Feature dims) we can not represent it.
+        if len({id(axes) for axes, _ in groups}) != len(groups):
+            raise NotImplementedError(
+                f"Transpose with permutation {self.perm} splits an axes of config "
+                f"{config}. Only permutations within a single axes or of whole "
+                "axes are currently supported."
+            )
+
+        new_axes = []
+        for axes, dims in groups:
+            if tuple(dims) == tuple(axes.shape):
+                # Whole axes moved without inner reordering -> keep as is
+                # (preserves variables / geometry information).
+                new_axes.append(axes)
+            elif isinstance(axes, FeatureAxes):
+                new_axes.append(FeatureAxes(shape=tuple(dims)))
+            elif isinstance(axes, GeometryAxes):
+                new_axes.append(GeometryAxes(shape=tuple(dims)))
+            else:
+                new_axes.append(type(axes)(*dims))
+        return DC(*new_axes, dtype=config.dtype)
 
     def forward(
-        self, x: Annotated[TensorType, x_data_config]
+        self, x: Annotated[TensorType, DC.empty()]
     ) -> Annotated[TensorType, DC.empty()]:
         return self.backend.math.transpose(x, axes=self.perm)
 

@@ -48,10 +48,10 @@ from qewton.algorithms.building_blocks.math import (
     Mean,
     Sum,
     Std,
-    Flatten,
     Transpose,
 )
 from qewton.config.data_configurations import DataConfiguration as DC
+from qewton.algorithms.building_blocks.array_operations import Flatten
 from qewton.config.axes import EllipsisAxes
 
 
