@@ -903,10 +903,9 @@ class Graph(Serializable):
                     in_port.clear_value()
             node.run()
 
-    def diagram(self,
-                depth: int = 1,
-                show_port_names: bool = False,
-                show_edge_labels: bool = True) -> GraphPlot:
+    def diagram(
+        self, depth: int = 1, show_port_names: bool = False, show_edge_labels: bool = True
+    ) -> GraphPlot:
         """Build a diagram of this graph's structure.
 
         Args:
@@ -923,10 +922,12 @@ class Graph(Serializable):
         """
         from qewton.visualization.plots.graph import GraphPlot
 
-        return GraphPlot(self,
-                         depth=depth,
-                         show_port_names=show_port_names,
-                         show_edge_labels=show_edge_labels)
+        return GraphPlot(
+            self,
+            depth=depth,
+            show_port_names=show_port_names,
+            show_edge_labels=show_edge_labels,
+        )
 
     def visualize(
         self,
@@ -1876,6 +1877,30 @@ class TrackingObject:
 
         matrix_div_node = MatrixDivergence()
         return matrix_div_node(self, with_respect_to)
+
+    def __le__(self, other):
+        from qewton.algorithms.building_blocks.math import LessEqualNode
+
+        less_equal_node = LessEqualNode()
+        return less_equal_node(self, other)
+
+    def __lt__(self, other):
+        from qewton.algorithms.building_blocks.math import LessNode
+
+        less_node = LessNode()
+        return less_node(self, other)
+
+    def __ge__(self, other):
+        from qewton.algorithms.building_blocks.math import GreaterEqualNode
+
+        greater_equal_node = GreaterEqualNode()
+        return greater_equal_node(self, other)
+
+    def __gt__(self, other):
+        from qewton.algorithms.building_blocks.math import GreaterNode
+
+        greater_node = GreaterNode()
+        return greater_node(self, other)
 
 
 # endregion

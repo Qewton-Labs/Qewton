@@ -48,6 +48,13 @@ from .math import (
     Inner,
     Norm,
     Dot,
+    LessNode,
+    LessEqualNode,
+    GreaterNode,
+    GreaterEqualNode,
+    EqualNode,
+    NotEqualNode,
+    Clip,
 )
 
 from .array_operations import (

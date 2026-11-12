@@ -114,6 +114,96 @@ class Negative(Node[TensorType]):
         return self.backend.math.negative(x)
 
 
+class EqualNode(Node[TensorType]):
+    """Element-wise equality comparison of two input tensors.
+    Has two input ports and one output port.
+    """
+
+    ellipsis_dims = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        return self.backend.math.equal(x, y)
+
+
+class NotEqualNode(Node[TensorType]):
+    """Element-wise inequality comparison of two input tensors.
+    Has two input ports and one output port.
+    """
+
+    ellipsis_dims = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        return self.backend.math.not_equal(x, y)
+
+
+class GreaterNode(Node[TensorType]):
+    """Element-wise greater-than comparison of two input tensors.
+    Has two input ports and one output port.
+    """
+
+    ellipsis_dims = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        return self.backend.math.greater(x, y)
+
+
+class GreaterEqualNode(Node[TensorType]):
+    """Element-wise greater-than-or-equal comparison of two input tensors.
+    Has two input ports and one output port.
+    """
+
+    ellipsis_dims = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        return self.backend.math.greater_equal(x, y)
+
+
+class LessNode(Node[TensorType]):
+    """Element-wise less-than comparison of two input tensors.
+    Has two input ports and one output port.
+    """
+
+    ellipsis_dims = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        return self.backend.math.less(x, y)
+
+
+class LessEqualNode(Node[TensorType]):
+    """Element-wise less-than-or-equal comparison of two input tensors.
+    Has two input ports and one output port.
+    """
+
+    ellipsis_dims = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        y: Annotated[TensorType, DC(ellipsis_dims)],
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        return self.backend.math.less_equal(x, y)
+
+
 # endregion
 
 
@@ -398,6 +488,22 @@ class Minimum(Node[TensorType]):
         y: Annotated[TensorType, DC(ellipsis_dims)],
     ) -> Annotated[TensorType, DC(ellipsis_dims)]:
         return self.backend.math.minimum(x, y)
+
+
+class Clip(Node[TensorType]):
+    """Element-wise clipping of the input tensor to a specified range [min, max].
+    Has one input port and one output port.
+    """
+
+    ellipsis_dims = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Annotated[TensorType, DC(ellipsis_dims)],
+        min_val: Annotated[TensorType, DC(ellipsis_dims)] = None,  # type: ignore
+        max_val: Annotated[TensorType, DC(ellipsis_dims)] = None,  # type: ignore
+    ) -> Annotated[TensorType, DC(ellipsis_dims)]:
+        return self.backend.math.clip(x, min_val, max_val)
 
 
 # endregion
