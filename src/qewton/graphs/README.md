@@ -18,3 +18,24 @@ Data loaders and constraints are also implemented as nodes, allowing them to be 
 4. **Flexibility**: Support both simple sequential execution and complex, multi-input/multi-output DAGs. Can therefore cover arbitrary algorithms, e.g. for time-dependent problems, multi-physics coupling, or multi-task learning.
 5. **Hierarchical Nesting**: Enable users to create subgraphs that can be reused as single nodes in larger graphs.
 6. **Independence of Backend**: Does not only allow for the use of multiple deep learning frameworks, but also for non-deep learning computations, e.g. for data preprocessing or classical numerical methods.
+
+## Usage
+```python
+from qewton.graphs import Graph
+
+graph = Graph()
+with graph.tracker():
+    data = dataloader()       # returns a TrackingObject for its output port
+    prediction = model(data)  # connects dataloader -> model in `graph`
+
+graph.setup()  # sorts the graph and sets up all nodes
+graph.run()
+result = model.output_ports[0].value
+```
+
+Nodes can also be connected explicitly with `graph.connect(from_, to_)`.
+Each graph keeps the unified data configuration of every port in
+`graph.dynamic_data_configs`; the static configuration of a port
+(`port.data_configuration`) is never changed by connecting it.
+
+See [DECISIONS.md](DECISIONS.md) for design decisions.

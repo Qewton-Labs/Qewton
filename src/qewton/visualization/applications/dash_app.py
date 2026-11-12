@@ -1,181 +1,141 @@
-from dash import Dash, html, dcc
-from dash.dependencies import Input, Output
+"""Interactive Dash application for a Figure."""
 
-from qewton.visualization.applications.base import RenderApplication
-from qewton.visualization.plots.spec import PlotSpec, SliderSpec, SelectorSpec
+from qewton.visualization.applications.base import RenderApplication, require
+from qewton.visualization.axes import Control, Selector, SliderAxis
+from qewton.visualization.renderers.text import as_plain
+
+try:
+    from dash import Dash, dcc, html
+    from dash.dependencies import Input, Output
+
+    from qewton.visualization.renderers.plotly import PlotlyRenderer, camera
+except ImportError:  # optional packages; create() names the missing ones
+    pass
 
 
-def _selector_id(index: int) -> str:
-    return f"selector-spec-{index}"
-
-
-def _slider_id(index: int) -> str:
-    return f"slider-spec-{index}"
+def _control_id(index: int) -> str:
+    return f"control-{index}"
 
 
 class DashApplication(RenderApplication):
-    """Serves a Figure as a Dash app, with one slider widget per SliderSpec
-    control and one dropdown per SelectorSpec - other control types
-    (FixedSpec, FacetSpec, TimeSpec) are non-interactive and get no widget."""
+    """Serves a Figure as a Dash app: a slider per SliderAxis and a
+    dropdown per Selector of the figure are connected, i.e. a callback sets
+    their states and draws the figure again; the other controls are
+    embedded into the drawn figure (a TimeAxis as an animation).
 
-    @staticmethod
-    def create(figure):
-        """Builds a Dash app displaying `figure`, with a callback that
-        re-draws it whenever a slider's or dropdown's value changes."""
+    See Also:
+        :class:`~qewton.visualization.applications.base.RenderApplication`
+    """
+
+    connected = (SliderAxis, Selector)
+
+    @classmethod
+    def renderer_classes(cls) -> tuple[type, ...]:
+        """See :meth:`RenderApplication.renderer_classes
+        <qewton.visualization.applications.base.RenderApplication.renderer_classes>`."""
+        return (PlotlyRenderer,)
+
+    @classmethod
+    def create(cls, figure):
+        """Build a Dash app displaying `figure`.
+
+        Args:
+            figure (Figure): The figure to serve.
+
+        Returns:
+            dash.Dash: The application; start it with ``app.run()``.
+
+        Raises:
+            ImportError: If Dash or Plotly is not installed.
+            TypeError: If the figure is not drawn by a PlotlyRenderer.
+        """
+        require(cls.__name__, "dash", "plotly")
+        cls.check_renderer(figure)
         app = Dash(__name__)
         if figure.title is not None:
-            # Left at Dash's own default ("Dash") otherwise - assigning
-            # None here crashes the very first page render, since Dash
-            # interpolates it directly into the index HTML template via
-            # str.replace(), which requires a string.
-            app.title = figure.title
-
-        DashApplication._build_layout(app, figure)
-        DashApplication._register_callbacks(app, figure)
-        return app
-
-    @staticmethod
-    def _build_layout(app, figure):
-
-        widgets = []
-
-        # Plot
-        widgets.append(
+            app.title = as_plain(figure.title)
+        controls = cls.interactive_controls(figure)
+        embedded = cls.embedded_controls(figure)
+        widgets = [
             dcc.Graph(
                 id="figure",
-                figure=figure.draw(),
-                # Dash's dcc.Graph doesn't render $...$ LaTeX (PlotSpec.
-                # math_name/axis_names_from_variable) unless explicitly
-                # opted into - it's off by default.
-                mathjax=True,
+                figure=figure.draw(embedded=embedded),
+                mathjax=figure.renderer.mathjax,
+                # At the figure's own size; the page scrolls if it is wider.
+                responsive=False,
             )
-        )
-
-        # Controls - only SliderSpec gets an interactive widget. FixedSpec is
-        # deliberately non-interactive (one plot pinned to one state, e.g.
-        # several slices shown at once via separate FixedSpec-controlled
-        # plots), and has none of the min/max/step/marks a slider needs.
-        for i, control in enumerate(DashApplication._slider_controls(figure)):
-            widgets.append(
-                html.Div(
-                    [
-                        html.Label(DashApplication._slider_label(figure, control)),
-                        DashApplication.create_slider(control, id=_slider_id(i)),
-                    ]
-                )
-            )
-
-        # SelectorSpecs aren't in figure.controls (see Plot.selector_specs) -
-        # collected separately, one dropdown each.
-        for i, spec in enumerate(figure.selector_specs):
-            widgets.append(
-                html.Div(
-                    [
-                        html.Label(DashApplication._selector_label(figure, spec)),
-                        DashApplication.create_dropdown(spec, id=_selector_id(i)),
-                    ]
-                )
-            )
-
-        app.layout = html.Div(widgets)
-
-    @staticmethod
-    def _slider_controls(figure) -> list[SliderSpec]:
-        """Every SliderSpec in figure.controls, in a fixed order shared by
-        _build_layout() and _register_callbacks() - each widget's position
-        in this list is its component id (_slider_id), so the two stay in
-        sync without either needing the other's ids up front."""
-        return [c for c in figure.controls if isinstance(c, SliderSpec)]
-
-    @staticmethod
-    def _slider_label(figure, control: SliderSpec) -> str:
-        """Which plot(s) a SliderSpec belongs to, identified by title/label
-        if either is set, else by position - same purpose as
-        _selector_label for dropdowns: two sliders can easily share a name
-        (e.g. two different panels' same-shaped batch axis both stringify
-        to e.g. "BatchAxes([32])"), so the label needs its own
-        disambiguation independent of `.name`."""
-        owners = [
-            plot.title or plot.label or f"plot {plot.color_index}"
-            for plot in figure.plots
-            if control in plot.controls
         ]
-        if not owners:
-            return control.name
-        return f"{' / '.join(owners)}: {control.name}"
-
-    @staticmethod
-    def _selector_label(figure, spec: SelectorSpec) -> str:
-        """The plot attribute(s) a SelectorSpec is embedded in (x, y, color,
-        ...) followed by its candidates, so two dropdowns over the same
-        candidates stay distinguishable."""
-        roles = []
-        for plot in figure.plots:
-            for role, value in vars(plot).items():
-                if (
-                    isinstance(value, PlotSpec)
-                    and value.embedded_selector_spec is spec
-                    and role not in roles
-                ):
-                    roles.append(role)
-        if not roles:
-            return spec.name
-        return f"{' / '.join(roles)}: {spec.name}"
-
-    @staticmethod
-    def create_slider(sliderspec: SliderSpec, id: str | None = None):
-        """`id` must be unique per control: SliderSpec.name falls back to
-        str(variable_or_axes) (PlotSpec.name) when its axis isn't a named
-        Variable, and two different Axes instances of the same shape (e.g.
-        two panels' own same-sized batch axis) stringify identically -
-        component ids that collided this way, in the past, left Dash
-        tracking one shared value for what looked like several independent
-        sliders."""
-        return dcc.Slider(
-            id=id if id is not None else sliderspec.name,
-            min=sliderspec.minimum,
-            max=sliderspec.maximum,
-            step=sliderspec.step,
-            value=sliderspec.state,
-            marks=sliderspec.marks,
-        )
-
-    @staticmethod
-    def create_dropdown(spec: SelectorSpec, id: str | None = None):
-        """Options are candidate indices, not the Variables themselves -
-        dcc.Dropdown needs a JSON-serializable value. SelectorSpec.state's
-        setter already accepts an int index directly, so the callback below
-        needs no translation either.
-
-        `id` must be unique per spec: SelectorSpec.name is derived from the
-        candidates, so two specs over the same candidates (a scatter's x and
-        y) share a name and would collide as component ids."""
-        return dcc.Dropdown(
-            id=id if id is not None else spec.name,
-            options=[
-                {"label": SelectorSpec.candidate_name(candidate), "value": i}
-                for i, candidate in enumerate(spec.candidates)
-            ],
-            value=spec.candidates.index(spec.state),
-            clearable=False,
-        )
-
-    @staticmethod
-    def _register_callbacks(app, figure):
-        inputs = []
-        controls = []
-        for i, control in enumerate(DashApplication._slider_controls(figure)):
-            inputs.append(Input(_slider_id(i), "value"))
-            controls.append(control)
-        for i, spec in enumerate(figure.selector_specs):
-            inputs.append(Input(_selector_id(i), "value"))
-            controls.append(spec)
+        for index, control in enumerate(controls):
+            widgets.append(
+                html.Div(
+                    [
+                        cls.label(control, figure.renderer.mathjax),
+                        cls.widget(control, _control_id(index)),
+                    ]
+                )
+            )
+        groups = figure.renderer.linked_scenes()
+        if groups:
+            # Linked 3D cells move their cameras together.
+            widgets.append(dcc.Store(id="camera-sync"))
+            app.clientside_callback(
+                camera.dash_callback(groups, "figure"),
+                Output("camera-sync", "data"),
+                Input("figure", "relayoutData"),
+            )
+        app.layout = html.Div(widgets)
 
         @app.callback(
             Output("figure", "figure"),
-            inputs,
+            [Input(_control_id(i), "value") for i in range(len(controls))],
         )
-        def update(*values):
-            for control, value in zip(controls, values):
-                control.state = value
-            return figure.draw()
+        def update(*states):
+            return cls.update(figure, controls, states)
+
+        return app
+
+    @staticmethod
+    def label(control: Control, mathjax: bool):
+        """The label of a control's widget: its name, with math rendered by
+        MathJax if `mathjax`.
+
+        Args:
+            control: The control.
+            mathjax: Whether MathJax renders math.
+
+        Returns:
+            dash component: The label.
+        """
+        if mathjax:
+            return dcc.Markdown(control.name, mathjax=True)
+        return html.Label(as_plain(control.name))
+
+    @staticmethod
+    def widget(control: Control, id: str):
+        """A slider for a SliderAxis, a dropdown for a Selector.
+
+        Args:
+            control: The control the widget sets.
+            id: Component id.
+
+        Returns:
+            dash component: The widget, valued by state index.
+        """
+        return _WIDGETS[type(control)](control, id)
+
+
+def _slider(control: Control, id: str):
+    states = control.states
+    marks = {s: as_plain(control.label(s)) for s in states[:: max(1, len(states) // 10)]}
+    return dcc.Slider(
+        id=id, min=states[0], max=states[-1], step=1, value=control.state, marks=marks
+    )
+
+
+def _dropdown(control: Control, id: str):
+    options = [{"label": as_plain(control.label(s)), "value": s} for s in control.states]
+    return dcc.Dropdown(id=id, options=options, value=control.state, clearable=False)
+
+
+#: The widget of each kind of control that has one.
+_WIDGETS = {SliderAxis: _slider, Selector: _dropdown}

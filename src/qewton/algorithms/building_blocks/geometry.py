@@ -21,8 +21,8 @@ class MeshInterpolationNode(Node[TensorType]):
     vertices for mesh-to-mesh transfer all work the same way through this one
     node - only the target geometry differs, and none of that difference is
     plane-specific. See geometries.discrete.plane_slice.PlaneSliceGeometry for
-    building the plane-stack target specifically (visualization plan, section
-    12); this node has no knowledge of planes at all.
+    building the plane-stack target specifically; this node has no knowledge
+    of planes at all.
 
     The source mesh geometry and target geometry are structural constants,
     fixed at construction time - like PointSampler.geometry, not something
@@ -82,6 +82,15 @@ class MeshInterpolationNode(Node[TensorType]):
                 name="interpolated",
             )
         ]
+
+    def to(self, device):
+        """Move the source mesh and the target geometry to `device`.
+
+        Args:
+            device (Device | str): The target device.
+        """
+        self.mesh_geometry.to(device)
+        self.target_geometry.to(device)
 
     def forward(self, field):
         dim = self.mesh_geometry.variable.dim

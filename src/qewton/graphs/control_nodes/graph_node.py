@@ -39,6 +39,9 @@ class GraphNode(Node[TensorType]):
         name (str, optional): The name of this node. Defaults to "GraphNode".
         backend (type[Backend[TensorType]], optional): The backend type for tensor
             operations. Defaults to Backend.
+
+    Attributes:
+        inner_graph (Graph): The encapsulated graph.
     """
 
     def __init__(
@@ -139,6 +142,10 @@ class GraphNode(Node[TensorType]):
                 self._graph.connect_to_outside_of_graph(new_output_ports[p], p)
             else:
                 self._graph.connect_to_outside_of_graph(p, self._output_ports[i])
+
+    @property
+    def inner_graph(self):
+        return self._graph
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:

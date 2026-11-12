@@ -1,469 +1,379 @@
-from qewton.config.axes import Axes, EllipsisAxes, FeatureAxes, GeometryAxes
+"""Automatic choice of a plot type and its bindings from a
+DataConfiguration.
+
+:func:`auto_plot` decides in three steps, without knowing any geometry
+class:
+
+1. The drawn domain: the GeometryAxes not reduced by a control (1D factors
+   of a product, or 1D GeometryAxes, are split off where needed), else
+   the first other axis. Every axis not drawn gets a control.
+2. The kind of value, from the quantities of the FeatureAxes' Variable.
+3. The plot type: the first entry of :data:`CHOICES` for that kind whose
+   type declares that it draws the domain (:meth:`DataPlot.supports`).
+"""
+
+import inspect
+from dataclasses import dataclass
+from enum import Enum, auto
+
+from qewton.config.axes import Axes, FeatureAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.geometries.base import DiscreteGeometry
-from qewton.geometries.discrete.grid_geometry import GridGeometry
-from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.data.curve import LinePlot, PathPlot
-from qewton.visualization.plots.data.grid import EmbeddedGridPlot, HeatmapPlot, QuiverPlot
-from qewton.visualization.plots.data.mesh import MeshFieldPlot, MeshVectorPlot
-from qewton.visualization.plots.data.points import PointCloudPlot
-from qewton.visualization.plots.data.samples import ScatterPlot
-from qewton.visualization.plots.spec import (
-    ColorSpec,
-    ControlSpec,
-    SliderSpec,
-    SelectorSpec,
-    VectorSpec,
+from qewton.visualization.axes import POSITION_CHANNELS, ControlAxis, Selector, SliderAxis
+from qewton.visualization.plots.data import (
+    BarPlot,
+    DataPlot,
+    HeatmapPlot,
+    LinePlot,
+    ScatterPlot,
+    SurfacePlot,
+    VectorPlot,
+    controlled_axes,
+    drawable_geometry,
+    n_components,
+    split_products,
 )
+from qewton.visualization.scales import ColorScale, VectorScale
+
+#: Highest dimension a drawn domain can have.
+MAX_DRAWN_DIM = 3
+
+# Bindings given as plot arguments, which override those of a Choice.
+_CHANNELS = ("position", *POSITION_CHANNELS, "color", "vector")
+
+
+class Kind(Enum):
+    """What the plotted value is, relative to the drawn domain.
+
+    Attributes:
+        SCALAR: One value per point (or a Selector of such values).
+        VECTOR: A vector with one component per coordinate of the domain.
+        COORDINATES: The coordinates of the domain itself, e.g. sampled
+            points or the grid of a data loader; drawn as the points of the
+            domain (on the x axis for a 1D domain).
+        VALUES: Values without a domain, drawn in value space; every point
+            of the data is one element.
+    """
+
+    SCALAR = auto()
+    VECTOR = auto()
+    COORDINATES = auto()
+    VALUES = auto()
+
+
+class _Placeholder(Enum):
+    DOMAIN = auto()
+    VALUE = auto()
+    FIRST = auto()
+    SECOND = auto()
+
+
+D, V = _Placeholder.DOMAIN, _Placeholder.VALUE
+V0, V1 = _Placeholder.FIRST, _Placeholder.SECOND
+
+
+@dataclass(frozen=True)
+class Choice:
+    """A plot type with its bindings; placeholders stand for the drawn
+    domain (``D``) and the value (``V``, or ``V0``/``V1`` for two)."""
+
+    plot_type: type[DataPlot]
+    bindings: dict
+
+
+#: Plot types per kind of value, in order of preference.
+CHOICES: dict[Kind, list[Choice]] = {
+    Kind.SCALAR: [
+        Choice(HeatmapPlot, dict(position=D, color=V)),
+        Choice(LinePlot, dict(x=D, y=V)),
+        Choice(BarPlot, dict(x=D, y=V)),
+        Choice(SurfacePlot, dict(position=D, color=V)),
+        Choice(ScatterPlot, dict(position=D, color=V)),
+    ],
+    Kind.VECTOR: [Choice(VectorPlot, dict(position=D, vector=V, color=V))],
+    Kind.COORDINATES: [Choice(ScatterPlot, dict(position=D))],
+    Kind.VALUES: [
+        Choice(ScatterPlot, dict(x=V0, y=V1)),
+        Choice(ScatterPlot, dict(position=V)),
+    ],
+}
 
 
 def auto_plot(
-    data, data_config: DataConfiguration, plot_type: type[Plot] | None = None, **kwargs
-) -> Plot:
-    """Builds a Plot for `data`, choosing a sensible type and its required
-    roles (x/y/color/vector) from `data_config`'s axes alone.
+    data,
+    data_config: DataConfiguration,
+    plot_type: type[DataPlot] | None = None,
+    *,
+    value: Variable | Selector | None = None,
+    controls: list[ControlAxis] = (),
+    default_control: type[ControlAxis] = SliderAxis,
+    color_scale: ColorScale | None = None,
+    vector_scale: VectorScale | None = None,
+    **plot_kwargs,
+) -> DataPlot:
+    """Build a plot for `data`, choosing its type and bindings from
+    `data_config` (see the module documentation).
 
-    With `plot_type=None` (default):
-        - A GeometryAxes wrapping a MeshGeometry, plus a scalar (dim=1)
-          FeatureAxes variable, becomes a MeshFieldPlot colored by it; a
-          vector one (dim matching the mesh's own dimension) becomes a
-          MeshVectorPlot.
-        - A GeometryAxes wrapping a GridGeometry (a parametric grid) is
-          dispatched on its discretization_points' own coordinate count
-          (coord_dim), not on how many structural grid axes it has: 2
-          (index coordinates only) becomes a HeatmapPlot for a scalar
-          variable or a 2-component QuiverPlot for a vector; 3 (embedded in
-          3D space) becomes an EmbeddedGridPlot or a 3-component QuiverPlot.
-          More than two structural grid axes get a default SliderSpec each
-          on every axis but the last two, which stay as the drawn grid;
-          exactly one axis becomes a LinePlot instead.
-        - No GeometryAxes, plus a FeatureAxes whose Variable has exactly
-          one scalar leaf, becomes a LinePlot - the first remaining axis is
-          its domain (`x`).
-        - No GeometryAxes, plus a FeatureAxes whose Variable has exactly
-          two scalar leaves, becomes a ScatterPlot (one leaf per x/y); any
-          remaining axes are left alone, since ScatterPlot already flattens
-          them into its implicit samples axis.
-        - Any axis besides the ones just described - an extra batch/step
-          axis alongside a GeometryAxes, or beyond a LinePlot's domain -
-          gets a default SliderSpec, unless a control for it was already
-          passed in `controls=`. Without one, the constructed Plot would
-          fail at evaluate() time asking for exactly this.
-        - Anything else raises ValueError with a specific explanation,
-          rather than guessing - including cases with an equally valid but
-          differently-drawn alternative (BarPlot instead of LinePlot,
-          PathPlot instead of ScatterPlot, MeshSurfacePlot instead of
-          MeshFieldPlot for a scalar on a 2D mesh), and a FeatureAxes
-          bundling multiple distinct named variables (e.g. temperature
-          *and* pressure, not one variable's auto-expanded components):
-          those need an explicit `plot_type` and role.
+    Args:
+        data: Tensor described by `data_config`, of any backend.
+        data_config: Its DataConfiguration, with a FeatureAxes of a named
+            Variable.
+        plot_type: Restricts the choice to this plot type.
+        value: What to draw: a Variable of the FeatureAxes, or a Selector of
+            them (e.g. one shared by several plots); None for every
+            quantity of the FeatureAxes.
+        controls: Control axes for chosen dimensions, e.g.
+            ``[TimeAxis(t)]``; a control on a factor of a product splits it
+            off.
+        default_control: Control axis class for every other dimension not
+            drawn.
+        color_scale: Passed to the plot's color channel.
+        vector_scale: Passed to a VectorPlot.
+        **plot_kwargs: Further arguments of the plot type, e.g. ``title``;
+            bindings among them (e.g. ``z=u``) override the chosen ones.
 
-    With an explicit `plot_type`, this is a plain pass-through -
-    `plot_type(data, data_config, **kwargs)` - no auto-selection happens,
-    and `**kwargs` must supply that type's required roles directly, exactly
-    as if it were constructed directly.
+    Returns:
+        DataPlot: The plot.
+
+    Raises:
+        ValueError: If the data has no named feature Variable, the drawn
+            domain or the value is ambiguous, no plot type (or not
+            `plot_type`) fits, or `color_scale` / `vector_scale` is given
+            for a plot without that channel.
     """
-    if plot_type is not None:
-        return plot_type(data, data_config, **kwargs)
+    controls = list(controls)
+    explicit = {c: plot_kwargs.pop(c) for c in _CHANNELS if c in plot_kwargs}
+    references = [c.variable_or_axes for c in controls]
+    data, data_config = split_products(data, data_config, references)
+    selector = value if isinstance(value, Selector) else None
+    if selector is not None:
+        quantities = list(selector.candidates)
+    elif value is not None:
+        quantities = [value]
+    else:
+        quantities = _quantities(data_config)
+    drawn, data, data_config, leftover = _drawn_axes(
+        data, data_config, controls, quantities
+    )
+    kind, value = _kind(drawn, quantities, selector)
+    if kind is not Kind.VALUES:
+        controls += [
+            default_control(_control_reference(axes, data_config)) for axes in leftover
+        ]
 
-    geometry_axes = data_config.geometry_axes
-    if isinstance(geometry_axes, list):
-        raise ValueError(
-            f"{data_config} has multiple GeometryAxes - auto_plot can't pick "
-            "one. Construct a Plot explicitly."
+    choices = [
+        c for c in CHOICES[kind] if plot_type is None or c.plot_type is plot_type
+    ]
+    domain = drawable_geometry([drawn]) if drawn is not None else None
+    scales = {"color_scale": color_scale, "vector_scale": vector_scale}
+    scales = {name: scale for name, scale in scales.items() if scale is not None}
+    reasons = []
+    for choice in choices:
+        bindings = _bind(choice.bindings, drawn, value)
+        if bindings is not None:
+            bindings.update(explicit)
+        reason = _mismatch(choice, bindings, drawn, domain, {**plot_kwargs, **scales})
+        if reason is not None:
+            reasons.append(f"{choice.plot_type.__name__} {reason}")
+            continue
+        return choice.plot_type(
+            data, data_config, controls=controls, **bindings, **scales, **plot_kwargs
         )
-    if geometry_axes is not None:
-        return _auto_geometry_plot(data, data_config, geometry_axes, **kwargs)
-    return _auto_flat_plot(data, data_config, **kwargs)
-
-
-def is_curve_like(plot: Plot) -> bool:
-    """Whether `plot` draws on one shared 2D x/y axes the way a LinePlot/
-    PathPlot does, so several of them compose safely in one Overlay.
-
-    A PointCloudPlot qualifies only for a 1D domain (drawn on a plain 2D
-    x/y=0 axes) - a 2D/3D point cloud's axes are spatial coordinates, not
-    domain-vs-value, and don't share meaning with a curve's axes; mesh/grid
-    field plots are excluded for the same reason.
-    """
-    if isinstance(plot, (LinePlot, PathPlot)):
-        return True
-    if isinstance(plot, PointCloudPlot):
-        return plot.coordinate_dim == 1
-    return False
-
-
-def _require_named_variable(
-    data_config: DataConfiguration, feature_axes: FeatureAxes | None
-) -> Variable:
-    if feature_axes is None:
-        raise ValueError(
-            f"{data_config} has no FeatureAxes - there is no field data to "
-            "plot. Construct a Plot explicitly."
-        )
-    variable = feature_axes.variables
-    if variable.name is None or variable.dim is None:
-        raise ValueError(
-            f"{data_config}'s FeatureAxes was built from a raw shape, not a "
-            "named Variable - auto_plot needs a Variable to label axes/color "
-            "by. Construct a Plot explicitly."
-        )
-    return variable
-
-
-def _is_auto_expanded(variable: Variable) -> bool:
-    """True for a Variable's own multi-component expansion (e.g. dim=3 ->
-    children named x_1/x_2/x_3) - one physical quantity, safe to bundle as
-    a single color/vector role. False once a child's name breaks that
-    pattern, meaning the children are genuinely distinct variables composed
-    together (e.g. TEMPERATURE * PRESSURE), not components of one."""
-    if variable.is_leaf:
-        return True
-    return all(
-        child.name == f"{variable.name}_{i + 1}" for i, child in enumerate(variable.children)
+    given = sorted([*plot_kwargs, *scales, *explicit])
+    raise ValueError(
+        f"No plot type draws {kind.name.lower()} values on {_name(drawn)}"
+        + (f" with the arguments {', '.join(given)}" if given else "")
+        + ": "
+        + "; ".join(reasons or [f"{plot_type.__name__} draws no such values"])
+        + ". Pass plot_type with its bindings, or construct the plot explicitly."
     )
 
 
-def _distinct_quantities(variable: Variable) -> list[Variable]:
-    """Splits `variable` at the seams between genuinely different
-    variables, leaving each auto-expanded multi-component quantity intact.
-    A plain scalar or auto-expanded vector returns just itself."""
-    if _is_auto_expanded(variable):
-        return [variable]
-    quantities = []
-    for child in variable.children:
-        quantities.extend(_distinct_quantities(child))
-    return quantities
+def _quantities(data_config: DataConfiguration) -> list[Variable]:
+    features = data_config.feature_axes
+    variable = features.variables if features is not None else None
+    if variable is None or variable.is_empty or variable.name is None:
+        raise ValueError(
+            "auto_plot needs a FeatureAxes of a named Variable to choose what to draw."
+        )
+    return variable.quantities
 
 
-def _auto_quantity(
-    data_config: DataConfiguration, variable: Variable
-) -> "Variable | SelectorSpec":
-    """The single quantity to plot, or - when the FeatureAxes bundles
-    several distinct ones - a SelectorSpec letting the user switch between
-    them, as long as they all share one dim (so the same Plot role stays
-    valid regardless of which is selected)."""
-    quantities = _distinct_quantities(variable)
-    if len(quantities) == 1:
-        return quantities[0]
-    dims = {q.dim for q in quantities}
-    if len(dims) == 1:
-        return SelectorSpec(quantities)
+def _controlled(data_config: DataConfiguration, controls: list[ControlAxis]) -> list:
+    return [controlled_axes(data_config, c) for c in controls]
+
+
+def _drawn_axes(data, data_config, controls, quantities) -> tuple:
+    # The drawn axes (None for values without a domain), the data and
+    # configuration with products split where needed, and the axes left
+    # over for default controls.
+    controlled = _controlled(data_config, controls)
+    free = [
+        a
+        for a in data_config.axes
+        if not isinstance(a, FeatureAxes) and not any(a is c for c in controlled)
+    ]
+    geometries = [a for a in free if isinstance(a, GeometryAxes)]
+    if len(geometries) == 1 and geometries[0].geometry.factors is not None:
+        target = _target_dim(quantities)
+        named = _factors_to_split(geometries[0], target)
+        if named:
+            data, data_config = split_products(data, data_config, named)
+            return _drawn_axes(data, data_config, controls, quantities)
+    if len(geometries) > 1:
+        wide = [a for a in geometries if n_components(a) > 1]
+        if len(wide) != 1:
+            raise ValueError(
+                f"auto_plot cannot choose which of {len(geometries)} geometries to "
+                "draw; pass controls for all but one."
+            )
+        geometries = wide
+    others = [a for a in free if not isinstance(a, GeometryAxes)]
+    drawn = geometries[0] if geometries else (others[0] if others else None)
+    leftover = [a for a in free if a is not drawn]
+    return drawn, data, data_config, leftover
+
+
+def _control_reference(axes: Axes, data_config: DataConfiguration) -> Variable | Axes:
+    # A geometry is controlled through its Variable, so the control fits
+    # every configuration of that Variable (e.g. shared by several plots),
+    # unless the Variable names data values too.
+    if not isinstance(axes, GeometryAxes) or axes.geometry.variable.is_empty:
+        return axes
+    variable = axes.geometry.variable
+    return variable if data_config.axes_of(variable) is axes else axes
+
+
+def _target_dim(quantities: list[Variable]) -> int:
+    # The dimension the drawn domain may have for the plotted value.
+    if len(quantities) == 1 and quantities[0].dim in (2, 3):
+        return quantities[0].dim
+    return MAX_DRAWN_DIM
+
+
+def _factors_to_split(axes: GeometryAxes, target: int) -> list[Variable]:
+    # The 1D factors to split off a product so that `target` dimensions
+    # remain; none if it fits already.
+    geometry = axes.geometry
+    excess = geometry.dim - target
+    if excess <= 0:
+        return []
+    one_d = [f.variable for f in geometry.factors if f.variable.dim == 1]
+    if len(one_d) == excess:
+        return one_d
+    names = ", ".join(v.name for v in one_d)
+    raise ValueError(
+        f"{geometry.variable.name} has {geometry.dim} dimensions, {target} can be "
+        f"drawn: pass a control for {excess} of its 1D factors ({names})."
+    )
+
+
+def _kind(
+    drawn: Axes | None, quantities: list[Variable], selector: Selector | None
+) -> tuple:
+    # The kind of value and what V stands for: a Variable, a Selector (the
+    # given one, else a new one), or the two quantities of a pair.
+    on_geometry = isinstance(drawn, GeometryAxes)
+    scalars = all(q.dim == 1 for q in quantities)
+    single = quantities[0] if len(quantities) == 1 else None
+    if on_geometry and single == drawn.geometry.variable:
+        return Kind.COORDINATES, single
+    if scalars and (selector is not None or on_geometry or len(quantities) != 2):
+        if selector is None and single is None:
+            selector = Selector(quantities)
+        return Kind.SCALAR, single if selector is None else selector
+    if scalars:
+        return Kind.VALUES, quantities
+    if single is not None and on_geometry and single.dim == n_components(drawn):
+        return Kind.VECTOR, single
+    if single is not None and not on_geometry and single.dim in (2, 3):
+        return Kind.VALUES, single
     names = ", ".join(q.name for q in quantities)
     raise ValueError(
-        f"{data_config}'s FeatureAxes bundles multiple distinct variables "
-        f"({names}) with different dims ({sorted(dims)}) - auto_plot can't "
-        "build one Plot role for all of them. Construct a Plot explicitly, "
-        "naming one of them."
+        f"auto_plot draws scalars, or one vector with a component per coordinate; "
+        f"got {names}{_product_hint(drawn)}. Construct the plot explicitly."
     )
 
 
-def _other_axes(data_config: DataConfiguration, *consumed: Axes | None) -> list[Axes]:
-    """Every axis in `data_config` besides the ones already spoken for
-    (geometry, feature) and any EllipsisAxes wildcard."""
-    return [
-        axes
-        for axes in data_config.axes
-        if axes not in consumed and not isinstance(axes, EllipsisAxes)
-    ]
-
-
-def _resolve_control(spec, axis: Axes):
-    """Resolves one control - a ControlSpec subclass or instance - for
-    `axis`.
-
-    A class is instantiated with the axis filled in. An instance gets its
-    still-unset `variable_or_axes` filled in and is then reused as-is (by
-    identity) - the mechanism that lets one instance, passed to several
-    auto_plot() calls, end up shared across them (one widget, moving them
-    together), the same way a shared Scale or SelectorSpec already works.
-    """
-    if isinstance(spec, type):
-        # By keyword, not position: FixedSpec inherits ControlSpec.__init__
-        # verbatim (init_state first), unlike SliderSpec/FacetSpec (both put
-        # variable_or_axes first) - the keyword is the only thing every
-        # ControlSpec subclass's signature agrees on.
-        return spec(variable_or_axes=axis)
-    if spec.variable_or_axes is None:
-        spec.variable_or_axes = axis
-    elif spec.variable_or_axes is not axis:
-        raise ValueError(
-            f"{spec} is already resolved for {spec.variable_or_axes!r} - "
-            f"can't also resolve it for {axis!r}. Use a separate instance "
-            "per axis, or a {axis: control} dict."
-        )
-    return spec
-
-
-def _default_sliders(
-    axes: list[Axes], existing_controls: list, controls=SliderSpec
-) -> list[ControlSpec]:
-    """One resolved control per axis not already covered by a caller-
-    supplied control.
-
-    `controls` (default SliderSpec) is a ControlSpec class or instance
-    applied to every uncovered axis, or a `{axis: class-or-instance}` dict
-    for several unresolved axes at once. A bare (non-dict) instance only
-    makes sense for exactly one uncovered axis - it can't simultaneously
-    represent several.
-
-    Bounds/initial state left unresolved (None) are filled in from the data
-    by DataPlot.__init__, same as any explicitly-constructed ControlSpec
-    with unspecified bounds.
-    """
-    covered = {c.variable_or_axes for c in existing_controls}
-    uncovered = [axis for axis in axes if axis not in covered]
-    if isinstance(controls, dict):
-        conflicting = covered & controls.keys()
-        if conflicting:
-            raise ValueError(
-                f"controls has entries for axes already covered by an "
-                f"explicit control: {conflicting}."
-            )
-        return [
-            _resolve_control(controls.get(axis, SliderSpec), axis) for axis in uncovered
-        ]
-    if not isinstance(controls, type) and len(uncovered) > 1:
-        raise ValueError(
-            f"One ControlSpec instance ({controls}) can't resolve "
-            f"{len(uncovered)} different axes ({uncovered}) - pass a class "
-            "(a new instance per axis) or a {axis: control} dict instead."
-        )
-    return [_resolve_control(controls, axis) for axis in uncovered]
-
-
-def _split_controls_default(kwargs: dict):
-    """Pulls a class/instance/dict `controls=` (what to use for surplus
-    axes) out of `kwargs`, leaving a plain list (or nothing) to forward to
-    the Plot constructor as-is. A list means the caller already fully
-    resolved their own controls."""
-    controls = kwargs.get("controls")
-    if controls is None or isinstance(controls, list):
-        return SliderSpec, kwargs
-    return controls, {k: v for k, v in kwargs.items() if k != "controls"}
-
-
-def _with_extra_controls(kwargs: dict, axes: list[Axes], controls=SliderSpec) -> dict:
-    generated = _default_sliders(axes, kwargs.get("controls") or [], controls)
-    if not generated:
-        return kwargs
-    return dict(kwargs, controls=list(kwargs.get("controls") or []) + generated)
-
-
-def _auto_geometry_plot(
-    data, data_config: DataConfiguration, geometry_axes: GeometryAxes, **kwargs
-) -> Plot:
-    feature_axes = data_config.feature_axes
-    variable = _require_named_variable(data_config, feature_axes)
-    quantity = _auto_quantity(data_config, variable)
-    geometry = geometry_axes.geometry
-    default_control, kwargs = _split_controls_default(kwargs)
-    kwargs = _with_extra_controls(
-        kwargs, _other_axes(data_config, geometry_axes, feature_axes), default_control
-    )
-
-    # The plotted quantity IS this geometry's own coordinate Variable (e.g.
-    # a PointSampler's own output, or an operator-learning model's
-    # coordinate input) - there's no separate quantity to color/height by,
-    # so show the points themselves instead of dispatching on `quantity` as
-    # if it were one.
-    if geometry.variable is not None and quantity == geometry.variable:
-        if quantity.dim in (1, 2, 3):
-            return PointCloudPlot(data, data_config, color=None, **kwargs)
-        raise ValueError(
-            f"{quantity.name} matches this geometry's own coordinate "
-            f"Variable but has dim={quantity.dim} - only dim 1-3 can be "
-            "shown as a point cloud. Construct a Plot explicitly if this "
-            "is intentional."
-        )
-
-    # Checked structurally (`.mesh` populated), not by isinstance(MeshGeometry)
-    # - a SampledGeometry only has a mesh once mesh-mode sampling gave it real
-    # cell connectivity, so this correctly falls through to the point-cloud
-    # branch below outside of that, without auto_plot needing to know
-    # SampledGeometry exists at all.
-    if getattr(geometry, "mesh", None) is not None:
-        # A 1D "mesh" (points connected in a line, e.g. a sampled Interval)
-        # isn't a drawable 2D/3D surface at all - MeshFieldPlot/
-        # MeshVectorPlot explicitly reject it. It's a LinePlot: value vs.
-        # position along the domain, x=geometry_axes itself (LinePlot reads
-        # real coordinates from a 1D geometry's own discretization_points -
-        # see LinePlot._geometry_x_values()).
-        if geometry.dim == 1:
-            if quantity.dim == 1:
-                return LinePlot(data, data_config, x=geometry_axes, y=quantity, **kwargs)
-            raise ValueError(
-                f"{quantity.name} has dim={quantity.dim} - a 1D mesh only "
-                "supports a scalar quantity as a LinePlot. Construct a Plot "
-                "explicitly if this is intentional."
-            )
-        if quantity.dim == 1:
-            return MeshFieldPlot(data, data_config, color=ColorSpec(quantity), **kwargs)
-        if quantity.dim == geometry.dim:
-            return MeshVectorPlot(
-                data, data_config, vector=VectorSpec(quantity), **kwargs
-            )
-        raise ValueError(
-            f"{quantity.name} has dim={quantity.dim}, but the mesh is "
-            f"{geometry.dim}D - expected dim=1 for a MeshFieldPlot or "
-            f"dim={geometry.dim} for a MeshVectorPlot. Construct one "
-            "explicitly if this is intentional."
-        )
-
-    if isinstance(geometry, GridGeometry):
-        # Dispatch on coord_dim (discretization_points' own component count),
-        # not on how many structural grid axes there are - a 2-axis
-        # index-coordinate grid and a 2-axis grid embedded in 3D space need
-        # different Plot families regardless of both having grid_dims==2.
-        leaves = geometry.variable.leaves
-        if len(leaves) > 2:
-            # Surplus structural axes beyond the last two get a default
-            # SliderSpec each, the same mechanism _other_axes/
-            # _with_extra_controls already applies to non-geometry axes -
-            # the last two leaves stay as the drawn grid.
-            kwargs = _with_extra_controls(kwargs, leaves[:-2], default_control)
-            leaves = leaves[-2:]
-        grid_dims = len(leaves)
-        coord_dim = geometry.discretization_points.shape[-1]
-
-        if grid_dims == 1:
-            if quantity.dim == 1:
-                return LinePlot(data, data_config, x=leaves[0], y=quantity, **kwargs)
-            raise ValueError(
-                f"{quantity.name} has dim={quantity.dim} - a 1D grid only "
-                "supports a scalar quantity as a LinePlot. Construct a "
-                "PathPlot explicitly for a vector quantity."
-            )
-
-        if coord_dim == 2:
-            if quantity.dim == 1:
-                return HeatmapPlot(
-                    data, data_config, x=leaves[0], y=leaves[1],
-                    color=ColorSpec(quantity), **kwargs
-                )
-            if quantity.dim == 2:
-                return QuiverPlot(
-                    data, data_config, vector=VectorSpec(quantity), **kwargs
-                )
-            raise ValueError(
-                f"{quantity.name} has dim={quantity.dim} - expected dim=1 for "
-                "a HeatmapPlot or dim=2 for a QuiverPlot. Construct one "
-                "explicitly if this is intentional."
-            )
-
-        if coord_dim == 3:
-            if quantity.dim == 1:
-                return EmbeddedGridPlot(
-                    data, data_config, color=ColorSpec(quantity), **kwargs
-                )
-            if quantity.dim == 3:
-                return QuiverPlot(
-                    data, data_config, vector=VectorSpec(quantity), **kwargs
-                )
-            raise ValueError(
-                f"{quantity.name} has dim={quantity.dim} - expected dim=1 for "
-                "an EmbeddedGridPlot or dim=3 for a QuiverPlot. Construct one "
-                "explicitly if this is intentional."
-            )
-
-        raise ValueError(
-            f"{type(geometry).__name__}'s discretization_points has "
-            f"{coord_dim} coordinate components - auto_plot only supports 2 "
-            "or 3. Construct a Plot explicitly."
-        )
-
-    # Any other DiscreteGeometry still has discretization_points (just no
-    # mesh/grid structure to them) - e.g. a SampledGeometry outside mesh
-    # mode. QuiverPlot itself has no GridGeometry-specific requirement (only
-    # 3D discretization_points), so it's reused as-is for the vector case.
-    if (
-        isinstance(geometry, DiscreteGeometry)
-        and geometry.discretization_points is not None
-    ):
-        # 1D points (e.g. a PointCloud along a line) aren't drawable by
-        # PointCloudPlot (2D/3D only) - a LinePlot, same as the 1D-mesh
-        # case above, reading real coordinates via
-        # LinePlot._geometry_x_values().
-        if geometry.discretization_points.shape[-1] == 1:
-            if quantity.dim == 1:
-                return LinePlot(data, data_config, x=geometry_axes, y=quantity, **kwargs)
-            raise ValueError(
-                f"{quantity.name} has dim={quantity.dim} - a 1D point set "
-                "only supports a scalar quantity as a LinePlot. Construct a "
-                "Plot explicitly if this is intentional."
-            )
-        if quantity.dim == 1:
-            return PointCloudPlot(data, data_config, color=ColorSpec(quantity), **kwargs)
-        if quantity.dim == 3:
-            return QuiverPlot(data, data_config, vector=VectorSpec(quantity), **kwargs)
-        raise ValueError(
-            f"{quantity.name} has dim={quantity.dim} - expected dim=1 for a "
-            "PointCloudPlot or dim=3 for a QuiverPlot. Construct one "
-            "explicitly if this is intentional."
-        )
-
-    raise ValueError(
-        f"{type(geometry).__name__} has no known discretization - auto_plot "
-        "can't infer point positions for a continuous geometry. Discretize "
-        "it first (e.g. via create_mesh(), or a PointSampler run in mesh "
-        "mode), or construct a Plot explicitly."
+def _product_hint(drawn: Axes | None) -> str:
+    # How to pass points of a product as such, if they look like one.
+    if not isinstance(drawn, GeometryAxes) or drawn.geometry.factors is not None:
+        return ""
+    variable = drawn.geometry.variable
+    if len(variable.quantities) < 2:
+        return ""
+    return (
+        f" on points of {variable.name}; for a product domain, pass one "
+        "GeometryAxes per factor"
     )
 
 
-def _auto_flat_plot(data, data_config: DataConfiguration, **kwargs) -> Plot:
-    """Unlike the geometry branch, two distinct scalar quantities are not
-    ambiguous here - x/y is exactly what a ScatterPlot needs them for, so
-    this (unlike _auto_geometry_plot) only reaches for a SelectorSpec once
-    ScatterPlot's 2-quantity case no longer applies (3+ distinct scalars)."""
-    feature_axes = data_config.feature_axes
-    variable = _require_named_variable(data_config, feature_axes)
-    quantities = _distinct_quantities(variable)
-    other_axes = _other_axes(data_config, feature_axes)
-    all_scalar = all(q.dim == 1 for q in quantities)
-    default_control, kwargs = _split_controls_default(kwargs)
+def _bind(template: dict, drawn: Axes | None, value) -> dict | None:
+    # The bindings of a choice; None if a position channel would take a
+    # reference with more than one component.
+    substitutes = {D: drawn, V: value}
+    if isinstance(value, list):
+        substitutes.update({V0: value[0], V1: value[1]})
+    bindings = {}
+    for channel, placeholder in template.items():
+        if placeholder not in substitutes or substitutes[placeholder] is None:
+            return None
+        reference = substitutes[placeholder]
+        if isinstance(reference, list):
+            return None
+        if channel in POSITION_CHANNELS and _n_reference(reference) != 1:
+            return None
+        bindings[channel] = reference
+    return bindings
 
-    if len(quantities) == 1:
-        leaves = quantities[0].leaves
-        if len(leaves) == 1 and other_axes:
-            domain, *rest = other_axes
-            return LinePlot(
-                data,
-                data_config,
-                x=domain,
-                y=quantities[0],
-                **_with_extra_controls(kwargs, rest, default_control),
+
+def _n_reference(reference) -> int:
+    if isinstance(reference, Selector):
+        return 1
+    return n_components(reference)
+
+
+def _n_positions(bindings: dict) -> int:
+    n = n_components(bindings["position"]) if "position" in bindings else 0
+    return n + sum(channel in bindings for channel in POSITION_CHANNELS)
+
+
+def _name(drawn: Axes | None) -> str:
+    # The drawn domain as named in messages.
+    if drawn is None:
+        return "no domain"
+    if isinstance(drawn, GeometryAxes) and not drawn.geometry.variable.is_empty:
+        return f"the geometry of {drawn.geometry.variable.name}"
+    return f"{type(drawn).__name__.removesuffix('Axes').lower()} axes"
+
+
+def _mismatch(choice, bindings, drawn, domain, arguments: dict) -> str | None:
+    # Why a choice cannot draw the value with the given arguments; None if
+    # it can.
+    plot_type = choice.plot_type
+    if bindings is None:
+        if drawn is not None and n_components(drawn) > 1:
+            return (
+                f"puts the domain on one axis, but it has {n_components(drawn)} "
+                "coordinates"
             )
-        if len(leaves) == 2:
-            return ScatterPlot(data, data_config, x=leaves[0], y=leaves[1], **kwargs)
-
-    if len(quantities) == 2 and all_scalar:
-        # ScatterPlot flattens every remaining axis into its implicit
-        # samples axis already - no control needed for `other_axes` here.
-        return ScatterPlot(data, data_config, x=quantities[0], y=quantities[1], **kwargs)
-
-    if len(quantities) >= 3 and all_scalar and other_axes:
-        domain, *rest = other_axes
-        return LinePlot(
-            data,
-            data_config,
-            x=domain,
-            y=SelectorSpec(quantities),
-            **_with_extra_controls(kwargs, rest, default_control),
+        return "needs two values to draw against each other"
+    accepted = inspect.signature(plot_type).parameters
+    unknown = sorted(name for name in arguments if name not in accepted)
+    if unknown:
+        return f"takes no {', '.join(unknown)}"
+    for name, channel in (("color_scale", "color"), ("vector_scale", "vector")):
+        if name in arguments and channel not in bindings:
+            return f"binds no {channel} for {name}"
+    if domain is None:
+        return None
+    n_positions = _n_positions(bindings)
+    if n_positions not in plot_type.dims:
+        dims = " or ".join(map(str, plot_type.dims))
+        return f"draws {dims} position components, not {n_positions}"
+    if not plot_type.draws(domain):
+        return (
+            f"draws no {domain.structure.name.lower()} domain of topological "
+            f"dimension {domain.topological_dim}"
         )
-
-    if len(quantities) > 1:
-        names = ", ".join(q.name for q in quantities)
-        raise ValueError(
-            f"{data_config}'s FeatureAxes bundles multiple distinct "
-            f"variables ({names}) that auto_plot can't combine into one "
-            "plot automatically. Construct a Plot explicitly, e.g. a "
-            "ScatterPlot naming two of them, or a LinePlot with an explicit "
-            "SelectorSpec."
-        )
-
-    raise ValueError(
-        f"Can't auto-select a plot for {data_config} - construct one "
-        "explicitly (e.g. LinePlot/ScatterPlot/BarPlot/PathPlot with "
-        "explicit roles)."
-    )
+    return None

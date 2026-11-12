@@ -1,176 +1,190 @@
-import itertools
+"""Base class :class:`Plot` shared by every plot family."""
 
-import numpy as np
+from enum import Enum, auto
 
-from qewton.visualization.plots.spec import (
-    ControlSpec,
-    PlotSpec,
-    SliderSpec,
-    SelectorSpec,
-)
+from qewton.visualization.axes import ControlAxis, Selector
+from qewton.visualization.scales import ColorScale, Scale
 
 
-def axis_names_from_variable(variable, n: int) -> list[str]:
-    """Derives per-axis labels from a geometry's coordinate Variable.
+class PointEncoding(Enum):
+    """How a plot shows values at the points of its domain. Two plots of
+    one encoding on one domain hide each other; plots of different ones
+    read well together, e.g. arrows over a heatmap.
 
-    Used by plot families whose positions come directly from a geometry
-    (mesh, geometry, vector, embedded-grid plots) rather than an explicit
-    AxisSpec, so there's no separate "x="/"y=" name for the user to supply.
-    A composed Variable such as ``Variable("x", 1) * Variable("y", 1) *
-    Variable("z", 1)`` yields ``["x", "y", "z"]``; a plain ``Variable("x",
-    dim=3)`` is auto-named ``["x_1", "x_2", "x_3"]``.
-
-    Falls back to generic labels (``axis_1``, ``axis_2``, ...) if `variable`
-    is None or doesn't decompose into exactly `n` leaves. Never raises - a
-    wrong or missing axis label is cosmetic, not worth failing a render
-    over.
-
-    A leaf's label is `leaf.math_name` (TeX math-mode, e.g. ``"x"`` ->
-    ``"$x$"``) - it's a real Variable, so it renders as math the same way
-    PlotSpec.math_name renders any other Variable-backed title. The generic
-    fallback isn't a Variable at all and stays plain text, matching
-    PlotSpec.math_name's same rule for a non-Variable spec.
+    Attributes:
+        COLOR: By color, e.g. a heatmap, a surface, colored points of a
+            domain or a filled geometry.
+        ARROW: By arrows.
     """
-    if variable is not None:
-        leaves = variable.leaves
-        if len(leaves) == n:
-            return [leaf.math_name for leaf in leaves]
-    return [f"axis_{i}" for i in range(1, n + 1)]
+
+    COLOR = auto()
+    ARROW = auto()
 
 
 class Plot:
-    """Base class for anything that can be evaluated and drawn.
+    """Anything drawn into an Overlay.
 
-    A Plot doesn't necessarily carry a DataConfiguration - four input
-    families derive from it, each describing a different kind of input:
-    DataPlot (data + DataConfiguration, ``plots/data/``), TablePlot (named
-    columns, ``plots/table/``), GeometryPlot (a Geometry, ``plots/geometry/``)
-    and GraphPlot (a computation Graph, ``plots/graph/``). Everything below
-    `evaluate()` - specs, Scale, controls, Figure, artists, and the result-
-    object contract - is shared across all four; only `evaluate()` and
-    `apply_controls()` differ per family.
+    A plot evaluates, in the current states of its controls, to one Result
+    per drawn copy (:meth:`evaluate`); the number of copies does not
+    change with the states.
+
+    Args:
+        title: Heading of the plot's cell.
+        label: Legend entry; None derives it from the plotted quantity.
+        controls: Control axes reducing dimensions of the plot's input.
+
+    Attributes:
+        point_encoding (PointEncoding or None): How the plot shows values at
+            the points of its domain; None if it shows them by position
+            (e.g. a line graph or points in value space) or not at all.
+            An Overlay draws plots encoding by color first. A class
+            attribute, or a property where it depends on the plot.
+        title (str or None): Heading of the plot's cell.
+        label (str or None): The explicit legend entry.
+        controls (list of ControlAxis): The control axes.
+        selectors (list of Selector): Selectors in place of references.
+        color_scales (list of ColorScale): The color scales the Figure
+            draws colorbars of, trained over all states.
+        active_color_scales (list of ColorScale): Those of `color_scales`
+            shown in the current states (e.g. of the chosen Selector
+            candidate).
+        scales (list of Scale): Every scale of the plot besides the
+            position axes, e.g. its color scales (also those without a
+            colorbar of the Figure) and a VectorScale; the Figure resets
+            them before training.
+        color_index (int): Index of the first categorical color of the
+            plot; set by the Figure so plots and their copies get distinct
+            colors.
+        margin (float): Fraction of the span of the position axes added on
+            both sides of their drawn range, so no mark is clipped; 0 for
+            plots ending at their domain (e.g. a heatmap). A class
+            attribute, or a property where it depends on the plot.
+        dim (int): Number of position components drawn: 2 or 3, or 0 for a
+            plot that lays out its own axes (e.g. parallel coordinates).
+        n_copies (int): Number of Results :meth:`evaluate` returns.
+        scaled_channels (tuple of str): Position channels drawn to one
+            scale, e.g. the coordinates of a geometry, so it is not
+            distorted; empty if none.
+        color_title (str or None): Name of what is bound to the color
+            channel in the current states; None if nothing named is.
+
+    Notes:
+        Subclasses implement `dim` and :meth:`evaluate`, and may override
+        `selectors`, `color_scales`, `active_color_scales`, `scales`,
+        `margin`, `n_copies`, `scaled_channels`, `color_title`, :meth:`color_ticks`,
+        :meth:`axis_title`,
+        :meth:`axis_ticks`, :meth:`channels_of` and :meth:`train_scales`.
     """
+
+    point_encoding: PointEncoding | None = None
+    margin: float = 0.04
 
     def __init__(
         self,
-        title=None,
-        label=None,
-        theme=None,
-        controls: list[ControlSpec] | None = None,
+        title: str | None = None,
+        label: str | None = None,
+        controls: tuple[ControlAxis, ...] | list[ControlAxis] = (),
     ) -> None:
-        self._title = title
-        self._label = label
-        self._theme = theme
-        self.controls = controls or []
-        #: This plot's position among every plot added to its Figure, in
-        #: add order - set once by Figure.add_plot(). None until then (or
-        #: for a plot never added to a Figure). Artists for families with
-        #: no other data-driven coloring (LineArtist, ScatterArtist without
-        #: a ColorSpec, ...) use it via `theme.get_color(index)` so multiple
-        #: overlaid traces get visually distinct colors.
-        self.color_index: int | None = None
+        self.title = title
+        self.label = label
+        self.controls = list(controls)
+        self.color_index = 0
 
     @property
-    def theme(self):
-        return self._theme
-
-    @theme.setter
-    def theme(self, value):
-        if self._theme is None:
-            self._theme = value
-
-    @property
-    def title(self):
-        return self._title
-
-    @property
-    def label(self):
-        """This plot's legend entry text, or None to fall back to whichever
-        variable it plots (each family's own default, e.g. LinePlot/BarPlot
-        fall back to `y.name`).
-
-        Distinct from `title` (a panel/subplot heading, shown as a subplot
-        annotation or the whole-figure title - see Figure.cell_titles()):
-        conflating the two meant one plot's title could leak into another's
-        legend entry, or vice versa, in any Figure overlaying more than one
-        plot.
-        """
-        return self._label
-
-    @property
-    def embedding_dim(self) -> int | None:
-        """How many spatial dimensions this plot draws into: 2, 3, or None.
-
-        A faceted Figure needs this to size each grid cell's subplot; the
-        translation into a specific renderer's vocabulary (e.g. Plotly's
-        `"xy"`/`"scene"` subplot types) happens in the renderer, not here.
-        Defaults to 2; plots that always draw into 3D space override it.
-        None means non-spatial - no cartesian axes at all (e.g.
-        ParallelCoordinatesPlot, GraphPlot), laid out by the renderer in a
-        slot with no x/y semantics. Unused for a non-faceted (1x1) Figure.
-        """
-        return 2
-
-    def evaluate(self):
-        raise NotImplementedError
-
-    def create_artist(self, backend_figure, renderer, row=None, col=None):
-        """Creates the renderer-specific Artist that draws this plot into
-        `backend_figure`, evaluating it in its current control state."""
+    def dim(self) -> int:
         raise NotImplementedError
 
     @property
-    def selector_specs(self) -> list[SelectorSpec]:
-        """Every SelectorSpec embedded in one of this plot's own PlotSpec
-        attributes (color, vector, x, y, ...), found generically by scanning
-        for PlotSpec-typed attributes rather than needing per-role
-        registration. Unlike `self.controls` (SliderSpec/FixedSpec/...,
-        passed explicitly via the `controls=` constructor argument), a
-        SelectorSpec is discovered this way because it is never itself a
-        whole-axis control - it only ever appears wrapped inside another
-        spec's `variable_or_axes`."""
-        found = []
-        for value in vars(self).values():
-            if isinstance(value, PlotSpec):
-                spec = value.embedded_selector_spec
-                if spec is not None and spec not in found:
-                    found.append(spec)
-        return found
+    def selectors(self) -> list[Selector]:
+        return []
 
-    def color_values(self):
-        """Values used to train this plot's shared color Scale, or None.
+    @property
+    def color_scales(self) -> list[ColorScale]:
+        return []
 
-        Returns None both when the plot has no ColorSpec and when its
-        ColorSpec has no Scale attached, letting `Figure.draw()` skip the
-        extra `evaluate()` call in the common case. Works generically across
-        plot families because every `evaluate()` returns a result dataclass
-        with a `.color` field.
+    @property
+    def active_color_scales(self) -> list[ColorScale]:
+        return self.color_scales
 
-        For a plot with SliderSpec controls, values are collected across
-        every slider state rather than only the state current when this
-        runs, so the color range stays fixed while scrubbing instead of
-        jumping around as the slider moves. FixedSpec controls are left
-        alone since they never change state.
+    @property
+    def scales(self) -> list[Scale]:
+        return list(self.color_scales)
+
+    @property
+    def n_copies(self) -> int:
+        return 1
+
+    @property
+    def scaled_channels(self) -> tuple[str, ...]:
+        return ()
+
+    @property
+    def color_title(self) -> str | None:
+        return None
+
+    def color_ticks(self, scale: ColorScale) -> tuple[list[float], list[str]] | None:
+        """The ticks the plot gives the colorbar of one of its scales, in
+        its transformed values, in every state (also while another scale
+        of the plot is shown), e.g. the categories of a categorical color.
+
+        Args:
+            scale: One of `color_scales`.
+
+        Returns:
+            tuple or None: Positions and labels; None for the scale's own
+                ticks.
         """
-        spec = getattr(self, "color", None)
-        if spec is None or spec.scale is None:
-            return None
+        return None
 
-        sliders = [c for c in self.controls if isinstance(c, SliderSpec)]
-        if not sliders:
-            return getattr(self.evaluate(), "color", None)
+    def axis_title(self, channel: str) -> str | None:
+        """The title the plot gives a position axis.
 
-        originals = [s.state for s in sliders]
-        try:
-            all_values = []
-            state_ranges = (range(s.minimum, s.maximum + 1, s.step) for s in sliders)
-            for states in itertools.product(*state_ranges):
-                for slider, state in zip(sliders, states):
-                    slider.state = state
-                values = getattr(self.evaluate(), "color", None)
-                if values is not None:
-                    all_values.append(np.asarray(values).reshape(-1))
-            return np.concatenate(all_values) if all_values else None
-        finally:
-            for slider, original in zip(sliders, originals):
-                slider.state = original
+        Args:
+            channel: ``"x"``, ``"y"`` or ``"z"``.
+
+        Returns:
+            str or None: The name of what is bound to `channel`; None if
+                nothing named is.
+        """
+        return None
+
+    def channels_of(self, selector: Selector) -> tuple[str, ...]:
+        """The channels a Selector of the plot fills.
+
+        Args:
+            selector: One of `selectors`.
+
+        Returns:
+            tuple of str: E.g. ``("color",)``.
+        """
+        return ()
+
+    def axis_ticks(self, channel: str) -> tuple[list[float], list[str]] | None:
+        """The ticks the plot gives a position axis in the current states,
+        e.g. the categories of a categorical column.
+
+        Args:
+            channel: ``"x"``, ``"y"`` or ``"z"``.
+
+        Returns:
+            tuple or None: Tick positions and their labels; None for
+                automatic ticks.
+        """
+        return None
+
+    def train_scales(self, axes: dict[str, Scale]) -> None:
+        """Train the plot's scales and the given position axis scales over
+        all states of its controls. Restores the states afterwards.
+
+        Args:
+            axes: Scale of each position axis of the plot's overlay, by
+                channel.
+        """
+
+    def evaluate(self) -> list:
+        """Evaluate the plot in the current states of its controls.
+
+        Returns:
+            list of Result: One Result per drawn copy.
+        """
+        raise NotImplementedError

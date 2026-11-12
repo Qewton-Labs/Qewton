@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import math
 from types import EllipsisType
 
 from qewton.config.variables import Variable
@@ -497,6 +499,55 @@ class GeometryAxes(Axes):
             self_dict[self_key] = new_a
             other_dict[other_key] = new_a
         return self_dict, other_dict
+
+    def split(self, variables: list[Variable]) -> list[GeometryAxes]:
+        """Split the axes of a product geometry into axes of its factors.
+
+        Every factor whose variable is in `variables` gets axes of its own;
+        each run of adjacent other factors stays together as their product.
+        The tensor axes keep their order (the first factor varies slowest),
+        so data described by these axes is reshaped, not reordered.
+
+        Args:
+            variables: Variables of factors of the geometry.
+
+        Returns:
+            list of GeometryAxes: In the order of the factors; together they
+                have as many elements as these axes.
+
+        Raises:
+            ValueError: If the geometry is no product, a variable is no
+                factor of it, or the factors do not span these axes.
+        """
+        factors = self.geometry.factors
+        if factors is None:
+            raise ValueError(f"{self.geometry} is not a product of geometries.")
+        names = [f.variable for f in factors]
+        unknown = [v for v in variables if v not in names]
+        if unknown:
+            raise ValueError(
+                f"{', '.join(map(str, unknown))} is no factor of {self.geometry}; "
+                f"its factors are {', '.join(map(str, names))}."
+            )
+        runs: list[list] = []
+        for factor in factors:
+            alone = factor.variable in variables
+            if alone or not runs or runs[-1][0].variable in variables:
+                runs.append([factor])
+            else:
+                runs[-1].append(factor)
+        split = [
+            GeometryAxes(run[0] if len(run) == 1 else self.geometry.subproduct(run))
+            for run in runs
+        ]
+        size = math.prod(d.size for a in split for d in a.shape)
+        own = math.prod(d.size for d in self.shape)
+        if size != own:
+            raise ValueError(
+                f"The factors of {self.geometry.variable} have {size} points in "
+                f"all, its axes {own}."
+            )
+        return split
 
 
 class FeatureAxes(Axes):

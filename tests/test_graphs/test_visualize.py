@@ -14,8 +14,7 @@ from qewton.visualization.auto import auto_plot
 from qewton.visualization.figure import Figure
 from qewton.visualization.plots.base import Plot
 from qewton.visualization.layout import Overlay, Row
-from qewton.visualization.plots.data.mesh import MeshFieldPlot
-from qewton.visualization.plots.data.points import PointCloudPlot
+from qewton.visualization import HeatmapPlot, ScatterPlot, SurfacePlot
 
 
 @pytest.fixture
@@ -59,7 +58,7 @@ class TestVisualize:
         graph, sampler, model = connected_graph
         layout = graph.visualize(model.output_ports[0])
         assert isinstance(layout, Overlay)
-        assert isinstance(layout.plots[0], MeshFieldPlot)
+        assert isinstance(layout.plots[0], HeatmapPlot)
 
     def test_the_resulting_plot_draws_without_error(self, connected_graph):
         graph, sampler, model = connected_graph
@@ -75,21 +74,21 @@ class TestVisualize:
         data, the same as every other caller does by convention."""
         graph, sampler, model = connected_graph
         layout = graph.visualize(model.output_ports[0])
-        result = layout.plots[0].evaluate()
-        assert isinstance(np.asarray(result.color), np.ndarray)
+        (result,) = layout.plots[0].evaluate()
+        assert isinstance(result.values, np.ndarray)
 
     def test_raw_sampling_without_mesh_mode_yields_a_point_cloud_plot(
         self, connected_graph
     ):
         """Outside of visualize()'s own mesh-mode run, the same graph's
         normal run() produces a plain, unstructured batch - auto_plot then
-        falls back to PointCloudPlot instead of MeshFieldPlot."""
+        falls back to ScatterPlot instead of HeatmapPlot."""
         graph, sampler, model = connected_graph
         graph.run()
         config = model.output_ports[0].get_data_configuration(graph)
         value = model.backend.to_numpy(model.output_ports[0].value)
         plot = auto_plot(value, config)
-        assert isinstance(plot, PointCloudPlot)
+        assert isinstance(plot, ScatterPlot)
 
     def test_samplers_on_path_to_finds_the_grid_sampler(self, connected_graph):
         graph, sampler, model = connected_graph
@@ -103,11 +102,13 @@ class TestVisualize:
         layout = graph.visualize(sampler.output_ports[0])
         assert isinstance(layout.plots[0], Plot)
 
-    def test_multiple_ports_return_a_row(self, connected_graph):
+    def test_a_field_and_its_points_share_an_overlay(self, connected_graph):
+        """The sampler's points are drawn over the model's field: the
+        field covers the domain, the uncolored points do not."""
         graph, sampler, model = connected_graph
         layout = graph.visualize([model.output_ports[0], sampler.output_ports[0]])
-        assert isinstance(layout, Row)
-        assert len(layout.plots) == 2
+        assert isinstance(layout, Overlay)
+        assert [type(p) for p in layout.plots] == [HeatmapPlot, ScatterPlot]
 
     def test_reference_with_more_than_one_port_raises(self, connected_graph):
         graph, sampler, model = connected_graph
@@ -148,14 +149,14 @@ class TestVisualizeDevice:
         regardless of the sampler's actual device - an explicit device=
         must reach mesh-mode's point generation too, not just move nodes."""
         graph, sampler, model = connected_graph
-        original_visualization_mesh = sampler.sampled_geometry.visualization_mesh
+        original_visualization_geometry = sampler.visualization_geometry
         captured = {}
 
         def spy(max_vertex_distance, device=None):
             captured["device"] = device
-            return original_visualization_mesh(max_vertex_distance, device)
+            return original_visualization_geometry(max_vertex_distance, device)
 
-        sampler.sampled_geometry.visualization_mesh = spy
+        sampler.visualization_geometry = spy
         graph.visualize(model.output_ports[0], device="cpu")
         assert captured["device"] == "cpu"
 
@@ -181,31 +182,6 @@ def reference_setup(connected_graph):
 
 
 class TestVisualizeWithReference:
-    def test_produces_a_row_of_reference_prediction_and_error(
-        self, connected_graph, reference_setup
-    ):
-        graph, sampler, model = connected_graph
-        ref_values, ref_config = reference_setup
-        layout = graph.visualize(
-            model.output_ports[0], reference=ref_values, reference_config=ref_config
-        )
-        assert isinstance(layout, Row)
-        assert len(layout.plots) == 3
-        assert [p.title for p in layout.plots] == ["Reference", "Prediction", "Error"]
-
-    def test_reference_and_prediction_share_one_scale_error_gets_its_own(
-        self, connected_graph, reference_setup
-    ):
-        graph, sampler, model = connected_graph
-        ref_values, ref_config = reference_setup
-        layout = graph.visualize(
-            model.output_ports[0], reference=ref_values, reference_config=ref_config
-        )
-        reference_plot, prediction_plot, error_plot = layout.plots
-        assert reference_plot.color.scale is prediction_plot.color.scale
-        assert error_plot.color.scale is not reference_plot.color.scale
-        assert error_plot.color.scale.symmetric is True
-
     def test_share_scale_false_gives_independent_scales(
         self, connected_graph, reference_setup
     ):
@@ -218,70 +194,7 @@ class TestVisualizeWithReference:
             share_scale=False,
         )
         reference_plot, prediction_plot, _ = layout.plots
-        assert reference_plot.color.scale is None
-        assert prediction_plot.color.scale is None
-
-    def test_error_none_omits_the_error_panel(self, connected_graph, reference_setup):
-        graph, sampler, model = connected_graph
-        ref_values, ref_config = reference_setup
-        layout = graph.visualize(
-            model.output_ports[0],
-            reference=ref_values,
-            reference_config=ref_config,
-            error=None,
-        )
-        assert len(layout.plots) == 2
-        assert [p.title for p in layout.plots] == ["Reference", "Prediction"]
-
-    def test_signed_error_is_prediction_minus_reference(
-        self, connected_graph, reference_setup
-    ):
-        graph, sampler, model = connected_graph
-        ref_values, ref_config = reference_setup
-        layout = graph.visualize(
-            model.output_ports[0],
-            reference=ref_values,
-            reference_config=ref_config,
-            error="signed",
-        )
-        reference_plot, prediction_plot, error_plot = layout.plots
-        ref_values = np.asarray(reference_plot.evaluate().color)
-        pred_values = np.asarray(prediction_plot.evaluate().color)
-        error_values = np.asarray(error_plot.evaluate().color)
-        assert np.allclose(error_values, pred_values - ref_values)
-
-    def test_absolute_error_is_non_negative(self, connected_graph, reference_setup):
-        graph, sampler, model = connected_graph
-        ref_values, ref_config = reference_setup
-        layout = graph.visualize(
-            model.output_ports[0],
-            reference=ref_values,
-            reference_config=ref_config,
-            error="absolute",
-        )
-        _, _, error_plot = layout.plots
-        error_values = np.asarray(error_plot.evaluate().color)
-        assert np.all(error_values >= 0)
-        assert error_plot.color.scale.vmin == 0.0
-
-    def test_relative_error_masks_near_zero_reference_with_nan(self, connected_graph):
-        graph, sampler, model = connected_graph
-        U = model.output_ports[0].get_data_configuration(graph).feature_axes.variables
-        points = np.array([[0.2, 0.2], [0.5, 0.5]], dtype=np.float32)
-        ref_values = np.array([[0.0], [2.0]], dtype=np.float32)  # first ~0 -> NaN
-        ref_geometry = PointCloud(Variable("y", 2), points)
-        ref_config = DataConfiguration(GeometryAxes(ref_geometry), FeatureAxes(U))
-
-        layout = graph.visualize(
-            model.output_ports[0],
-            reference=ref_values,
-            reference_config=ref_config,
-            error="relative",
-        )
-        _, _, error_plot = layout.plots
-        error_values = np.asarray(error_plot.evaluate().color)
-        assert np.isnan(error_values[0])
-        assert not np.isnan(error_values[1])
+        assert reference_plot.color_scale is not prediction_plot.color_scale
 
     def test_invalid_error_mode_raises(self, connected_graph, reference_setup):
         graph, sampler, model = connected_graph
@@ -338,70 +251,6 @@ class TestVisualizeWithReference:
         )
         assert sampler.active_discretization is None
 
-    def test_draws_without_error(self, connected_graph, reference_setup):
-        graph, sampler, model = connected_graph
-        ref_values, ref_config = reference_setup
-        layout = graph.visualize(
-            model.output_ports[0], reference=ref_values, reference_config=ref_config
-        )
-        backend_figure = Figure(layout).draw()
-        assert len(backend_figure.data) > 0
-
-    def test_prediction_and_error_reuse_the_references_resolved_controls(
-        self, connected_graph, reference_setup, monkeypatch
-    ):
-        """one ControlSpec instance shared
-        across every panel - prediction/error must be resolved with
-        whatever reference_plot's own auto_plot() call already resolved,
-        not independently re-resolve their own."""
-        graph, sampler, model = connected_graph
-        ref_values, ref_config = reference_setup
-        from qewton.visualization import auto as auto_module
-
-        real_auto_plot = auto_module.auto_plot
-        seen_controls = []
-
-        def spy(*args, **kwargs):
-            seen_controls.append(kwargs.get("controls"))
-            return real_auto_plot(*args, **kwargs)
-
-        monkeypatch.setattr(auto_module, "auto_plot", spy)
-        graph.visualize(
-            model.output_ports[0], reference=ref_values, reference_config=ref_config
-        )
-        # probe, reference (both resolve their own - unconstrained), then
-        # prediction and error - the latter two must carry the exact same,
-        # already-resolved controls list reference_plot ended up with.
-        assert len(seen_controls) == 4
-        assert seen_controls[2] is not None
-        assert seen_controls[2] is seen_controls[3]
-
-    def test_variables_redirects_matching_specs_to_one_shared_variablespec(self):
-        """Unit-level check of _redirect_to_shared_variable (used by
-        variables= ): every PlotSpec
-        attribute naming one of `variables` is redirected to the shared
-        instance; attributes naming something else are left alone."""
-        from qewton.config.axes import BatchAxes
-        from qewton.visualization.plots.data.curve import LinePlot
-        from qewton.visualization.plots.spec import SelectorSpec
-
-        temperature = Variable("temperature", 1)
-        pressure = Variable("pressure", 1)
-        sample_axis = BatchAxes(5)
-        data = np.random.rand(5, 1)
-        config = DataConfiguration(sample_axis, FeatureAxes(temperature))
-        plot = LinePlot(data, config, x=sample_axis, y=temperature)
-
-        shared_spec = SelectorSpec([temperature, pressure])
-        Graph._redirect_to_shared_variable(plot, [temperature, pressure], shared_spec)
-        assert plot.y.embedded_selector_spec is shared_spec
-
-        unrelated = Variable("other", 1)
-        plot2 = LinePlot(data, config, x=sample_axis, y=temperature)
-        Graph._redirect_to_shared_variable(plot2, [unrelated], shared_spec)
-        assert plot2.y.embedded_selector_spec is None
-
-
 @pytest.fixture
 def operator_learning_graph():
     """Two independent models fed by the same sampler, both declared with
@@ -425,17 +274,6 @@ def operator_learning_graph():
 
 
 class TestVisualizeWithPortReference:
-    def test_produces_a_row_of_reference_prediction_and_error(
-        self, operator_learning_graph
-    ):
-        graph, sampler, model, reference_model = operator_learning_graph
-        layout = graph.visualize(
-            model.output_ports[0], reference=reference_model.output_ports[0]
-        )
-        assert isinstance(layout, Row)
-        assert len(layout.plots) == 3
-        assert [p.title for p in layout.plots] == ["Reference", "Prediction", "Error"]
-
     def test_both_sides_come_from_one_run(self, operator_learning_graph):
         """No sampler geometry substitution for a Port reference - both
         sides are already graph data evaluated together."""
@@ -443,35 +281,6 @@ class TestVisualizeWithPortReference:
         graph.visualize(model.output_ports[0], reference=reference_model.output_ports[0])
         assert sampler.active_discretization is None
         assert sampler.mesh_mode is False
-
-    def test_signed_error_matches_the_two_predictions(self, operator_learning_graph):
-        graph, sampler, model, reference_model = operator_learning_graph
-        layout = graph.visualize(
-            model.output_ports[0], reference=reference_model.output_ports[0]
-        )
-        reference_plot, prediction_plot, error_plot = layout.plots
-        ref_values = np.asarray(reference_plot.evaluate().color)
-        pred_values = np.asarray(prediction_plot.evaluate().color)
-        error_values = np.asarray(error_plot.evaluate().color)
-        assert np.allclose(error_values, pred_values - ref_values)
-
-    def test_shares_scale_between_reference_and_prediction(self, operator_learning_graph):
-        graph, sampler, model, reference_model = operator_learning_graph
-        layout = graph.visualize(
-            model.output_ports[0], reference=reference_model.output_ports[0]
-        )
-        reference_plot, prediction_plot, error_plot = layout.plots
-        assert reference_plot.color.scale is prediction_plot.color.scale
-        assert error_plot.color.scale is not reference_plot.color.scale
-
-    def test_draws_without_error(self, operator_learning_graph):
-        graph, sampler, model, reference_model = operator_learning_graph
-        layout = graph.visualize(
-            model.output_ports[0], reference=reference_model.output_ports[0]
-        )
-        backend_figure = Figure(layout).draw()
-        assert len(backend_figure.data) > 0
-
 
 class TestVisualizeWithConfigOverrides:
     """prediction_config/reference_config let the caller supply the
@@ -554,13 +363,6 @@ class TestVisualizeWithCallableReference:
     """reference= as a plain callable - evaluated at the model's own
     natural mesh-mode points, no separate geometry to build by hand."""
 
-    def test_produces_a_row_of_reference_prediction_and_error(self, connected_graph):
-        graph, sampler, model = connected_graph
-        layout = graph.visualize(model.output_ports[0], reference=_zero_reference)
-        assert isinstance(layout, Row)
-        assert len(layout.plots) == 3
-        assert [p.title for p in layout.plots] == ["Reference", "Prediction", "Error"]
-
     def test_evaluates_the_reference_at_the_models_own_points(self, connected_graph):
         graph, sampler, model = connected_graph
         captured = {}
@@ -579,37 +381,6 @@ class TestVisualizeWithCallableReference:
             reference_plot.data_config.geometry_axes.geometry
             is prediction_plot.data_config.geometry_axes.geometry
         )
-
-    def test_signed_error_matches_prediction_minus_reference(self, connected_graph):
-        graph, sampler, model = connected_graph
-        layout = graph.visualize(model.output_ports[0], reference=_zero_reference)
-        reference_plot, prediction_plot, error_plot = layout.plots
-        ref_values = np.asarray(reference_plot.evaluate().color)
-        pred_values = np.asarray(prediction_plot.evaluate().color)
-        error_values = np.asarray(error_plot.evaluate().color)
-        assert np.allclose(error_values, pred_values - ref_values)
-
-    def test_shares_scale_between_reference_and_prediction(self, connected_graph):
-        graph, sampler, model = connected_graph
-        layout = graph.visualize(model.output_ports[0], reference=_zero_reference)
-        reference_plot, prediction_plot, error_plot = layout.plots
-        assert reference_plot.color.scale is prediction_plot.color.scale
-        assert error_plot.color.scale is not reference_plot.color.scale
-
-    def test_draws_without_error(self, connected_graph):
-        graph, sampler, model = connected_graph
-        layout = graph.visualize(model.output_ports[0], reference=_zero_reference)
-        backend_figure = Figure(layout).draw()
-        assert len(backend_figure.data) > 0
-
-    def test_a_lambda_works_too(self, connected_graph):
-        graph, sampler, model = connected_graph
-        layout = graph.visualize(
-            model.output_ports[0], reference=lambda points: _zero_reference(points)
-        )
-        assert isinstance(layout, Row)
-        assert len(layout.plots) == 3
-
 
 class TestVisualizeEvaluationPhase:
     """mode= controls which EvaluationPhase every DataLoader-like node on
@@ -694,19 +465,19 @@ class TestVisualizeWithVariablesNarrowing:
     def test_no_reference_single_variable_selects_the_vector_component(
         self, mixed_variable_graph
     ):
-        from qewton.visualization.plots.data.mesh import MeshVectorPlot
+        from qewton.visualization import VectorPlot
 
         graph, sampler, model, V, S = mixed_variable_graph
         layout = graph.visualize(model.output_ports[0], variables=[V])
         assert isinstance(layout, Overlay)
-        assert isinstance(layout.plots[0], MeshVectorPlot)
+        assert isinstance(layout.plots[0], VectorPlot)
 
     def test_no_reference_single_variable_selects_the_scalar_component(
         self, mixed_variable_graph
     ):
         graph, sampler, model, V, S = mixed_variable_graph
         layout = graph.visualize(model.output_ports[0], variables=[S])
-        assert isinstance(layout.plots[0], MeshFieldPlot)
+        assert isinstance(layout.plots[0], HeatmapPlot)
 
     def test_no_reference_without_variables_raises_on_the_full_mixed_output(
         self, mixed_variable_graph
@@ -757,7 +528,356 @@ class TestVisualizeWithVariablesNarrowing:
 
         layout = graph.visualize(model.output_ports[0], variables=[T, P])
         plot = layout.plots[0]
-        assert isinstance(plot, MeshFieldPlot)
-        assert plot.color.embedded_selector_spec is not None
-        candidate_names = {v.name for v in plot.color.embedded_selector_spec.candidates}
-        assert candidate_names == {"temperature", "pressure"}
+        assert isinstance(plot, HeatmapPlot)
+        (selector,) = plot.selectors
+        assert selector.candidates == [T, P]
+
+
+def _space_time_graph(sampler, T, X):
+    U = Variable("u", 1)
+    model = FCN(in_neurons=T * X, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+    graph = Graph()
+    graph.connect(sampler, model)
+    graph.setup()
+    return graph, model
+
+
+class TestVisualizeProductGeometry:
+    """Samplers on a space-time domain, plotted over space with time as a
+    control."""
+
+    @pytest.fixture
+    def domains(self):
+        from qewton.geometries.continuous.domains_1d.interval import Interval
+
+        T, X = Variable("t", 1), Variable("x", 2)
+        return T, X, Interval(T, 0.0, 2.0), Rectangle(X, [0.0, 0.0], 1.0, 1.0)
+
+    def _check_frames(self, plot, model, T):
+        """Every frame holds the model's values at that time."""
+        import torch
+
+        factor_axes, geometry_axes, _ = plot.data_config.axes
+        times = np.asarray(factor_axes.geometry.mesh.vertices)
+        space = np.asarray(geometry_axes.geometry.mesh.vertices)
+        assert plot.data.shape == (len(times), len(space), 1)
+        for i, t in enumerate(times):
+            points = np.hstack([np.full((len(space), 1), t), space]).astype(np.float32)
+            expected = model(torch.as_tensor(points)).detach().numpy()
+            assert np.allclose(plot.data[i], expected, atol=1e-5)
+
+    def test_product_geometry_sampler_with_time_control(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization import TimeAxis
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        layout = graph.visualize(
+            model.output_ports[0],
+            controls=[TimeAxis(T)],
+            max_vertex_distance={T: 0.5, X: 0.25},
+        )
+        plot = layout.plots[0]
+        assert isinstance(plot, HeatmapPlot)
+        assert plot.data.shape == (5, 25, 1)
+        self._check_frames(plot, model, T)
+        Figure(layout).draw()
+
+    def test_product_geometry_sampler_without_control_draws_3d(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        plot = graph.visualize(model.output_ports[0], max_vertex_distance=0.5).plots[0]
+        assert isinstance(plot, SurfacePlot)
+        assert plot.dim == 3
+
+    def test_product_sampler_with_time_control(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization import TimeAxis
+
+        T, X, time, square = domains
+        sampler = RandomUniformSampler(time, 5) * RandomUniformSampler(square, 7)
+        graph, model = _space_time_graph(sampler, T, X)
+        layout = graph.visualize(
+            model.output_ports[0],
+            controls=[TimeAxis(T)],
+            max_vertex_distance={T: 0.5, X: 0.25},
+        )
+        self._check_frames(layout.plots[0], model, T)
+        assert sampler.mesh_mode is False
+        assert sampler.sampler_a.mesh_mode is False
+
+    def test_boundary_alone_and_over_time(self, domains, tmp_path):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization import TimeAxis
+
+        T, X, time, square = domains
+        U = Variable("u", 1)
+        model = FCN(in_neurons=X, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(RandomUniformSampler(square.boundary, 10), model)
+        graph.setup()
+        Figure(graph.visualize(model.output_ports[0], max_vertex_distance=0.25)).draw()
+
+        graph, model = _space_time_graph(
+            RandomUniformSampler(time * square.boundary, 10), T, X
+        )
+        layout = graph.visualize(
+            model.output_ports[0], controls=[TimeAxis(T)], max_vertex_distance=0.5
+        )
+        figure = Figure(layout)
+        figure.save_html(tmp_path / "boundary.html")
+        labels = [step.label for step in figure.backend_figure.layout.sliders[0].steps]
+        assert labels == ["0", "0.5", "1", "1.5", "2"]
+        assert len(figure.backend_figure.frames) == 5
+
+    def test_scale_fixes_the_color_range_of_the_animation(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization import ColorScale, TimeAxis
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        scale = ColorScale(vmin=-2.0, vmax=2.0)
+        layout = graph.visualize(
+            model.output_ports[0], controls=[TimeAxis(T)], color_scale=scale,
+            max_vertex_distance=0.5,
+        )
+        assert layout.plots[0].color_scale is scale
+        Figure(layout).draw()
+        assert scale.range == (-2.0, 2.0)
+
+    def test_scale_is_shared_by_reference_and_prediction(self, domains):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization import ColorScale, TimeAxis
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        scale = ColorScale(vmin=0.0, vmax=2.0)
+        layout = graph.visualize(
+            model.output_ports[0], reference=lambda points: points[:, :1],
+            controls=[TimeAxis(T)], color_scale=scale, max_vertex_distance=0.5,
+        )
+        scales = [plot.color_scale for plot in layout.plots]
+        assert scales[0] is scale and scales[1] is scale
+        assert scales[2] is not scale  # the error panel keeps its own
+
+    @staticmethod
+    def _space_time_reference(T, U, square):
+        from qewton.geometries.discrete.mesh import Mesh
+        from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+
+        times = np.array([0.0, 0.1, 0.5, 2.0])
+        time_mesh = MeshGeometry(
+            T, Mesh(vertices=times[:, None], cells=[[0, 1], [1, 2], [2, 3]])
+        )
+        reference_geometry = (time_mesh * square.create_mesh(0.5)).create_mesh()
+        points = np.asarray(reference_geometry.discretization_points)
+        config = DataConfiguration(GeometryAxes(reference_geometry), FeatureAxes(U))
+        return points[:, :1] + points[:, 1:2], config
+
+    @pytest.mark.parametrize("device", ["cpu", "cuda"])
+    def test_data_reference_as_a_tensor_on_the_models_device(self, domains, device):
+        import torch
+
+        from qewton.config.devices import cpu, cuda
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization import TimeAxis
+
+        if device == "cuda" and not torch.cuda.is_available():
+            pytest.skip("needs a GPU")
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        for node in graph.nodes:
+            node.to(cuda(0) if device == "cuda" else cpu)
+        U = model.output_ports[0].get_data_configuration(graph).feature_axes.variables
+        reference, config = self._space_time_reference(T, U, square)
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=torch.as_tensor(reference, device=device),
+            reference_config=config,
+            controls=[TimeAxis(T)],
+        )
+        reference_plot, prediction_plot, _ = layout.plots
+        # time slowest in the product order, so the frames flatten back to the input
+        assert np.allclose(reference_plot.data.reshape(-1, 1), reference)
+        for node in graph.nodes:
+            node.to(cpu)
+        self._check_frames(prediction_plot, model, T)
+
+    def test_data_reference_on_a_space_time_mesh(self, domains, tmp_path):
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.geometries.discrete.mesh import Mesh
+        from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+        from qewton.visualization import TimeAxis
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        U = model.output_ports[0].get_data_configuration(graph).feature_axes.variables
+        times = np.array([0.0, 0.1, 0.5, 2.0])
+        time_mesh = MeshGeometry(
+            T, Mesh(vertices=times[:, None], cells=[[0, 1], [1, 2], [2, 3]])
+        )
+        reference_geometry = (time_mesh * square.create_mesh(0.5)).create_mesh()
+        points = np.asarray(reference_geometry.discretization_points)
+        reference = points[:, :1] + points[:, 1:2]  # t + x_1
+        config = DataConfiguration(GeometryAxes(reference_geometry), FeatureAxes(U))
+        layout = graph.visualize(
+            model.output_ports[0], reference=reference, reference_config=config,
+            controls=[TimeAxis(T)],
+        )
+        reference_plot, prediction_plot, error_plot = layout.plots
+        self._check_frames(prediction_plot, model, T)
+        space = np.asarray(reference_plot.data_config.axes[1].geometry.mesh.vertices)
+        for k, t in enumerate(times):
+            assert np.allclose(reference_plot.data[k, :, 0], t + space[:, 0])
+        assert np.allclose(error_plot.data, prediction_plot.data - reference_plot.data)
+        figure = Figure(layout)
+        figure.save_html(tmp_path / "reference.html")
+        labels = [step.label for step in figure.backend_figure.layout.sliders[0].steps]
+        assert labels == ["0", "0.1", "0.5", "2"]
+
+    def test_reference_with_an_explicit_plot_type_and_time_control(self, domains, tmp_path):
+        """A surface over space, animated in time, next to a reference: the
+        time factor must be split off for every panel."""
+        from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+        from qewton.visualization import TimeAxis
+
+        T, X, time, square = domains
+        graph, model = _space_time_graph(RandomUniformSampler(time * square, 10), T, X)
+        U = model.output_ports[0].get_data_configuration(graph).feature_axes.variables
+        control = TimeAxis(T)
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=lambda points: points[:, :1],
+            plot_type=SurfacePlot,
+            z=U,
+            controls=[control],
+            max_vertex_distance=0.5,
+        )
+        assert [type(p) for p in layout.plots] == [SurfacePlot] * 3
+        for plot in layout.plots:
+            assert plot.controls == [control]
+            assert plot.domain.variable == X
+        figure = Figure(layout)
+        figure.save_html(tmp_path / "surface.html")
+        assert len(figure.backend_figure.frames) == 5
+
+
+class TestVisualizeReferenceOnProductDomain:
+    """Reference data on a product domain (space x parameter) is given with
+    one GeometryAxes per factor; the model is evaluated at all combinations
+    and the parameter gets a slider."""
+
+    @staticmethod
+    def _setup():
+        from qewton.geometries.continuous.domains_1d.interval import Interval
+
+        X, A, U = Variable("x", 2), Variable("alpha", 1), Variable("u", 2)
+        domain = Rectangle(X, [0.0, 0.0], 1.0, 1.0) * Interval(A, 0.0, 1.0)
+        sampler = GridSampler(domain, 50)
+        model = FCN(in_neurons=domain.variable, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(sampler, model)
+        graph.setup()
+
+        alphas = np.array([[0.2], [0.5], [0.9]], dtype=np.float32)
+        g1, g2 = np.meshgrid(np.linspace(0, 1, 4), np.linspace(0, 1, 5), indexing="ij")
+        x_grid = np.stack([g1, g2], axis=-1).astype(np.float32)  # (4, 5, 2)
+        a_axes = GeometryAxes(Interval(A, 0.0, 1.0).discretize(alphas))
+        x_axes = GeometryAxes(Rectangle(X, [0.0, 0.0], 1.0, 1.0).discretize(x_grid))
+        return graph, model, U, a_axes, x_axes, alphas, x_grid
+
+    @staticmethod
+    def _model_at(model, alphas, x_grid) -> np.ndarray:
+        """The model's own values at every (alpha, x), as (n_alpha, 4, 5, 2) -
+        its input is ordered like the domain variable, (x, alpha)."""
+        import torch
+
+        x = np.broadcast_to(x_grid, (len(alphas), *x_grid.shape))
+        a = np.broadcast_to(alphas[:, None, None, :], (*x.shape[:-1], 1))
+        points = torch.tensor(np.concatenate([x, a], axis=-1).reshape(-1, 3))
+        with torch.no_grad():
+            return model(points).numpy().reshape(len(alphas), 4, 5, 2)
+
+    @pytest.mark.parametrize("alpha_first", [True, False])
+    def test_prediction_matches_the_model_at_every_combination(self, alpha_first):
+        graph, model, U, a_axes, x_axes, alphas, x_grid = self._setup()
+        reference = np.random.rand(3, 4, 5, 2).astype(np.float32)
+        axes = [a_axes, x_axes] if alpha_first else [x_axes, a_axes]
+        data = reference if alpha_first else reference.transpose(1, 2, 0, 3)
+        config = DataConfiguration(*axes, FeatureAxes(U))
+
+        layout = graph.visualize(model.output_ports[0], reference=data, reference_config=config)
+        ref_plot, pred_plot, error_plot = layout.plots
+        # Each panel steps through alpha, wherever its axes lie.
+        for plot in layout.plots:
+            assert [c.name for c in plot.controls] == ["$alpha$"]
+        expected = self._model_at(model, alphas, x_grid)
+        if not alpha_first:
+            expected = expected.transpose(1, 2, 0, 3)
+        assert np.allclose(np.asarray(pred_plot.data), expected, atol=1e-5)
+        assert np.allclose(np.asarray(ref_plot.data), data)
+        assert np.allclose(np.asarray(error_plot.data), expected - data, atol=1e-5)
+        Figure(layout).draw()
+
+    def test_a_flat_product_point_cloud_explains_how_to_pass_factors(self):
+        """The same points as one flat (x, alpha) point cloud can't be split
+        into its factors - the error says how to pass them instead."""
+        from qewton.geometries.discrete.product_mesh_geometry import (
+            ProductDiscreteGeometry,
+        )
+
+        graph, model, U, a_axes, x_axes, alphas, x_grid = self._setup()
+        flat = ProductDiscreteGeometry([x_axes.geometry, a_axes.geometry])
+        points = np.asarray(flat.discretization_points).reshape(-1, 3)
+        config = DataConfiguration(
+            GeometryAxes(PointCloud(flat.variable, points)), FeatureAxes(U)
+        )
+        with pytest.raises(ValueError, match="one GeometryAxes per factor"):
+            graph.visualize(
+                model.output_ports[0],
+                reference=np.zeros((len(points), 2), dtype=np.float32),
+                reference_config=config,
+            )
+
+
+class TestVisualizeWithDataLoaderReference:
+    """Operator learning: the model output is compared with the true output
+    of its data loader, i.e. two ports with matching but separate axes."""
+
+    def test_works_without_a_prediction_config(self):
+        import torch
+
+        from qewton.algorithms.dl_models.deeponet.deeponet_fcn import FCNDeepONet
+        from qewton.data import DataLoader, GridDataSet
+        from qewton.visualization import SliderAxis
+
+        F, X, U = Variable("f", 1), Variable("x", 1), Variable("u", 1)
+        x = torch.linspace(0, 1, 10)[None, :, None].repeat(6, 1, 1)
+        f, u = torch.rand(6, 10, 1), torch.rand(6, 10, 1)
+        dataset = GridDataSet(
+            data=[f, x, u], feature_variables=[F, X, U], geometry_variable=X, point_grid=x[0]
+        )
+        loader = DataLoader(data_set=dataset, batch_size=6, splitting_ratio=(1.0, 0.0, 0.0))
+        model = FCNDeepONet(
+            trunk_input=X, branch_input=F, output=U, trunk_hidden_neurons=4,
+            branch_hidden_neurons=4, trunk_hidden_layers=1, branch_hidden_layers=1,
+            intermediate_neurons=4,
+        )
+        graph = Graph()
+        with graph.tracker(0):
+            f_out, x_out, _ = loader()
+            model(f_out, x_out)
+        graph.setup()
+
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=loader.get_output_port(U),
+            mode=EvaluationPhase.TRAIN,
+        )
+        plots = layout.plots
+        assert len(plots) == 3
+        sliders = {id(c) for p in plots for c in p.controls if isinstance(c, SliderAxis)}
+        assert len(sliders) == 1  # one slider over the samples, shared by all panels
+        Figure(layout).draw()

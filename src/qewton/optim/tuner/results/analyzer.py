@@ -6,11 +6,14 @@ from pathlib import Path
 
 from qewton.optim.tuner.results.tune_results import TuneResultCollector
 from qewton.constraints.base import ConstraintObjective
-from qewton.visualization.plots.table.parallel_coordinates import ParallelCoordinatesPlot
-from qewton.visualization.plots.spec import ColorSpec, SelectorSpec
+from qewton.visualization.axes import ControlAxis, Selector
 from qewton.visualization.figure import Figure
-from qewton.visualization.plots.table.scatter_table import TableScatter
-from qewton.visualization.plots.table.heatmap import TableHeatMap
+from qewton.visualization.plots.table import (
+    ParallelCoordinatesPlot,
+    TableHeatMap,
+    TableScatter,
+)
+from qewton.visualization.scales import ColorScale
 
 
 class TuningAnalyzer:
@@ -364,86 +367,85 @@ class TuningAnalyzer:
         self,
         axes: list[str] | None = None,
         objectives: list[str] | None = None,
-        color: ColorSpec | str | None = None,
+        color: str | Selector | None = None,
         log_axes: list[str] | None = None,
-        **kwargs,
+        color_scale: ColorScale | list[ColorScale] | None = None,
+        controls: list[ControlAxis] = (),
+        title: str | None = None,
     ) -> Figure:
-        """Creates a parallel coordinates plot for the given axes and
-        objectives
+        """A parallel coordinates plot of the runs: one axis per parameter
+        and objective, one line per run.
 
         Args:
-            axes (list[str] | None, optional): The parameters that
-                should be shown in the plot. Defaults to None yielding all of them.
-            objectives (list[str] | None, optional): The objectives that should be
-                shown in the plot. Defaults to None showing all of them.
-            color (ColorSpec | str | None, optional): The data that should be used
-                for coloring the plot. Defaults to None creating a selection over
-                all objective/metrics.
-            log_axes (list[str], optional): Which axes should be shown in a log
-                scale. Defaults to [].
-
-        Raises:
-            ValueError: If the color column is not found in the axes or
-                objectives.
+            axes: The parameters shown; None for all of them.
+            objectives: The objectives shown; None for all of them.
+            color: The column colored by; None chooses between the
+                objectives (a Selector if there are several).
+            log_axes: Columns drawn on a log scale.
+            color_scale: Scale of the color, see
+                :class:`~qewton.visualization.plots.table.base.TablePlot`.
+            controls: Control axes over columns, e.g.
+                ``[FacetAxis("optimizer")]`` for one plot per optimizer.
+            title: Title of the plot.
 
         Returns:
-            Figure: A Figure object containing the parallel coordinates plot.
-                Call `Figure.show()` to display it.
+            Figure: The figure; show it with ``Figure.show()``.
+
+        Raises:
+            ValueError: If `color` names no shown column.
         """
-        if log_axes is None:
-            log_axes = []
-        if axes is None:
-            axes = self.hp_names
-        if objectives is None:
-            objectives = list(self.metrics.keys())
+        axes = self.hp_names if axes is None else axes
+        objectives = list(self.metrics.keys()) if objectives is None else objectives
         if color is None:
-            if len(objectives) > 1:
-                color = ColorSpec(SelectorSpec(candidates=objectives))
-            else:
-                color = objectives[0]
-        elif isinstance(color, str):
-            if color not in objectives + axes:
-                raise ValueError(f"Color column {color} not found in axes or objectives.")
-        para_plot = ParallelCoordinatesPlot(
-            columns=self.df,
-            axes=axes + objectives,
+            color = _choice(objectives)
+        elif isinstance(color, str) and color not in objectives + axes:
+            raise ValueError(f"Color column {color} not found in axes or objectives.")
+        plot = ParallelCoordinatesPlot(
+            self.df,
+            columns=axes + objectives,
             color=color,
-            log_axes=log_axes,
-            **kwargs,
+            color_scale=color_scale,
+            log_columns=log_axes or [],
+            controls=controls,
+            title=title,
         )
-        return Figure(para_plot)
+        return Figure(plot)
 
     def scatter_table_plot(
         self,
         log_axes: list[str] | None = None,
         jitter: float = 0.0,
-        **kwargs,
+        color_scale: ColorScale | list[ColorScale] | None = None,
+        controls: list[ControlAxis] = (),
+        title: str | None = None,
     ) -> Figure:
-        """Creates a scatter table plot for the given axes and objectives.
+        """A marker per run over two chosen parameters, colored by a chosen
+        objective.
 
         Args:
-            log_axes (list[str], optional): Which axes should be shown in a
-                log scale. Defaults to [].
-            jitter (float, optional): Amount of jitter to add to the x/y
-                values. This helps to visualize overlapping points.
-                Defaults to 0.0.
+            log_axes: Columns drawn on a log scale.
+            jitter: Random offset of the markers, as a fraction of each
+                column's span; separates runs with equal values.
+            color_scale: Scale of the color.
+            controls: Control axes over columns.
+            title: Title of the plot.
 
         Returns:
-            Figure: A Figure object containing the scatter table plot.
-                Call `Figure.show()` to display it.
+            Figure: The figure; show it with ``Figure.show()``.
         """
-        if log_axes is None:
-            log_axes = []
-        table_data, metric_keys = self._add_combined_score()
-        scatter_plot = TableScatter(
-            data=table_data,
-            axis_keys=self.hp_names,
-            objective_keys=metric_keys,
-            log_axes=log_axes,
+        table, objectives = self._add_combined_score()
+        plot = TableScatter(
+            table,
+            x=_choice(self.hp_names),
+            y=_choice(self.hp_names, 1),
+            color=_choice(objectives),
+            color_scale=color_scale,
+            log_columns=log_axes or [],
             jitter=jitter,
-            **kwargs,
+            controls=controls,
+            title=title,
         )
-        return Figure(scatter_plot)
+        return Figure(plot)
 
     def heatmap_plot(
         self,
@@ -451,42 +453,46 @@ class TuningAnalyzer:
         bins_y: int,
         axis_keys: list[str] | None = None,
         log_axes: list[str] | None = None,
-        **kwargs,
+        color_scale: ColorScale | list[ColorScale] | None = None,
+        controls: list[ControlAxis] = (),
+        title: str | None = None,
     ) -> Figure:
-        """Creates a heatmap plot for the given axes and objectives.
-        Note that non numeric hyperparameters will be ignored in the
-        heatmap plot, as they cannot be represented in a 2D grid.
+        """The mean of a chosen objective over a raster of two chosen
+        numeric parameters.
 
         Args:
-            bins (int): The number of bins to use for the heatmap.
-            axis_keys (list[str] | None, optional): The parameters that
-                should be shown in the plot. Defaults to None yielding all of them.
-            log_axes (list[str], optional): Which axes should be shown in a log
-                scale. Defaults to [].
+            bins_x, bins_y: Number of rectangles along x and y.
+            axis_keys: The numeric parameters to choose from; None for all
+                of them.
+            log_axes: Columns rastered and drawn on a log scale.
+            color_scale: Scale of the color.
+            controls: Control axes over columns.
+            title: Title of the plot.
 
         Returns:
-            Figure: A Figure object containing the heatmap plot.
-                Call `Figure.show()` to display it.
+            Figure: The figure; show it with ``Figure.show()``.
+
+        Raises:
+            ValueError: If an axis key is not a numeric parameter.
         """
-        if log_axes is None:
-            log_axes = []
         if axis_keys is None:
             axis_keys = self.numeric_params
-        else:
-            assert all(
-                key in self.numeric_params for key in axis_keys
-            ), "Heatmap plot only supports numeric hyperparameters."
-        table_data, metric_keys = self._add_combined_score()
-        heatmap_plot = TableHeatMap(
-            data=table_data,
+        elif any(key not in self.numeric_params for key in axis_keys):
+            raise ValueError("Heatmap plot only supports numeric hyperparameters.")
+        table, objectives = self._add_combined_score()
+        plot = TableHeatMap(
+            table,
+            x=_choice(axis_keys),
+            y=_choice(axis_keys, 1),
+            color=_choice(objectives),
             bins_x=bins_x,
             bins_y=bins_y,
-            axis_keys=axis_keys,
-            objective_keys=metric_keys,
-            log_axes=log_axes,
-            **kwargs,
+            color_scale=color_scale,
+            log_columns=log_axes or [],
+            controls=controls,
+            title=title,
         )
-        return Figure(heatmap_plot)
+        return Figure(plot)
 
     def _add_combined_score(self) -> tuple[pd.DataFrame, list[str]]:
         """Adds a combined score to the plotting data to compute the average
@@ -500,3 +506,10 @@ class TuningAnalyzer:
             table_data["combined_score"] = combined_objective
             keys.append("combined_score")
         return table_data, keys
+
+
+def _choice(columns: list[str], init_state: int = 0) -> str | Selector:
+    # The column, or a Selector between several, starting at `init_state`.
+    if len(columns) == 1:
+        return columns[0]
+    return Selector(columns, init_state=min(init_state, len(columns) - 1))

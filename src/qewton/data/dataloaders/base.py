@@ -11,7 +11,6 @@ import numpy as np
 
 from qewton.graphs.nodes import NodeState
 from qewton.backends import Backend, DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
-from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
 
 from qewton.optim.base import EvaluationPhase
@@ -32,9 +31,9 @@ if TYPE_CHECKING:
     # which imports GraphBasedTrainer, and qewton.visualization.plots.graph
     # itself imports DataNode from this module, so a module-level import
     # here would be circular.
+    from qewton.visualization.axes import ControlAxis
     from qewton.visualization.layout import Layout
-    from qewton.visualization.plots.base import Plot
-    from qewton.visualization.plots.spec import ControlSpec
+    from qewton.visualization.plots.data import DataPlot
 
 
 class DataNode(Node[TensorType]):
@@ -121,33 +120,34 @@ class DataNode(Node[TensorType]):
     def visualize(
         self,
         mode: EvaluationPhase = EvaluationPhase.VALIDATION,
-        plot_type: "type[Plot] | None" = None,
-        controls: "ControlSpec | type | dict | None" = None,
+        plot_type: "type[DataPlot] | None" = None,
+        controls: "list[ControlAxis]" = (),
+        default_control: "type[ControlAxis] | None" = None,
         **plot_kwargs,
     ) -> "Layout":
-        """Runs this node on its own - a DataNode is always a graph source,
-        so it needs no Graph - and builds a Layout showing every output
-        port.
+        """Run this node on its own (a DataNode is always a graph source,
+        so it needs no Graph) and build a layout showing every output port.
 
         Args:
-            mode: The EvaluationPhase this node is run in - determines
-                which of its splits supplies the batch. Defaults to
-                EvaluationPhase.VALIDATION.
-            plot_type: Passed through to auto_plot() for every port - an
-                explicit Plot type if auto-selection doesn't apply, or None
-                (default) to auto-select.
-            controls: A ControlSpec class, instance, or `{axis: class-or-
-                instance}` dict, used to resolve a control for any axis
-                left over after each port's own role - None (default)
-                behaves as SliderSpec.
-            **plot_kwargs: Passed through to auto_plot() for every port.
+            mode: The EvaluationPhase this node is run in; it determines
+                which split supplies the batch.
+            plot_type: Passed to
+                :func:`~qewton.visualization.auto.auto_plot` for every port.
+            controls: Control axes for chosen dimensions, passed to
+                auto_plot for every port.
+            default_control: Control axis class for every other dimension
+                not drawn; None for auto_plot's default.
+            **plot_kwargs: Passed to auto_plot for every port.
 
         Returns:
-            Layout: `Overlay(*plots)` if every port's plot is curve-like
-                (see auto_plot.is_curve_like()), `Row(*plots)` otherwise.
+            Layout: The plots arranged by
+                :func:`~qewton.visualization.layout.auto_layout`.
+
+        Raises:
+            ValueError: If this node provides no data in `mode`.
         """
-        from qewton.visualization.auto import auto_plot, is_curve_like
-        from qewton.visualization.layout import Overlay, Row
+        from qewton.visualization.auto import auto_plot
+        from qewton.visualization.layout import auto_layout
 
         if not self.provides_data_in_phase(mode):
             raise ValueError(
@@ -158,18 +158,19 @@ class DataNode(Node[TensorType]):
         self.set_mode(mode)
         self.run()
 
-        controls_kwarg = {} if controls is None else {"controls": controls}
+        if default_control is not None:
+            plot_kwargs["default_control"] = default_control
         plots = [
             auto_plot(
                 self.backend.to_numpy(port.value),
                 port.data_configuration,
                 plot_type,
-                **controls_kwarg,
+                controls=controls,
                 **plot_kwargs,
             )
             for port in self.output_ports
         ]
-        return Overlay(*plots) if all(is_curve_like(p) for p in plots) else Row(*plots)
+        return auto_layout(plots)
 
 
 class DataLoader(DataNode[TensorType]):
@@ -364,15 +365,6 @@ class DataLoader(DataNode[TensorType]):
 
     def cache(self, n_batches=-1):
         return
-
-    def get_output_port(self, name: str | Variable):
-        if isinstance(name, str):
-            return super().get_output_port(name)
-        if isinstance(name, Variable):
-            for port in self.output_ports:
-                if port.name == name.name:
-                    return port
-        raise ValueError(f"No output port with name {name} found in node {self.name}.")
 
     def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
         if phase == EvaluationPhase.TRAIN:

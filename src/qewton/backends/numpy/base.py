@@ -74,6 +74,10 @@ class NumPyBackend(ComputingBackend[np.ndarray]):
         return data  # always on cpu
 
     @classmethod
+    def move_to_same_device(cls, data, reference):
+        return data  # always on cpu
+
+    @classmethod
     def cast_dtype(cls, data: np.ndarray, dtype):
         return data.astype(cls.dtypes.get(dtype, dtype))
 

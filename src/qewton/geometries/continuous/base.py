@@ -55,7 +55,9 @@ class ContinuousBoundaryGeometry(BoundaryGeometry[TensorType]):
         self.geometry: ContinuousGeometry = geometry
 
     def create_mesh(self, max_vertex_distance: float | None = None, device: Device = cpu):
-        return self.geometry.create_mesh(max_vertex_distance=max_vertex_distance).boundary
+        return self.geometry.create_mesh(
+            max_vertex_distance=max_vertex_distance, device=device
+        ).boundary
 
     def create_boundary(self):
         raise ValueError("A boundary domain does not have a boundary.")

@@ -1,3 +1,4 @@
+from . import cmaps
 from .base import Theme
 
 LIGHT_THEME = Theme.default()

@@ -10,9 +10,7 @@ from qewton.config.variables import Variable
 from qewton.graphs.graphs import Graph
 from qewton.graphs.nodes import GraphAwareNode, Node
 from qewton.visualization.nodes import PlotNode
-from qewton.visualization.plots.data.curve import LinePlot
-from qewton.visualization.plots.data.mesh import MeshFieldPlot
-from qewton.visualization.plots.spec import ColorSpec
+from qewton.visualization import LinePlot
 
 
 def _constant_source(value, config: DataConfiguration, **kwargs):
@@ -79,7 +77,9 @@ class TestPlotNodeInGraph:
         data = np.random.rand(10, 1)
 
         source = _constant_source(data, config, name="Source")
-        plot_node = PlotNode(plot_type=LinePlot, show=False, x=sample_axis, y=Y, name="Plot")
+        # Bound by its Variable: the axes objects reaching the node are the
+        # graph's copies, so the batch axes is left to auto_plot.
+        plot_node = PlotNode(plot_type=LinePlot, show=False, y=Y, name="Plot")
 
         captured = {}
 
@@ -97,9 +97,10 @@ class TestPlotNodeInGraph:
         plot_node.show = True  # exercise the show() path with the monkeypatched Figure
         graph.run()
 
-        assert isinstance(captured["plot"], LinePlot)
-        assert captured["plot"].x.variable_or_axes is sample_axis
-        assert captured["plot"].y.variable_or_axes is Y
+        plot = captured["plot"]
+        assert isinstance(plot, LinePlot)
+        x, y = plot.bindings
+        assert x.in_domain and y.reference is Y
 
     def test_incompatible_connection_fails_at_run_time_with_auto_plots_own_error(self):
         """No graph-build-time shape check exists (the port is a wildcard,
@@ -115,5 +116,5 @@ class TestPlotNodeInGraph:
         graph.connect(source.output_ports[0], plot_node.input_ports[0])
         graph.setup()
 
-        with pytest.raises(ValueError, match="no FeatureAxes"):
+        with pytest.raises(ValueError, match="FeatureAxes"):
             graph.run()

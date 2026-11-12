@@ -1,528 +1,790 @@
+"""Plotly renderer: :class:`PlotlyRenderer` and its artists."""
+
+import dataclasses
+import io
+
+import numpy as np
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 
-from qewton.visualization.plots.spec import FacetSpec, SelectorSpec
-
-
-def _axis_layout_updates(backend_figure, trace) -> dict:
-    """The current title/type of the x/y axes `trace` is bound to, as a
-    flat {"xaxis3.title.text": ..., "xaxis3.type": ..., ...} relayout dict -
-    what a method="update" button's layout half needs to make a dropdown
-    also retitle/retype the axes an Artist.update() call just touched via
-    update_xaxes()/update_yaxes(), which method="restyle" alone can't reach.
-
-    Reads the axis back off `trace.xaxis`/`trace.yaxis` (Plotly's own "x",
-    "x2", "x3", ... trace-to-axis binding) rather than needing a facet
-    grid's row/col here too - whichever axis the trace actually ended up
-    on is whichever axis this reports on, grid or not.
-    """
-    updates = {}
-    for ref, prefix in ((trace.xaxis, "xaxis"), (trace.yaxis, "yaxis")):
-        # A trace outside any make_subplots() grid never got its xaxis/
-        # yaxis set explicitly (add_trace(row=None, col=None) leaves it
-        # None) and is bound to the figure's one implicit "xaxis"/"yaxis"
-        # by Plotly default - only a subplot grid trace carries an explicit
-        # "x"/"x2"/"x3", ... to translate.
-        axis_name = prefix if ref is None else f"{prefix}{ref[1:]}"
-        axis = getattr(backend_figure.layout, axis_name, None)
-        if axis is None:
-            continue
-        if axis.title is not None:
-            updates[f"{axis_name}.title.text"] = axis.title.text
-        updates[f"{axis_name}.type"] = axis.type
-    return updates
-
-
-from qewton.visualization.renderers.base import Renderer
-from qewton.visualization.renderers.plotly.curve import LineArtist, PathArtist
-from qewton.visualization.renderers.plotly.geometry import (
-    GeometryArtist,
-    GeometryArtist2D,
+from qewton.visualization.axes import Selector, SliderAxis, TimeAxis
+from qewton.visualization.plots.result import (
+    ArrowResult,
+    BarResult,
+    GraphLayoutResult,
+    HeatmapResult,
+    ImageResult,
+    LineResult,
+    MarkerResult,
+    ParallelCoordinatesResult,
+    SurfaceResult,
 )
+from qewton.visualization.renderers.base import Renderer, notebook_html
+from qewton.visualization.renderers.plotly import camera
 from qewton.visualization.renderers.plotly.graph import NodeLinkArtist
-from qewton.visualization.renderers.plotly.grid import (
+from qewton.visualization.renderers.plotly.text import as_markup, as_math
+from qewton.visualization.themes import DEFAULT_THEME
+from qewton.visualization.themes.base import Theme
+from qewton.visualization.renderers.plotly.primitives import (
+    Arrow2DArtist,
+    Arrow3DArtist,
+    BarArtist,
+    FlatMeshArtist,
     HeatmapArtist,
-    ParametricHeatmapArtist,
     ImageArtist,
-    ParametricSurfaceArtist,
+    ParallelCoordinatesArtist,
+    Line2DArtist,
+    Line3DArtist,
+    Marker2DArtist,
+    Marker3DArtist,
     SurfaceArtist,
 )
-from qewton.visualization.renderers.plotly.mesh import FilledMeshArtist, SurfaceMeshArtist
-from qewton.visualization.renderers.plotly.points import (
-    PointCloud2DArtist,
-    PointCloud3DArtist,
-)
-from qewton.visualization.renderers.plotly.table import ParallelCoordinatesArtist
-from qewton.visualization.renderers.plotly.tabular import BarArtist, ScatterArtist
-from qewton.visualization.renderers.plotly.vector import (
-    ArrowField2DArtist,
-    ArrowField3DArtist,
-)
+from qewton.visualization.renderers import space
+from qewton.visualization.renderers.plotly import embedding, layout
+from qewton.visualization.scales import color_range
+
+#: Distance of a scene's camera on each axis: far enough that the box and
+#: its tick labels fit the scene's domain (Plotly's own 1.25 clips them).
+_SCENE_EYE = 1.6
+
+#: make_subplots() subplot type per number of position components.
+_SUBPLOT_TYPES = {0: "domain", 2: "xy", 3: "scene"}
+
+#: Per number of position components: a trace drawing nothing but the
+#: colorbar of its one value in such a cell, and the property holding its
+#: colors. A cell laying out its own axes takes only domain traces, hence
+#: parallel coordinates with one hidden axis.
+_CARRIERS = {
+    0: (lambda value: go.Parcoords(dimensions=[dict(values=value, visible=False)]), "line"),
+    2: (
+        lambda value: go.Scatter(
+            x=[None], y=[None], mode="markers", showlegend=False, hoverinfo="skip"
+        ),
+        "marker",
+    ),
+    3: (
+        lambda value: go.Scatter3d(
+            x=[None], y=[None], z=[None], mode="markers", showlegend=False, hoverinfo="skip"
+        ),
+        "marker",
+    ),
+}
 
 
 class PlotlyRenderer(Renderer):
-    """Aggregation namespace: renderer.SurfaceMeshArtist.create(...) etc.
+    """Draws a Figure as a Plotly ``go.Figure``.
 
-    The artists themselves live at module level (geometry.py, grid.py, mesh.py,
-    vector.py) - this class only collects them so plots can reach them off the
-    renderer instance without knowing which module each one lives in.
+    Every cell is a subplot of ``make_subplots``: ``"xy"`` in 2D,
+    ``"scene"`` in 3D, ``"domain"`` without position axes. Embedded controls become frames (TimeAxis),
+    ``method="update"`` slider steps (SliderAxis) and dropdown buttons
+    (Selector); each state sets only the trace properties and axes that
+    differ between the states.
+
+    Names of Variables (``$...$`` in the core) are rendered by MathJax:
+    every text containing one is written as one math text, and
+    :meth:`show` and :meth:`save_html` load MathJax. Slider labels,
+    dropdown buttons and the axis titles of 3D scenes, where Plotly renders
+    no math, get Plotly's own text markup (italics, sub- and superscripts)
+    instead, as does every text without MathJax.
+
+    Args:
+        theme: As for :class:`~qewton.visualization.renderers.base.Renderer`.
+        mathjax: Whether math is rendered by MathJax (loaded from a CDN);
+            False writes every text in Plotly's markup and shows figures
+            the usual Plotly way, e.g. offline.
+
+    Attributes:
+        mathjax (bool): Whether math is rendered by MathJax.
     """
 
-    ImageArtist = ImageArtist
-    HeatmapArtist = HeatmapArtist
-    ParametricHeatmapArtist = ParametricHeatmapArtist
-    SurfaceArtist = SurfaceArtist
-    ParametricSurfaceArtist = ParametricSurfaceArtist
-    SurfaceMeshArtist = SurfaceMeshArtist
-    FilledMeshArtist = FilledMeshArtist
-    GeometryArtist = GeometryArtist
-    GeometryArtist2D = GeometryArtist2D
-    LineArtist = LineArtist
-    PathArtist = PathArtist
-    ScatterArtist = ScatterArtist
-    BarArtist = BarArtist
-    PointCloud2DArtist = PointCloud2DArtist
-    PointCloud3DArtist = PointCloud3DArtist
-    ParallelCoordinatesArtist = ParallelCoordinatesArtist
-    ArrowField2DArtist = ArrowField2DArtist
-    ArrowField3DArtist = ArrowField3DArtist
-    NodeLinkArtist = NodeLinkArtist
+    artists = {
+        (HeatmapResult, 2): HeatmapArtist,
+        (SurfaceResult, 2): FlatMeshArtist,
+        (SurfaceResult, 3): SurfaceArtist,
+        (LineResult, 2): Line2DArtist,
+        (LineResult, 3): Line3DArtist,
+        (MarkerResult, 2): Marker2DArtist,
+        (MarkerResult, 3): Marker3DArtist,
+        (BarResult, 2): BarArtist,
+        (ImageResult, 2): ImageArtist,
+        (ArrowResult, 2): Arrow2DArtist,
+        (ArrowResult, 3): Arrow3DArtist,
+        (ParallelCoordinatesResult, 0): ParallelCoordinatesArtist,
+        (GraphLayoutResult, 2): NodeLinkArtist,
+    }
 
-    #: Plotly's make_subplots `specs` vocabulary for each embedding dimension
-    #: Figure.cell_dimensions() reports. Plotly-specific translation lives
-    #: here, not on Plot/Figure, which only know "2 or 3 spatial dimensions,
-    #: or None for non-spatial (ParallelCoordinatesPlot, GraphPlot)".
-    _SUBPLOT_TYPE_BY_DIM = {2: "xy", 3: "scene", None: "domain"}
+    embeddable = (TimeAxis, SliderAxis, Selector)
 
-    @staticmethod
-    def setup(figure):
-        n_rows, n_cols = figure.grid_shape()
-        if n_rows == 1 and n_cols == 1:
-            # Unchanged path for the common non-faceted case - avoids
-            # make_subplots' extra layout machinery (subplot titles, spacing
-            # defaults) changing anything about today's single-canvas output.
-            fig = go.Figure()
-        else:
-            dims = figure.cell_dimensions(n_rows, n_cols)
-            spans = figure.cell_spans(n_rows, n_cols)
-            specs = [
-                [
-                    (
-                        None
-                        if spans[r][c] is None
-                        else {
-                            "type": PlotlyRenderer._SUBPLOT_TYPE_BY_DIM[dims[r][c]],
-                            **({"rowspan": spans[r][c][0]} if spans[r][c][0] > 1 else {}),
-                            **({"colspan": spans[r][c][1]} if spans[r][c][1] > 1 else {}),
-                        }
-                    )
-                    for c in range(n_cols)
-                ]
-                for r in range(n_rows)
-            ]
-            titles = figure.cell_titles(n_rows, n_cols)
-            fig = make_subplots(
-                rows=n_rows,
-                cols=n_cols,
-                specs=specs,
-                subplot_titles=titles if any(titles) else None,
-            )
-        # The whole-figure title is Figure.title alone, set once here - never
-        # any individual Plot.title (each panel's own title already shows as
-        # a subplot annotation via cell_titles()/make_subplots above). With
-        # no Figure.title, no title is shown at all rather than falling back
-        # to some arbitrary plot's title.
-        fig.update_layout(uirevision=True, title=figure.title)
-        PlotlyRenderer._apply_theme(fig, figure.theme)
-        return fig
+    def __init__(self, theme: Theme = DEFAULT_THEME, mathjax: bool = True) -> None:
+        super().__init__(theme)
+        self.mathjax = mathjax
+        self._colorbars: dict = {}
+        self._legends: list = []
+        self._cells: dict = {}
 
-    @staticmethod
-    def _apply_theme(fig, theme):
-        """Figure-wide chrome (background, fonts, gridlines) applied once
-        here rather than per-artist - every artist's own update_xaxes/
-        update_scenes calls only ever ADD keys (title, type=log, ...) on top
-        of what's set here, they never overwrite it, so call order with this
-        doesn't matter. Per-trace/data-driven styling (marker colors,
-        surface fills, ...) stays in the artists - this is only the parts of
-        a theme that are true of the whole figure regardless of what's
-        plotted in it."""
-        fig.update_layout(
-            paper_bgcolor=theme.background_color,
-            plot_bgcolor=theme.background_color,
-            font=dict(
-                family=theme.font_family,
-                size=theme.font_size_labels,
-                color=theme.text_color,
-            ),
-            title_font=dict(size=theme.font_size_title, color=theme.text_color),
-            showlegend=theme.show_legend,
-            legend=dict(
-                bordercolor=theme.line_color,
-                borderwidth=1 if theme.show_axis_line else 0,
-                bgcolor=theme.background_color,
-            ),
-        )
-        axis_kwargs = dict(
-            showgrid=theme.show_grid,
-            gridcolor=theme.grid_color,
-            zerolinecolor=theme.grid_color,
-            showline=theme.show_axis_line,
-            linecolor=theme.line_color,
-            mirror=theme.axis_box,
-            ticks="outside" if theme.show_axis_line else "",
-            tickcolor=theme.line_color,
-            tickfont=dict(size=theme.font_size_axes, color=theme.text_color),
-            title_font=dict(size=theme.font_size_axes, color=theme.text_color),
-        )
-        fig.update_xaxes(**axis_kwargs)
-        fig.update_yaxes(**axis_kwargs)
-        # Scene (3D) axes are a different schema - they additionally have
-        # their own background plane (backgroundcolor/showbackground), which
-        # 2D axes don't, so this can't just reuse axis_kwargs as-is.
-        scene_axis_kwargs = dict(
-            axis_kwargs, showbackground=True, backgroundcolor=theme.background_color
-        )
-        fig.update_scenes(
-            bgcolor=theme.background_color,
-            xaxis=scene_axis_kwargs,
-            yaxis=scene_axis_kwargs,
-            zaxis=scene_axis_kwargs,
-        )
+    def setup(self, figure) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.setup`."""
+        self._colorbars, self._legends, self._cells = {}, [], {}
+        super().setup(figure)
 
-    @staticmethod
-    def reconcile_y_axis_titles(figure, backend_figure, n_rows, n_cols):
-        titles = figure.cell_y_titles(n_rows, n_cols)
-        is_grid = (n_rows, n_cols) != (1, 1)
-        for idx, title in enumerate(titles):
-            if title is None:
-                continue
-            if is_grid:
-                row, col = divmod(idx, n_cols)
-                backend_figure.update_yaxes(title=title, row=row + 1, col=col + 1)
-            else:
-                backend_figure.update_yaxes(title=title)
+    def text(self, text: str | None) -> str | None:
+        """A text of the core as this renderer writes it into titles,
+        axes, legends and colorbars.
 
-    @staticmethod
-    def animate(figure, backend_figure, spec):
-        """Materializes one go.Frame per spec.values on top of the
-        already-drawn backend_figure, by replaying Artist.update() at each
-        state and snapshotting the resulting trace - no per-Artist animation
-        code needed, since every artist already knows how to fully refresh
-        its trace(s) for the plot's current control state via update().
+        Args:
+            text: A text, possibly with ``$...$`` parts.
 
-        Animating a faceted plot (TimeSpec combined with FacetSpec on the
-        same plot) is deliberately rejected rather than silently producing
-        wrong frames: update() has no per-cell state to replay outside
-        Figure._draw_plot()'s own row/col loop, so calling it here would use
-        whichever facet state happened to be left over after the normal
-        draw() pass for every cell alike.
+        Returns:
+            str or None: One math text with MathJax, else Plotly markup.
         """
-        animated: list[tuple] = []
-        for plot, cells in figure.artists.items():
-            if spec not in plot.controls:
-                continue
-            if any(isinstance(c, FacetSpec) for c in plot.controls):
-                raise NotImplementedError(
-                    f"{type(plot).__name__} combines a TimeSpec with a FacetSpec - "
-                    "animating a faceted plot is not supported yet."
+        return as_math(text) if self.mathjax else as_markup(text)
+
+    def draw(self, key, result, cell, visible: bool = True) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.draw`;
+        the legend entry is written as :meth:`text`, shown once the figure
+        draws its legend (:meth:`draw_legend`)."""
+        super().draw(key, dataclasses.replace(result, label=self.text(result.label)), cell, visible)
+        self._cells[key] = cell
+
+    def _traces_of(self, cell) -> list:
+        # The traces of the artists drawn into a cell.
+        data = self.backend_figure.data
+        return [
+            data[i] for key, c in self._cells.items() if c is cell
+            for i in self.artist_of(key).trace_indices
+        ]
+
+    def draw_legend(self, entries: dict, cell) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_legend`.
+
+        One Plotly legend (``legend``, ``legend2``, ...) per legend of the
+        figure: the traces of a label form a ``legendgroup``, so a click
+        toggles every copy, and the first trace of its first artist shows
+        the entry. Artists draw no entry of their own and updates keep
+        these, so they are set once. Placed by :meth:`draw_layout`."""
+        texts = [self.text(label) for label in entries]
+        names = [n for n, t, c in self._legends if t == texts and c is cell]
+        name = names[0] if names else _legend_name(len(self._legends))
+        if not names:
+            self._legends.append((name, texts, cell))
+            self.backend_figure.update_layout({name: _legend_style(self.theme)})
+        data = self.backend_figure.data
+        for text, keys in zip(texts, entries.values()):
+            for k, key in enumerate(keys):
+                indices = self.artist_of(key).trace_indices
+                for index in indices:
+                    data[index].update(
+                        legend=name,
+                        legendgroup=f"{name}-{text}",
+                        showlegend=k == 0 and index == indices[0],
+                    )
+
+    # --- figure, axes, colorbars --------------------------------------------
+
+    def create_backend_figure(self, figure) -> go.Figure:
+        """See :meth:`Renderer.create_backend_figure
+        <qewton.visualization.renderers.base.Renderer.create_backend_figure>`."""
+        n_rows, n_cols = figure.grid_shape
+        specs = [
+            [
+                {"type": _SUBPLOT_TYPES[cell.dim] if cell else "xy"}
+                for cell in (figure.cell_at(row, col) for col in range(1, n_cols + 1))
+            ]
+            for row in range(1, n_rows + 1)
+        ]
+        backend_figure = make_subplots(rows=n_rows, cols=n_cols, specs=specs)
+        backend_figure.update_layout(uirevision=True, title=self.text(figure.title))
+        for cell in figure.cells:
+            if cell.title:
+                # Placed by draw_layout().
+                backend_figure.add_annotation(
+                    name=_title_name(cell),
+                    text=self.text(cell.title),
+                    xref="paper",
+                    yref="paper",
+                    xanchor="center",
+                    yanchor="bottom",
+                    showarrow=False,
                 )
-            animated.extend((plot, artist) for artist in cells.values())
+        _apply_theme(backend_figure, self.theme)
+        # Once: an embedded state or a redraw leaves the viewer's camera.
+        backend_figure.update_scenes(camera_eye=dict(x=_SCENE_EYE, y=_SCENE_EYE, z=_SCENE_EYE))
+        return backend_figure
 
-        if not animated:
-            return backend_figure
+    def draw_layout(self) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_layout`.
 
-        original_state = spec.state
-        frames = []
-        for value in spec.values:
-            spec.state = value
-            frame_data, frame_traces = [], []
-            for plot, artist in animated:
-                artist.update(backend_figure, plot)
-                frame_data.append(backend_figure.data[artist.figure_idx].to_plotly_json())
-                frame_traces.append(artist.figure_idx)
-            frames.append(go.Frame(data=frame_data, traces=frame_traces, name=str(value)))
-        spec.state = original_state
-        for plot, artist in animated:
-            artist.update(
-                backend_figure, plot
-            )  # leave the live traces at the initial state
-
-        backend_figure.frames = frames
+        The figure is sized in pixels and has fixed margins of 0; every
+        cell, cell title, colorbar and embedded control is placed in paper
+        coordinates (see :mod:`~qewton.visualization.renderers.plotly.layout`):
+        sliders below the cells, an animation's buttons left of its slider,
+        dropdowns right of the cells. Equal units never widen a range: the
+        plot area has the aspect of its ranges.
+        """
+        backend_figure = self.backend_figure
+        sliders = list(backend_figure.layout.sliders)
+        menus = list(backend_figure.layout.updatemenus)
+        dropdowns = [m for m in menus if m.type != "buttons"]
+        placed = layout.place(
+            self.figure,
+            self._colorbars,
+            self.theme,
+            legends=[(texts, cell) for _, texts, cell in self._legends],
+            sliders=[s.name.startswith("time-") for s in sliders],
+            dropdowns=[[b.label for b in m.buttons] for m in dropdowns],
+        )
+        width, height = placed["size"]
+        title_x, title_y = placed["title"]
         backend_figure.update_layout(
-            updatemenus=[
+            width=round(width),
+            height=round(height),
+            # Plotly would widen margins for what it draws outside the plot
+            # areas, shrinking the paper under the places computed here.
+            margin=dict(l=0, r=0, t=0, b=0, autoexpand=False),
+            title=dict(x=title_x, y=title_y, xanchor="center", yanchor="middle"),
+        )
+        for cell in self.figure.cells:
+            x0, x1, y0, y1 = placed["cells"][(cell.row, cell.col)]
+            if cell.dim == 3:
+                backend_figure.update_scenes(
+                    domain=dict(x=[x0, x1], y=[y0, y1]), row=cell.row, col=cell.col
+                )
+            elif cell.dim == 2:
+                backend_figure.update_xaxes(domain=[x0, x1], row=cell.row, col=cell.col)
+                backend_figure.update_yaxes(domain=[y0, y1], row=cell.row, col=cell.col)
+            else:  # its traces lay out their own axes
+                for trace in self._traces_of(cell):
+                    trace.domain = dict(x=[x0, x1], y=[y0, y1])
+            if cell.title:
+                x, y = placed["titles"][(cell.row, cell.col)]
+                backend_figure.update_annotations(dict(x=x, y=y), selector=dict(name=_title_name(cell)))
+        for key, (x, y, length) in placed["colorbars"].items():
+            place = dict(x=x, xanchor="left", y=y, yanchor="middle", len=length, lenmode="fraction")
+            _, colored = _CARRIERS[self._colorbars[key]["cell"].dim]
+            backend_figure.update_traces({colored: dict(colorbar=place)}, selector=dict(uid=key))
+        for (name, _, _), (x, y) in zip(self._legends, placed["legends"]):
+            backend_figure.update_layout({name: dict(x=x, xanchor="left", y=y, yanchor="top")})
+        for slider, (x, y, length) in zip(sliders, placed["sliders"]):
+            slider.update(x=x, xanchor="left", y=y, yanchor="top", len=length)
+        for menu in menus:
+            if menu.type == "buttons":
+                x, y = placed["buttons"]
+                menu.update(x=x, xanchor="left", y=y, yanchor="top", direction="left")
+        for menu, (x, y) in zip(dropdowns, placed["dropdowns"]):
+            menu.update(x=x, xanchor="left", y=y, yanchor="top")
+        backend_figure.update_layout(sliders=sliders, updatemenus=menus)
+
+    def draw_axes(self, cell) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_axes`."""
+        if not cell.axes:
+            return  # e.g. parallel coordinates, which lay out their own axes
+        backend_figure = self.backend_figure
+        # Scenes render no MathJax: their titles are written in markup.
+        text = as_markup if cell.dim == 3 else self.text
+        axes = {channel: _axis(cell, channel, axis, text) for channel, axis in cell.axes.items()}
+        if cell.dim == 3:
+            backend_figure.update_scenes(
+                row=cell.row,
+                col=cell.col,
+                **{f"{c}axis": a for c, a in axes.items()},
+                **_scene_aspect(cell),
+            )
+            return
+        for channel in ("x", "y"):
+            first = self._first_cell_with(cell.axes[channel], channel)
+            if first is not cell:
+                # Zooming one cell zooms every cell sharing the axis.
+                axes[channel]["matches"] = _axis_reference(backend_figure, first, channel)
+        backend_figure.update_xaxes(row=cell.row, col=cell.col, **axes["x"])
+        backend_figure.update_yaxes(row=cell.row, col=cell.col, **axes["y"])
+        # Equal units: draw_layout() sizes the plot area to the aspect of
+        # the ranges. A cell of its own also keeps them on zooming
+        # (scaleanchor, shrinking the plot area rather than widening a
+        # range); Plotly draws the ticks of matched axes with a scaleanchor
+        # displaced, so cells sharing an axis rely on their sizes.
+        shared = any(
+            other is not cell and other.axes.get(c) is cell.axes[c]
+            for other in self.figure.cells
+            for c in ("x", "y")
+        )
+        if cell.aspect is not None and not shared:
+            backend_figure.update_xaxes(row=cell.row, col=cell.col, constrain="domain")
+            backend_figure.update_yaxes(
+                row=cell.row,
+                col=cell.col,
+                scaleanchor=_axis_reference(backend_figure, cell, "x"),
+                scaleratio=1,
+                constrain="domain",
+            )
+
+    def _first_cell_with(self, axis, channel: str):
+        # The first cell of the figure drawing `axis` as `channel`.
+        return next(c for c in self.figure.cells if c.axes.get(channel) is axis)
+
+    def linked_scenes(self) -> list[list[str]]:
+        """The 3D cells sharing their position axes, whose cameras move
+        together: groups of scene names, e.g. ``[["scene", "scene2"]]``.
+
+        Returns:
+            list of list of str: Every group of at least two scenes.
+        """
+        groups: dict[int, list[str]] = {}
+        for cell in self.figure.cells:
+            if cell.dim == 3:
+                scene = self.backend_figure.get_subplot(cell.row, cell.col).plotly_name
+                groups.setdefault(id(self._first_cell_with(cell.axes["x"], "x")), []).append(scene)
+        return [names for names in groups.values() if len(names) > 1]
+
+    def draw_colorbar(self, scale, title, ticks, cell, slot: int, visible: bool = True) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.draw_colorbar`.
+
+        The colorbar is carried by a one-value trace drawing nothing else
+        (see ``_CARRIERS``), identified by the scale's ``uid``.
+        """
+        backend_figure = self.backend_figure
+        # What it shows in any state drawn, for the room draw_layout()
+        # keeps for it.
+        space.note_colorbar(
+            self._colorbars,
+            _colorbar_uid(scale),
+            cell,
+            slot,
+            title,
+            ticks[1] if ticks is not None else space.tick_labels(*color_range(scale)),
+        )
+        lo, hi = color_range(scale)
+        colorbar = _colorbar_style(self.theme, self.text(title))
+        if ticks is not None:
+            positions, labels = ticks
+            colorbar.update(
+                tickvals=list(positions), ticktext=[self.text(t) for t in labels]
+            )
+        else:
+            colorbar.update(tickvals=None, ticktext=None)
+        create, colored = _CARRIERS[cell.dim]
+        colors = {
+            colored: dict(
+                color=[lo],
+                colorscale=scale.colorscale(self.theme),
+                cmin=lo,
+                cmax=hi,
+                showscale=True,
+                colorbar=colorbar,
+            )
+        }
+        index = self._colorbar_index(scale)
+        if index is not None:
+            backend_figure.data[index].update(colors, visible=visible)
+            return
+        carrier = create([lo]).update(colors, uid=_colorbar_uid(scale), visible=visible)
+        backend_figure.add_trace(carrier, row=cell.row, col=cell.col)
+
+    def colorbar(self, scale):
+        """The colorbar drawn for `scale`.
+
+        Args:
+            scale (ColorScale): A color scale of the figure.
+
+        Returns:
+            The Plotly colorbar, e.g. with ``x``, ``y``, ``len``,
+            ``tickvals`` and ``ticktext``.
+        """
+        _, colored = _CARRIERS[self._colorbars[_colorbar_uid(scale)]["cell"].dim]
+        return self.backend_figure.data[self._colorbar_index(scale)][colored].colorbar
+
+    def _colorbar_index(self, scale) -> int | None:
+        uid = _colorbar_uid(scale)
+        return next(
+            (i for i, t in enumerate(self.backend_figure.data) if t.uid == uid), None
+        )
+
+    # --- embedded controls ---------------------------------------------------
+
+    def clear_embeddings(self) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.clear_embeddings`."""
+        self.backend_figure.frames = ()
+        self.backend_figure.layout.sliders = ()
+        self.backend_figure.layout.updatemenus = ()
+
+    def snapshot(self, keys, cells, scales) -> tuple[dict, dict]:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.snapshot`.
+
+        Returns:
+            tuple: ``({trace index: flat properties}, flat axis layout)``,
+                with nested properties as dotted paths.
+        """
+        data = self.backend_figure.data
+        indices = [i for key in keys for i in self.artist_of(key).trace_indices]
+        indices += [self._colorbar_index(scale) for scale in scales]
+        traces = {i: embedding.flatten(data[i].to_plotly_json()) for i in indices}
+        layout = self.backend_figure.layout.to_plotly_json()
+        axes = {}
+        for cell in cells:
+            for name in _axis_names(self.backend_figure, cell):
+                axes.update(embedding.flatten(layout.get(name, {}), prefix=name))
+        return traces, axes
+
+    def animate(self, time_axis, snapshots) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.animate`.
+
+        Frames update only the trace properties and axes that differ
+        between the states. With non-uniform frame weights each frame gets
+        its own duration and playback always starts at the first frame.
+        """
+        backend_figure = self.backend_figure
+        states = time_axis.states
+        indices, keys, layout_keys = embedding.changes(snapshots)
+        types = {i: backend_figure.data[i].type for i in indices}
+        backend_figure.frames = [
+            go.Frame(
+                data=[
+                    dict(embedding.nest({k: traces[i].get(k) for k in keys[i]}), type=types[i])
+                    for i in indices
+                ],
+                traces=indices,
+                layout=embedding.nest({k: axes.get(k) for k in layout_keys}),
+                name=str(state),
+            )
+            for state, (traces, axes) in zip(states, snapshots)
+        ]
+        weights = time_axis.frame_weights()
+        uniform = bool(np.allclose(weights, weights[0]))
+        play_frame = (
+            dict(duration=time_axis.duration, redraw=True)
+            if uniform
+            else [dict(duration=time_axis.duration * w, redraw=True) for w in weights]
+        )
+        # No transitions: Plotly would interpolate the coordinates of traces
+        # between frames, e.g. move triangles from one value bin's trace to
+        # another's.
+        still = dict(duration=0)
+        play = dict(frame=play_frame, fromcurrent=uniform, transition=still)
+        pause = dict(frame=dict(duration=0, redraw=False), mode="immediate", transition=still)
+        step = dict(mode="immediate", frame=dict(duration=0, redraw=True), transition=still)
+        backend_figure.update_layout(
+            updatemenus=list(backend_figure.layout.updatemenus)
+            + [
                 dict(
                     type="buttons",
                     showactive=False,
                     buttons=[
-                        dict(
-                            label="Play",
-                            method="animate",
-                            args=[
-                                None,
-                                dict(
-                                    frame=dict(duration=spec.duration, redraw=True),
-                                    fromcurrent=True,
-                                    transition=dict(duration=0),
-                                ),
-                            ],
-                        ),
-                        dict(
-                            label="Pause",
-                            method="animate",
-                            args=[
-                                [None],
-                                dict(
-                                    frame=dict(duration=0, redraw=False),
-                                    mode="immediate",
-                                ),
-                            ],
-                        ),
+                        dict(label="Play", method="animate", args=[None, play]),
+                        dict(label="Pause", method="animate", args=[[None], pause]),
                     ],
                 )
             ],
-            sliders=[
+            sliders=list(backend_figure.layout.sliders)
+            + [
                 dict(
+                    name=f"time-{id(time_axis)}",
+                    active=time_axis.state,
+                    transition=still,
+                    currentvalue=dict(prefix=as_markup(f"{time_axis.name} = ")),
                     steps=[
                         dict(
                             method="animate",
-                            args=[
-                                [str(value)],
-                                dict(
-                                    mode="immediate",
-                                    frame=dict(duration=0, redraw=True),
-                                ),
-                            ],
-                            label=str(value),
+                            args=[[str(s)], step],
+                            label=as_markup(time_axis.label(s)),
                         )
-                        for value in spec.values
-                    ]
+                        for s in states
+                    ],
                 )
             ],
         )
-        return backend_figure
 
-    @staticmethod
-    def apply_selector(figure, backend_figure, spec):
-        """Adds one Plotly dropdown (updatemenus, method="update") letting
-        an already-drawn static figure itself switch which variable is
-        plotted - the static-export equivalent of DashApplication's
-        dropdown widget, since a Dash app's own client/server round-trip
-        isn't available once a figure is exported.
+    def apply_slider(self, slider, snapshots) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.apply_slider`.
 
-        Only meaningful for the static/non-Dash path (Figure.show()/
-        save_html()/save_png()/save_svg() call this after draw(); Dash's
-        own callback loop already handles SelectorSpec entirely server-side
-        and does not need this). Mirrors animate()'s replay-and-capture
-        approach: temporarily set `spec` to each candidate, replay
-        Artist.update() to compute what that trace (and the axes it
-        redraws into) would look like, and capture the result into one
-        button per candidate.
-
-        Raises NotImplementedError if any affected plot has more than one
-        SelectorSpec of its own (e.g. TableScatter's x/y/color, all read by
-        the same evaluate() call): each button here is baked by varying
-        exactly one spec at a time with every other spec frozen at
-        whatever state it happened to be in when *that* spec's own button
-        was built, so once a plot has two or more, only the initial
-        combination and single-spec deviations from it are ever reachable -
-        every other combination silently renders wrong data with no error.
-        That's a structural limit of baking independent, static buttons
-        with no server to recompute a joint state on click - see
-        DashApplication, which handles any number of SelectorSpecs per plot
-        correctly via one real callback, for a plot like that instead.
+        Each step updates only the trace properties and axes that differ
+        between the states.
         """
-        affected = [
-            (plot, artist)
-            for plot, cells in figure.artists.items()
-            if spec in plot.selector_specs
-            for artist in cells.values()
+        steps = [
+            dict(label=as_markup(slider.label(state)), method="update", args=args)
+            for state, args in zip(slider.states, embedding.update_args(snapshots))
         ]
-        if not affected:
-            return backend_figure
-
-        for plot, _ in affected:
-            if len(plot.selector_specs) > 1:
-                raise NotImplementedError(
-                    f"{type(plot).__name__} has {len(plot.selector_specs)} "
-                    "SelectorSpecs feeding into one evaluate() call, so their "
-                    "dropdowns can't be baked as independent static buttons - "
-                    "each one's choices would silently ignore the others' "
-                    "current selection except at the combination the figure "
-                    "started at. Figure.show()/save_html()/save_png()/"
-                    "save_svg() only support a plot with at most one "
-                    "SelectorSpec; use "
-                    "qewton.visualization.applications.dash_app."
-                    "DashApplication for a plot with more than one, which "
-                    "resolves them all correctly via a real callback."
-                )
-
-        original_state = spec.state
-        trace_indices = [artist.figure_idx for _, artist in affected]
-        buttons = []
-        for candidate in spec.candidates:
-            spec.state = candidate
-            per_key_values: dict = {}
-            layout_updates: dict = {}
-            for plot, artist in affected:
-                artist.update(backend_figure, plot)
-                trace = backend_figure.data[artist.figure_idx]
-                trace_json = trace.to_plotly_json()
-                for key, value in trace_json.items():
-                    if key in ("type", "uid"):
-                        continue
-                    per_key_values.setdefault(key, []).append(value)
-                # Artist.update() may have retitled/retyped the axes this
-                # trace is bound to (e.g. ScatterArtist tracking x/y through
-                # an AxisSpec) - restyle alone can't reach layout, so those
-                # need capturing separately for a method="update" button.
-                layout_updates.update(_axis_layout_updates(backend_figure, trace))
-            buttons.append(
+        existing = list(self.backend_figure.layout.sliders)
+        self.backend_figure.update_layout(
+            sliders=existing
+            + [
                 dict(
-                    label=SelectorSpec.candidate_name(candidate),
-                    method="update",
-                    args=[per_key_values, layout_updates, trace_indices],
+                    name=f"slider-{id(slider)}",
+                    active=slider.state,
+                    steps=steps,
+                    currentvalue=dict(prefix=as_markup(f"{slider.name} = ")),
                 )
-            )
-        spec.state = original_state
-        for plot, artist in affected:
-            artist.update(
-                backend_figure, plot
-            )  # leave the live traces at the initial state
-
-        # animate() (TimeSpec) sets its own updatemenus wholesale, so this
-        # only ever drops/replaces entries it added itself, tagged by name -
-        # both can coexist on one figure.
-        menu_name = f"selector_{id(spec)}"
-
-        # Keep any non-selector menus (e.g. animation controls) and
-        # rebuild selector menus with explicit positions so they do
-        # not overlap.
-        existing_selectors = []
-        kept = []
-        for menu in backend_figure.layout.updatemenus:
-            menu_name_value = getattr(menu, "name", None)
-            if menu_name_value is None and isinstance(menu, dict):
-                menu_name_value = menu.get("name")
-
-            to_plotly_json = getattr(menu, "to_plotly_json", None)
-            if callable(to_plotly_json):
-                menu_dict = to_plotly_json()
-            elif isinstance(menu, dict):
-                menu_dict = dict(menu)
-            else:
-                menu_dict = {}
-            if isinstance(menu_name_value, str) and menu_name_value.startswith(
-                "selector_"
-            ):
-                existing_selectors.append(menu_dict)
-            else:
-                kept.append(menu_dict)
-
-        # Replace/create this selector's menu content before laying all
-        # variable selectors out in a clean vertical stack.
-        existing_selectors = [m for m in existing_selectors if m.get("name") != menu_name]
-        existing_selectors.append(
-            dict(name=menu_name, buttons=buttons, direction="down", showactive=True)
+            ]
         )
 
-        x = 1.01
-        y_start = 1.0
-        y_step = 0.12
-        laid_out_selectors = []
-        for idx, menu in enumerate(existing_selectors):
-            laid_out_selectors.append(
-                {
-                    **menu,
-                    "x": x,
-                    "xanchor": "left",
-                    "y": y_start - idx * y_step,
-                    "yanchor": "top",
-                }
-            )
+    def apply_selector(self, selector, snapshots) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.apply_selector`.
 
-        backend_figure.update_layout(updatemenus=kept + laid_out_selectors)
-        return backend_figure
-
-    @staticmethod
-    def show(backend_figure):
-        # Plotly no longer auto-loads MathJax (removed in plotly.js v2) - the
-        # $...$-wrapped titles PlotSpec.math_name/axis_names_from_variable
-        # produce render as literal dollar-sign text without this. Harmless
-        # (silently ignored) for mimebundle-based renderers like "vscode",
-        # whose own webview extension is responsible for LaTeX rendering.
-        backend_figure.show(include_mathjax="cdn")
-
-    @staticmethod
-    def save_html(backend_figure, path):
-        backend_figure.write_html(path, include_mathjax="cdn")
-
-    @staticmethod
-    def save_gif(backend_figure, path, fps=10):
-        """Rasterizes each animation frame to a PNG (via Plotly's optional
-        'kaleido' static-image backend) and assembles them into a looping
-        GIF (via Pillow). Both are imported lazily, right here, rather than
-        being hard dependencies of the visualization package - same
-        convention as HDF5DataSet.from_file()'s h5py import: importing this
-        module (or even Figure.draw()'s animation path) never requires
-        either package, only actually calling save_gif() does."""
-        try:
-            import kaleido  # noqa: F401 - presence check; Figure.to_image() uses it internally
-        except ImportError as e:
-            raise ImportError(
-                "save_gif() requires the optional 'kaleido' package. "
-                "Install via: pip install kaleido"
-            ) from e
-        try:
-            from PIL import Image
-        except ImportError as e:
-            raise ImportError(
-                "save_gif() requires the optional 'Pillow' package. "
-                "Install via: pip install Pillow"
-            ) from e
-        import io
-
-        if not backend_figure.frames:
-            raise ValueError(
-                "backend_figure has no animation frames - draw a Figure with "
-                "a TimeSpec control before calling save_gif()."
-            )
-
-        # Static per-frame figures, not the live one: strip the play/pause/
-        # slider UI (meaningless in a still image) and never mutate the
-        # interactive backend_figure this call was handed.
-        static_layout = go.Layout(backend_figure.layout)
-        static_layout.updatemenus = ()
-        static_layout.sliders = ()
-
-        images = [
-            Image.open(
-                io.BytesIO(
-                    go.Figure(data=frame.data, layout=static_layout).to_image(
-                        format="png"
-                    )
-                )
-            )
-            for frame in backend_figure.frames
+        Each choice updates only the trace properties and axes that differ
+        between the choices: with every candidate drawn, their visibility.
+        """
+        buttons = [
+            dict(label=as_markup(selector.label(state)), method="update", args=args)
+            for state, args in zip(selector.states, embedding.update_args(snapshots))
         ]
-
-        images[0].save(
-            path,
-            save_all=True,
-            append_images=images[1:],
-            duration=int(1000 / fps),
-            loop=0,
+        existing = list(self.backend_figure.layout.updatemenus)
+        self.backend_figure.update_layout(
+            updatemenus=existing
+            + [
+                dict(
+                    name=f"selector-{id(selector)}",
+                    buttons=buttons,
+                    direction="down",
+                    active=selector.state,
+                    showactive=True,
+                )
+            ]
         )
 
-    @staticmethod
-    def save_image(backend_figure, path, format, **kwargs):
-        """Rasterizes the figure's current state via Plotly's optional
-        'kaleido' static-image backend - same lazy-import convention as
-        save_gif()."""
+    # --- outputs -------------------------------------------------------------
+
+    def show(self) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.show`.
+
+        A notebook gets the figure as :meth:`html` (which loads plotly.js
+        and, with MathJax, MathJax from a CDN, as notebook frontends load no
+        MathJax for Plotly's own output) at its own size, scrolling where it
+        is wider than the output (:func:`~qewton.visualization.renderers.base.notebook_html`);
+        elsewhere Plotly's renderer shows it. An animation starts with its
+        play button, not on load. Linked 3D cells move their cameras
+        together.
+        """
+        if _in_notebook():
+            from IPython.display import HTML, display
+
+            display(HTML(notebook_html(self.html(full_html=False))))
+            return
+        groups = self.linked_scenes()
+        script = dict(post_script=camera.page_script(groups)) if groups else {}
+        mathjax = dict(include_mathjax="cdn") if self.mathjax else {}
+        self.backend_figure.show(auto_play=False, **mathjax, **script)
+
+    def html(self, full_html: bool = True) -> str:
+        """The figure as HTML that loads plotly.js and, with MathJax,
+        MathJax from a CDN. An animation starts with its play button, not on
+        load: playing on load would use Plotly's default transitions, which
+        interpolate trace coordinates between frames. Linked 3D cells move
+        their cameras together.
+
+        Args:
+            full_html: A whole page, else an element to embed.
+
+        Returns:
+            str: The HTML.
+        """
+        groups = self.linked_scenes()
+        return self.backend_figure.to_html(
+            full_html=full_html,
+            include_plotlyjs="cdn",
+            include_mathjax="cdn" if self.mathjax else False,
+            auto_play=False,
+            post_script=camera.page_script(groups) if groups else None,
+        )
+
+    def save_html(self, path) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.save_html`;
+        the page loads plotly.js and MathJax from a CDN."""
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(self.html())
+
+    def save_image(self, path, format, **kwargs) -> None:
+        """See :meth:`~qewton.visualization.renderers.base.Renderer.save_image`.
+
+        Raises:
+            ImportError: If the optional ``kaleido`` package is missing.
+        """
+        try:
+            import kaleido  # noqa: F401 - presence check; write_image() uses it
+        except ImportError as e:
+            raise ImportError(
+                "Saving images requires the optional 'kaleido' package: "
+                "pip install kaleido"
+            ) from e
+        self.backend_figure.write_image(path, format=format, **kwargs)
+
+    def frame_figures(self) -> list[go.Figure]:
+        """One static figure per animation frame: the backend figure with
+        the frame's changes applied, without frames, sliders and buttons.
+
+        Returns:
+            list of plotly.graph_objects.Figure: The frames' figures.
+
+        Raises:
+            ValueError: If the figure has no animation frames.
+        """
+        base = self.backend_figure
+        if not base.frames:
+            raise ValueError("The figure has no animation frames; it needs a TimeAxis.")
+        figures = []
+        for frame in base.frames:
+            figure = go.Figure(base)
+            figure.frames = ()
+            figure.layout.sliders, figure.layout.updatemenus = (), ()
+            for index, data in zip(frame.traces, frame.data):
+                figure.data[index].update(data.to_plotly_json())
+            if frame.layout is not None:
+                figure.update_layout(frame.layout.to_plotly_json())
+            figures.append(figure)
+        return figures
+
+    def save_gif(self, path, fps: float = 10, frame_weights=None) -> None:
+        """Rasterize every animation frame and write a looping GIF.
+
+        Args:
+            path (str or path-like): Output file path.
+            fps: Frames per second of equally weighted frames.
+            frame_weights (list of float, optional): Relative display
+                duration per frame.
+
+        Raises:
+            ImportError: If ``kaleido`` or ``Pillow`` is missing.
+            ValueError: If the figure has no animation frames.
+        """
         try:
             import kaleido  # noqa: F401 - presence check
+            from PIL import Image
         except ImportError as e:
-            raise ImportError(
-                "save_png()/save_svg() require the optional 'kaleido' package. "
-                "Install via: pip install kaleido"
-            ) from e
-        backend_figure.write_image(path, format=format, **kwargs)
+            raise ImportError("save_gif() requires 'kaleido' and 'Pillow'.") from e
+        images = [
+            Image.open(io.BytesIO(figure.to_image(format="png")))
+            for figure in self.frame_figures()
+        ]
+        durations = [int(1000 / fps * w) for w in (frame_weights or [1.0] * len(images))]
+        images[0].save(
+            path, save_all=True, append_images=images[1:], duration=durations, loop=0
+        )
+
+
+def _axis_reference(backend_figure, cell, channel: str) -> str:
+    # The reference of a cell's axis, e.g. "x2".
+    subplot = backend_figure.get_subplot(cell.row, cell.col)
+    axis = subplot.xaxis if channel == "x" else subplot.yaxis
+    return axis.plotly_name.replace("axis", "")
+
+
+def _scene_aspect(cell) -> dict:
+    # The scene settings of a 3D cell's box aspect.
+    box = cell.box_aspect
+    if box is None:
+        return dict(aspectmode="auto")
+    return dict(aspectmode="manual", aspectratio=dict(zip("xyz", box)))
+
+
+def _axis(cell, channel: str, axis, text) -> dict:
+    # Plotly axis settings of a position axis: title (written by `text`),
+    # type, range, ticks.
+    scale = axis.scale
+    settings = dict(title=dict(text=text(cell.axis_title(channel))))
+    settings["type"] = (
+        "category" if scale.categorical else ("log" if scale.log else "linear")
+    )
+    if scale.range is not None and not scale.categorical:
+        drawn = cell.axis_range(channel)
+        settings["range"] = (
+            [float(v) for v in scale.transform(np.asarray(drawn))] if drawn else None
+        )
+    ticks = cell.axis_ticks(channel)
+    if ticks is not None:
+        positions, labels = ticks
+        settings["tickvals"] = list(positions)
+        settings["ticktext"] = list(labels) if labels is not None else None
+    return settings
+
+
+def _title_name(cell) -> str:
+    return f"cell-title-{cell.row}-{cell.col}"
+
+
+def _colorbar_uid(scale) -> str:
+    return f"colorbar-{id(scale)}"
+
+
+def _axis_names(backend_figure, cell) -> list[str]:
+    # Layout names of a cell's axes, e.g. ["xaxis2", "yaxis2"] or ["scene"];
+    # none for a cell without position axes.
+    if not cell.axes:
+        return []
+    subplot = backend_figure.get_subplot(cell.row, cell.col)
+    if cell.dim == 3:
+        return [subplot.plotly_name]
+    return [subplot.xaxis.plotly_name, subplot.yaxis.plotly_name]
+
+
+def _apply_theme(backend_figure, theme) -> None:
+    # Figure-wide theme chrome: background, fonts, legend, axis lines; the
+    # annotations are the cell titles, the only ones when it is applied.
+    backend_figure.update_annotations(font=dict(size=theme.font_size_axes))
+    backend_figure.update_layout(
+        paper_bgcolor=theme.background_color,
+        plot_bgcolor=theme.background_color,
+        font=dict(
+            family=theme.font_family, size=theme.font_size_labels, color=theme.text_color
+        ),
+        title_font=dict(size=theme.font_size_title, color=theme.text_color),
+        showlegend=theme.show_legend,
+        legend=_legend_style(theme),
+    )
+    axis = dict(
+        showgrid=theme.show_grid,
+        gridcolor=theme.grid_color,
+        zeroline=theme.show_zero_line,
+        zerolinecolor=theme.grid_color,
+        showline=theme.show_axis_line,
+        linecolor=theme.line_color,
+        mirror=theme.axis_box,
+        ticks="outside" if theme.show_axis_line else "",
+        tickcolor=theme.line_color,
+        tickfont=dict(size=theme.font_size_labels, color=theme.text_color),
+        title_font=dict(size=theme.font_size_axes, color=theme.text_color),
+    )
+    backend_figure.update_xaxes(**axis)
+    backend_figure.update_yaxes(**axis)
+    scene_axis = dict(axis, showbackground=True, backgroundcolor=theme.background_color)
+    backend_figure.update_scenes(
+        bgcolor=theme.background_color,
+        xaxis=scene_axis,
+        yaxis=scene_axis,
+        zaxis=scene_axis,
+    )
+
+
+def _colorbar_style(theme, title: str | None) -> dict:
+    # The look of every colorbar: its title beside it, a fixed thickness,
+    # no padding within its length (it is as tall as the plot area).
+    return dict(
+        title=dict(text=title, side="right", font=dict(size=theme.font_size_axes)),
+        thickness=space.COLORBAR_THICKNESS,
+        thicknessmode="pixels",
+        tickfont=dict(size=theme.font_size_labels),
+        ypad=0,
+        outlinewidth=1 if theme.axis_box else 0,
+        outlinecolor=theme.line_color,
+    )
+
+
+def _legend_name(index: int) -> str:
+    # Plotly's name of the index-th legend: "legend", "legend2", ...
+    return "legend" if index == 0 else f"legend{index + 1}"
+
+
+def _legend_style(theme) -> dict:
+    # The look of every legend.
+    return dict(
+        bordercolor=theme.line_color,
+        borderwidth=1 if theme.legend_box else 0,
+        bgcolor=theme.background_color,
+        font=dict(size=theme.font_size_labels),
+    )
+
+
+def _in_notebook() -> bool:
+    # Whether code runs in a Jupyter kernel (notebook, JupyterLab, VS Code).
+    try:
+        from IPython import get_ipython
+    except ImportError:
+        return False
+    shell = get_ipython()
+    return shell is not None and "IPKernelApp" in shell.config

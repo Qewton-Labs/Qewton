@@ -183,12 +183,6 @@ class SplitVariables(Node[TensorType]):
 
         return updated_ports
 
-    def get_output_port(self, name: str | Variable):
-        # TODO Merge into general node?
-        if isinstance(name, Variable):
-            name = name.name
-        return super().get_output_port(name)
-
 
 class ConcatVariables(Node[TensorType]):
     """Concatenate variables node that combines multiple input tensors with different variables along a dimension.
@@ -461,7 +455,9 @@ class Flatten(Node[TensorType]):
     def forward(
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.backend.math.flatten(inp, self.start_dim, self.end_dim)
+        return self.backend.math.flatten(
+            inp, start_dim=self.start_dim, end_dim=self.end_dim
+        )
 
 
 class Unflatten(Node[TensorType]):

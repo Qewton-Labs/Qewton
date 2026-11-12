@@ -1,6 +1,6 @@
 from .parameters import ParameterNode
 from .activation_functions import ReLU, Tanh, Sigmoid, AdaptiveActivation, SoftPlus
-from .linear import Linear, FunctionalLinear
+from .linear import Linear, FunctionalLinear, Quadratic
 from .conv import (
     FunctionalConv,
     Conv,
@@ -44,10 +44,18 @@ from .math import (
     Minimum,
     MatMul,
     Mean,
+    Sum,
+    Std,
+    Exp,
+    Log,
+    Log2,
+    Log10,
+    SVD,
     Negative,
     Inner,
     Norm,
     Dot,
+    Transpose,
 )
 
 from .array_operations import (
@@ -74,6 +82,10 @@ from .derivatives import (
     Jacobian,
     Partial,
     Hessian,
+    MatrixDivergence,
+    Rotation,
+    SymmetricGradient,
 )
 from .creation import Zeros, ZerosLike, Ones, OnesLike, Identity
 from .geometry import MeshInterpolationNode
+from .norms import MSN

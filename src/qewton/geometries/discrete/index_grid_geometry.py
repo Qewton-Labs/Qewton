@@ -16,8 +16,8 @@ class IndexGridGeometry(GridGeometry[TensorType]):
     Args:
         variable (Variable): The variable connected to this geometry. Its
             dim must equal len(shape). Build it composite
-            (Variable("i", 1) * Variable("j", 1)) if a SliderSpec or
-            FacetSpec should later target a single grid axis.
+            (Variable("i", 1) * Variable("j", 1)) if a control should
+            later step through a single grid axis.
         shape (tuple[int, ...]): Grid extent per axis.
         point_filter (TensorType | None, optional): A grid of boolean
             values of shape shape + (1,). True marks an included point,
@@ -69,7 +69,6 @@ class IndexGridGeometry(GridGeometry[TensorType]):
 
         self.discretization_of = None  # not a discretization of a continuous domain
         self.cell_volumes: TensorType | None = None
-        self._device = None
 
     # -- lazy coordinates ---------------------------------------------------
 
@@ -128,8 +127,7 @@ class IndexGridGeometry(GridGeometry[TensorType]):
         """
         if self._points is not None:
             self._points = self.backend.to(self._points, device=device)
-        else:
-            self._device = device
+        self.point_filter = self.backend.to(self.point_filter, device=device)
         if self.cell_volumes is not None:
             self.cell_volumes = self.backend.to(self.cell_volumes, device=device)
 
@@ -147,7 +145,7 @@ class IndexGridGeometry(GridGeometry[TensorType]):
         for n in self._grid_shape:
             bounds.append(0.0)
             bounds.append(float(n - 1))
-        return self.backend.build_tensor(bounds)
+        return self._bounds(bounds)
 
     def _compute_cell_volumes(self) -> None:
         """Computes and caches the volume of every grid cell, masked by

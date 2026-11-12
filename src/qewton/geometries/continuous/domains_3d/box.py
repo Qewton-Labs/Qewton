@@ -44,12 +44,15 @@ class Box(ContinuousGeometry[TensorType]):
         self.height = float(height)
         self.depth = float(depth)
 
+    def _move_data(self, device: Device | str) -> None:
+        self.origin = self.backend.to(self.origin, device=device)
+
     def contains(self, points):
+        origin = self._on(self.origin, self._device_of(points))
         p_device = points.device if hasattr(points, "device") else cpu
-        self.origin = self.backend.to(self.origin, device=p_device)
         points = self.backend.build_tensor(points, dtype=Float32)
         points = points.reshape(-1, 3)
-        relative = points - self.origin
+        relative = points - origin
         inside = self.backend.math.ones((len(points), 1), dtype=bool, device=p_device)
         scale_list = [self.width, self.height, self.depth]
         for i in range(3):
@@ -65,18 +68,19 @@ class Box(ContinuousGeometry[TensorType]):
         for i in range(3):
             bounds.append(self.origin[i])
             bounds.append(self.origin[i] + scale_list[i])
-        return self.backend.build_tensor(bounds)
+        return self._bounds(bounds)
 
     def sample_random_uniform(self, n_points: int, device: Device = cpu):
+        origin = self._on(self.origin, device)
         points = self.backend.random.uniform((n_points, 3), device=device)
-        self.origin = self.backend.to(self.origin, device=device)
         points[:, 0] *= self.width
         points[:, 1] *= self.height
         points[:, 2] *= self.depth
-        points += self.origin
+        points += origin
         return points
 
     def sample_grid(self, n_points: int, device: Device = cpu):
+        origin = self._on(self.origin, device)
         # Scale the number of points w.r.t. the shape of the box
         volume = self.width * self.height * self.depth
         n_scale = (n_points / volume) ** (1.0 / 3.0)
@@ -92,11 +96,10 @@ class Box(ContinuousGeometry[TensorType]):
         grid = self.backend.math.stack([xx.ravel(), yy.ravel(), zz.ravel()], axis=1)
 
         # Scale and shift the grid
-        self.origin = self.backend.to(self.origin, device=device)
         grid[:, 0] *= self.width
         grid[:, 1] *= self.height
         grid[:, 2] *= self.depth
-        grid += self.origin
+        grid += origin
 
         # Ensure we have exactly n_points by adding random samples if needed
         if len(grid) < n_points:
@@ -105,7 +108,7 @@ class Box(ContinuousGeometry[TensorType]):
             random_points[:, 0] *= self.width
             random_points[:, 1] *= self.height
             random_points[:, 2] *= self.depth
-            random_points += self.origin
+            random_points += origin
             grid = self.backend.math.vstack([grid, random_points])
 
         return grid[:n_points]
@@ -123,7 +126,7 @@ class Box(ContinuousGeometry[TensorType]):
     def create_mesh(
         self, max_vertex_distance: float | None = None, device: Device = cpu
     ) -> MeshGeometry:
-        self.origin = self.backend.to(self.origin, device=device)
+        origin = self._on(self.origin, device)
 
         # choose subdivision count
         if max_vertex_distance is None:
@@ -133,18 +136,21 @@ class Box(ContinuousGeometry[TensorType]):
             ny = max(1, int(math.ceil(self.height / max_vertex_distance)))
             nz = max(1, int(math.ceil(self.depth / max_vertex_distance)))
         # unit-square vertices
-        u = self.backend.math.linspace(0.0, 1.0, num=nx + 1)
-        v = self.backend.math.linspace(0.0, 1.0, num=ny + 1)
-        w = self.backend.math.linspace(0.0, 1.0, num=nz + 1)
+        u = self.backend.math.linspace(0.0, 1.0, num=nx + 1, device=device)
+        v = self.backend.math.linspace(0.0, 1.0, num=ny + 1, device=device)
+        w = self.backend.math.linspace(0.0, 1.0, num=nz + 1, device=device)
 
         U, V, W = self.backend.math.meshgrid(u, v, w, indexing="ij")
 
+        def edge(values):
+            return self.backend.build_tensor(values, dtype=Float32, device=device)
+
         # affine map
         vertices = self.backend.math.reshape(
-            self.origin
-            + U[..., None] * self.backend.build_tensor([self.width, 0, 0], dtype=Float32)
-            + V[..., None] * self.backend.build_tensor([0, self.height, 0], dtype=Float32)
-            + W[..., None] * self.backend.build_tensor([0, 0, self.depth], dtype=Float32),
+            origin
+            + U[..., None] * edge([self.width, 0, 0])
+            + V[..., None] * edge([0, self.height, 0])
+            + W[..., None] * edge([0, 0, self.depth]),
             (-1, 3),
         )
 
@@ -172,11 +178,11 @@ class Box(ContinuousGeometry[TensorType]):
                     tetrahedra.append([a, d1, c1, a1])
                     tetrahedra.append([a, d1, c, c1])
 
-        tetrahedra = self.backend.build_tensor(tetrahedra)
+        tetrahedra = self.backend.build_tensor(tetrahedra, device=device)
 
         return MeshGeometry(
             variable=self.variable,
-            mesh=Mesh(vertices=vertices, cells=tetrahedra),
+            mesh=Mesh(vertices=vertices, cells=tetrahedra, device=device),
             discretization_of=self,
         )
 
@@ -189,11 +195,11 @@ class BoxBoundary(ContinuousBoundaryGeometry):
         self.geometry: Box = geometry  # type: ignore
 
     def contains(self, points):
+        origin = self._on(self.geometry.origin, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32)
         points = points.reshape(-1, 3)
         p_device = points.device if hasattr(points, "device") else cpu
-        self.geometry.origin = self.backend.to(self.geometry.origin, device=p_device)
-        relative = points - self.geometry.origin
+        relative = points - origin
         scale_list = [self.geometry.width, self.geometry.height, self.geometry.depth]
 
         on_boundary = self.backend.math.zeros(
@@ -229,6 +235,7 @@ class BoxBoundary(ContinuousBoundaryGeometry):
     def sample_random_uniform(
         self, n_points: int, device: Device = cpu, include_normals: bool = False
     ):
+        origin = self._on(self.geometry.origin, device)
         w = self.geometry.width
         h = self.geometry.height
         d = self.geometry.depth
@@ -271,8 +278,7 @@ class BoxBoundary(ContinuousBoundaryGeometry):
                 points[current_n : current_n + n_half] = pts
                 current_n += n_half
 
-        self.geometry.origin = self.backend.to(self.geometry.origin, device=device)
-        points += self.geometry.origin
+        points += origin
         if include_normals:
             normals = self.normal(points, device=device)
             return points, normals
@@ -281,6 +287,7 @@ class BoxBoundary(ContinuousBoundaryGeometry):
     def sample_grid(
         self, n_points: int, device: Device = cpu, include_normals: bool = False
     ):
+        origin = self._on(self.geometry.origin, device)
         w = self.geometry.width
         h = self.geometry.height
         d = self.geometry.depth
@@ -337,9 +344,8 @@ class BoxBoundary(ContinuousBoundaryGeometry):
                         grid_1[:-1], grid_2[:-1], indexing="ij"
                     )
                     grid = self.backend.math.stack([g1.ravel(), g2.ravel()], axis=1)
-                    grid = self.backend.math.stack(
-                        [self.backend.math.zeros(len(grid), device=device), grid], axis=0
-                    )
+                    fixed = self.backend.math.zeros((len(grid), 1), device=device)
+                    grid = self.backend.math.concatenate([fixed, grid], axis=1)
                 else:
                     g1, g2 = self.backend.math.meshgrid(
                         grid_1[1:], grid_2[1:], indexing="ij"
@@ -353,14 +359,10 @@ class BoxBoundary(ContinuousBoundaryGeometry):
                             (n_difference, 2), device=device
                         )
                         grid = self.backend.math.vstack([grid, random_pts])
-                    grid = self.backend.math.stack(
-                        [
-                            scale_list[i]
-                            * self.backend.math.ones(len(grid), device=device),
-                            grid,
-                        ],
-                        axis=0,
+                    fixed = scale_list[i] * self.backend.math.ones(
+                        (len(grid), 1), device=device
                     )
+                    grid = self.backend.math.concatenate([fixed, grid], axis=1)
 
                 # Scale by the other two dimensions
                 i_mod_1 = (i + 1) % 3
@@ -368,8 +370,8 @@ class BoxBoundary(ContinuousBoundaryGeometry):
                 grid[:, 1] *= scale_list[i_mod_1]
                 grid[:, 2] *= scale_list[i_mod_2]
 
-                # Permute to correct order
-                # grid = grid[:, permute_list[i]]
+                # Columns are ordered (i, i + 1, i + 2); reorder to (x, y, z)
+                grid = grid[:, [(j - i) % 3 for j in range(3)]]
 
                 n_to_add = min(len(grid), n_points - current_n)
                 points[current_n : current_n + n_to_add] = grid[:n_to_add]
@@ -381,8 +383,7 @@ class BoxBoundary(ContinuousBoundaryGeometry):
             if current_n >= n_points:
                 break
 
-        self.geometry.origin = self.backend.to(self.geometry.origin, device=device)
-        points += self.geometry.origin
+        points += origin
 
         if include_normals:
             normals = self.normal(points, device=device)
@@ -390,10 +391,10 @@ class BoxBoundary(ContinuousBoundaryGeometry):
         return points
 
     def normal(self, points, device: Device = cpu):
+        origin = self._on(self.geometry.origin, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32)
-        self.geometry.origin = self.backend.to(self.geometry.origin, device=device)
         points = points.reshape(-1, 3)
-        relative = points - self.geometry.origin
+        relative = points - origin
         scale_list = [self.geometry.width, self.geometry.height, self.geometry.depth]
 
         normals = self.backend.math.zeros_like(relative)

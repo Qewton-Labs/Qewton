@@ -34,6 +34,9 @@ class UnionGeometry(ContinuousGeometry[TensorType]):
             backend=geometry_a.backend,
         )
 
+    def _related_geometries(self) -> list:
+        return [self.geometry_a, self.geometry_b, *super()._related_geometries()]
+
     def _get_volume(self):
         volume_a = self.geometry_a.volume()
         volume_b = self.geometry_b.volume()
@@ -51,7 +54,7 @@ class UnionGeometry(ContinuousGeometry[TensorType]):
         for i in range(self.variable.dim):
             bounds.append(min([bounds_a[2 * i], bounds_b[2 * i]]))
             bounds.append(max([bounds_a[2 * i + 1], bounds_b[2 * i + 1]]))
-        return self.backend.build_tensor(bounds)
+        return self._bounds(bounds)
 
     def sample_random_uniform(self, n_points: int, device: Device = cpu):
         # sample n points in both domains
@@ -62,7 +65,7 @@ class UnionGeometry(ContinuousGeometry[TensorType]):
         # approximate volume of this geometry
         volume_approx = self._get_volume()
         volume_a = self.geometry_a.volume()
-        volume_ratio = volume_a / volume_approx
+        volume_ratio = float(volume_a / volume_approx)
         # choose points depending of the proportion of the geometry w.r.t. the
         # whole geometry union
         rand_index = self.backend.random.uniform((n_points, 1), device=device)

@@ -30,12 +30,13 @@ def test_create_point_cloud(backend: type[ComputingBackend]):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_point_cloud_move_points_preserves_point_values(backend: type[ComputingBackend]):
+def test_point_cloud_to_preserves_point_values(backend: type[ComputingBackend]):
     T = Variable("x", 2)
     points = backend.build_tensor([[1.0, 2.0], [3.0, 4.0]])
     pc = PointCloud(T, points, backend=backend)
 
-    pc._move_points(cpu)
+    assert pc.to(cpu) is pc
+    assert pc.device == cpu
 
     assert pc.discretization_points.shape == points.shape
     assert float(pc.discretization_points[0][0]) == 1.0
