@@ -20,6 +20,7 @@ from vtkmodules.vtkCommonDataModel import (
     vtkPolyData,
     VTK_TETRA,
     VTK_TRIANGLE,
+    VTK_LINE,
 )
 
 from vtkmodules.vtkFiltersCore import (
@@ -82,13 +83,15 @@ class VectorComponent(IntEnum):
     Z = 2
 
 
-VECTOR_COMPONENTS = [
+VECTOR_COMPONENTS_2D = [
     {"text": "Magnitude", "value": VectorComponent.Magnitude},
     {"text": "X", "value": VectorComponent.X},
     {"text": "Y", "value": VectorComponent.Y},
+]
+VECTOR_COMPONENTS_3D = VECTOR_COMPONENTS_2D + [
     {"text": "Z", "value": VectorComponent.Z},
 ]
-COMPONENT_TEXT = {entry["value"]: entry["text"] for entry in VECTOR_COMPONENTS}
+COMPONENT_TEXT = {entry["value"]: entry["text"] for entry in VECTOR_COMPONENTS_3D}
 
 STREAMLINE_SEED_OFFSET_FACTOR = 1e-4  # relative to bounding box diagonal
 STREAMLINE_MAX_SEEDS = 500
@@ -147,6 +150,15 @@ class ColorState:
     field: dict | None = None
     component: VectorComponent = VectorComponent.Magnitude
     preset: int = 0
+
+
+def extend_3d(values):
+    """Extend 2D values (x, y) to 3D values (x, y, 0)"""
+    if values.ndim != 2 or values.shape[1] not in (2, 3):
+        raise ValueError("Must have shape (N, 2) or (N, 3)")
+    if values.shape[1] == 2:
+        values = np.pad(values, ((0, 0), (0, 1)))
+    return values
 
 
 def _update_and_has_cells(filter_):
@@ -329,7 +341,7 @@ class ClipSlice:
 
 def create_points(vertices):
     """Create a VTK points object from the given vertices"""
-    vertices = np.ascontiguousarray(vertices, dtype=np.float64)
+    vertices = np.ascontiguousarray(extend_3d(vertices), dtype=np.float64)
     points = vtkPoints()
     points.SetData(numpy_to_vtk(vertices, deep=True))
     return points
@@ -355,13 +367,20 @@ def create_mesh(vertices, cells, cell_type):
 
     # Choose the appropriate VTK data structure
     if cell_type == VTK_TETRA:
+        assert n_vertices_per_cell == 4
         mesh = vtkUnstructuredGrid()
         mesh.SetPoints(vtk_points)
         mesh.SetCells(VTK_TETRA, vtk_cells)
     elif cell_type == VTK_TRIANGLE:
+        assert n_vertices_per_cell == 3
         mesh = vtkPolyData()
         mesh.SetPoints(vtk_points)
         mesh.SetPolys(vtk_cells)
+    elif cell_type == VTK_LINE:
+        assert n_vertices_per_cell == 2
+        mesh = vtkPolyData()
+        mesh.SetPoints(vtk_points)
+        mesh.SetLines(vtk_cells)
     else:
         raise ValueError(f"Unsupported cell type: {cell_type}")
 
@@ -560,12 +579,15 @@ def apply_color_state(mapper, state: ColorState, lut):
 class MeshScene:
     def __init__(self) -> None:
         self.actors = []
+        self.geo_dim: int = 3
 
     def build(
         self, qmesh: "qewton.geometries.MeshGeometry", scalar_fields, vector_fields
     ):
+        self.geo_dim = qmesh.variable.dim
         self._init_cube_axes()
-        tet_mesh = create_mesh(qmesh.mesh.vertices, qmesh.mesh.cells, VTK_TETRA)
+        cell_type = VTK_TETRA if self.geo_dim == 3 else VTK_TRIANGLE
+        tet_mesh = create_mesh(qmesh.mesh.vertices, qmesh.mesh.cells, cell_type)
         self._init_scalar_fields(tet_mesh, scalar_fields)
         self._init_vector_fields(tet_mesh, vector_fields)
         self.vtk_color_fields = self.vtk_scalar_fields + self.vtk_vector_fields
@@ -613,12 +635,15 @@ class MeshScene:
         self.vtk_meshes = [self.volume_mesh]
 
         submeshes = [
-            name for name, value in qmesh.mesh.marker_labels.items() if value[1] == 2
+            name
+            for name, value in qmesh.mesh.marker_labels.items()
+            if value[1] == self.geo_dim - 1
         ]
         for i, surf_name in enumerate(submeshes):
             surface_geo = qmesh.boundary.get_submesh(surf_name)
+            cell_type = VTK_TRIANGLE if self.geo_dim == 3 else VTK_LINE
             surface_mesh = create_mesh(
-                surface_geo.mesh.vertices, surface_geo.mesh.cells, VTK_TRIANGLE
+                surface_geo.mesh.vertices, surface_geo.mesh.cells, cell_type
             )
             surface_mapper = vtkDataSetMapper()
             surface_mapper.SetInputData(surface_mesh)
@@ -652,6 +677,7 @@ class MeshScene:
         for name, v in vector_fields.items():
             values = np.asarray(v, dtype=np.float64)
             assert values.ndim == 2 and (values.shape[1] == 2 or values.shape[1] == 3)
+            values = extend_3d(values)
 
             vtk_values = numpy_to_vtk(values, deep=True, array_type=None)
             dim = values.shape[1]
@@ -892,6 +918,7 @@ class TrameApplication(TrameApp, RenderApplication):
         super().__init__(server, client_type="vue3")
         self.title = None
         self.state.setdefault("active_ui", None)
+        self.geo_dim = 3
 
     @staticmethod
     def create(figure):
@@ -904,12 +931,42 @@ class TrameApplication(TrameApp, RenderApplication):
         return app
 
     @staticmethod
-    def createMesh(mesh, scalar_fields, vector_fields):
+    def createMesh(data_conf: qewton.DataConfiguration, data: np.ndarray):
         """Builds a Trame app displaying `mesh`, colored by `scalar_fields` or `vector_fields`"""
         app = TrameApplication()
 
+        assert data_conf.geometry_axes
+        mesh = data_conf.geometry_axes.geometry
+        app.geo_dim = data_conf.geometry_axes.variables.dim
+        assert app.geo_dim == 2 or app.geo_dim == 3
+
+        scalar_fields, vector_fields = app._fields_from_data_conf(data_conf, data)
         app._build_mesh_ui(mesh, scalar_fields, vector_fields)
         return app
+
+    def _fields_from_data_conf(
+        self, data_conf: qewton.DataConfiguration, data: np.ndarray
+    ):
+        vars = data_conf.feature_axes.variables
+        scalar_fields = {v.name: data[:, i] for i, v in enumerate(vars.leaves)}
+
+        def find_vector_variables(v, ofs=0):
+            if v.dim == self.geo_dim:
+                return [(v, ofs, v.dim)], ofs + v.dim
+            if v.is_leaf:
+                return [], ofs + v.dim
+
+            vars = []
+            for c in v.children:
+                assert c is not None
+                child_vars, cofs = find_vector_variables(c, ofs)
+                vars += child_vars
+                ofs = cofs
+            return vars, ofs
+
+        vf, _ = find_vector_variables(vars)
+        vector_fields = {v.name: data[:, ofs : ofs + dim] for v, ofs, dim in vf}
+        return scalar_fields, vector_fields
 
     def _hide_kitware_link(self):
         # Inject CSS to hide ONLY the Kitware website link inside the footer
@@ -964,7 +1021,7 @@ class TrameApplication(TrameApp, RenderApplication):
                     fluid=True,
                     classes="pa-0 fill-height",
                 ):
-                    # view = vtk.VtkRemoteView(self.renderWindow, interactive_ratio=1)
+                    # view = vtk.VtkRemoteView(self.renderWindow, interactive_ratio=1, interactive_quality=100, still_quality=100, still_ratio=1)
                     view = vtk.VtkLocalView(self.renderWindow)
                     # view = vtk.VtkRemoteLocalView(
                     #    self.renderWindow, namespace="view", mode="local", interactive_ratio=1
@@ -984,7 +1041,7 @@ class TrameApplication(TrameApp, RenderApplication):
                         i,
                         show_color=vol_mesh,
                         show_streamlines=vol_mesh,
-                        show_slice=vol_mesh,
+                        show_slice=(vol_mesh and self.geo_dim == 3),
                     )
 
     def _init_vtk(self):
@@ -1281,6 +1338,11 @@ class TrameApplication(TrameApp, RenderApplication):
                             classes="pt-1",
                         )
                     with v3.VCol(classes="pl-1", cols="6"):
+                        comp = (
+                            VECTOR_COMPONENTS_3D
+                            if self.geo_dim == 3
+                            else VECTOR_COMPONENTS_2D
+                        )
                         v3.VSelect(
                             v_show=(f"mesh_color_is_vector_{ui_id}",),
                             label="Component",
@@ -1288,7 +1350,7 @@ class TrameApplication(TrameApp, RenderApplication):
                                 f"mesh_color_component_{ui_id}",
                                 VectorComponent.Magnitude,
                             ),
-                            items=("component_list", VECTOR_COMPONENTS),
+                            items=("component_list", comp),
                             item_title="text",
                             item_value="value",
                             hide_details=True,
