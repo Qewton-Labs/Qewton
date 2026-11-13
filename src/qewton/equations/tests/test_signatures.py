@@ -16,7 +16,7 @@ from qewton.equations import (
     dt,
     integral,
 )
-from qewton.equations.analysis.prepare.signatures import signatures
+from qewton.equations.analysis.context import signatures
 from qewton.equations.fixtures import delay, heat, periodic_poisson, poisson
 
 x = Variable("x", dim=2)

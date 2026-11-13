@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
+from math import prod
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.prepare.normalize import normalize
-from qewton.equations.analysis.structure.coupling import coupling_graph
+from qewton.equations.analysis.prepare.infer import constraint_shape
 from qewton.equations.analysis.structure.structure import Orders, constraint_orders
 from qewton.equations.expr.nodes import Expr, FunctionSymbol, Restrict
 from qewton.equations.geometry.sets import (
@@ -18,8 +19,9 @@ from qewton.equations.geometry.sets import (
     SetNode,
     Slice,
 )
+from qewton.equations.expr.ops import Shape
 from qewton.equations.model.constraints import Constraint
-from qewton.equations.model.task import Task
+from qewton.equations.model.problem import Problem
 
 
 class Region(Enum):
@@ -129,15 +131,21 @@ class Row:
         return self.orders.get(symbol, {}).get(time, 0) if time is not None else 0
 
 
-def rows(task: Task) -> tuple[Row, ...]:
-    """The rows of the normalized problem of `task`."""
-    problem = normalize(task.problem).problem
-    unknowns = frozenset(task.unknowns)
-    graph = coupling_graph(task)
+def build_rows(
+    problem: Problem,
+    unknowns: Iterable[FunctionSymbol],
+    shapes: Mapping[FunctionSymbol, Shape],
+) -> tuple[Row, ...]:
+    """One row per constraint of the normalized `problem`.
+
+    `shapes` holds the output shape of every function; the component count of a row
+    is the number of scalar equations its constraint stands for.
+    """
+    unknowns = frozenset(unknowns)
     result = []
     for index, constraint in enumerate(problem.constraints):
         orders = {s: o for s, o in constraint_orders(constraint).items() if s in unknowns}
-        count = sum(1 for e in graph.equations if e.constraint == index)
+        count = prod(constraint_shape(constraint, shapes))
         region = _region(constraint, problem.time, unknowns)
         result.append(Row(index, constraint, region, orders, count))
     return tuple(result)

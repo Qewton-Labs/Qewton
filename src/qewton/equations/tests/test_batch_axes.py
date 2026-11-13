@@ -9,7 +9,7 @@ from qewton.equations import (
     Variable,
     signatures,
 )
-from qewton.equations.analysis.structure.batch_axes import inherited_batch_axes
+from qewton.equations.analysis.context import inherited_batch_axes
 from qewton.equations.fixtures import heat, poisson
 
 

@@ -11,13 +11,11 @@ from qewton.equations import (
     lap,
     shift,
 )
+from qewton.equations.analysis.context import batch_placement, decoupled_axes, split
 from qewton.equations.analysis.structure.structure import (
-    batch_placement,
     constraint_orders,
-    decoupled_axes,
     derivative_orders,
     linearity,
-    split,
     unknown_orders,
 )
 from qewton.equations.fixtures import delay, heat, poisson

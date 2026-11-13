@@ -12,13 +12,13 @@ operator once, is a suggestion and belongs to M6.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 
 from qewton.config.variables import Variable
 from qewton.equations.analysis.checks.diagnostics import Diagnostic, warning
-from qewton.equations.analysis.structure.batch_axes import inherited_batch_axes
-from qewton.equations.analysis.structure.structure import BatchPlacement, batch_placement
+from qewton.equations.analysis.structure.structure import BatchPlacement
 from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.geometry.sets import SetNode
 from qewton.equations.model.task import Task
@@ -91,10 +91,16 @@ def _function_mode(placements: tuple[BatchPlacement, ...]) -> BatchMode:
     return BatchMode.OPERATOR_NONLINEAR
 
 
-def batching(task: Task) -> Batching:
-    """One entry per parameter axis of `task`, ordered by axis name."""
-    inherited = inherited_batch_axes(task)
-    placements = batch_placement(task)
+def build_batching(
+    task: Task,
+    inherited: Mapping[FunctionSymbol, tuple[Variable, ...]],
+    placements: tuple[BatchPlacement, ...],
+) -> Batching:
+    """One entry per parameter axis of `task`, ordered by axis name.
+
+    `inherited` holds the batch axes each unknown inherits and `placements` where
+    each varying function enters the normalized constraints.
+    """
     entries, notes = [], []
     for owner, axis in sorted(task.batch_axes.items(), key=lambda it: str(it[1].name)):
         reaches = tuple(s for s in task.unknowns if axis in inherited.get(s, ()))

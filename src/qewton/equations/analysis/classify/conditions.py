@@ -16,6 +16,7 @@ on purpose, as the Stokes fixture does.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from enum import Enum
 
 from qewton.config.variables import Variable
@@ -186,12 +187,13 @@ def interface_counts(
     rows: tuple[Row, ...],
     problem: Problem,
     graph: CouplingGraph,
-    kinds: tuple[Fact, ...],
+    kinds: Mapping[int, ConditionKind],
 ) -> tuple[tuple[Fact, ...], tuple[Diagnostic, ...]]:
     """Each declared interface needs as many value as flux conditions as there are
-    components of its second-order unknowns: the unknown and its flux are continuous."""
+    components of its second-order unknowns: the unknown and its flux are continuous.
+
+    `kinds` maps the index of each condition to its kind."""
     components = _unknown_components(graph)
-    by_row = {f.constraints[0]: f.value for f in kinds}
     results = []
     for interface in problem.interfaces:
         need = sum(components[s] for s in _interface_need(rows, interface, problem))
@@ -199,7 +201,7 @@ def interface_counts(
             continue
         on_it = [r for r in rows if interface_of(r.constraint.on) == interface]
         for kind in (ConditionKind.INTERFACE_VALUE, ConditionKind.INTERFACE_FLUX):
-            used = [r for r in on_it if by_row.get(r.index) is kind]
+            used = [r for r in on_it if kinds.get(r.index) is kind]
             subject = f"{interface}, {kind.value}"
             results.append(_count("interface_count", subject, used, need))
     notes = tuple(n for _, n in results if n is not None)

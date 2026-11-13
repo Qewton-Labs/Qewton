@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from math import prod
 
-from qewton.equations.analysis.prepare.infer import infer_shapes, shape_with
-from qewton.equations.analysis.prepare.normalize import normalize
-from qewton.equations.expr.nodes import Const, FunctionSymbol, walk
-from qewton.equations.expr.ops import ShapeError
+from qewton.equations.analysis.prepare.infer import constraint_shape
+from qewton.equations.expr.nodes import FunctionSymbol, walk
 from qewton.equations.model.constraints import Constraint
-from qewton.equations.model.task import Task
+from qewton.equations.model.problem import Problem
 
 Shape = tuple[int, ...]
 
@@ -66,24 +65,6 @@ class CouplingGraph:
     def has_full_matching(self) -> bool:
         """Whether every equation and unknown component can be paired."""
         return len(self.matching) == len(self.equations) == len(self.unknowns)
-
-
-def _constraint_shape(
-    constraint: Constraint, shapes: dict[FunctionSymbol, Shape]
-) -> Shape:
-    left = shape_with(constraint.lhs, shapes)
-    right = shape_with(constraint.rhs, shapes)
-    if left == right:
-        return left
-    if left == () and isinstance(constraint.lhs, Const):
-        return right
-    if right == () and isinstance(constraint.rhs, Const):
-        return left
-    raise ShapeError(f"Cannot determine scalar equation components for {constraint}.")
-
-
-def _component_count(shape: Shape) -> int:
-    return prod(shape) if shape else 1
 
 
 def _symbols(
@@ -212,22 +193,22 @@ def _condensation(
 
 def _nodes(
     constraints: tuple[Constraint, ...],
-    task: Task,
-    shapes: dict[FunctionSymbol, Shape],
+    unknowns: Sequence[FunctionSymbol],
+    shapes: Mapping[FunctionSymbol, Shape],
 ) -> tuple[tuple[EquationNode, ...], tuple[UnknownNode, ...]]:
     equations = tuple(
         EquationNode(index, component)
         for index, constraint in enumerate(constraints)
-        for component in range(_component_count(_constraint_shape(constraint, shapes)))
+        for component in range(prod(constraint_shape(constraint, shapes)))
     )
-    unknowns = tuple(
+    unknown_nodes = tuple(
         UnknownNode(symbol, component)
-        for symbol in task.unknowns
+        for symbol in unknowns
         for component in range(
-            _component_count(symbol.shape if symbol.shape is not None else shapes[symbol])
+            prod(symbol.shape if symbol.shape is not None else shapes[symbol])
         )
     )
-    return equations, unknowns
+    return equations, unknown_nodes
 
 
 def _incidence(
@@ -308,33 +289,39 @@ def _blocks(
     return _strong_components(ordered, adjacency, equation_for)
 
 
-def coupling_graph(task: Task) -> CouplingGraph:
+def build_coupling_graph(
+    problem: Problem,
+    unknowns: Sequence[FunctionSymbol],
+    shapes: Mapping[FunctionSymbol, Shape],
+) -> CouplingGraph:
     """Build the scalar bipartite graph, a maximum matching and matched SCC blocks.
+
+    `problem` is the normalized problem, `unknowns` are in the order their components
+    are numbered, and `shapes` holds the output shape of every function.
 
     Matching uses a deterministic augmenting-path algorithm. For the block ordering,
     each matched equation is paired with its matched unknown; an incidence to another
     matched unknown becomes a directed edge between the two unknowns. Unmatched rows
     and columns are reported separately and are excluded from blocks.
     """
-    problem = normalize(task.problem).problem
-    inference = infer_shapes(problem)
-    shapes = dict(inference.shapes)
-    equations, unknowns = _nodes(problem.constraints, task, shapes)
+    equation_nodes, unknown_nodes = _nodes(problem.constraints, unknowns, shapes)
     incidence, edges = _incidence(
-        problem.constraints, equations, unknowns, frozenset(task.unknowns)
+        problem.constraints, equation_nodes, unknown_nodes, frozenset(unknowns)
     )
-    matching, matched_unknowns = _maximum_matching(equations, incidence)
+    matching, matched_unknowns = _maximum_matching(equation_nodes, incidence)
     matched_equations = {equation for equation, _ in matching}
     unmatched_equations = tuple(
-        node for node in equations if node not in matched_equations
+        node for node in equation_nodes if node not in matched_equations
     )
-    unmatched_unknowns = tuple(node for node in unknowns if node not in matched_unknowns)
+    unmatched_unknowns = tuple(
+        node for node in unknown_nodes if node not in matched_unknowns
+    )
     return CouplingGraph(
-        equations,
-        unknowns,
+        equation_nodes,
+        unknown_nodes,
         edges,
         matching,
-        _blocks(unknowns, matching, incidence, matched_unknowns),
+        _blocks(unknown_nodes, matching, incidence, matched_unknowns),
         unmatched_equations,
         unmatched_unknowns,
     )

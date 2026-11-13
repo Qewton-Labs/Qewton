@@ -2,25 +2,29 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from qewton.config.variables import Variable
-from qewton.equations.analysis.prepare.normalize import normalize
 from qewton.equations.expr.nodes import FunctionSymbol, walk
 from qewton.equations.geometry.sets import Product, SetNode
 from qewton.equations.model.constraints import Constraint
-from qewton.equations.model.task import Task
+from qewton.equations.model.problem import Problem
+
+BatchAxes = Mapping[FunctionSymbol | SetNode, Variable]
 
 
-def _set_depends_on(node: SetNode, source: SetNode, task: Task) -> bool:
+def _set_depends_on(node: SetNode, source: SetNode, problem: Problem) -> bool:
     if node is source:
         return True
     if isinstance(node, Product):
-        if any(_set_depends_on(factor, source, task) for factor in node.factors):
+        if any(_set_depends_on(factor, source, problem) for factor in node.factors):
             return True
-    elif hasattr(node, "of") and _set_depends_on(node.of, source, task):  # type: ignore
-        return True
+    elif hasattr(node, "of"):
+        if _set_depends_on(node.of, source, problem):  # type: ignore
+            return True
     return any(
         node in partition.parts and source in partition.parts
-        for partition in task.problem.partitions
+        for partition in problem.partitions
     )
 
 
@@ -42,7 +46,7 @@ def _evaluation_sets(constraint: Constraint) -> tuple[SetNode, ...]:
 
 
 def _constraint_seeds(
-    task: Task,
+    problem: Problem,
     constraint: Constraint,
     unknowns: frozenset[FunctionSymbol],
     varying_functions: dict[FunctionSymbol, Variable],
@@ -55,7 +59,7 @@ def _constraint_seeds(
         seeds.setdefault(varying_functions[symbol], set()).update(involved)
     for evaluated_on in _evaluation_sets(constraint):
         for varying_set, axis in varying_sets.items():
-            if _set_depends_on(evaluated_on, varying_set, task):
+            if _set_depends_on(evaluated_on, varying_set, problem):
                 seeds.setdefault(axis, set()).update(involved)
     return involved, seeds
 
@@ -75,25 +79,25 @@ def _connected(
 
 
 def _influence(
-    task: Task,
+    problem: Problem,
     unknowns: frozenset[FunctionSymbol],
+    batch_axes: BatchAxes,
 ) -> tuple[
     dict[FunctionSymbol, set[FunctionSymbol]], dict[Variable, set[FunctionSymbol]]
 ]:
     varying_functions = {
         symbol: axis
-        for symbol, axis in task.batch_axes.items()
+        for symbol, axis in batch_axes.items()
         if isinstance(symbol, FunctionSymbol)
     }
     varying_sets = {
-        node: axis for node, axis in task.batch_axes.items() if isinstance(node, SetNode)
+        node: axis for node, axis in batch_axes.items() if isinstance(node, SetNode)
     }
     adjacency = {symbol: set() for symbol in unknowns}
     seeds: dict[Variable, set[FunctionSymbol]] = {}
-    problem = normalize(task.problem).problem
     for constraint in problem.constraints:
         involved, constraint_axes = _constraint_seeds(
-            task, constraint, unknowns, varying_functions, varying_sets
+            problem, constraint, unknowns, varying_functions, varying_sets
         )
         for symbol in involved:
             adjacency[symbol].update(involved - {symbol})
@@ -102,8 +106,13 @@ def _influence(
     return adjacency, seeds
 
 
-def inherited_batch_axes(task: Task) -> dict[FunctionSymbol, tuple[Variable, ...]]:
+def build_inherited_batch_axes(
+    problem: Problem, unknowns: Sequence[FunctionSymbol], batch_axes: BatchAxes
+) -> dict[FunctionSymbol, tuple[Variable, ...]]:
     """Axes inherited by unknowns coupled to varying functions or sets.
+
+    `problem` is the normalized problem and `batch_axes` the parameter axis of each
+    varying function or set (`Task.batch_axes`).
 
     Unknowns share a batch axis if they occur in the same constraint. Varying
     functions seed the constraints in which they occur. A varying set seeds
@@ -113,11 +122,10 @@ def inherited_batch_axes(task: Task) -> dict[FunctionSymbol, tuple[Variable, ...
     Returns only inherited axes; a varying function keeps its own axis in
     ``task.batch_axes``. Axes are ordered by name for reproducible reports.
     """
-    unknowns = task.unknowns
     if not unknowns:
         return {}
     unknown_set = frozenset(unknowns)
-    adjacency, seeds = _influence(task, unknown_set)
+    adjacency, seeds = _influence(problem, unknown_set, batch_axes)
     inherited: dict[FunctionSymbol, set[Variable]] = {
         symbol: set() for symbol in unknowns
     }

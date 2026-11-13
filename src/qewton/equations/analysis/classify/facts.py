@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -24,3 +26,12 @@ class Fact:
     def __str__(self) -> str:
         value = getattr(self.value, "value", self.value)
         return f"{self.subject}: {value}  ({self.why})"
+
+
+def by_constraint(facts: Iterable[Fact]) -> dict[int, Any]:
+    """The value of each fact by the index of the constraint it is about.
+
+    For facts about one constraint each, such as the PDE type of an equation or the
+    kind of a condition.
+    """
+    return {fact.constraints[0]: fact.value for fact in facts}

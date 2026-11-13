@@ -15,20 +15,10 @@ from functools import reduce
 
 from qewton.config.variables import Variable
 from qewton.equations.analysis.checks.diagnostics import Diagnostic, error, warning
-from qewton.equations.analysis.classify.conditions import ConditionKind, condition_kinds
-from qewton.equations.analysis.classify.rows import (
-    Region,
-    Row,
-    rows,
-    spatial_domain,
-)
-from qewton.equations.analysis.classify.spaces import (
-    FunctionSpace,
-    function_spaces,
-    _ALLOWED,
-)
-from qewton.equations.analysis.prepare.infer import infer_shapes
-from qewton.equations.analysis.prepare.normalize import normalize
+from qewton.equations.analysis.classify.conditions import ConditionKind
+from qewton.equations.analysis.classify.rows import Region, Row, spatial_domain
+from qewton.equations.analysis.classify.spaces import FunctionSpace, highest_order
+from qewton.equations.analysis.context import AnalysisContext
 from qewton.equations.analysis.structure.structure import derivative_orders
 from qewton.equations.compile.boundary import BoundaryContext, Condition, boundary_terms
 from qewton.equations.compile.by_parts import Cutter, Pieces
@@ -148,7 +138,7 @@ def _equation(
 
 def _final_spaces(
     residuals: tuple[Residual, ...],
-    first: dict[str, FunctionSpace],
+    first: dict[FunctionSymbol, FunctionSpace],
     setup: _Setup,
 ) -> dict[FunctionSymbol, FunctionSpace]:
     """The space of each unknown that the derivatives left in the form call for."""
@@ -162,7 +152,7 @@ def _final_spaces(
                     orders[symbol] = max(orders.get(symbol, 0), spatial)
     spaces = {}
     for symbol, order in orders.items():
-        guess = first.get(str(symbol.variable.name), FunctionSpace.H1)
+        guess = first.get(symbol, FunctionSpace.H1)
         if order >= 2:
             spaces[symbol] = FunctionSpace.H2
         elif order == 1:
@@ -195,25 +185,19 @@ def _others(
     return essential, kept, notes
 
 
-def _setup(task: Task, table: tuple[Row, ...]) -> tuple[_Setup, dict, dict]:
-    """The setup, the first-guess spaces by name, and the number of components."""
-    problem = normalize(task.problem).problem
+def _setup(ctx: AnalysisContext) -> _Setup:
+    """The test functions, the cutter and the boundary conditions of the task."""
+    problem = ctx.problem
     time = problem.time
-    unknowns = task.unknowns
-    shapes = dict(infer_shapes(problem).shapes)
+    unknowns = ctx.task.unknowns
+    shapes = dict(ctx.inference.shapes)
     tests = {u: _test_function(u, shapes[u], time) for u in unknowns}
     shapes.update({tests[u]: shapes[u] for u in unknowns})
-    kinds = {
-        f.constraints[0]: f.value
-        for f in condition_kinds(table, problem, frozenset(unknowns))
-    }
-    first = {f.subject: f.value for f in function_spaces(table, time)}
-    allowed = {
-        u: _ALLOWED[first.get(u.variable.name, FunctionSpace.H1)] for u in unknowns
-    }
+    first = ctx.classification.space_of
+    allowed = {u: highest_order(first.get(u, FunctionSpace.H1)) for u in unknowns}
     cutter = Cutter(allowed, shapes, time)
-    setup = _Setup(problem, unknowns, tests, cutter, _conditions(table, kinds, time))
-    return setup, first, kinds
+    kinds = ctx.classification.condition_kind_of
+    return _Setup(problem, unknowns, tests, cutter, _conditions(ctx.rows, kinds, time))
 
 
 def _residuals(
@@ -245,15 +229,15 @@ def _residuals(
 
 def weak_form(task: Task) -> WeakProblem:
     """The weak form of the normalized problem of `task`, in space (method of lines)."""
-    table = rows(task)
-    setup, first, kinds = _setup(task, table)
-    residuals, notes = _residuals(table, setup)
-    essential, kept, skipped = _others(table, kinds)
+    ctx = AnalysisContext(task)
+    setup = _setup(ctx)
+    residuals, notes = _residuals(ctx.rows, setup)
+    essential, kept, skipped = _others(ctx.rows, ctx.classification.condition_kind_of)
     done = tuple(residuals)
     return WeakProblem(
         setup.unknowns,
         setup.tests,
-        _final_spaces(done, first, setup),
+        _final_spaces(done, ctx.classification.space_of, setup),
         done,
         tuple(essential),
         setup.problem.periodic,

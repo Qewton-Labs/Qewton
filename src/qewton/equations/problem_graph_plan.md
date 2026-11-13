@@ -69,7 +69,8 @@ qewton/equations/
     │   │   ├── batch_axes.py    # inherited batch axes
     │   │   ├── batching.py      # one entry per parameter axis: mode, placement, reach
     │   │   └── coupling.py      # coupling graph, matching, blocks
-    │   ├── pipeline.py          # run_pipeline(task)
+    │   ├── context.py           # AnalysisContext: wires the passes, each result computed once
+    │   ├── pipeline.py          # run_pipeline(task), report(ctx)
     │   ├── overview.py
     │   ├── classify/            # what kind of problem it is (M4)
     │   │   ├── rows.py          # constraints with region, orders, component counts
@@ -78,7 +79,7 @@ qewton/equations/
     │   │   ├── spaces.py        # first-guess function spaces
     │   │   ├── facts.py         # Fact(rule, subject, value, why, constraints)
     │   │   └── classify.py      # classify(task) -> Classification
-    │   └── suggest.py           # method suggestions with rationale (M6)
+    │   └── suggest/             # method suggestions with rationale (M6): base.py (Rule, Suggestion, suggest), rules.py (built-in rules)
     ├── compile/
     │   ├── forms.py             # Measure, FormTerm, Residual, WeakProblem (M8)
     │   ├── by_parts.py          # integration-by-parts rules per operator (M8)
@@ -347,20 +348,18 @@ ctx = run_pipeline(task)   # validate → axis pre-pass → normalize → infer 
 print(report(ctx))
 ```
 
-Each pass has the form `run(task, ctx) -> None`. It reads the tables of earlier passes, writes its own, and appends diagnostics. No pass mutates nodes; normalisation builds a new `Problem` and stores it in `ctx.problem`.
+As built (`analysis/context.py`): each pass is a plain function of its inputs, named `build_<result>`, e.g. `build_rows(problem, unknowns, shapes)`. Passes never call each other and never re-derive anything from the task. `AnalysisContext(task)` is the one place that wires them: one `cached_property` per result, which passes the results of earlier properties on, so each result is computed once and only when asked for. No pass mutates nodes; normalisation builds a new `Problem`, available as `ctx.problem`. Task-level shortcuts such as `classify(task)` are `AnalysisContext(task).classification`.
 
 ```python
-@dataclass
+@dataclass(frozen=True, eq=False)
 class AnalysisContext:
     task: Task
-    problem: Problem                                  # the normalised version
-    signatures: dict[FunctionSymbol, Signature]
-    shapes: dict[Expr, Shape]
-    orders: dict[tuple[Constraint, FunctionSymbol], dict[Variable, int]]
-    coupling: "BipartiteGraph"
-    facts: list["Fact"]             # e.g. Fact("pde_type", c1, "elliptic", evidence=[...])
-    suggestions: list["Suggestion"]
-    diagnostics: list["Diagnostic"] # severity: error | warning | info
+    # cached properties, in dependency order:
+    normalized, problem, origin          # normalize(task.problem)
+    inference                            # shapes of the normalized problem
+    inherited_batch_axes, signatures, diagnostics, ok
+    coupling, splits, nonlinear, decoupled_axes, batch_placement, batching, training_modes
+    rows, classification, suggestions
 ```
 
 ### 6.0 axis pre-pass
@@ -383,7 +382,7 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 
 ### 6.3 infer: signatures and shapes
 
-- **Pipeline.** `run_pipeline(task)` (`analysis/pipeline.py`) runs validate, normalize and signatures, merges all findings (errors first) into an `AnalysisContext(task, problem, origin, signatures, diagnostics)`, and `report(ctx)` prints Task, Signatures, Normalized and Diagnostics. `ctx.ok` is false when any finding is an error.
+- **Pipeline.** `run_pipeline(task)` (`analysis/pipeline.py`) builds the `AnalysisContext` and runs the checking passes (validate, normalize, signatures) right away; `ctx.diagnostics` merges their findings, errors first. `report(ctx)` prints Task, Signatures, Normalized, Batching, Classification, Suggestions and Diagnostics, reading each from the context. `ctx.ok` is false when any finding is an error.
 
 - **Inputs are declared, not inferred.** Usage cannot tell a constant from a function that is not differentiated along x, so no inputs are inferred from where a symbol is used. An unknown with `inputs=None` is an error.
 - **Lower bound check.** If a derivative along axis a is applied directly to s (or to `Restrict(s, …)`), then a must be among s's declared inputs, or the problem is an error. Nested cases such as grad(u·v) give no requirement.
@@ -433,7 +432,7 @@ Built (M4): `classify(task)` returns a `Classification` of `Fact`s, each with it
 
 ### 6.6 suggest
 
-Built (M6): `analysis/suggest.py` holds a registry `RULES` of functions `Findings -> Suggestion`, added with `@rule`. `Findings` bundles the task, its classification, its batching and the coupling facts. Each `Suggestion(rule, method, why, evidence)` carries the facts it came from, and `report()` prints them in a Suggestions section. Rules: one per block type (elliptic, parabolic, transport, wave, saddle point, ODE), algebraic, nonlinear operator (Newton), inequality (active set), time decoupled (sequence of stationary solves) and one per batch mode. Learning (added after M6): `problem.task(..., observed={u: Observed(on=, samples=, noisy=)})` records samples of an unknown without changing its role. `analysis/training.py` derives a `TrainingMode` per unknown (physics informed: no samples; data driven: samples cover its full-dimensional sets; hybrid: partial), and the `learning` rule turns it into PINN, supervised operator learning or hybrid suggestions, but only when the task has samples or batch axes. Not built: the row "task asks to generalise to unseen parameters", because the task has no such flag. The suggestions are heuristics and do not look at signs or coefficients.
+Built (M6): `analysis/suggest/`. A rule is a subclass of `Rule` (`base.py`) that sets `method` and `category` and implements `check(ctx)`, which reads the `AnalysisContext` and yields suggestions; defining the class registers it in `Rule.registry` under its class name, and `register=False` opts out. Families of rules that differ only in data fill in a small base class (`rules.py`): `BlockTypeRule` (one per block type: elliptic, parabolic, transport, wave, saddle point, ODE, algebraic), `BatchModeRule` (one per batch mode) and `TrainingRule` (one per training mode). The other rules are `Newton` (nonlinear operator), `ActiveSet` (inequality) and `StationarySolves` (time decoupled). Each `Suggestion(rule, method, why, evidence, category)` carries the facts it came from, and `report()` prints them in a Suggestions section. `suggest(task, rules=...)` runs only the given rules. Learning (added after M6): `problem.task(..., observed={u: Observed(on=, samples=, noisy=)})` records samples of an unknown without changing its role. `analysis/training.py` derives a `TrainingMode` per unknown (physics informed: no samples; data driven: samples cover its full-dimensional sets; hybrid: partial), and the `TrainingRule` subclasses turn it into PINN, supervised operator learning or hybrid suggestions, but only when the task has samples or batch axes. Not built: the row "task asks to generalise to unseen parameters", because the task has no such flag. The suggestions are heuristics and do not look at signs or coefficients.
 
 A rule table: conditions on facts produce a `Suggestion(method, evidence)`.
 

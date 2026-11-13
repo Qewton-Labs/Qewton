@@ -16,7 +16,7 @@ from qewton.equations import (
 from qewton.equations.analysis.checks.axes import free_axes
 from qewton.equations.analysis.checks.shapes import UnknownShapeError, shape_of
 from qewton.equations.analysis.prepare.infer import infer_shapes
-from qewton.equations.analysis.prepare.signatures import signatures
+from qewton.equations.analysis.context import signatures
 from qewton.equations.analysis.structure.structure import linearity
 from qewton.equations.expr.ops import ShapeError
 from qewton.equations.printing.pretty import pretty

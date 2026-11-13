@@ -7,6 +7,7 @@ user, e.g. a time lifting.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -28,6 +29,12 @@ class Diagnostic:
     def __str__(self) -> str:
         text = f"{self.severity.value}: {self.message}"
         return text if self.where is None else f"{text}  [{self.where}]"
+
+
+def by_severity(diagnostics: Iterable[Diagnostic]) -> tuple[Diagnostic, ...]:
+    """The diagnostics sorted errors first, then warnings, then infos; stable."""
+    order = list(Severity)
+    return tuple(sorted(diagnostics, key=lambda d: order.index(d.severity)))
 
 
 def errors(diagnostics: tuple[Diagnostic, ...]) -> tuple[Diagnostic, ...]:

@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from qewton.equations import (
+    Category,
     Domain,
     Eq,
     FunctionSymbol,
@@ -82,21 +83,21 @@ def test_observed_validates_its_arguments():
 def test_a_plain_forward_task_gets_no_learning_suggestion():
     problem, u, *_ = heat_problem()
     task = problem.task(unknown=[u])
-    assert not [s for s in suggest(task) if s.rule.startswith("learning")]
+    assert not [s for s in suggest(task) if s.category is Category.LEARNING]
 
 
 def test_operator_learning_suggestions_follow_the_data():
     problem, u, nu, bulk, _ = heat_problem()
     varying = {nu: np.ones((4,))}
     pinn = problem.task(unknown=[u], varying=varying)
-    (found,) = [s for s in suggest(pinn) if s.rule.startswith("learning")]
-    assert found.rule == "learning_physics_informed"
+    (found,) = [s for s in suggest(pinn) if s.category is Category.LEARNING]
+    assert found.rule == "PhysicsInformed"
     assert "varying inputs" in found.method
 
     data = Observed(on=bulk, samples=100, noisy=True)
     supervised = problem.task(unknown=[u], varying=varying, observed={u: data})
-    (found,) = [s for s in suggest(supervised) if s.rule.startswith("learning")]
-    assert found.rule == "learning_data_driven"
+    (found,) = [s for s in suggest(supervised) if s.category is Category.LEARNING]
+    assert found.rule == "SupervisedSurrogate"
     assert "operator learning" in found.method
     assert "noisy" in found.why
     assert found.evidence[0].rule == "training_mode"
@@ -105,7 +106,7 @@ def test_operator_learning_suggestions_follow_the_data():
 def test_observed_unknown_without_batch_gets_a_surrogate_and_shows_in_the_report():
     problem, u, _, bulk, _ = heat_problem()
     task = problem.task(unknown=[u], observed={u: Observed(on=bulk, samples=50)})
-    (found,) = [s for s in suggest(task) if s.rule.startswith("learning")]
+    (found,) = [s for s in suggest(task) if s.category is Category.LEARNING]
     assert "regression" in found.method
     assert "observed u" in report(run_pipeline(task))
 

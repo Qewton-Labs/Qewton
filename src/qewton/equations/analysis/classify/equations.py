@@ -13,6 +13,7 @@ Anything else is UNCLASSIFIED. Without a time variable every axis counts as spac
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import Enum
 
 from qewton.config.variables import Variable
@@ -65,7 +66,7 @@ def pde_type(t: int, s: int) -> PdeType:
 
 
 def equation_types(rows: tuple[Row, ...], time: Variable | None) -> tuple[Fact, ...]:
-    """One fact per bulk constraint, plus a note for each inequality."""
+    """One fact per bulk constraint: its PDE type."""
     facts = []
     for row in rows:
         if row.region is not Region.BULK:
@@ -75,8 +76,15 @@ def equation_types(rows: tuple[Row, ...], time: Variable | None) -> tuple[Fact, 
         s = max((row.space_order(s, time) for s in symbols), default=0)
         why = f"highest time order {t}, highest space order {s}"
         facts.append(Fact("pde_type", row.constraint, pde_type(t, s), why, (row.index,)))
+    return tuple(facts)
+
+
+def relations(rows: tuple[Row, ...]) -> tuple[Fact, ...]:
+    """One fact per bulk constraint that is an inequality or a complementarity."""
+    facts = []
+    for row in rows:
         relation = row.constraint.rel
-        if relation is not Relation.EQ:
+        if row.region is Region.BULK and relation is not Relation.EQ:
             note = f"the relation is '{relation.value}': a variational inequality"
             facts.append(Fact("relation", row.constraint, relation, note, (row.index,)))
     return tuple(facts)
@@ -109,11 +117,13 @@ def _saddle_multiplier(
 
 
 def block_types(
-    rows: tuple[Row, ...], graph: CouplingGraph, facts: tuple[Fact, ...]
+    rows: tuple[Row, ...], graph: CouplingGraph, kinds: Mapping[int, PdeType]
 ) -> tuple[Fact, ...]:
-    """One fact per coupled block: SADDLE_POINT, else the dominant equation type."""
+    """One fact per coupled block: SADDLE_POINT, else the dominant equation type.
+
+    `kinds` maps the index of each bulk equation to its type.
+    """
     by_index = {row.index: row for row in rows}
-    kinds = {f.constraints[0]: f.value for f in facts if f.rule == "pde_type"}
     result = []
     for block in graph.blocks:
         indices = tuple(sorted({e.constraint for e in block.equations}))

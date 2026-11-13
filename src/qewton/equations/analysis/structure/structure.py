@@ -6,19 +6,18 @@ Block 2: the operator/source split and linearity. Each constraint is cut into si
 terms at its top-level sums. A term that contains an unknown belongs to the operator
 part, the others to the source part. Every term is labelled by how it depends on the
 unknowns. Batch placement and decoupled coordinate axes are included here; the scalar
-coupling graph is in `analysis/coupling.py`.
+coupling graph is in `structure/coupling.py`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from functools import singledispatch
 from typing import Literal
 
 from qewton.config.variables import Variable
 from qewton.equations.analysis.checks.axes import free_axes
-from qewton.equations.analysis.prepare.normalize import normalize
 from qewton.equations.expr.nodes import (
     Apply,
     Const,
@@ -33,7 +32,8 @@ from qewton.equations.expr.nodes import (
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.expr.ops import Linearity
 from qewton.equations.model.constraints import Constraint
-from qewton.equations.model.task import Role, Task
+from qewton.equations.model.problem import Problem
+from qewton.equations.model.task import Task
 
 Orders = dict[Variable, int]
 
@@ -89,17 +89,19 @@ def unknown_orders(task: Task) -> tuple[dict[FunctionSymbol, Orders], ...]:
     )
 
 
-def decoupled_axes(task: Task) -> tuple[Variable, ...]:
+def build_decoupled_axes(
+    problem: Problem, unknowns: Iterable[FunctionSymbol]
+) -> tuple[Variable, ...]:
     """Axes along which unknowns have no differential or nonlocal coupling.
 
-    These are candidate independent directions: the equations can be solved pointwise
-    along such coordinates. An integral over an axis or a shift along it couples
-    different points even without a derivative, so those axes are excluded.
+    These are candidate independent directions: the equations of the (normalized)
+    `problem` can be solved pointwise along such coordinates. An integral over an
+    axis or a shift along it couples different points even without a derivative, so
+    those axes are excluded.
     """
-    unknowns = frozenset(task.unknowns)
+    unknowns = frozenset(unknowns)
     if not unknowns:
         return ()
-    problem = normalize(task.problem).problem
     axes = {
         root_of(axis)
         for symbol in unknowns
@@ -255,14 +257,6 @@ def split_constraint(
     return Split(tuple(operator), tuple(source))
 
 
-def split(task: Task) -> tuple[Split, ...]:
-    """The operator/source split of every constraint of the normalized problem."""
-    unknowns = frozenset(task.unknowns)
-    return tuple(
-        split_constraint(c, unknowns) for c in normalize(task.problem).problem.constraints
-    )
-
-
 @dataclass(frozen=True)
 class BatchPlacement:
     """Where one varying function enters one normalized constraint."""
@@ -301,31 +295,24 @@ def _affine_in(expr: Expr, symbol: FunctionSymbol) -> bool:
     ) is not Linearity.NONLINEAR and not _differentiates(expr, symbol)
 
 
-def batch_placement(task: Task) -> tuple[BatchPlacement, ...]:
-    """Locate varying functions in the operator/source terms of each constraint.
+def build_batch_placement(
+    splits: Sequence[Split], varying: Sequence[FunctionSymbol]
+) -> tuple[BatchPlacement, ...]:
+    """Locate the `varying` functions in the operator/source split of each constraint.
 
-    One result is returned per (constraint, varying function, part). A symbol can
-    occur in both parts or in several terms of one part. In that case `affine` is true
-    only if all its terms in that part separate from the rest of the expression.
+    `splits` holds one split per normalized constraint. One result is returned per
+    (constraint, varying function, part). A symbol can occur in both parts or in
+    several terms of one part. In that case `affine` is true only if all its terms in
+    that part separate from the rest of the expression.
 
     Varying sets are not listed: they change the constraint's geometry rather than
     appearing as expression symbols. A varying function differentiated along one of
     its declared input axes is not separable. Thus `div(nu * grad(u, x), x)` is affine
     in `nu` when `nu` is spatially constant, but not when `nu` depends on `x`.
     """
-    symbols = tuple(
-        sorted(
-            (
-                symbol
-                for symbol, role in task.roles.items()
-                if isinstance(symbol, FunctionSymbol) and role is Role.VARYING
-            ),
-            key=lambda symbol: str(symbol.variable.name),
-        )
-    )
     results = []
-    for index, constraint_split in enumerate(split(task)):
-        for symbol in symbols:
+    for index, constraint_split in enumerate(splits):
+        for symbol in varying:
             for name, terms in (
                 ("operator", constraint_split.operator),
                 ("source", constraint_split.source),

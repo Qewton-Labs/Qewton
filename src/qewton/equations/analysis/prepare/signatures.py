@@ -17,14 +17,13 @@ about the coupling of the equations, which comes with the structure analysis.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 
+
 from qewton.config.variables import Variable
-from qewton.equations.analysis.structure.batch_axes import inherited_batch_axes
 from qewton.equations.analysis.checks.diagnostics import Diagnostic, warning
-from qewton.equations.analysis.prepare.infer import infer_shapes
-from qewton.equations.analysis.prepare.normalize import normalize
+from qewton.equations.analysis.prepare.infer import Inference
 from qewton.equations.expr.nodes import (
     Expr,
     FunctionSymbol,
@@ -142,15 +141,19 @@ def evaluation_sets(problem: Problem) -> dict[FunctionSymbol, set[SetNode]]:
     return evaluated
 
 
-def signatures(task: Task) -> Signatures:
+def build_signatures(
+    task: Task,
+    problem: Problem,
+    inference: Inference,
+    inherited: Mapping[FunctionSymbol, tuple[Variable, ...]],
+) -> Signatures:
     """The signature of every function of the task's problem.
 
-    Runs on the normalized problem, so time lifting is already applied: a condition
-    on a boundary for a time-dependent function counts as evaluated on boundary × I.
+    `problem` is the normalized problem, so time lifting is already applied: a
+    condition on a boundary for a time-dependent function counts as evaluated on
+    boundary × I. `inference` holds its shapes and `inherited` the batch axes that
+    unknowns inherit (see `build_inherited_batch_axes`).
     """
-    problem = normalize(task.problem).problem
-    inference = infer_shapes(problem)
-    inherited = inherited_batch_axes(task)
 
     evaluated = evaluation_sets(problem)
     seen_with = {

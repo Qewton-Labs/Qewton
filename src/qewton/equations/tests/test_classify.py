@@ -1,7 +1,7 @@
 import pytest
 
 from qewton.equations import fixtures
-from qewton.equations.analysis.classify.classify import classify
+from qewton.equations.analysis.context import classify
 from qewton.equations.analysis.classify.conditions import ConditionKind
 from qewton.equations.analysis.classify.equations import PdeType, pde_type
 from qewton.equations.analysis.classify.spaces import FunctionSpace
@@ -30,7 +30,7 @@ def kinds(facts):
 
 
 def spaces(result):
-    return {f.subject: f.value for f in result.spaces}
+    return {str(s.variable.name): v for s, v in result.space_of.items()}
 
 
 @pytest.mark.parametrize(
@@ -65,7 +65,8 @@ def test_stokes_equations_and_multiplier():
 
 def test_obstacle_has_a_relation_fact():
     result = run("obstacle")
-    assert [f.rule for f in result.equations] == ["pde_type", "relation"]
+    assert [f.rule for f in result.equations] == ["pde_type"]
+    assert [f.rule for f in result.relations] == ["relation"]
 
 
 def test_condition_kinds():

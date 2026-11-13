@@ -20,13 +20,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from qewton.equations.analysis.context import AnalysisContext
+from qewton.equations.analysis.prepare.signatures import evaluation_sets
 from qewton.equations.analysis.structure.batch_axes import (
     _evaluation_sets,
     _function_symbols,
 )
-from qewton.equations.analysis.structure.coupling import coupling_graph
-from qewton.equations.analysis.prepare.normalize import normalize
-from qewton.equations.analysis.prepare.signatures import evaluation_sets
 from qewton.equations.geometry.sets import Product, Slice
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.model.task import Role, Task
@@ -81,9 +80,10 @@ def _set_coordinates(domain) -> list[str]:
     return list(dict.fromkeys([str(f) for f in found]))
 
 
-def _evaluated_on(task: Task, graph, data: list[str]):
+def _evaluated_on(ctx: AnalysisContext, data: list[str]):
     """(unknown component or data node, set) for every set a function is evaluated on."""
-    evaluated = evaluation_sets(normalize(task.problem).problem)
+    graph = ctx.coupling
+    evaluated = evaluation_sets(ctx.problem)
     for symbol, sets in evaluated.items():
         nodes: list[Node] = [
             ("unknowns", str(u)) for u in graph.unknowns if u.symbol == symbol
@@ -97,11 +97,11 @@ def _evaluated_on(task: Task, graph, data: list[str]):
 
 def coupling_diagram(task: Task) -> CouplingDiagram:
     """The nodes and edges of the extended coupling graph of a task."""
-    graph = coupling_graph(task)
+    ctx = AnalysisContext(task)
     columns: dict[str, list[str]] = {name: [] for name in COLUMNS}
     edges: list[Edge] = []
     roles: dict[Node, str] = {}
-    columns["unknowns"] = [str(unknown) for unknown in graph.unknowns]
+    columns["unknowns"] = [str(unknown) for unknown in ctx.coupling.unknowns]
 
     domains: dict[str, object] = {}
 
@@ -113,23 +113,23 @@ def coupling_diagram(task: Task) -> CouplingDiagram:
         if edge not in edges:
             edges.append(edge)
 
-    for index, constraint in enumerate(normalize(task.problem).problem.constraints):
+    for index, constraint in enumerate(ctx.problem.constraints):
         columns["equations"].append(f"c{index + 1}")
         for node in _data_nodes(task, constraint, roles):
             add("occurs", ("equations", f"c{index + 1}"), node)
         for domain in dict.fromkeys(_evaluation_sets(constraint)):
             domains[str(domain)] = domain
             add("posed", ("sets", str(domain)), ("equations", f"c{index + 1}"))
-    for equation, unknown in graph.edges:
+    for equation, unknown in ctx.coupling.edges:
         add(
             "contains",
             ("equations", f"c{equation.constraint + 1}"),
             ("unknowns", str(unknown)),
-            (equation, unknown) in graph.matching,
+            (equation, unknown) in ctx.coupling.matching,
         )
-    for unknown in graph.unknowns:
+    for unknown in ctx.coupling.unknowns:
         roles[("unknowns", str(unknown))] = "unknown"
-    for node, domain in _evaluated_on(task, graph, columns["data"]):
+    for node, domain in _evaluated_on(ctx, columns["data"]):
         domains[str(domain)] = domain
         add("on", node, ("sets", str(domain)))
     for label in columns["sets"]:

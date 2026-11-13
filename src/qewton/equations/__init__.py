@@ -17,35 +17,43 @@ from qewton.equations.model.constraints import (
     Relation,
 )
 from qewton.equations.analysis.prepare.normalize import Normalized, normalize
-from qewton.equations.analysis.classify.classify import Classification, classify
+from qewton.equations.analysis.classify.classify import Classification
 from qewton.equations.analysis.classify.conditions import ConditionKind
 from qewton.equations.analysis.classify.equations import PdeType
 from qewton.equations.analysis.classify.facts import Fact
 from qewton.equations.analysis.classify.spaces import FunctionSpace
 from qewton.equations.analysis.overview import Overview, overview
-from qewton.equations.analysis.suggest import Suggestion, suggest
-from qewton.equations.analysis.pipeline import AnalysisContext, report, run_pipeline
-from qewton.equations.analysis.prepare.signatures import Signature, Signatures, signatures
+from qewton.equations.analysis.suggest import Category, Rule, Suggestion, suggest
+from qewton.equations.analysis.context import (
+    AnalysisContext,
+    batch_placement,
+    batching,
+    classify,
+    coupling_graph,
+    decoupled_axes,
+    inherited_batch_axes,
+    signatures,
+    split,
+    training_modes,
+)
+from qewton.equations.analysis.pipeline import report, run_pipeline
+from qewton.equations.analysis.prepare.signatures import Signature, Signatures
 from qewton.equations.analysis.structure.batching import (
     BatchEntry,
     BatchMode,
     Batching,
-    batching,
 )
 from qewton.equations.analysis.structure.structure import (
     BatchPlacement,
     Split,
     Term,
-    batch_placement,
     constraint_orders,
-    decoupled_axes,
     derivative_orders,
     linearity,
-    split,
     unknown_orders,
 )
 from qewton.equations.analysis.prepare.validate import validate
-from qewton.equations.analysis.training import TrainingMode, training_modes
+from qewton.equations.analysis.training import TrainingMode
 from qewton.equations.compile.forms import FormTerm, Measure, Residual, WeakProblem
 from qewton.equations.compile.weak_form import weak_form
 from qewton.equations.model.observation import Observed
@@ -111,9 +119,7 @@ from qewton.equations.analysis.structure.coupling import (
     CouplingGraph,
     EquationNode,
     UnknownNode,
-    coupling_graph,
 )
-from qewton.equations.analysis.structure.batch_axes import inherited_batch_axes
 from qewton.equations.printing.coupling_diagram import (
     CouplingDiagram,
     coupling_diagram,
@@ -190,6 +196,8 @@ __all__ = [
     "BatchEntry",
     "BatchMode",
     "Batching",
+    "Category",
+    "Rule",
     "Suggestion",
     "suggest",
     "batch_placement",

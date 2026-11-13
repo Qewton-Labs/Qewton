@@ -21,6 +21,7 @@ from collections.abc import Iterator
 from qewton.equations.analysis.checks.axes import free_axes, set_free_axes, sliced_axes
 from qewton.equations.analysis.checks.diagnostics import (
     Diagnostic,
+    by_severity,
     error,
     warning,
 )
@@ -55,7 +56,7 @@ def validate(problem: Problem) -> tuple[Diagnostic, ...]:
         *_restrictions(problem),
         *_shapes(problem),
     ]
-    return tuple(sorted(found, key=lambda d: d.severity.value != "error"))
+    return by_severity(found)
 
 
 def _nodes(problem: Problem) -> Iterator[tuple[Constraint, Expr]]:

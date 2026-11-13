@@ -43,7 +43,7 @@ _RANK = {
 }
 
 # The highest spatial derivative order of a function in each space.
-_ALLOWED = {
+_HIGHEST_ORDER = {
     FunctionSpace.L2: 0,
     FunctionSpace.H_DIV: 1,
     FunctionSpace.H_CURL: 1,
@@ -52,6 +52,11 @@ _ALLOWED = {
 }
 
 _BY_OPERATOR = {"div": FunctionSpace.H_DIV, "curl": FunctionSpace.H_CURL}
+
+
+def highest_order(space: FunctionSpace) -> int:
+    """The highest spatial derivative order a function in `space` has: 1 for H1."""
+    return _HIGHEST_ORDER[space]
 
 
 def _operators(expr: Expr, symbol: FunctionSymbol, time: Variable | None) -> set[str]:
@@ -103,7 +108,7 @@ def function_spaces(rows: tuple[Row, ...], time: Variable | None) -> tuple[Fact,
     return tuple(
         Fact(
             "function_space",
-            symbol.variable.name,
+            symbol,
             space,
             "derivatives left after moving half the equation order to the test function",
             tuple(where[symbol]),

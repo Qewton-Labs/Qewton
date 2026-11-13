@@ -1,13 +1,19 @@
 import numpy as np
+import pytest
 
 from qewton.config.variables import Variable
 from qewton.equations import (
+    AnalysisContext,
     Boundary,
+    Category,
     Domain,
     Eq,
     FunctionSymbol,
+    PdeType,
     Problem,
     Restrict,
+    Rule,
+    Suggestion,
     div,
     fixtures,
     grad,
@@ -15,7 +21,13 @@ from qewton.equations import (
     run_pipeline,
     suggest,
 )
-from qewton.equations.analysis.suggest import RULES, Suggestion
+from qewton.equations.analysis.suggest.rules import (
+    ActiveSet,
+    BlockTypeRule,
+    LagrangeFem,
+    MethodOfLines,
+    SingleFactorization,
+)
 
 
 def task_of(name, *unknown):
@@ -32,6 +44,10 @@ def has(task, text):
     return any(text in m for m in methods(task))
 
 
+def by_rule(task, rule):
+    return [s for s in suggest(task) if s.rule == rule.__name__]
+
+
 def test_each_pde_type_gets_its_method():
     assert has(task_of("poisson", "u"), "Lagrange FEM")
     assert has(task_of("heat", "w"), "method of lines")
@@ -42,14 +58,14 @@ def test_each_pde_type_gets_its_method():
 
 
 def test_obstacle_gets_an_active_set_method_with_its_relation_as_evidence():
-    task = task_of("obstacle", "u")
-    (found,) = [s for s in suggest(task) if s.rule == "inequality"]
+    (found,) = by_rule(task_of("obstacle", "u"), ActiveSet)
     assert "semismooth" in found.method
     assert [f.rule for f in found.evidence] == ["relation"]
+    assert found.category is Category.SOLVER
 
 
 def test_suggestions_carry_the_facts_they_come_from():
-    (found,) = [s for s in suggest(task_of("heat", "w")) if s.rule == "parabolic"]
+    (found,) = by_rule(task_of("heat", "w"), MethodOfLines)
     assert found.evidence[0].rule == "block_type"
     assert "parabolic" in found.why
     assert str(found).startswith(found.method)
@@ -93,10 +109,11 @@ def test_batched_source_suggests_a_single_factorization():
         fixed=fixed,
         varying={by_name["f"]: np.ones(3)},
     )
-    found = [s for s in suggest(task) if s.rule == "batch_source_only"]
+    found = by_rule(task, SingleFactorization)
     assert len(found) == 1
     assert "right-hand sides" in found[0].method
     assert found[0].evidence[0].rule == "batch_mode"
+    assert found[0].category is Category.BATCH
 
 
 def test_batched_operator_suggests_reduced_basis_or_eim():
@@ -108,7 +125,7 @@ def test_batched_operator_suggests_reduced_basis_or_eim():
         unknown=[by_name["u"]], fixed=fixed, varying={by_name["nu"]: np.ones(3)}
     )
     rules = {s.rule for s in suggest(task)}
-    assert rules & {"batch_operator_affine", "batch_operator_nonlinear"}
+    assert rules & {"ReducedBasis", "EmpiricalInterpolation"}
 
 
 def test_report_lists_classification_and_suggestions():
@@ -126,4 +143,65 @@ def test_report_skips_the_analysis_when_the_task_is_invalid_or_has_no_unknown():
 
 def test_every_rule_yields_suggestions():
     assert all(isinstance(s, Suggestion) for s in suggest(task_of("stokes", "u", "p")))
-    assert len(RULES) >= 10
+    assert len(Rule.registry) >= 10
+
+
+def test_the_context_reuses_its_suggestions():
+    ctx = AnalysisContext(task_of("poisson", "u"))
+    assert ctx.suggestions is ctx.suggestions
+    assert suggest(ctx) == ctx.suggestions
+
+
+def test_base_classes_are_not_registered():
+    assert "BlockTypeRule" not in Rule.registry
+    assert Rule.registry["LagrangeFem"] is LagrangeFem
+
+
+def test_suggest_runs_only_the_rules_it_is_given():
+    found = suggest(task_of("heat", "w"), rules=[LagrangeFem, MethodOfLines])
+    assert [s.rule for s in found] == ["MethodOfLines"]
+
+
+def test_a_new_rule_is_one_subclass():
+    class Multigrid(BlockTypeRule, register=False):
+        kind = PdeType.ELLIPTIC
+        method = "geometric multigrid"
+
+    (found,) = suggest(task_of("poisson", "u"), rules=[Multigrid])
+    assert found == Suggestion(
+        "Multigrid",
+        "geometric multigrid",
+        "elliptic block",
+        found.evidence,
+        Category.DISCRETIZATION,
+    )
+    assert "Multigrid" not in Rule.registry
+
+
+def test_defining_a_rule_registers_it_and_a_redefinition_replaces_it():
+    try:
+
+        class AlwaysOn(Rule):
+            method = "first"
+
+            def check(self, ctx):
+                yield self.suggestion("always")
+
+        class AlwaysOn(Rule):  # noqa: F811  # pylint: disable=function-redefined
+            method = "second"
+
+            def check(self, ctx):
+                yield self.suggestion("always")
+
+        found = [s for s in suggest(task_of("poisson", "u")) if s.rule == "AlwaysOn"]
+        assert [s.method for s in found] == ["second"]
+    finally:
+        Rule.registry.pop("AlwaysOn", None)
+
+
+def test_a_rule_without_a_method_is_rejected():
+    with pytest.raises(TypeError, match="needs a `method`"):
+
+        class Nameless(Rule):  # pylint: disable=unused-variable
+            def check(self, ctx):
+                yield from ()

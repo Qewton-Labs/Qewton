@@ -94,6 +94,21 @@ def shape_with(expr: Expr, shapes: Mapping[FunctionSymbol, Shape]) -> Shape:
     return shape
 
 
+def constraint_shape(
+    constraint: Constraint, shapes: Mapping[FunctionSymbol, Shape]
+) -> Shape:
+    """The shape of both sides of `constraint`; a scalar constant side fits any shape."""
+    left = shape_with(constraint.lhs, shapes)
+    right = shape_with(constraint.rhs, shapes)
+    if left == right:
+        return left
+    if left == () and isinstance(constraint.lhs, Const):
+        return right
+    if right == () and isinstance(constraint.rhs, Const):
+        return left
+    raise ShapeError(f"Cannot determine scalar equation components for {constraint}.")
+
+
 def _symbols_in_order(problem: Problem) -> list[FunctionSymbol]:
     found: dict[FunctionSymbol, None] = {}
     for constraint in problem.constraints:

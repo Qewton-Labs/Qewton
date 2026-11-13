@@ -1,63 +1,25 @@
-"""The analysis pipeline: run every pass on a task and report what was found.
+"""The analysis pipeline: run the passes on a task and report what was found.
 
-    ctx = run_pipeline(task)      # validate, normalize, signatures
+    ctx = run_pipeline(task)      # the checks run now, everything else on demand
     print(report(ctx))
 
-Each pass reads the result of the earlier ones and adds diagnostics. No pass changes
-a node: normalization builds a new problem, kept in `ctx.problem`, and the problem
-you built stays in `ctx.task.problem`. Passes for structure, classification and
-suggestions will join later, and each adds a field to the context.
+`run_pipeline` builds the task's `AnalysisContext` and runs the checking passes
+(validate, normalize, signatures) right away, so `ctx.ok` and `ctx.diagnostics` are
+ready. Structure, classification and suggestions are computed when first read, and
+`report` reads them only if the checks found no error.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, Severity, errors
-from qewton.equations.analysis.prepare.normalize import normalize
-from qewton.equations.analysis.prepare.signatures import Signatures, signatures
-from qewton.equations.analysis.prepare.validate import validate
-from qewton.equations.analysis.structure.batching import batching
-from qewton.equations.analysis.suggest import RULES, findings
-from qewton.equations.model.problem import Problem
+from qewton.equations.analysis.context import AnalysisContext
 from qewton.equations.model.task import Task
-
-_ORDER = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
-
-
-@dataclass(frozen=True)
-class AnalysisContext:
-    """Everything the passes found out about one task.
-
-    `problem` is the normalized problem and `origin` the constraints it came from.
-    `diagnostics` holds the findings of the task and of every pass, errors first.
-    """
-
-    task: Task
-    problem: Problem
-    origin: tuple
-    signatures: Signatures
-    diagnostics: tuple[Diagnostic, ...]
-
-    @property
-    def ok(self) -> bool:
-        """Whether no pass found an error."""
-        return not errors(self.diagnostics)
 
 
 def run_pipeline(task: Task) -> AnalysisContext:
-    """Validate the task's problem, normalize it, and compute the signatures."""
-    checked = validate(task.problem)
-    normalized = normalize(task.problem)
-    table = signatures(task)
-    found = (
-        *task.diagnostics,
-        *checked,
-        *normalized.diagnostics,
-        *table.diagnostics,
-    )
-    ordered = tuple(sorted(found, key=lambda d: _ORDER[d.severity]))
-    return AnalysisContext(task, normalized.problem, normalized.origin, table, ordered)
+    """The analysis context of `task`, with the checking passes already run."""
+    ctx = AnalysisContext(task)
+    _ = ctx.diagnostics
+    return ctx
 
 
 def _section(title: str, lines: list[str]) -> list[str]:
@@ -72,16 +34,11 @@ def report(ctx: AnalysisContext) -> str:
     lines += _section("Task", task_lines or ["(no roles given)"])
     lines += _section("Signatures", str(ctx.signatures).splitlines())
     lines += _section("Normalized", str(ctx.problem).splitlines())
-    batch = batching(ctx.task)
-    if batch:
-        lines += _section("Batching", str(batch).splitlines())
+    if ctx.batching:
+        lines += _section("Batching", str(ctx.batching).splitlines())
     if ctx.ok and ctx.task.unknowns:
-        found = findings(ctx.task)
-        lines += _section("Classification", str(found.classification).splitlines())
-        suggestions = tuple(s for run in RULES for s in run(found))
-        lines += _section("Suggestions", [str(s) for s in suggestions] or ["none"])
-    if ctx.diagnostics:
-        lines += _section("Diagnostics", [str(d) for d in ctx.diagnostics])
-    else:
-        lines += _section("Diagnostics", ["none"])
+        lines += _section("Classification", str(ctx.classification).splitlines())
+        suggestions = [str(s) for s in ctx.suggestions]
+        lines += _section("Suggestions", suggestions or ["none"])
+    lines += _section("Diagnostics", [str(d) for d in ctx.diagnostics] or ["none"])
     return "\n".join(lines)
