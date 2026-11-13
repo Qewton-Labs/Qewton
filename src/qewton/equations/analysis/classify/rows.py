@@ -12,12 +12,11 @@ from qewton.equations.analysis.prepare.infer import constraint_shape
 from qewton.equations.analysis.structure.structure import Orders, constraint_orders
 from qewton.equations.expr.nodes import Expr, FunctionSymbol, Restrict
 from qewton.equations.geometry.sets import (
-    Boundary,
     Interface,
-    Part,
-    Product,
     SetNode,
     Slice,
+    factors,
+    lies_on_boundary,
 )
 from qewton.equations.expr.ops import Shape
 from qewton.equations.model.constraints import Constraint
@@ -32,50 +31,6 @@ class Region(Enum):
     INTERFACE = "interface"
     INITIAL = "initial"
     GLOBAL = "global"
-
-
-def factors(region: SetNode | None) -> tuple[SetNode, ...]:
-    """The sets a product is made of; any other set is its own only factor."""
-    if isinstance(region, Product):
-        return tuple(f for factor in region.factors for f in factors(factor))
-    return () if region is None else (region,)
-
-
-def lies_on_boundary(region: SetNode) -> bool:
-    """Whether `region` is a boundary, or a part of one; a part of a domain is not."""
-    if isinstance(region, Part):
-        return lies_on_boundary(region.of)
-    return isinstance(region, Boundary)
-
-
-def base_domain(region: SetNode | None) -> SetNode | None:
-    """The domain a subdomain (a `Part` of a domain) belongs to; other sets stay."""
-    while isinstance(region, Part):
-        region = region.of
-    return region
-
-
-def interface_of(region: SetNode | None) -> Interface | None:
-    """The interface a constraint set contains, e.g. Gamma for Gamma x I."""
-    return next((f for f in factors(region) if isinstance(f, Interface)), None)
-
-
-def boundary_of(region: SetNode | None) -> Boundary | None:
-    """The boundary a constraint set lies on, e.g. d(Omega) for Gamma x I."""
-    for factor in factors(region):
-        if isinstance(factor, Boundary):
-            return factor
-        if isinstance(factor, Part) and isinstance(factor.of, Boundary):
-            return factor.of
-    return None
-
-
-def spatial_domain(region: SetNode | None, time: Variable | None) -> SetNode | None:
-    """The factor of a bulk set that is not the time interval."""
-    for factor in factors(region):
-        if factor.axes != frozenset({time}):
-            return factor
-    return None
 
 
 def _only_restricted(expr: Expr, on: SetNode, unknowns: frozenset) -> bool:
@@ -105,9 +60,8 @@ def _region(constraint: Constraint, time: Variable | None, unknowns: frozenset) 
     if shown is not None:
         return shown
     # The history of a delay equation: a time interval where u itself is prescribed.
-    sides = (constraint.lhs, constraint.rhs)
     history = time is not None and on.axes == frozenset({time})
-    if history and all(_only_restricted(s, on, unknowns) for s in sides):
+    if history and all(_only_restricted(s, on, unknowns) for s in constraint.sides):
         return Region.INITIAL
     return Region.BULK
 

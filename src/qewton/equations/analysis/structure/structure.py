@@ -17,7 +17,7 @@ from functools import singledispatch
 from typing import Literal
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.checks.axes import free_axes
+from qewton.equations.expr.axes import free_axes
 from qewton.equations.expr.nodes import (
     Apply,
     Const,
@@ -27,6 +27,8 @@ from qewton.equations.expr.nodes import (
     Integral,
     Restrict,
     Shift,
+    contains,
+    symbols_in,
     walk,
 )
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
@@ -111,14 +113,10 @@ def build_decoupled_axes(
     differentiated: set[Variable] = set()
     nonlocal_axes: set[Variable] = set()
     for constraint in problem.constraints:
-        for side in (constraint.lhs, constraint.rhs):
+        for side in constraint.sides:
             differentiated.update(_differentiated_axes(side, unknowns))
             nonlocal_axes.update(_nonlocal_axes(side, unknowns))
     return tuple(sorted(axes - differentiated - nonlocal_axes, key=lambda a: str(a.name)))
-
-
-def _contains_unknown(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> bool:
-    return any(node in unknowns for node in walk(expr))
 
 
 def _differentiated_axes(
@@ -129,7 +127,7 @@ def _differentiated_axes(
         for node in walk(expr)
         if isinstance(node, Apply)
         and node.op.takes_axes
-        and _contains_unknown(node.args[0], unknowns)  # type: ignore
+        and contains(node.args[0], unknowns)  # type: ignore
         for axis in coordinate_factors(node.args[node.op.arity])  # type: ignore
     }
 
@@ -138,16 +136,12 @@ def _nonlocal_axes(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> set[Varia
     coupled = set()
     for node in walk(expr):
         if isinstance(node, Integral):
-            symbols = {
-                child
-                for child in walk(node.expr)
-                if isinstance(child, FunctionSymbol) and child in unknowns
-            }
+            symbols = {s for s in symbols_in(node.expr) if s in unknowns}
             for symbol in symbols:
                 coupled.update(
                     root_of(axis) for axis in free_axes(symbol) & node.over.axes
                 )
-        elif isinstance(node, Shift) and _contains_unknown(node.expr, unknowns):
+        elif isinstance(node, Shift) and contains(node.expr, unknowns):
             coupled.add(root_of(node.axis))
     return coupled
 
@@ -252,8 +246,7 @@ def split_constraint(
         if isinstance(expr, Const) and expr.value == 0:
             continue
         term = Term(expr, sign, linearity(expr, unknowns))  # type: ignore
-        has_unknown = any(node in unknowns for node in walk(expr))  # type: ignore
-        (operator if has_unknown else source).append(term)
+        (operator if contains(expr, unknowns) else source).append(term)  # type: ignore
     return Split(tuple(operator), tuple(source))
 
 
@@ -267,10 +260,6 @@ class BatchPlacement:
     affine: bool
 
 
-def _contains(expr: Expr, symbol: FunctionSymbol) -> bool:
-    return any(node is symbol for node in walk(expr))
-
-
 def _differentiates(expr: Expr, symbol: FunctionSymbol) -> bool:
     """Whether a derivative acts on a varying symbol along one of its input axes."""
     if symbol.inputs is None:
@@ -281,7 +270,7 @@ def _differentiates(expr: Expr, symbol: FunctionSymbol) -> bool:
             continue
         argument = node.args[0]
         axes = node.args[node.op.arity]
-        if _contains(argument, symbol) and symbol_axes.intersection(  # type: ignore
+        if contains(argument, (symbol,)) and symbol_axes.intersection(  # type: ignore
             coordinate_factors(axes)  # type: ignore
         ):
             return True
@@ -317,7 +306,7 @@ def build_batch_placement(
                 ("operator", constraint_split.operator),
                 ("source", constraint_split.source),
             ):
-                uses = [term.expr for term in terms if _contains(term.expr, symbol)]
+                uses = [term.expr for term in terms if contains(term.expr, (symbol,))]
                 if uses:
                     results.append(
                         BatchPlacement(

@@ -22,11 +22,7 @@ from dataclasses import dataclass
 
 from qewton.equations.analysis.context import AnalysisContext
 from qewton.equations.analysis.prepare.signatures import evaluation_sets
-from qewton.equations.analysis.structure.batch_axes import (
-    _evaluation_sets,
-    _function_symbols,
-)
-from qewton.equations.geometry.sets import Product, Slice
+from qewton.equations.geometry.sets import Domain, SetNode, Slice
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
 from qewton.equations.model.task import Role, Task
 
@@ -55,9 +51,7 @@ class CouplingDiagram:
 
 def _data_nodes(task: Task, constraint, roles: dict[Node, str]) -> list[Node]:
     found = []
-    for symbol in sorted(
-        _function_symbols(constraint), key=lambda s: str(s.variable.name)
-    ):
+    for symbol in sorted(constraint.symbols(), key=lambda s: str(s.variable.name)):
         if task.roles[symbol] is not Role.UNKNOWN:
             node = ("data", str(symbol.variable.name))
             roles[node] = task.roles[symbol].value
@@ -65,19 +59,15 @@ def _data_nodes(task: Task, constraint, roles: dict[Node, str]) -> list[Node]:
     return found
 
 
-def _set_coordinates(domain) -> list[str]:
-    """The coordinates a set lives in: its ambient space, factors, or sliced axis."""
-    if isinstance(domain, Product):
-        found = [name for factor in domain.factors for name in _set_coordinates(factor)]
-    elif isinstance(domain, Slice):
+def _set_coordinates(domain: SetNode) -> list[str]:
+    """The coordinates a set lives in, in the order of its factors."""
+    if isinstance(domain, Slice):
         found = [root_of(domain.axis).name]
-    elif hasattr(domain, "of"):
-        found = _set_coordinates(domain.of)
-    elif getattr(domain, "ambient", None) is not None:
+    elif isinstance(domain, Domain):
         found = [root_of(axis).name for axis in coordinate_factors(domain.ambient)]
     else:
-        found = []
-    return list(dict.fromkeys([str(f) for f in found]))
+        found = [name for part in domain.built_from() for name in _set_coordinates(part)]
+    return list(dict.fromkeys(str(f) for f in found))
 
 
 def _evaluated_on(ctx: AnalysisContext, data: list[str]):
@@ -103,7 +93,7 @@ def coupling_diagram(task: Task) -> CouplingDiagram:
     roles: dict[Node, str] = {}
     columns["unknowns"] = [str(unknown) for unknown in ctx.coupling.unknowns]
 
-    domains: dict[str, object] = {}
+    domains: dict[str, SetNode] = {}
 
     def add(kind: str, left: Node, right: Node, matched: bool = False) -> None:
         for name, label in (left, right):
@@ -117,7 +107,7 @@ def coupling_diagram(task: Task) -> CouplingDiagram:
         columns["equations"].append(f"c{index + 1}")
         for node in _data_nodes(task, constraint, roles):
             add("occurs", ("equations", f"c{index + 1}"), node)
-        for domain in dict.fromkeys(_evaluation_sets(constraint)):
+        for domain in constraint.sets():
             domains[str(domain)] = domain
             add("posed", ("sets", str(domain)), ("equations", f"c{index + 1}"))
     for equation, unknown in ctx.coupling.edges:

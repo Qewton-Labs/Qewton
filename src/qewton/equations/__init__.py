@@ -36,7 +36,6 @@ from qewton.equations.analysis.context import (
     split,
     training_modes,
 )
-from qewton.equations.analysis.pipeline import report, run_pipeline
 from qewton.equations.analysis.prepare.signatures import Signature, Signatures
 from qewton.equations.analysis.structure.batching import (
     BatchEntry,
@@ -112,8 +111,8 @@ from qewton.equations.geometry.sets import (
     is_subset,
     set_from_geometry,
 )
-from qewton.equations.analysis.checks.axes import AxisError, free_axes
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, Severity
+from qewton.equations.expr.axes import AxisError, free_axes
+from qewton.equations.diagnostics import Diagnostic, Severity
 from qewton.equations.analysis.structure.coupling import (
     CouplingBlock,
     CouplingGraph,
@@ -217,8 +216,6 @@ __all__ = [
     "derivative_orders",
     "linearity",
     "overview",
-    "report",
-    "run_pipeline",
     "shift",
     "signatures",
     "split",

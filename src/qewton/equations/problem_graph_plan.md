@@ -41,24 +41,25 @@ M1–M6 import nothing numeric except `ContinuousGeometry`, used by `Domain` to 
 qewton/equations/
     ├── geometry/
     │   ├── coordinates.py       # check_coordinate: a coordinate is a config Variable with an integer dim
-    │   └── sets.py              # SetNode hierarchy, Partition, subset queries
+    │   └── sets.py              # SetNode hierarchy (built_from), Partition, and every query about sets: is_subset, factors, boundary_of, sliced_axes, depends_on, ...
     ├── expr/
-    │   ├── nodes.py             # Expr, FunctionSymbol, Coord, Const, Normal, Apply, Restrict, Integral, Shift
+    │   ├── __init__.py          # registers the eager shape and axis checks with the nodes
+    │   ├── nodes.py             # Expr, FunctionSymbol, Coord, Const, Normal, Apply, Restrict, Integral, Shift; walk, symbols_in, contains
     │   ├── ops.py               # OpSpec and the operator registry (grad, div, dt, ...)
+    │   ├── shapes.py            # shape_of, eager shape check
+    │   ├── axes.py              # free_axes, eager axis check
     │   └── api.py               # user-facing helpers: grad, div, curl, lap, d, dt, dot, inner, sin, cos, exp (Eq goes in constraints.py)
     ├── model/
-    │   ├── constraints.py       # Relation, Constraint, PendingConstraint, Eq/Le/Ge/Complementary
-    │   └── problem.py           # Problem
+    │   ├── constraints.py       # Relation, Constraint (sides, nodes, symbols, sets), PendingConstraint, Eq/Le/Ge/Complementary
+    │   ├── problem.py           # Problem; checks the axes of each constraint
+    │   ├── task.py              # Task, Role
+    │   └── observation.py       # Observed: samples of an unknown
+    ├── diagnostics.py           # Diagnostic, Severity: findings of any layer
     ├── printing/
     │   ├── coupling_diagram.py  # coupling diagram data and matplotlib drawing
     │   ├── pretty.py            # readable text for expressions, sets, constraints, problems (M1)
     │   └── printable.py         # mixin: str() and notebook display through pretty
-    ├── task.py                  # Task, Role
     ├── analysis/
-    │   ├── checks/              # used while building objects (model/ imports these)
-    │   │   ├── shapes.py        # shape_of, eager shape checks
-    │   │   ├── axes.py          # free_axes, eager axis checks, constraint axis check
-    │   │   └── diagnostics.py   # Diagnostic
     │   ├── prepare/             # make a problem ready to analyse
     │   │   ├── validate.py
     │   │   ├── normalize.py
@@ -69,8 +70,7 @@ qewton/equations/
     │   │   ├── batch_axes.py    # inherited batch axes
     │   │   ├── batching.py      # one entry per parameter axis: mode, placement, reach
     │   │   └── coupling.py      # coupling graph, matching, blocks
-    │   ├── context.py           # AnalysisContext: wires the passes, each result computed once
-    │   ├── pipeline.py          # run_pipeline(task), report(ctx)
+    │   ├── context.py           # AnalysisContext: wires the passes, each result computed once; report()
     │   ├── overview.py
     │   ├── classify/            # what kind of problem it is (M4)
     │   │   ├── rows.py          # constraints with region, orders, component counts
@@ -303,7 +303,7 @@ class Problem:
 
 `Periodic` is a declaration like `Partition`: it says two sets are the same place, shifted. The condition on the functions is still a constraint with a `shift`. The validate pass (M2) checks that the offsets agree.
 
-**Axis analysis** (`analysis/checks/axes.py`). `free_axes(expr)` is the set of coordinates an expression varies with: the declared inputs of its functions, the coordinate of a `Coord`, minus the sliced coordinates of a `Restrict` and the coordinates of an `Integral`'s set. Checked eagerly: a derivative or `Shift` along a coordinate the operand does not depend on is an `AxisError` (the derivative would be zero). Checked when a `Problem` is built: both sides of a constraint use only the coordinates of the set it holds on (a slice fixes its coordinate), and a global constraint uses none. The declared time is the exception: a constraint without time that uses time-dependent functions is accepted, because normalisation lifts it to all times. `Problem.coordinates()` lists every coordinate the problem uses.
+**Axis analysis** (`expr/axes.py`, set queries in `geometry/sets.py`). `free_axes(expr)` is the set of coordinates an expression varies with: the declared inputs of its functions, the coordinate of a `Coord`, minus the sliced coordinates of a `Restrict` and the coordinates of an `Integral`'s set. Checked eagerly: a derivative or `Shift` along a coordinate the operand does not depend on is an `AxisError` (the derivative would be zero). Checked when a `Problem` is built: both sides of a constraint use only the coordinates of the set it holds on (a slice fixes its coordinate), and a global constraint uses none. The declared time is the exception: a constraint without time that uses time-dependent functions is accepted, because normalisation lifts it to all times. `Problem.coordinates()` lists every coordinate the problem uses.
 
 Still waiting for later passes: a delay has history on an interval; a constraint's offset agrees with its `Periodic` declaration.
 
@@ -344,8 +344,8 @@ Implemented in `model/task.py` (`build_task`, reached through `Problem.task`). `
 ## 6. Analysis pipeline
 
 ```python
-ctx = run_pipeline(task)   # validate → axis pre-pass → normalize → infer → structure → classify → suggest
-print(report(ctx))
+ctx = AnalysisContext(task)   # validate → normalize → infer → structure → classify → suggest, on demand
+print(ctx.report())
 ```
 
 As built (`analysis/context.py`): each pass is a plain function of its inputs, named `build_<result>`, e.g. `build_rows(problem, unknowns, shapes)`. Passes never call each other and never re-derive anything from the task. `AnalysisContext(task)` is the one place that wires them: one `cached_property` per result, which passes the results of earlier properties on, so each result is computed once and only when asked for. No pass mutates nodes; normalisation builds a new `Problem`, available as `ctx.problem`. Task-level shortcuts such as `classify(task)` are `AnalysisContext(task).classification`.
@@ -364,7 +364,7 @@ class AnalysisContext:
 
 ### 6.0 axis pre-pass
 
-Not a separate pass. It was meant to find the functions that depend on time, so that time lifting could run before inference. `free_axes` (`analysis/checks/axes.py`) already answers that for every expression, with no inference, so time lifting uses it directly. Whether a function has a time *derivative* (evolution versus a time-parametrised stationary problem) is a question for structure and classification (M3, M4), which compute derivative orders anyway.
+Not a separate pass. It was meant to find the functions that depend on time, so that time lifting could run before inference. `free_axes` (`expr/axes.py`) already answers that for every expression, with no inference, so time lifting uses it directly. Whether a function has a time *derivative* (evolution versus a time-parametrised stationary problem) is a question for structure and classification (M3, M4), which compute derivative orders anyway.
 
 ### 6.1 validate
 
@@ -382,13 +382,13 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 
 ### 6.3 infer: signatures and shapes
 
-- **Pipeline.** `run_pipeline(task)` (`analysis/pipeline.py`) builds the `AnalysisContext` and runs the checking passes (validate, normalize, signatures) right away; `ctx.diagnostics` merges their findings, errors first. `report(ctx)` prints Task, Signatures, Normalized, Batching, Classification, Suggestions and Diagnostics, reading each from the context. `ctx.ok` is false when any finding is an error.
+- **Context.** `AnalysisContext(task)` (`analysis/context.py`) computes each result when first read: `ctx.diagnostics` merges the findings of the task, validate, normalize and signatures, errors first, and `ctx.ok` is false when any of them is an error. `ctx.report()` prints Task, Signatures, Normalized, Batching, Classification, Suggestions and Diagnostics; classification and suggestions only when `ctx.ok` and the task has unknowns.
 
 - **Inputs are declared, not inferred.** Usage cannot tell a constant from a function that is not differentiated along x, so no inputs are inferred from where a symbol is used. An unknown with `inputs=None` is an error.
 - **Lower bound check.** If a derivative along axis a is applied directly to s (or to `Restrict(s, …)`), then a must be among s's declared inputs, or the problem is an error. Nested cases such as grad(u·v) give no requirement.
 - **Data values.** A supplied value must agree with the declared inputs. A constant (`inputs=None`) cannot get a spatial array, and a numeric value with spatial inputs needs a geometry through `Task.values`. This is checked when the Task is built.
 - **Conflicts and unused inputs.** A declared output shape must agree with the inferred one. Declared inputs that no constraint needs are a warning.
-- **Shapes.** `shape_of` computes them bottom-up with `OpSpec.shape_rule` (M2, `shapes.py`). `infer_shapes(problem)` (`infer.py`) fills in symbols declared with `dim=None`: known shapes flow backwards through invertible operators (neg, d, lap, grad, div, and add, sub, mul, inner when the other operand is known), scalar-only operators force scalar arguments, and a scalar constant never decides a shape. When nothing more follows, the first undetermined symbol in order of appearance defaults to scalar and is reported in `Inference.defaulted` (a warning), then propagation continues. A final pass re-checks every constraint, so conflicts raise `ShapeError`. `dot` is not inverted, because it is ambiguous.
+- **Shapes.** `shape_of` computes them bottom-up with `OpSpec.shape_rule` (M2, `expr/shapes.py`). `infer_shapes(problem)` (`infer.py`) fills in symbols declared with `dim=None`: known shapes flow backwards through invertible operators (neg, d, lap, grad, div, and add, sub, mul, inner when the other operand is known), scalar-only operators force scalar arguments, and a scalar constant never decides a shape. When nothing more follows, the first undetermined symbol in order of appearance defaults to scalar and is reported in `Inference.defaulted` (a warning), then propagation continues. A final pass re-checks every constraint, so conflicts raise `ShapeError`. `dot` is not inverted, because it is ambiguous.
 - The declared inputs and the inferred shapes are printed first in the report, the way a type checker shows types.
 
 ### 6.4 structure
@@ -407,7 +407,7 @@ Also built: `decoupled_axes(task)`, which reports declared unknown input axes wi
 - **Coupling diagram.** `coupling_diagram(task)` (data in `printing/coupling_diagram.py`) extends the graph with data functions (fixed/varying), the sets each equation is posed on and each unknown is defined on, and the coordinates the sets live in; `plot_coupling(task)` draws it in five columns (equations, unknowns, data, sets, coordinates).
 - **Decoupled axes.** `decoupled_axes(task)` reports coordinates declared on unknowns with no unknown derivative, integral coupling, or shift along them. These are candidate pointwise directions (including quasi-static time); batch parallelism is reported separately in M5.
 
-Batched reporting (M5): `batching(task)` returns one `BatchEntry` per parameter axis, with a `BatchMode` (source only, operator affine, operator not separable, geometry, unused), the constraints it occurs in, and the unknowns that depend on it. `report(ctx)` prints a Batching section when the task has batch axes. Instances are always independent, since a parameter axis appears in no expression. What to do with a mode (factor the operator once, reduced basis) is a suggestion and stays in M6.
+Batched reporting (M5): `batching(task)` returns one `BatchEntry` per parameter axis, with a `BatchMode` (source only, operator affine, operator not separable, geometry, unused), the constraints it occurs in, and the unknowns that depend on it. `ctx.report()` prints a Batching section when the task has batch axes. Instances are always independent, since a parameter axis appears in no expression. What to do with a mode (factor the operator once, reduced basis) is a suggestion and stays in M6.
 
 ### 6.5 classify
 

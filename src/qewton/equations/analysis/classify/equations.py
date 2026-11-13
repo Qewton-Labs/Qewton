@@ -20,7 +20,7 @@ from qewton.config.variables import Variable
 from qewton.equations.analysis.classify.facts import Fact
 from qewton.equations.analysis.classify.rows import Region, Row
 from qewton.equations.analysis.structure.coupling import CouplingBlock, CouplingGraph
-from qewton.equations.expr.nodes import FunctionSymbol, walk
+from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.model.constraints import Relation
 
 
@@ -91,8 +91,8 @@ def relations(rows: tuple[Row, ...]) -> tuple[Fact, ...]:
 
 
 def _symbols_in(row: Row) -> set[FunctionSymbol]:
-    sides = (row.constraint.lhs, row.constraint.rhs)
-    return {n for side in sides for n in walk(side) if n in row.orders}  # type: ignore
+    """The unknowns of the row's constraint."""
+    return {s for s in row.constraint.symbols() if s in row.orders}
 
 
 def _saddle_multiplier(

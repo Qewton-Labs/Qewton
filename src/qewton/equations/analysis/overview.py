@@ -18,6 +18,7 @@ from qewton.equations.geometry.sets import (
     Product,
     SetNode,
     Slice,
+    with_factors,
 )
 
 if TYPE_CHECKING:
@@ -87,15 +88,6 @@ def _describe_set(node: SetNode) -> str:
     return describe(node)
 
 
-def _with_factors(nodes) -> set[SetNode]:
-    found: set[SetNode] = set()
-    for node in nodes:
-        found.add(node)
-        if isinstance(node, Product):
-            found |= _with_factors(node.factors)
-    return found
-
-
 def overview(problem: Problem) -> Overview:
     """Collect the coordinates, sets and functions of a problem."""
     inference = infer_shapes(problem)
@@ -103,7 +95,7 @@ def overview(problem: Problem) -> Overview:
     space = tuple(
         sorted((a for a in problem.coordinates() if a != time), key=lambda a: str(a.name))
     )
-    sets = sorted(_with_factors(problem.sets()), key=lambda s: (s.codim, str(s)))
+    sets = sorted(with_factors(problem.sets()), key=lambda s: (s.codim, str(s)))
     functions = dict(sorted(inference.shapes.items(), key=lambda kv: str(kv[0])))
     return Overview(
         time,

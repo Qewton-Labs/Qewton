@@ -21,7 +21,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import singledispatch
 
-from qewton.equations.analysis.checks.shapes import index_shape, shape_of
+from qewton.equations.expr.shapes import index_shape, shape_of
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.expr.nodes import (
     Apply,
@@ -32,7 +32,6 @@ from qewton.equations.expr.nodes import (
     Integral,
     Restrict,
     Shift,
-    walk,
 )
 from qewton.equations.expr.ops import Shape, ShapeError
 from qewton.equations.model.problem import Problem
@@ -77,13 +76,12 @@ def infer_shapes(problem: Problem) -> Inference:
 def _reject_indexed(problem: Problem, symbol: FunctionSymbol) -> None:
     """A component does not say how many components there are, so it cannot default."""
     for constraint in problem.constraints:
-        for side in (constraint.lhs, constraint.rhs):
-            for node in walk(side):
-                if isinstance(node, Index) and node.expr == symbol:
-                    raise ShapeError(
-                        f"The output shape of {symbol.name!r} cannot be inferred from "
-                        f"{node}; declare it, e.g. Variable({symbol.name!r}, dim=2)."
-                    )
+        for node in constraint.nodes():
+            if isinstance(node, Index) and node.expr == symbol:
+                raise ShapeError(
+                    f"The output shape of {symbol.name!r} cannot be inferred from "
+                    f"{node}; declare it, e.g. Variable({symbol.name!r}, dim=2)."
+                )
 
 
 def shape_with(expr: Expr, shapes: Mapping[FunctionSymbol, Shape]) -> Shape:
@@ -110,13 +108,8 @@ def constraint_shape(
 
 
 def _symbols_in_order(problem: Problem) -> list[FunctionSymbol]:
-    found: dict[FunctionSymbol, None] = {}
-    for constraint in problem.constraints:
-        for side in (constraint.lhs, constraint.rhs):
-            for node in walk(side):
-                if isinstance(node, FunctionSymbol):
-                    found[node] = None
-    return list(found)
+    found = (s for constraint in problem.constraints for s in constraint.symbols())
+    return list(dict.fromkeys(found))
 
 
 def _propagate(problem: Problem, env: Env) -> None:
@@ -125,9 +118,8 @@ def _propagate(problem: Problem, env: Env) -> None:
         known = len(env)
         for constraint in problem.constraints:
             _constrain(constraint.lhs, constraint.rhs, env)
-            for side in (constraint.lhs, constraint.rhs):
-                for node in walk(side):
-                    _demand(node, env)
+            for node in constraint.nodes():
+                _demand(node, env)
         if len(env) == known:
             return
 

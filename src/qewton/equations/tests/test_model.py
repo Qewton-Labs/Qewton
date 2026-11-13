@@ -3,7 +3,14 @@ import pytest
 from qewton.config.variables import Variable
 from qewton.equations.model.constraints import Eq
 from qewton.equations.expr import api
-from qewton.equations.expr.nodes import FunctionSymbol, Normal, Restrict, walk
+from qewton.equations.expr.nodes import (
+    FunctionSymbol,
+    Normal,
+    Restrict,
+    contains,
+    symbols_in,
+    walk,
+)
 from qewton.equations.geometry.sets import (
     Boundary,
     Domain,
@@ -100,6 +107,22 @@ class TestWalk:
 
     def test_walk_of_a_leaf_is_the_leaf(self):
         assert list(walk(f)) == [f]
+
+    def test_symbols_in_keeps_repeats_and_contains_asks_for_any(self):
+        assert list(symbols_in(nu * api.grad(u, x) + u)) == [nu, u, u]
+        assert contains(api.grad(u, x), {u, g})
+        assert not contains(api.grad(u, x), {g})
+
+
+class TestConstraintQueries:
+    def test_sides_symbols_and_sets(self):
+        flux = Eq(api.dot(Restrict(nu * api.grad(u, x), GN), Normal(dO)), h).on(GN)
+        assert flux.sides == (flux.lhs, flux.rhs)
+        assert flux.symbols() == (nu, u, h)
+        assert flux.sets() == (GN, dO)
+
+    def test_a_global_constraint_has_only_the_sets_of_its_sides(self):
+        assert Eq(api.integral(g, Omega), 0).on(None).sets() == (Omega,)
 
 
 def test_global_constraint_and_integral_sets():

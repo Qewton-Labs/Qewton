@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from dataclasses import dataclass, replace
 from typing import ClassVar
 
@@ -14,15 +14,8 @@ from qewton.equations.geometry.coordinates import (
     coordinate_factors,
     root_of,
 )
-from qewton.equations.geometry.sets import Boundary, Interface, Part, SetNode
+from qewton.equations.geometry.sets import SetNode, has_normal
 from qewton.equations.printing.printable import Printable
-
-
-# Utility functions for expression tree nodes:
-def _is_boundary(of: SetNode) -> bool:
-    if isinstance(of, Part):
-        return _is_boundary(of.of)
-    return isinstance(of, (Boundary, Interface))
 
 
 def _check_output(variable: Variable) -> None:
@@ -66,8 +59,8 @@ class Expr(Printable):
     conditions, etc. that define the problem.
     """
 
-    # Checks run when an Apply or Shift is built. The analysis modules (shapes, axes)
-    # build on these nodes and so register themselves here instead of being imported.
+    # Checks run when an Apply, Shift or Index is built: the shape and axis checks,
+    # registered by expr/__init__.py since they are written against these nodes.
     checks: ClassVar[list[Callable[[Expr], object]]] = []
 
     def children(self) -> tuple[Expr, ...]:
@@ -228,7 +221,7 @@ class Normal(Expr):
     of: SetNode
 
     def __post_init__(self):
-        if not _is_boundary(self.of):
+        if not has_normal(self.of):
             raise ValueError(
                 "A normal only exists on a boundary, a part of one, or an interface."
             )
@@ -437,3 +430,13 @@ def walk(expr: Expr) -> Iterator[Expr]:
     yield expr
     for child in expr.children():
         yield from walk(child)
+
+
+def symbols_in(expr: Expr) -> Iterator[FunctionSymbol]:
+    """Yield every function symbol in `expr`, depth first, repeats included."""
+    return (node for node in walk(expr) if isinstance(node, FunctionSymbol))
+
+
+def contains(expr: Expr, symbols: Collection[FunctionSymbol]) -> bool:
+    """Whether one of `symbols` occurs in `expr`."""
+    return any(symbol in symbols for symbol in symbols_in(expr))

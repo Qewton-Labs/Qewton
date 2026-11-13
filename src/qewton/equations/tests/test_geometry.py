@@ -11,11 +11,21 @@ from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
 from qewton.equations.geometry.sets import (
     Boundary,
     Domain,
+    Interface,
     Part,
+    Partition,
     Product,
     Slice,
+    boundary_of,
+    depends_on,
+    factors,
     is_subset,
+    lies_on_boundary,
+    set_free_axes,
     set_from_geometry,
+    sliced_axes,
+    spatial_domain,
+    with_factors,
 )
 
 x = Variable("x", dim=2)
@@ -193,3 +203,40 @@ class TestProductSyntax:
     def test_star_with_a_non_set_is_a_type_error(self):
         with pytest.raises(TypeError):
             Domain("A", ambient=Variable("x", dim=1)) * 2
+
+
+class TestSetQueries:
+    def test_each_set_knows_what_it_is_built_from(self):
+        left, right = Part("L", Omega), Part("R", Omega)
+        assert Omega.built_from() == ()
+        assert dO.built_from() == (Omega,)
+        assert Gamma_D.built_from() == (dO,)
+        assert Product(Omega, Interval).built_from() == (Omega, Interval)
+        assert Interface(left, right).built_from() == (left, right)
+
+    def test_a_lifted_condition_knows_its_boundary_and_its_spatial_part(self):
+        lifted = Product(Gamma_D, Interval)
+        assert factors(lifted) == (Gamma_D, Interval)
+        assert factors(Omega) == (Omega,) and factors(None) == ()
+        assert with_factors([lifted, Omega]) == {lifted, Gamma_D, Interval, Omega}
+        assert boundary_of(lifted) == dO and boundary_of(Omega) is None
+        assert spatial_domain(lifted, t) == Gamma_D
+        assert lies_on_boundary(Gamma_D) and not lies_on_boundary(Part("S", Omega))
+
+    def test_a_slice_fixes_its_coordinate(self):
+        initial = Product(Omega, Slice(t, 0.0))
+        assert sliced_axes(initial) == {t}
+        assert set_free_axes(initial) == {x}
+        assert sliced_axes(Gamma_D) == frozenset()
+
+    def test_a_set_moves_with_what_it_is_built_from_and_with_its_siblings(self):
+        partitions = (Partition(dO, (Gamma_D, Gamma_N)),)
+        assert depends_on(Product(Gamma_D, Interval), Omega)
+        assert depends_on(Gamma_N, Gamma_D, partitions)
+        assert not depends_on(Gamma_N, Gamma_D)
+        assert not depends_on(dO, Gamma_D, partitions)
+
+    def test_an_interface_moves_with_its_subdomains(self):
+        left, right = Part("L", Omega), Part("R", Omega)
+        assert depends_on(Interface(left, right), Omega)
+        assert depends_on(Interface(left, right), right)

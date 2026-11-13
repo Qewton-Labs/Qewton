@@ -2,6 +2,7 @@ import pytest
 
 from qewton.config.variables import Variable
 from qewton.equations import (
+    AnalysisContext,
     Boundary,
     ConditionKind,
     Domain,
@@ -16,7 +17,6 @@ from qewton.equations import (
     classify,
     jump,
     lap,
-    run_pipeline,
     trace,
 )
 from qewton.equations.analysis.prepare.validate import validate
@@ -63,7 +63,7 @@ def test_trace_and_jump_print_and_check_the_side():
 
 def test_transmission_problem_is_valid_and_prints_its_interface():
     problem = transmission()
-    assert run_pipeline(unknown_task(problem)).ok
+    assert AnalysisContext(unknown_task(problem)).ok
     assert "interfaces:\n  Omega_1 | Omega_2" in str(problem)
 
 

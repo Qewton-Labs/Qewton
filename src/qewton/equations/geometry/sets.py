@@ -1,8 +1,10 @@
-"""Sets on which constraints hold: domains, boundaries, parts,
-products and slices.
+"""Sets on which constraints hold: domains, boundaries, parts, interfaces, products
+and slices, and the questions asked about them.
 
-Essentially just a wrapper around the domains, that represent the
-connections more symbolic.
+The set classes describe the structure symbolically: a boundary knows what it is the
+boundary of, a product knows its factors. The functions at the end answer what the
+other layers need to know from that structure, e.g. `boundary_of(region)` or
+`depends_on(node, source)`, so that no other module walks the set classes itself.
 
 TODO: A direct connection to the underlying geometry and boundaries
 might be added later.
@@ -13,6 +15,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Sequence
 
 from qewton.config.variables import Variable
 from qewton.equations.geometry.coordinates import check_coordinate
@@ -38,6 +41,12 @@ class SetNode(Printable, ABC):
         1 is a co-dimension-one set, e.g., a boundary.
         and so on...
         """
+
+    def built_from(self) -> tuple[SetNode, ...]:
+        """The sets this one is defined from: the set of a boundary or a part, the
+        factors of a product, the two sides of an interface. A domain or a slice is
+        built from nothing."""
+        return ()
 
     def __mul__(self, other: object) -> SetNode:
         if not isinstance(other, SetNode):
@@ -111,6 +120,9 @@ class Boundary(SetNode):
     def codim(self) -> int:
         return self.of.codim + 1
 
+    def built_from(self) -> tuple[SetNode, ...]:
+        return (self.of,)
+
 
 @dataclass(frozen=True)
 class Part(SetNode):
@@ -129,6 +141,9 @@ class Part(SetNode):
     @property
     def codim(self) -> int:
         return self.of.codim
+
+    def built_from(self) -> tuple[SetNode, ...]:
+        return (self.of,)
 
 
 @dataclass(frozen=True)
@@ -166,6 +181,9 @@ class Interface(SetNode):
     def codim(self) -> int:
         return self.first.codim + 1
 
+    def built_from(self) -> tuple[SetNode, ...]:
+        return (self.first, self.second)
+
 
 @dataclass(frozen=True, init=False)
 class Product(SetNode):
@@ -177,11 +195,11 @@ class Product(SetNode):
 
     factors: tuple[SetNode, ...]
 
-    def __init__(self, *factors: SetNode | Iterable[SetNode]):
-        if len(factors) == 1 and isinstance(factors[0], (tuple, list)):
-            factors = tuple(factors[0])
+    def __init__(self, *given: SetNode | Iterable[SetNode]):
+        if len(given) == 1 and isinstance(given[0], (tuple, list)):
+            given = tuple(given[0])
         flat: list[SetNode] = []
-        for factor in factors:
+        for factor in given:
             _check_set(factor)
             flat.extend(factor.factors if isinstance(factor, Product) else (factor,))
         object.__setattr__(self, "factors", tuple(flat))
@@ -206,6 +224,9 @@ class Product(SetNode):
     @property
     def codim(self) -> int:
         return sum(factor.codim for factor in self.factors)
+
+    def built_from(self) -> tuple[SetNode, ...]:
+        return self.factors
 
 
 @dataclass(frozen=True)
@@ -305,6 +326,94 @@ def is_subset(a: SetNode, b: SetNode) -> bool:
             any(is_subset(fa, fb) for fb in b.factors) for fa in a.factors
         )
     return False
+
+
+###
+# Queries about the structure of sets.
+###
+def factors(region: SetNode | None) -> tuple[SetNode, ...]:
+    """The factors of a product (products are flat); any other set is its own factor."""
+    if isinstance(region, Product):
+        return region.factors
+    return () if region is None else (region,)
+
+
+def with_factors(sets: Iterable[SetNode]) -> set[SetNode]:
+    """The sets, together with the factors of every product among them."""
+    return {found for node in sets for found in (node, *factors(node))}
+
+
+def lies_on_boundary(region: SetNode) -> bool:
+    """Whether `region` is a boundary, or a part of one; a part of a domain is not."""
+    while isinstance(region, Part):
+        region = region.of
+    return isinstance(region, Boundary)
+
+
+def has_normal(region: SetNode) -> bool:
+    """Whether `region` has a normal: a boundary, an interface, or a part of either."""
+    while isinstance(region, Part):
+        region = region.of
+    return isinstance(region, (Boundary, Interface))
+
+
+def base_domain(region: SetNode | None) -> SetNode | None:
+    """The domain a subdomain (a `Part` of a domain) belongs to; other sets stay."""
+    while isinstance(region, Part):
+        region = region.of
+    return region
+
+
+def interface_of(region: SetNode | None) -> Interface | None:
+    """The interface a constraint set contains, e.g. Gamma for Gamma x I."""
+    return next((f for f in factors(region) if isinstance(f, Interface)), None)
+
+
+def boundary_of(region: SetNode | None) -> Boundary | None:
+    """The boundary a constraint set lies on, e.g. d(Omega) for Gamma x I."""
+    for factor in factors(region):
+        if isinstance(factor, Boundary):
+            return factor
+        if isinstance(factor, Part) and isinstance(factor.of, Boundary):
+            return factor.of
+    return None
+
+
+def spatial_domain(region: SetNode | None, time: Variable | None) -> SetNode | None:
+    """The factor of a set that is not the time interval."""
+    for factor in factors(region):
+        if factor.axes != frozenset({time}):
+            return factor
+    return None
+
+
+def sliced_axes(region: SetNode) -> frozenset[Variable]:
+    """The coordinates a set fixes to a single value, such as t in Omega x {t = 0}."""
+    if isinstance(region, Slice):
+        return frozenset({region.axis})
+    return frozenset().union(*(sliced_axes(p) for p in region.built_from()))
+
+
+def set_free_axes(region: SetNode) -> frozenset[Variable]:
+    """The coordinates a point of the set still varies in: its axes minus the sliced."""
+    return region.axes - sliced_axes(region)
+
+
+def depends_on(
+    node: SetNode, source: SetNode, partitions: Sequence[Partition] = ()
+) -> bool:
+    """Whether `node` changes when `source` changes, e.g. when `source` varies.
+
+    It does if it is `source`, if a set it is built from depends on `source` (the
+    boundary of a moving domain), or if both are parts of one of the `partitions`:
+    the parts fill the whole, so one cannot move alone. A whole with a moving part
+    stays where it is.
+    """
+    if node == source:
+        return True
+    if any(depends_on(p, source, partitions) for p in node.built_from()):
+        return True
+    return any(node in p.parts and source in p.parts for p in partitions)
 
 
 def set_from_geometry(geometry: Geometry, name: str | None = None) -> SetNode:

@@ -20,25 +20,27 @@ from collections.abc import Mapping
 from enum import Enum
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, info, warning
+from qewton.equations.diagnostics import Diagnostic, info, warning
 from qewton.equations.analysis.classify.equations import PdeType
 from qewton.equations.analysis.classify.facts import Fact
-from qewton.equations.analysis.classify.rows import (
-    Region,
-    Row,
-    base_domain,
-    boundary_of,
-    factors,
-    interface_of,
-    spatial_domain,
-)
+from qewton.equations.analysis.classify.rows import Region, Row
 from qewton.equations.analysis.structure.coupling import CouplingGraph
 from qewton.equations.analysis.structure.structure import (
     derivative_orders,
     split_constraint,
 )
 from qewton.equations.expr.nodes import FunctionSymbol
-from qewton.equations.geometry.sets import Boundary, Interface, Part, SetNode
+from qewton.equations.geometry.sets import (
+    Boundary,
+    Interface,
+    Part,
+    SetNode,
+    base_domain,
+    boundary_of,
+    factors,
+    interface_of,
+    spatial_domain,
+)
 from qewton.equations.model.problem import Problem
 
 

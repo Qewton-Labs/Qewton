@@ -9,12 +9,21 @@ Until .on(...) is called the result is a PendingConstraint, which Problem refuse
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
 
-from qewton.equations.expr.nodes import Expr, as_expr
+from qewton.equations.expr.nodes import (
+    Const,
+    Expr,
+    FunctionSymbol,
+    as_expr,
+    symbols_in,
+    walk,
+)
+from qewton.equations.expr.ops import ShapeError
+from qewton.equations.expr.shapes import check_shape
 from qewton.equations.geometry.sets import SetNode
-from qewton.equations.analysis.checks.shapes import check_sides
 from qewton.equations.printing.printable import Printable
 
 
@@ -48,7 +57,39 @@ class Constraint(Printable):
             raise TypeError(
                 f"A constraint holds on a set or None, got {type(self.on).__name__}."
             )
-        check_sides(self.lhs, self.rhs)
+        _check_sides(self.lhs, self.rhs)
+
+    @property
+    def sides(self) -> tuple[Expr, Expr]:
+        return (self.lhs, self.rhs)
+
+    def nodes(self) -> Iterator[Expr]:
+        """Every node of both sides, depth first, the left side first."""
+        for side in self.sides:
+            yield from walk(side)
+
+    def symbols(self) -> tuple[FunctionSymbol, ...]:
+        """The functions in the constraint, in order of first appearance."""
+        found = (s for side in self.sides for s in symbols_in(side))
+        return tuple(dict.fromkeys(found))
+
+    def sets(self) -> tuple[SetNode, ...]:
+        """The set it holds on, then every set its sides refer to, without repeats."""
+        found = [] if self.on is None else [self.on]
+        found.extend(s for node in self.nodes() for s in node.sets())
+        return tuple(dict.fromkeys(found))
+
+
+def _check_sides(lhs: Expr, rhs: Expr) -> None:
+    """Both sides must have one shape; a scalar constant may stand for any shape."""
+    left, right = check_shape(lhs), check_shape(rhs)
+    if left is None or right is None or left == right:
+        return
+    if (isinstance(rhs, Const) and right == ()) or (
+        isinstance(lhs, Const) and left == ()
+    ):
+        return
+    raise ShapeError(f"The sides of a constraint have shapes {left} and {right}.")
 
 
 @dataclass(frozen=True)

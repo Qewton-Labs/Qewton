@@ -12,7 +12,7 @@ from qewton.equations.expr.nodes import (
 )
 from qewton.equations.expr.ops import OPS
 from qewton.equations.geometry.sets import Domain
-from qewton.equations.analysis.checks.shapes import shape_of
+from qewton.equations.expr.shapes import shape_of
 
 x = Variable("x", dim=2)
 t = Variable("t", dim=1)

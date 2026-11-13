@@ -16,7 +16,7 @@ from qewton.equations import (
     grad,
     weak_form,
 )
-from qewton.equations.analysis.checks.diagnostics import Severity
+from qewton.equations.diagnostics import Severity
 from qewton.equations.analysis.structure.structure import signed_terms
 from qewton.equations.expr.ops import Linearity
 

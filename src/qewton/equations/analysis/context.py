@@ -1,8 +1,9 @@
 """AnalysisContext: every analysis result of one task, each computed once.
 
     ctx = AnalysisContext(task)
+    ctx.ok                    # no errors in the checks
     ctx.classification        # computed on first access, then kept
-    ctx.suggestions
+    print(ctx.report())       # everything as one readable text
 
 The passes in `prepare/`, `structure/` and `classify/` are plain functions of their
 inputs, such as `build_rows(problem, unknowns, shapes)`. They never call each other.
@@ -23,7 +24,7 @@ from dataclasses import dataclass
 from functools import cached_property
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, by_severity, errors
+from qewton.equations.diagnostics import Diagnostic, by_severity, errors
 from qewton.equations.analysis.classify.classify import (
     Classification,
     build_classification,
@@ -172,6 +173,30 @@ class AnalysisContext:
     def suggestions(self) -> tuple[Suggestion, ...]:
         """The suggestions of every registered rule; see `analysis/suggest`."""
         return suggest(self)
+
+    def report(self) -> str:
+        """A readable summary: the task, signatures, normalized problem, batching,
+        classification, suggestions and diagnostics.
+
+        Classification and suggestions are left out if the checks found an error or
+        the task has no unknowns, since both assume a valid problem to solve.
+        """
+        lines = _section("Task", str(self.task).splitlines() or ["(no roles given)"])
+        lines += _section("Signatures", str(self.signatures).splitlines())
+        lines += _section("Normalized", str(self.problem).splitlines())
+        if self.batching:
+            lines += _section("Batching", str(self.batching).splitlines())
+        if self.ok and self.task.unknowns:
+            lines += _section("Classification", str(self.classification).splitlines())
+            suggestions = [str(s) for s in self.suggestions]
+            lines += _section("Suggestions", suggestions or ["none"])
+        diagnostics = [str(d) for d in self.diagnostics]
+        lines += _section("Diagnostics", diagnostics or ["none"])
+        return "\n".join(lines)
+
+
+def _section(title: str, lines: list[str]) -> list[str]:
+    return [title] + [f"  {line}" for line in lines]
 
 
 # Shortcuts for a single result.

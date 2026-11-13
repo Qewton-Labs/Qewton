@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, warning
+from qewton.equations.diagnostics import Diagnostic, warning
 from qewton.equations.analysis.structure.structure import BatchPlacement
 from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.geometry.sets import SetNode

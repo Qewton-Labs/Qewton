@@ -7,10 +7,8 @@ from qewton.equations import (
     FunctionSymbol,
     Problem,
     Variable,
-    report,
-    run_pipeline,
 )
-from qewton.equations.analysis.checks.diagnostics import Severity
+from qewton.equations.diagnostics import Severity
 from qewton.equations.fixtures import (
     delay,
     heat,
@@ -67,7 +65,7 @@ Diagnostics
 
 
 def test_golden_report_for_poisson():
-    assert report(run_pipeline(forward_poisson())) == GOLDEN_POISSON
+    assert AnalysisContext(forward_poisson()).report() == GOLDEN_POISSON
 
 
 GOLDEN_DELAY_SIGNATURES = """\
@@ -79,14 +77,14 @@ Signatures
 def test_golden_signatures_for_the_delay_problem():
     p = delay()
     task = p.task(unknown=[named(p, "u")], fixed={named(p, "phi"): 1.0})
-    text = report(run_pipeline(task))
+    text = AnalysisContext(task).report()
     assert GOLDEN_DELAY_SIGNATURES in text
     assert text.endswith("Diagnostics\n  none")
 
 
 def test_the_context_keeps_the_problem_and_its_normalized_form():
     task = forward_poisson()
-    ctx = run_pipeline(task)
+    ctx = AnalysisContext(task)
     assert isinstance(ctx, AnalysisContext)
     assert ctx.task is task
     assert ctx.origin == task.problem.constraints
@@ -96,7 +94,7 @@ def test_the_context_keeps_the_problem_and_its_normalized_form():
 
 def test_findings_of_every_pass_are_collected_errors_first():
     p = heat()
-    ctx = run_pipeline(p.task(unknown=[named(p, "w")]))
+    ctx = AnalysisContext(p.task(unknown=[named(p, "w")]))
     kinds = [d.severity for d in ctx.diagnostics]
     assert kinds == sorted(kinds, key=lambda k: list(Severity).index(k))
     messages = " ".join(d.message for d in ctx.diagnostics)
@@ -119,7 +117,7 @@ def test_a_lift_shows_up_as_information():
         ),
         time=t,
     )
-    ctx = run_pipeline(problem.task(unknown=[w], fixed={g: 0.0}))
+    ctx = AnalysisContext(problem.task(unknown=[w], fixed={g: 0.0}))
     assert [d.severity for d in ctx.diagnostics] == [Severity.INFO]
     assert ctx.ok
 
@@ -128,10 +126,10 @@ def test_a_lift_shows_up_as_information():
     "make", [poisson, heat, neumann_poisson, delay, periodic_poisson]
 )
 def test_every_fixture_runs_through_the_pipeline(make):
-    ctx = run_pipeline(make().task())
+    ctx = AnalysisContext(make().task())
     assert ctx.ok
     assert len(ctx.signatures.table) == len(ctx.task.problem.symbols())
-    assert report(ctx).startswith("Task")
+    assert ctx.report().startswith("Task")
 
 
 def test_a_problem_with_a_validation_error_is_not_ok():
@@ -145,6 +143,6 @@ def test_a_problem_with_a_validation_error_is_not_ok():
     problem = Problem(
         (Eq(u, 0).on(part),), partitions=(Partition(boundary, (part, part)),)
     )
-    ctx = run_pipeline(problem.task(unknown=[u]))
+    ctx = AnalysisContext(problem.task(unknown=[u]))
     assert not ctx.ok
     assert ctx.diagnostics[0].severity is Severity.ERROR

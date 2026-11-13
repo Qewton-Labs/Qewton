@@ -5,44 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.nodes import FunctionSymbol, walk
-from qewton.equations.geometry.sets import Product, SetNode
+from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.geometry.sets import SetNode, depends_on
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
 
 BatchAxes = Mapping[FunctionSymbol | SetNode, Variable]
-
-
-def _set_depends_on(node: SetNode, source: SetNode, problem: Problem) -> bool:
-    if node is source:
-        return True
-    if isinstance(node, Product):
-        if any(_set_depends_on(factor, source, problem) for factor in node.factors):
-            return True
-    elif hasattr(node, "of"):
-        if _set_depends_on(node.of, source, problem):  # type: ignore
-            return True
-    return any(
-        node in partition.parts and source in partition.parts
-        for partition in problem.partitions
-    )
-
-
-def _function_symbols(constraint: Constraint) -> set[FunctionSymbol]:
-    return {
-        node
-        for side in (constraint.lhs, constraint.rhs)
-        for node in walk(side)
-        if isinstance(node, FunctionSymbol)
-    }
-
-
-def _evaluation_sets(constraint: Constraint) -> tuple[SetNode, ...]:
-    found = [constraint.on] if constraint.on is not None else []
-    for side in (constraint.lhs, constraint.rhs):
-        for node in walk(side):
-            found.extend(node.sets())
-    return tuple(found)
 
 
 def _constraint_seeds(
@@ -52,14 +20,14 @@ def _constraint_seeds(
     varying_functions: dict[FunctionSymbol, Variable],
     varying_sets: dict[SetNode, Variable],
 ) -> tuple[set[FunctionSymbol], dict[Variable, set[FunctionSymbol]]]:
-    symbols = _function_symbols(constraint)
+    symbols = set(constraint.symbols())
     involved = symbols & unknowns
     seeds: dict[Variable, set[FunctionSymbol]] = {}
     for symbol in symbols & varying_functions.keys():
         seeds.setdefault(varying_functions[symbol], set()).update(involved)
-    for evaluated_on in _evaluation_sets(constraint):
+    for evaluated_on in constraint.sets():
         for varying_set, axis in varying_sets.items():
-            if _set_depends_on(evaluated_on, varying_set, problem):
+            if depends_on(evaluated_on, varying_set, problem.partitions):
                 seeds.setdefault(axis, set()).update(involved)
     return involved, seeds
 

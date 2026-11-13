@@ -17,8 +17,6 @@ from qewton.equations import (
     div,
     fixtures,
     grad,
-    report,
-    run_pipeline,
     suggest,
 )
 from qewton.equations.analysis.suggest.rules import (
@@ -129,7 +127,7 @@ def test_batched_operator_suggests_reduced_basis_or_eim():
 
 
 def test_report_lists_classification_and_suggestions():
-    text = report(run_pipeline(task_of("heat", "w")))
+    text = AnalysisContext(task_of("heat", "w")).report()
     assert "Classification" in text
     assert "Suggestions" in text
     assert "method of lines" in text
@@ -137,7 +135,7 @@ def test_report_lists_classification_and_suggestions():
 
 def test_report_skips_the_analysis_when_the_task_is_invalid_or_has_no_unknown():
     problem = fixtures.poisson()
-    text = report(run_pipeline(problem.task()))
+    text = AnalysisContext(problem.task()).report()
     assert "Suggestions" not in text
 
 

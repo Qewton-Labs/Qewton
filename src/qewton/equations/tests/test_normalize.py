@@ -21,7 +21,7 @@ from qewton.equations import (
     lap,
 )
 from qewton.equations.analysis.prepare.normalize import normalize
-from qewton.equations.analysis.checks.diagnostics import errors
+from qewton.equations.diagnostics import errors
 from qewton.equations.fixtures import (
     delay,
     heat,

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, warning
+from qewton.equations.diagnostics import Diagnostic, warning
 from qewton.equations.analysis.prepare.infer import Inference
 from qewton.equations.expr.nodes import (
     Expr,
@@ -134,7 +134,7 @@ def evaluation_sets(problem: Problem) -> dict[FunctionSymbol, set[SetNode]]:
     """Every set each function is evaluated on, including sets inside larger ones."""
     evaluated: dict[FunctionSymbol, set[SetNode]] = {}
     for constraint in problem.constraints:
-        for side in (constraint.lhs, constraint.rhs):
+        for side in constraint.sides:
             for symbol, where in _occurrences(side, constraint.on):
                 if where is not None:
                     evaluated.setdefault(symbol, set()).add(where)

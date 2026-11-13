@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from qewton.equations.analysis.checks.diagnostics import Diagnostic
+from qewton.equations.diagnostics import Diagnostic
 from qewton.equations.analysis.classify.conditions import (
     ConditionKind,
     boundary_counts,

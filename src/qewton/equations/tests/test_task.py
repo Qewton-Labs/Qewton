@@ -14,7 +14,7 @@ from qewton.equations import (
     sin,
 )
 from qewton.equations.expr.nodes import Coord
-from qewton.equations.fixtures import heat, poisson
+from qewton.equations.fixtures import heat, poisson, transmission
 
 
 def symbol(problem, name):
@@ -190,3 +190,11 @@ class TestSets:
         assert task.varies(names["Gamma_D"]) and task.varies(names["Gamma_N"])
         assert not task.varies(names["Omega"])
         assert not task.varies(names["∂Omega"])
+
+    def test_an_interface_varies_with_its_subdomains(self):
+        problem = transmission()
+        (gamma,) = problem.interfaces
+        left = gamma.first
+        task = problem.task(unknown=[symbol(problem, "u")], varying={left: "meshes"})
+        assert task.varies(gamma) and task.varies(gamma.second)
+        assert not task.varies(left.of)

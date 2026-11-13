@@ -20,12 +20,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from qewton.equations.analysis.checks.axes import free_axes, set_free_axes, sliced_axes
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, info, warning
+from qewton.equations.expr.axes import free_axes
+from qewton.equations.diagnostics import Diagnostic, info, warning
 from qewton.equations.expr.nodes import Apply, Const, Expr, transform
 from qewton.equations.expr.ops import OPS
 from qewton.equations.geometry.coordinates import root_of
-from qewton.equations.geometry.sets import Domain, Product, SetNode
+from qewton.equations.geometry.sets import (
+    Domain,
+    Product,
+    SetNode,
+    set_free_axes,
+    sliced_axes,
+    with_factors,
+)
 from qewton.equations.model.constraints import Constraint, Relation
 from qewton.equations.model.problem import Problem
 
@@ -44,14 +51,11 @@ def _time_domains(problem: Problem) -> list[Domain]:
     if problem.time is None:
         return []
     time = root_of(problem.time)
-    found: set[Domain] = set()
-    stack: list[SetNode] = list(problem.sets())
-    while stack:
-        node = stack.pop()
-        if isinstance(node, Product):
-            stack.extend(node.factors)
-        elif isinstance(node, Domain) and node.axes == {time}:
-            found.add(node)
+    found = (
+        node
+        for node in with_factors(problem.sets())
+        if isinstance(node, Domain) and node.axes == {time}
+    )
     return sorted(found, key=lambda d: d.name)
 
 

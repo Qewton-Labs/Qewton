@@ -15,7 +15,7 @@ from qewton.equations import (
     lap,
 )
 from qewton.equations.expr.ops import ShapeError
-from qewton.equations.analysis.checks.shapes import UnknownShapeError, shape_of
+from qewton.equations.expr.shapes import UnknownShapeError, shape_of
 
 x = Variable("x", dim=2)
 t = Variable("t", dim=1)

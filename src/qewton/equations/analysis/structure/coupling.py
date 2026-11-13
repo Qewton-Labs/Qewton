@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from math import prod
 
 from qewton.equations.analysis.prepare.infer import constraint_shape
-from qewton.equations.expr.nodes import FunctionSymbol, walk
+from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
 
@@ -70,12 +70,7 @@ class CouplingGraph:
 def _symbols(
     constraint: Constraint, unknowns: frozenset[FunctionSymbol]
 ) -> set[FunctionSymbol]:
-    return {
-        node
-        for side in (constraint.lhs, constraint.rhs)
-        for node in walk(side)
-        if isinstance(node, FunctionSymbol) and node in unknowns
-    }
+    return {s for s in constraint.symbols() if s in unknowns}
 
 
 def _strong_components(

@@ -16,12 +16,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.checks.axes import free_axes
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, warning
-from qewton.equations.analysis.checks.shapes import UnknownShapeError, shape_of
+from qewton.equations.expr.axes import free_axes
+from qewton.equations.diagnostics import Diagnostic, warning
+from qewton.equations.expr.shapes import UnknownShapeError, shape_of
 from qewton.equations.expr.nodes import Expr, FunctionSymbol
 from qewton.equations.geometry.coordinates import root_of
-from qewton.equations.geometry.sets import Product, SetNode
+from qewton.equations.geometry.sets import SetNode, depends_on, with_factors
 from qewton.equations.model.observation import Observed
 
 if TYPE_CHECKING:
@@ -84,19 +84,10 @@ class Task:
         whose other parts vary: the parts fill the whole, so one cannot move alone.
         A fixed whole with varying parts stays fixed.
         """
-        if self.roles.get(node) is Role.VARYING:
-            return True
-        if isinstance(node, Product):
-            built_from = node.factors
-        else:
-            built_from = (node.of,) if hasattr(node, "of") else ()  # type: ignore
-        if any(self.varies(p) for p in built_from):
-            return True
         return any(
-            self.roles.get(sibling) is Role.VARYING
-            for partition in self.problem.partitions
-            if node in partition.parts
-            for sibling in partition.parts
+            depends_on(node, source, self.problem.partitions)
+            for source, role in self.roles.items()
+            if role is Role.VARYING and isinstance(source, SetNode)
         )
 
     @property
@@ -138,23 +129,13 @@ def _as_mapping(entries: object, what: str) -> dict:
     return {key: None for key in entries}
 
 
-def _with_factors(sets) -> set[SetNode]:
-    """The sets and, recursively, the factors of their products (a mesh of Omega
-    serves Omega x I)."""
-    found: set[SetNode] = set()
-    for node in sets:
-        found.add(node)
-        if isinstance(node, Product):
-            found |= _with_factors(node.factors)
-    return found
-
-
 def _check_key(problem: Problem, key: object, what: str) -> None:
     if isinstance(key, FunctionSymbol):
         if key not in problem.symbols():
             raise TaskError(f"`{what}`: {key.variable.name} is not in the problem.")
     elif isinstance(key, SetNode):
-        if key not in _with_factors(problem.sets()):
+        # A mesh of Omega also serves Omega x I, so factors count too.
+        if key not in with_factors(problem.sets()):
             raise TaskError(f"`{what}`: the set {key} is not in the problem.")
     else:
         raise TypeError(

@@ -10,13 +10,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.checks.diagnostics import Diagnostic
-from qewton.equations.analysis.classify.rows import lies_on_boundary
+from qewton.equations.diagnostics import Diagnostic
 from qewton.equations.analysis.classify.spaces import FunctionSpace
 from qewton.equations.analysis.structure.structure import linearity
 from qewton.equations.expr.nodes import Expr, FunctionSymbol
 from qewton.equations.expr.ops import Linearity
-from qewton.equations.geometry.sets import Part, Periodic, SetNode
+from qewton.equations.geometry.sets import Part, Periodic, SetNode, lies_on_boundary
 from qewton.equations.model.constraints import Constraint
 
 

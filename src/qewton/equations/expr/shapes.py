@@ -1,7 +1,9 @@
 """Bottom-up shape computation for expressions.
 
 Shapes follow the declared outputs of the function symbols: () is a scalar, (n,) a
-vector, (n, m) a matrix. Inferring undeclared shapes comes in a later block.
+vector, (n, m) a matrix. Undeclared shapes are inferred by the analysis
+(`analysis/prepare/infer.py`); until then `check_shape` skips them.
+`expr/__init__.py` registers `check_shape` with the nodes.
 """
 
 from functools import singledispatch
@@ -128,18 +130,3 @@ def check_shape(expr: Expr) -> Shape | None:
         return shape_of(expr)
     except UnknownShapeError:
         return None
-
-
-def check_sides(lhs: Expr, rhs: Expr) -> None:
-    """Both sides of a relation must agree; a scalar constant may stand for any shape."""
-    left, right = check_shape(lhs), check_shape(rhs)
-    if left is None or right is None or left == right:
-        return
-    if (isinstance(rhs, Const) and right == ()) or (
-        isinstance(lhs, Const) and left == ()
-    ):
-        return
-    raise ShapeError(f"The sides of a constraint have shapes {left} and {right}.")
-
-
-Expr.checks.append(check_shape)

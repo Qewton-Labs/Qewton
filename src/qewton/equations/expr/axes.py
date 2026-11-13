@@ -11,7 +11,8 @@ varies with. It follows the declared inputs of the functions:
 
 Two mistakes are caught when an expression is built: differentiating along a
 coordinate the operand does not depend on (the result is zero, which is almost
-certainly not intended), and shifting along one.
+certainly not intended), and shifting along one. `check_axes` runs these checks;
+`expr/__init__.py` registers it with the nodes.
 """
 
 from __future__ import annotations
@@ -32,15 +33,7 @@ from qewton.equations.expr.nodes import (
     Shift,
 )
 from qewton.equations.geometry.coordinates import coordinate_factors, root_of
-from qewton.equations.model.constraints import Constraint
-from qewton.equations.geometry.sets import (
-    Boundary,
-    Interface,
-    Part,
-    Product,
-    SetNode,
-    Slice,
-)
+from qewton.equations.geometry.sets import set_free_axes, sliced_axes
 
 Axes = frozenset[Variable]
 
@@ -51,24 +44,6 @@ class AxisError(ValueError):
 
 def _names(axes: Axes) -> str:
     return "{" + ", ".join(sorted(str(axis.name) for axis in axes)) + "}"
-
-
-def sliced_axes(s: SetNode) -> Axes:
-    """The coordinates a set fixes to a single value, such as t in Omega x {t = 0}."""
-    if isinstance(s, Slice):
-        return frozenset({s.axis})
-    if isinstance(s, Product):
-        return frozenset().union(*(sliced_axes(factor) for factor in s.factors))
-    if isinstance(s, (Boundary, Part)):
-        return sliced_axes(s.of)
-    if isinstance(s, Interface):
-        return sliced_axes(s.first)
-    return frozenset()
-
-
-def set_free_axes(s: SetNode) -> Axes:
-    """The coordinates a point of the set still varies in: its axes minus the sliced."""
-    return s.axes - sliced_axes(s)
 
 
 @singledispatch
@@ -149,32 +124,3 @@ def _(expr: Apply) -> Axes:
 
 def check_axes(expr: Expr) -> None:
     free_axes(expr)
-
-
-def check_constraint_axes(constraint: Constraint, time: Variable | None) -> None:
-    """Both sides may depend only on the coordinates the constraint holds on.
-
-    The time coordinate is the exception: a constraint on a set without time that
-    uses time-dependent functions is lifted to hold at every time, so it is allowed.
-    A global constraint holds on no coordinate.
-    """
-    on = constraint.on
-    allowed = frozenset() if on is None else set_free_axes(on)
-    if time is not None:
-        allowed |= {root_of(time)}
-    used = free_axes(constraint.lhs) | free_axes(constraint.rhs)
-    extra = used - allowed
-    if extra:
-        where = "globally" if on is None else f"on {on}"
-        hint = (
-            " Integrate or restrict it first."
-            if on is None
-            else " Restrict it, integrate it, or hold the constraint on a larger set."
-        )
-        raise AxisError(
-            f"The constraint {constraint} holds {where} but depends on "
-            f"{_names(extra)}.{hint}"
-        )
-
-
-Expr.checks.append(check_axes)

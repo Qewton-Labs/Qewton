@@ -17,9 +17,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.classify.rows import Row, base_domain, spatial_domain
+from qewton.equations.analysis.classify.rows import Row
 from qewton.equations.expr.nodes import FunctionSymbol
-from qewton.equations.geometry.sets import Part
+from qewton.equations.geometry.sets import Part, base_domain, spatial_domain
 
 
 def _candidates(

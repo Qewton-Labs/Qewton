@@ -13,8 +13,8 @@ from qewton.equations import (
     transform,
     walk,
 )
-from qewton.equations.analysis.checks.axes import free_axes
-from qewton.equations.analysis.checks.shapes import UnknownShapeError, shape_of
+from qewton.equations.expr.axes import free_axes
+from qewton.equations.expr.shapes import UnknownShapeError, shape_of
 from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.analysis.context import signatures
 from qewton.equations.analysis.structure.structure import linearity

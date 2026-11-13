@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, info, warning
+from qewton.equations.diagnostics import Diagnostic, info, warning
 from qewton.equations.analysis.classify.conditions import ConditionKind
 from qewton.equations.analysis.classify.rows import Row
 from qewton.equations.analysis.structure.structure import split_constraint

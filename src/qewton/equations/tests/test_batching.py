@@ -2,6 +2,7 @@ import numpy as np
 
 from qewton.config.variables import Variable
 from qewton.equations import (
+    AnalysisContext,
     BatchMode,
     Boundary,
     Domain,
@@ -16,8 +17,6 @@ from qewton.equations import (
     div,
     dot,
     grad,
-    report,
-    run_pipeline,
 )
 
 
@@ -109,10 +108,10 @@ def test_a_task_without_varying_data_has_no_batching():
 def test_report_has_a_batching_section_only_for_batched_tasks():
     problem, s = poisson()
     plain = problem.task(unknown=[s["u"]], fixed=fixed_data(s))
-    assert "Batching" not in report(run_pipeline(plain))
+    assert "Batching" not in AnalysisContext(plain).report()
     batched = problem.task(
         unknown=[s["u"]], fixed=fixed_data(s, s["f"]), varying={s["f"]: np.ones(3)}
     )
-    text = report(run_pipeline(batched))
+    text = AnalysisContext(batched).report()
     assert "p_f (f): source only in C1; reaches u" in text
     assert "parallel over the batch" in text

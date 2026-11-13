@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from functools import reduce
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.checks.diagnostics import Diagnostic, error, warning
+from qewton.equations.diagnostics import Diagnostic, error, warning
 from qewton.equations.analysis.classify.conditions import ConditionKind
-from qewton.equations.analysis.classify.rows import Region, Row, spatial_domain
+from qewton.equations.analysis.classify.rows import Region, Row
 from qewton.equations.analysis.classify.spaces import FunctionSpace, highest_order
 from qewton.equations.analysis.context import AnalysisContext
 from qewton.equations.analysis.structure.structure import derivative_orders
@@ -27,7 +27,13 @@ from qewton.equations.compile.pairing import pair
 from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.expr.ops import Shape
 from qewton.equations.geometry.coordinates import coordinate_factors
-from qewton.equations.geometry.sets import Boundary, Domain, Part, SetNode
+from qewton.equations.geometry.sets import (
+    Boundary,
+    Domain,
+    Part,
+    SetNode,
+    spatial_domain,
+)
 from qewton.equations.model.constraints import Constraint, Relation
 from qewton.equations.model.problem import Problem
 from qewton.equations.model.task import Task

@@ -18,26 +18,24 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from qewton.equations.analysis.checks.axes import free_axes, set_free_axes, sliced_axes
-from qewton.equations.analysis.checks.diagnostics import (
+from qewton.equations.expr.axes import free_axes
+from qewton.equations.diagnostics import (
     Diagnostic,
     by_severity,
     error,
     warning,
 )
 from qewton.equations.analysis.prepare.infer import infer_shapes
-from qewton.equations.expr.nodes import (
-    Apply,
-    Const,
-    Expr,
-    FunctionSymbol,
-    Restrict,
-    Shift,
-    walk,
-)
+from qewton.equations.expr.nodes import Apply, Const, Expr, Restrict, Shift
 from qewton.equations.expr.ops import ShapeError
-from qewton.equations.geometry.coordinates import coordinate_factors, root_of
-from qewton.equations.geometry.sets import Interface, Product, SetNode
+from qewton.equations.geometry.coordinates import root_of
+from qewton.equations.geometry.sets import (
+    Interface,
+    Product,
+    factors,
+    set_free_axes,
+    sliced_axes,
+)
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
 
@@ -61,9 +59,8 @@ def validate(problem: Problem) -> tuple[Diagnostic, ...]:
 
 def _nodes(problem: Problem) -> Iterator[tuple[Constraint, Expr]]:
     for constraint in problem.constraints:
-        for side in (constraint.lhs, constraint.rhs):
-            for node in walk(side):
-                yield constraint, node
+        for node in constraint.nodes():
+            yield constraint, node
 
 
 def _partitions(problem: Problem) -> Found:
@@ -94,17 +91,11 @@ def _interfaces(problem: Problem) -> Found:
             )
     declared = set(problem.interfaces)
     for constraint in problem.constraints:
-        for factor in _factors(constraint.on):
+        for factor in factors(constraint.on):
             if isinstance(factor, Interface) and factor not in declared:
                 yield warning(
                     f"{factor} is not declared in Problem(interfaces=...).", constraint
                 )
-
-
-def _factors(region: SetNode | None) -> tuple[SetNode, ...]:
-    if isinstance(region, Product):
-        return tuple(f for factor in region.factors for f in _factors(factor))
-    return () if region is None else (region,)
 
 
 def _periodic(problem: Problem) -> Found:
@@ -217,10 +208,8 @@ def _slices(problem: Problem) -> Found:
             continue
         coordinates = {
             root_of(axis)
-            for side in (constraint.lhs, constraint.rhs)
-            for node in walk(side)
-            if isinstance(node, FunctionSymbol) and node.inputs is not None
-            for axis in coordinate_factors(node.inputs)
+            for symbol in constraint.symbols()
+            for axis in symbol.coordinates()
         }
         if not coordinates:
             continue

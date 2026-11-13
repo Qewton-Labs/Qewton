@@ -86,7 +86,7 @@ def _needed(
     if order >= 2:
         return FunctionSpace.H2
     names = set()
-    for side in (row.constraint.lhs, row.constraint.rhs):
+    for side in row.constraint.sides:
         names |= _operators(side, symbol, time)
     if len(names) == 1:
         return _BY_OPERATOR.get(names.pop(), FunctionSpace.H1)

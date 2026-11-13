@@ -20,7 +20,14 @@ from dataclasses import dataclass, field
 from qewton.config.variables import Variable
 from qewton.equations.analysis.structure.structure import derivative_orders, signed_terms
 from qewton.equations.expr.api import div, dot, grad, inner
-from qewton.equations.expr.nodes import Apply, Coord, Expr, FunctionSymbol, walk
+from qewton.equations.expr.nodes import (
+    Apply,
+    Coord,
+    Expr,
+    FunctionSymbol,
+    contains,
+    walk,
+)
 from qewton.equations.expr.ops import ShapeError, Shape
 from qewton.equations.analysis.prepare.infer import shape_with
 
@@ -66,10 +73,6 @@ class Pieces:
     interior: list[tuple[int, Expr]] = field(default_factory=list)
     boundary: list[BoundaryPiece] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
-
-
-def _contains(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> bool:
-    return any(node in unknowns for node in walk(expr))
 
 
 def _constant(expr: Expr) -> bool:
@@ -158,7 +161,7 @@ class Cutter:
         first, second = term.args
         for factor, rest in ((first, second), (second, first)):
             scalar = self._shape(factor) == ()  # type: ignore
-            if scalar and not _contains(factor, unknowns):  # type: ignore
+            if scalar and not contains(factor, unknowns):  # type: ignore
                 self.cut(rest, factor * test, sign, out)  # type: ignore
                 return True
         return False

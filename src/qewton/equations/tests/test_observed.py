@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from qewton.equations import (
+    AnalysisContext,
     Category,
     Domain,
     Eq,
@@ -15,8 +16,6 @@ from qewton.equations import (
     dt,
     integral,
     lap,
-    report,
-    run_pipeline,
     suggest,
     training_modes,
 )
@@ -108,7 +107,7 @@ def test_observed_unknown_without_batch_gets_a_surrogate_and_shows_in_the_report
     task = problem.task(unknown=[u], observed={u: Observed(on=bulk, samples=50)})
     (found,) = [s for s in suggest(task) if s.category is Category.LEARNING]
     assert "regression" in found.method
-    assert "observed u" in report(run_pipeline(task))
+    assert "observed u" in AnalysisContext(task).report()
 
 
 def test_a_kernel_integral_over_a_copy_of_the_interval_passes_the_pipeline():
@@ -120,4 +119,4 @@ def test_a_kernel_integral_over_a_copy_of_the_interval_passes_the_pipeline():
         Domain("I", ambient=x)
     )
     task = Problem((constraint,)).task(unknown=[g], fixed=[kernel, f])
-    assert run_pipeline(task).ok
+    assert AnalysisContext(task).ok
