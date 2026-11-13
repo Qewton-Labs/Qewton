@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import ufl
 from mpi4py import MPI
-
 from dolfinx import default_scalar_type, fem, la, mesh as dmesh
 
 from qewton.backends.fem.form import FormBackend
@@ -154,8 +153,7 @@ class FenicsXFormBackend(FormBackend):
                 boundary facets geometrically, or an array of facet indices.
             function_space: The function space the condition acts on.
         """
-        V = function_space
-        msh = V.mesh
+        msh = function_space.mesh
         fdim = msh.topology.dim - 1
 
         if callable(boundary):
@@ -164,18 +162,22 @@ class FenicsXFormBackend(FormBackend):
             facets = np.asarray(boundary, dtype=np.int32)
 
         msh.topology.create_connectivity(fdim, msh.topology.dim)
-        dofs = fem.locate_dofs_topological(V, fdim, facets)
+        dofs = fem.locate_dofs_topological(function_space, fdim, facets)
 
         if isinstance(boundary_value, fem.Function):
             return fem.dirichletbc(boundary_value, dofs)
         if isinstance(boundary_value, fem.Constant):
-            return fem.dirichletbc(boundary_value, dofs, V)
+            return fem.dirichletbc(boundary_value, dofs, function_space)
         if callable(boundary_value):
-            u_bc = fem.Function(V)
+            u_bc = fem.Function(function_space)
             u_bc.interpolate(boundary_value)
             return fem.dirichletbc(u_bc, dofs)
 
         value = fem.Constant(msh, np.asarray(boundary_value, dtype=default_scalar_type))
-        return fem.dirichletbc(value, dofs, V)
+        return fem.dirichletbc(value, dofs, function_space)
+
+    @staticmethod
+    def boundary_normal(mesh: Any) -> Any:
+        return ufl.FacetNormal(mesh)
 
     # endregion

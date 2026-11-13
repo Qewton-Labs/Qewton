@@ -9,7 +9,7 @@ class FunctionSpaceBackend(Backend[TensorType]):
     # region FunctionSpaces
     @staticmethod
     @abstractmethod
-    def create_function_space(mesh: Any, type: Any, order: int) -> Any:
+    def create_function_space(mesh: Any, function_type: Any, order: int) -> Any:
         pass
 
     @staticmethod

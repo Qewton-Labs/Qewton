@@ -129,4 +129,9 @@ class FormBackend(Backend[TensorType]):
     def build_dirichlet(boundary_value: Any, boundary: Any, function_space: Any) -> Any:
         pass
 
+    @staticmethod
+    @abstractmethod
+    def boundary_normal(mesh: Any) -> Any:
+        pass
+
     # endregion

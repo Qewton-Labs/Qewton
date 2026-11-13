@@ -14,7 +14,7 @@ class FEMBackend(Backend[TensorType]):
 
     form: ClassVar[type[FormBackend]]
     function_space: ClassVar[type[FunctionSpaceBackend]]
-    comp: ClassVar[type[ComputingBackend]]
+    comp: ClassVar[type[ComputingBackend]]  # backend for general basic computations
     solve: ClassVar[type[SolveBackend]]
     mesh: ClassVar[type[MeshBackend]]
 
