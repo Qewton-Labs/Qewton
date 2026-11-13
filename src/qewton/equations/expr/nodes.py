@@ -15,7 +15,7 @@ from qewton.equations.geometry.coordinates import (
     root_of,
 )
 from qewton.equations.geometry.sets import SetNode, has_normal
-from qewton.equations.printing.printable import Printable
+from qewton.equations.printable import Printable
 
 
 def _check_output(variable: Variable) -> None:

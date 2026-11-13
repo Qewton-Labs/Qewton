@@ -13,7 +13,7 @@ from qewton.equations.geometry.sets import (
     Slice,
 )
 from qewton.equations.model.problem import Problem
-from qewton.equations.printing.pretty import pretty
+from qewton.equations.printing.text import pretty
 
 x = Variable("x", dim=2)
 t = Variable("t", dim=1)

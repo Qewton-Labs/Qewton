@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from qewton.config.variables import Variable
 from qewton.equations.diagnostics import Diagnostic
-from qewton.equations.analysis.classify.spaces import FunctionSpace
+from qewton.equations.analysis.classification.spaces import FunctionSpace
 from qewton.equations.analysis.structure.structure import linearity
 from qewton.equations.expr.nodes import Expr, FunctionSymbol
 from qewton.equations.expr.ops import Linearity

@@ -5,7 +5,7 @@
     ctx.classification        # computed on first access, then kept
     print(ctx.report())       # everything as one readable text
 
-The passes in `prepare/`, `structure/` and `classify/` are plain functions of their
+The passes in `prepare/`, `structure/` and `classification/` are plain functions of their
 inputs, such as `build_rows(problem, unknowns, shapes)`. They never call each other.
 This class is the one place that wires them together: each property passes the
 results of earlier ones on, so what a pass depends on can be read off here. Nothing
@@ -25,15 +25,15 @@ from functools import cached_property
 
 from qewton.config.variables import Variable
 from qewton.equations.diagnostics import Diagnostic, by_severity, errors
-from qewton.equations.analysis.classify.classify import (
+from qewton.equations.analysis.classification.classify import (
     Classification,
     build_classification,
 )
-from qewton.equations.analysis.classify.rows import Row, build_rows
+from qewton.equations.analysis.classification.rows import Row, build_rows
 from qewton.equations.analysis.prepare.infer import Inference, infer_shapes
-from qewton.equations.analysis.prepare.normalize import Normalized, normalize
+from qewton.equations.analysis.prepare.normalization import Normalized, normalize
 from qewton.equations.analysis.prepare.signatures import Signatures, build_signatures
-from qewton.equations.analysis.prepare.validate import validate
+from qewton.equations.analysis.prepare.validation import validate
 from qewton.equations.analysis.structure.batch_axes import build_inherited_batch_axes
 from qewton.equations.analysis.structure.batching import Batching, build_batching
 from qewton.equations.analysis.structure.coupling import (
@@ -47,7 +47,7 @@ from qewton.equations.analysis.structure.structure import (
     build_decoupled_axes,
     split_constraint,
 )
-from qewton.equations.analysis.suggest import Suggestion, suggest
+from qewton.equations.analysis.suggestions.base import Suggestion, suggest
 from qewton.equations.analysis.training import TrainingMode, build_training_modes
 from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.expr.ops import Linearity

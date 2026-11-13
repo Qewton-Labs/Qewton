@@ -65,16 +65,12 @@ class Task:
 
     def with_role(self, role: Role) -> tuple[FunctionSymbol, ...]:
         """The functions that have this role, in order of name."""
-        return tuple(
-            sorted(  # type: ignore
-                (s for s, r in self.roles.items() if r is role and _is_symbol(s)),
-                key=lambda s: (
-                    s.variable.name
-                    if isinstance(s, FunctionSymbol) and s.variable.name is not None
-                    else ""
-                ),
-            )
-        )
+        symbols = [
+            s
+            for s, r in self.roles.items()
+            if r is role and isinstance(s, FunctionSymbol)
+        ]
+        return tuple(sorted(symbols, key=lambda s: s.variable.name or ""))
 
     def varies(self, node: SetNode) -> bool:
         """Whether the set changes per instance.

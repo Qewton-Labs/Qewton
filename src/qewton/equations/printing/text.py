@@ -39,7 +39,7 @@ from qewton.equations.geometry.sets import (
     Slice,
 )
 from qewton.equations.model.problem import Problem
-from qewton.equations.printing.printable import Printable
+from qewton.equations.printable import Printable
 
 # Precedence levels, loosest binding first.
 ADD, MUL, NEG, POW, ATOM = 1, 2, 3, 4, 5

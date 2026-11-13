@@ -20,8 +20,8 @@ from __future__ import annotations
 from enum import Enum
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.classify.facts import Fact
-from qewton.equations.analysis.classify.rows import Region, Row
+from qewton.equations.analysis.classification.facts import Fact
+from qewton.equations.analysis.classification.rows import Region, Row
 from qewton.equations.expr.nodes import Apply, Expr, FunctionSymbol
 from qewton.equations.geometry.coordinates import coordinate_factors
 

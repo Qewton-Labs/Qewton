@@ -20,7 +20,7 @@ from qewton.equations import (
     integral,
     lap,
 )
-from qewton.equations.analysis.prepare.normalize import normalize
+from qewton.equations.analysis.prepare.normalization import normalize
 from qewton.equations.diagnostics import errors
 from qewton.equations.fixtures import (
     delay,

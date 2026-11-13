@@ -2,9 +2,9 @@ import pytest
 
 from qewton.equations import fixtures
 from qewton.equations.analysis.context import classify
-from qewton.equations.analysis.classify.conditions import ConditionKind
-from qewton.equations.analysis.classify.equations import PdeType, pde_type
-from qewton.equations.analysis.classify.spaces import FunctionSpace
+from qewton.equations.analysis.classification.conditions import ConditionKind
+from qewton.equations.analysis.classification.equations import PdeType, pde_type
+from qewton.equations.analysis.classification.spaces import FunctionSpace
 
 UNKNOWNS = {
     "poisson": ("u",),

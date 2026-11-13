@@ -19,7 +19,7 @@ from qewton.equations import (
     grad,
     suggest,
 )
-from qewton.equations.analysis.suggest.rules import (
+from qewton.equations.analysis.suggestions.rules import (
     ActiveSet,
     BlockTypeRule,
     LagrangeFem,

@@ -21,7 +21,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from qewton.equations.diagnostics import Diagnostic
-from qewton.equations.analysis.classify.conditions import (
+from qewton.equations.analysis.classification.conditions import (
     ConditionKind,
     boundary_counts,
     condition_kinds,
@@ -29,15 +29,15 @@ from qewton.equations.analysis.classify.conditions import (
     interface_counts,
     transport_notes,
 )
-from qewton.equations.analysis.classify.equations import (
+from qewton.equations.analysis.classification.equations import (
     PdeType,
     block_types,
     equation_types,
     relations,
 )
-from qewton.equations.analysis.classify.facts import Fact, by_constraint
-from qewton.equations.analysis.classify.rows import Row
-from qewton.equations.analysis.classify.spaces import FunctionSpace, function_spaces
+from qewton.equations.analysis.classification.facts import Fact, by_constraint
+from qewton.equations.analysis.classification.rows import Row
+from qewton.equations.analysis.classification.spaces import FunctionSpace, function_spaces
 from qewton.equations.analysis.structure.coupling import CouplingGraph
 from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.model.problem import Problem

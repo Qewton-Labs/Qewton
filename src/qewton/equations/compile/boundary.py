@@ -15,8 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from qewton.equations.diagnostics import Diagnostic, info, warning
-from qewton.equations.analysis.classify.conditions import ConditionKind
-from qewton.equations.analysis.classify.rows import Row
+from qewton.equations.analysis.classification.conditions import ConditionKind
+from qewton.equations.analysis.classification.rows import Row
 from qewton.equations.analysis.structure.structure import split_constraint
 from qewton.equations.compile.by_parts import BoundaryPiece
 from qewton.equations.compile.forms import FormTerm, Measure

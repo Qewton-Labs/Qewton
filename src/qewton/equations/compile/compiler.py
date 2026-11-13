@@ -15,9 +15,9 @@ from functools import reduce
 
 from qewton.config.variables import Variable
 from qewton.equations.diagnostics import Diagnostic, error, warning
-from qewton.equations.analysis.classify.conditions import ConditionKind
-from qewton.equations.analysis.classify.rows import Region, Row
-from qewton.equations.analysis.classify.spaces import FunctionSpace, highest_order
+from qewton.equations.analysis.classification.conditions import ConditionKind
+from qewton.equations.analysis.classification.rows import Region, Row
+from qewton.equations.analysis.classification.spaces import FunctionSpace, highest_order
 from qewton.equations.analysis.context import AnalysisContext
 from qewton.equations.analysis.structure.structure import derivative_orders
 from qewton.equations.compile.boundary import BoundaryContext, Condition, boundary_terms

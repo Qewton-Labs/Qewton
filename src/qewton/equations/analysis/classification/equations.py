@@ -17,8 +17,8 @@ from collections.abc import Mapping
 from enum import Enum
 
 from qewton.config.variables import Variable
-from qewton.equations.analysis.classify.facts import Fact
-from qewton.equations.analysis.classify.rows import Region, Row
+from qewton.equations.analysis.classification.facts import Fact
+from qewton.equations.analysis.classification.rows import Region, Row
 from qewton.equations.analysis.structure.coupling import CouplingBlock, CouplingGraph
 from qewton.equations.expr.nodes import FunctionSymbol
 from qewton.equations.model.constraints import Relation

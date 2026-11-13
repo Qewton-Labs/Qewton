@@ -19,7 +19,7 @@ from qewton.equations import (
     lap,
     trace,
 )
-from qewton.equations.analysis.prepare.validate import validate
+from qewton.equations.analysis.prepare.validation import validate
 from qewton.equations.fixtures import transmission
 
 

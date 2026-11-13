@@ -21,9 +21,9 @@ from enum import Enum
 
 from qewton.config.variables import Variable
 from qewton.equations.diagnostics import Diagnostic, info, warning
-from qewton.equations.analysis.classify.equations import PdeType
-from qewton.equations.analysis.classify.facts import Fact
-from qewton.equations.analysis.classify.rows import Region, Row
+from qewton.equations.analysis.classification.equations import PdeType
+from qewton.equations.analysis.classification.facts import Fact
+from qewton.equations.analysis.classification.rows import Region, Row
 from qewton.equations.analysis.structure.coupling import CouplingGraph
 from qewton.equations.analysis.structure.structure import (
     derivative_orders,

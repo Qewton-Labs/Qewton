@@ -19,7 +19,7 @@ from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.analysis.context import signatures
 from qewton.equations.analysis.structure.structure import linearity
 from qewton.equations.expr.ops import ShapeError
-from qewton.equations.printing.pretty import pretty
+from qewton.equations.printing.text import pretty
 
 x = Variable("x", dim=2)
 t = Variable("t", dim=1)

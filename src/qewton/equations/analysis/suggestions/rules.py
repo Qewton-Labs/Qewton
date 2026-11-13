@@ -16,10 +16,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, ClassVar
 
-from qewton.equations.analysis.classify.equations import PdeType
-from qewton.equations.analysis.classify.facts import Fact
+from qewton.equations.analysis.classification.equations import PdeType
+from qewton.equations.analysis.classification.facts import Fact
 from qewton.equations.analysis.structure.batching import BatchMode
-from qewton.equations.analysis.suggest.base import Category, Rule, Suggestion
+from qewton.equations.analysis.suggestions.base import Category, Rule, Suggestion
 from qewton.equations.analysis.training import TrainingMode
 from qewton.equations.geometry.coordinates import root_of
 from qewton.equations.model.constraints import Relation

@@ -1,6 +1,6 @@
 """Mixin that gives symbolic objects a readable str() and notebook display.
 
-The printer lives in pretty.py, which sets `printer` on import. This module imports
+The printer lives in printing/text.py, which sets `printer` on import. This module imports
 nothing, so the symbolic classes can use it without an import cycle.
 """
 
@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 class Printable:
     printer: Callable[[object], str] | None = (
-        None  # set by qewton.equations.printing.pretty
+        None  # set by qewton.equations.printing.text
     )
 
     def __str__(self) -> str:

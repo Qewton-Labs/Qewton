@@ -19,7 +19,7 @@ from typing import Sequence
 
 from qewton.config.variables import Variable
 from qewton.equations.geometry.coordinates import check_coordinate
-from qewton.equations.printing.printable import Printable
+from qewton.equations.printable import Printable
 from qewton.geometries.base import Geometry
 from qewton.geometries.continuous.base import ContinuousGeometry
 from qewton.geometries.product import ProductGeometry

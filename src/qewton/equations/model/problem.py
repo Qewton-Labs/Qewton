@@ -22,7 +22,7 @@ from qewton.equations.geometry.sets import (
 )
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.task import Task, build_task
-from qewton.equations.printing.printable import Printable
+from qewton.equations.printable import Printable
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ class Problem(Printable):
     def overview(self):
         """The coordinates, sets and functions of this problem; print it to read it."""
         # pylint: disable-next=import-outside-toplevel,cyclic-import
-        from qewton.equations.analysis.overview import overview
+        from qewton.equations.analysis.problem_overview import overview
 
         return overview(self)
 

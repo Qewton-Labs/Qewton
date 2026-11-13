@@ -37,6 +37,8 @@ M1–M6 import nothing numeric except `ContinuousGeometry`, used by `Domain` to 
 
 **TODO: tighter coupling between `SetNode` and `Geometry`.** For now a mesh tag is looked up by name (`Part` name = tag name). A given mesh geometry should instead be linked to the `Domain`, `Boundary` and `Part` objects, so that tags, subdomains and interfaces come from the geometry and not from matching strings.
 
+Every package's `__init__.py` re-exports the public names of its modules, and `qewton.equations` combines those of its layers. No module is named like a function its package exports, so a re-export never hides a module.
+
 ```
 qewton/equations/
     ├── geometry/
@@ -55,14 +57,14 @@ qewton/equations/
     │   ├── task.py              # Task, Role
     │   └── observation.py       # Observed: samples of an unknown
     ├── diagnostics.py           # Diagnostic, Severity: findings of any layer
+    ├── printable.py             # mixin: str() and notebook display through pretty
     ├── printing/
-    │   ├── coupling_diagram.py  # coupling diagram data and matplotlib drawing
-    │   ├── pretty.py            # readable text for expressions, sets, constraints, problems (M1)
-    │   └── printable.py         # mixin: str() and notebook display through pretty
+    │   ├── diagram.py           # coupling diagram data and matplotlib drawing
+    │   └── text.py              # pretty: readable text for expressions, sets, constraints, problems (M1)
     ├── analysis/
     │   ├── prepare/             # make a problem ready to analyse
-    │   │   ├── validate.py
-    │   │   ├── normalize.py
+    │   │   ├── validation.py
+    │   │   ├── normalization.py
     │   │   ├── infer.py         # shape inference for undeclared outputs
     │   │   └── signatures.py
     │   ├── structure/           # what the equations look like
@@ -71,21 +73,21 @@ qewton/equations/
     │   │   ├── batching.py      # one entry per parameter axis: mode, placement, reach
     │   │   └── coupling.py      # coupling graph, matching, blocks
     │   ├── context.py           # AnalysisContext: wires the passes, each result computed once; report()
-    │   ├── overview.py
-    │   ├── classify/            # what kind of problem it is (M4)
+    │   ├── problem_overview.py  # overview(problem): coordinates, sets, functions
+    │   ├── classification/      # what kind of problem it is (M4)
     │   │   ├── rows.py          # constraints with region, orders, component counts
     │   │   ├── equations.py     # PDE type per equation, block types, saddle points
     │   │   ├── conditions.py    # BC kinds, condition counts, transport note
     │   │   ├── spaces.py        # first-guess function spaces
     │   │   ├── facts.py         # Fact(rule, subject, value, why, constraints)
-    │   │   └── classify.py      # classify(task) -> Classification
-    │   └── suggest/             # method suggestions with rationale (M6): base.py (Rule, Suggestion, suggest), rules.py (built-in rules)
+    │   │   └── classify.py      # Classification, build_classification
+    │   └── suggestions/             # method suggestions with rationale (M6): base.py (Rule, Suggestion, suggest), rules.py (built-in rules)
     ├── compile/
     │   ├── forms.py             # Measure, FormTerm, Residual, WeakProblem (M8)
     │   ├── by_parts.py          # integration-by-parts rules per operator (M8)
     │   ├── pairing.py           # equations ↔ test functions (M8)
     │   ├── boundary.py          # boundary terms: essential, natural, Robin (M8)
-    │   ├── weak_form.py         # strong form → WeakProblem (M8)
+    │   ├── compiler.py          # weak_form(task): strong form → WeakProblem (M8)
     │   ├── ufl_export.py        # WeakProblem → UFL (FEniCS / Firedrake)
     │   ├── samplers.py          # SetNode → point sampler (interior, boundary parts, slices)
     │   ├── losses.py            # constraints / weak forms → PINN, VPINN, Deep Ritz losses
@@ -371,12 +373,12 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 - The axes of every constraint's set are known axes, and `Part`/`Boundary` chains are well-formed.
 - Every declared `Partition` is consistent.
 - Every unknown listed in the task appears in at least one constraint (checked when the Task is built).
-- `validate(problem)` (`analysis/prepare/validate.py`) returns `Diagnostic`s: partitions, periodic offsets, delays with history, restrictions, shape conflicts (errors) and defaulted shapes (warnings).
+- `validate(problem)` (`analysis/prepare/validation.py`) returns `Diagnostic`s: partitions, periodic offsets, delays with history, restrictions, shape conflicts (errors) and defaulted shapes (warnings).
 
 ### 6.2 normalize
 
-- Bring every constraint into the form `lhs − rhs REL 0` (`analysis/prepare/normalize.py`, done), keeping the original for display in `Normalized.origin`. A right side that is already zero stays, and a complementarity is not rewritten.
-- **Time lifting** (`analysis/prepare/normalize.py`, done). A constraint whose sides vary in time (`free_axes` contains t) but which holds on a set without time is rewritten to hold on S × I, and a global one to hold on I. Initial conditions are left alone, since `Restrict` to a slice already removed t. The interval is the one `Domain` on the time coordinate found in the problem; if there is none, or several, nothing is lifted and a warning says why. Each lift is an info diagnostic, and `Normalized.origin` keeps the original constraints for display. The `partitions` are not lifted: a lifted part `Gamma_D x I` is covered by its declaration of `Gamma_D`.
+- Bring every constraint into the form `lhs − rhs REL 0` (`analysis/prepare/normalization.py`, done), keeping the original for display in `Normalized.origin`. A right side that is already zero stays, and a complementarity is not rewritten.
+- **Time lifting** (`analysis/prepare/normalization.py`, done). A constraint whose sides vary in time (`free_axes` contains t) but which holds on a set without time is rewritten to hold on S × I, and a global one to hold on I. Initial conditions are left alone, since `Restrict` to a slice already removed t. The interval is the one `Domain` on the time coordinate found in the problem; if there is none, or several, nothing is lifted and a warning says why. Each lift is an info diagnostic, and `Normalized.origin` keeps the original constraints for display. The `partitions` are not lifted: a lifted part `Gamma_D x I` is covered by its declaration of `Gamma_D`.
 - **Batch lifting.** Constraints that involve a batched symbol get its parameter axis (× P).
 - Choose canonical forms (done): expand `lap(u, axes)` into `div(grad(u, axes), axes)`, so that −div(ν∇u) and −νΔu are analysed consistently. The rewrite uses the new generic `transform(expr, rewrite)` in `expr/nodes.py`, which rebuilds a tree bottom-up and reuses unchanged nodes.
 
@@ -404,7 +406,7 @@ Also built: `decoupled_axes(task)`, which reports declared unknown input axes wi
 - **Linearity.** Classify each term as linear, affine or nonlinear in the unknowns, using `OpSpec.linearity`.
 - **Batch placement.** Record whether each batched symbol appears in the operator part or only in the source part, and whether it enters affinely (term = θ(μ) · term′, where term′ does not depend on μ). A symbol with no spatial axes can be pulled out of `div`, `grad` and `lap`. That rule is what makes `div(nu * grad(u, x), x)` affine, so the structure pass must state it explicitly.
 - **Coupling graph.** `analysis/structure/coupling.py` builds a bipartite graph between scalar equation components and scalar unknown components. Edges mean an unknown occurs in a constraint. Since expressions do not yet select vector components, vector equations are conservatively connected to every component of each occurring unknown. A deterministic augmenting-path maximum matching reports unmatched rows and columns; it is a structural count/coupling check, not a well-posedness proof. Matched equation/unknown pairs induce a directed dependency graph whose strongly connected components are returned in topological order. Unmatched nodes are not included in blocks. This avoids adding a graph dependency. The Stokes fixture omits boundary conditions and exists to demonstrate the velocity-pressure saddle-point block.
-- **Coupling diagram.** `coupling_diagram(task)` (data in `printing/coupling_diagram.py`) extends the graph with data functions (fixed/varying), the sets each equation is posed on and each unknown is defined on, and the coordinates the sets live in; `plot_coupling(task)` draws it in five columns (equations, unknowns, data, sets, coordinates).
+- **Coupling diagram.** `coupling_diagram(task)` (data in `printing/diagram.py`) extends the graph with data functions (fixed/varying), the sets each equation is posed on and each unknown is defined on, and the coordinates the sets live in; `plot_coupling(task)` draws it in five columns (equations, unknowns, data, sets, coordinates).
 - **Decoupled axes.** `decoupled_axes(task)` reports coordinates declared on unknowns with no unknown derivative, integral coupling, or shift along them. These are candidate pointwise directions (including quasi-static time); batch parallelism is reported separately in M5.
 
 Batched reporting (M5): `batching(task)` returns one `BatchEntry` per parameter axis, with a `BatchMode` (source only, operator affine, operator not separable, geometry, unused), the constraints it occurs in, and the unknowns that depend on it. `ctx.report()` prints a Batching section when the task has batch axes. Instances are always independent, since a parameter axis appears in no expression. What to do with a mode (factor the operator once, reduced basis) is a suggestion and stays in M6.
@@ -413,7 +415,7 @@ Batched reporting (M5): `batching(task)` returns one `BatchEntry` per parameter 
 
 Built (M4): `classify(task)` returns a `Classification` of `Fact`s, each with its rule and reason, plus warnings. The notes below say what was implemented and where it is deliberately rough.
 
-- The PDE type rule uses the highest time order t and space order s per bulk equation (see the table in `classify/equations.py`). The sign of the leading terms is not checked. A coupled block takes the dominant type of its equations, or SADDLE_POINT when an unknown (the multiplier) is missing from fewer equations than the other unknowns have components.
+- The PDE type rule uses the highest time order t and space order s per bulk equation (see the table in `classification/equations.py`). The sign of the leading terms is not checked. A coupled block takes the dominant type of its equations, or SADDLE_POINT when an unknown (the multiplier) is missing from fewer equations than the other unknowns have components.
 - Conditions are told apart by where they hold: a time slice or a delay history is INITIAL, a boundary or part is a boundary condition (Dirichlet, Neumann, Robin, or PERIODIC for the second set of a `Periodic`), no set is GLOBAL.
 - Counts are warnings, never errors (Stokes leaves its boundary conditions out on purpose). A periodic condition counts for both of its parts. Transport equations only get a note that inflow data is needed; the flow direction is not checked.
 - Subdomains and interfaces: a `Part` of a domain carries bulk equations, and `Interface(first, second)` is their common boundary (normal from first to second). A problem declares its interfaces with `Problem(interfaces=...)`. Write one-sided traces and jumps with `trace(u, gamma, side)` and `jump(u, gamma)`. Each declared interface needs as many value conditions (INTERFACE_VALUE) and flux conditions (INTERFACE_FLUX) as the second-order unknowns on its two sides have components, else a warning. Not checked: that the parts really touch, that the partition covers the domain with equations, and that the flux uses the matching coefficient.
@@ -432,7 +434,7 @@ Built (M4): `classify(task)` returns a `Classification` of `Fact`s, each with it
 
 ### 6.6 suggest
 
-Built (M6): `analysis/suggest/`. A rule is a subclass of `Rule` (`base.py`) that sets `method` and `category` and implements `check(ctx)`, which reads the `AnalysisContext` and yields suggestions; defining the class registers it in `Rule.registry` under its class name, and `register=False` opts out. Families of rules that differ only in data fill in a small base class (`rules.py`): `BlockTypeRule` (one per block type: elliptic, parabolic, transport, wave, saddle point, ODE, algebraic), `BatchModeRule` (one per batch mode) and `TrainingRule` (one per training mode). The other rules are `Newton` (nonlinear operator), `ActiveSet` (inequality) and `StationarySolves` (time decoupled). Each `Suggestion(rule, method, why, evidence, category)` carries the facts it came from, and `report()` prints them in a Suggestions section. `suggest(task, rules=...)` runs only the given rules. Learning (added after M6): `problem.task(..., observed={u: Observed(on=, samples=, noisy=)})` records samples of an unknown without changing its role. `analysis/training.py` derives a `TrainingMode` per unknown (physics informed: no samples; data driven: samples cover its full-dimensional sets; hybrid: partial), and the `TrainingRule` subclasses turn it into PINN, supervised operator learning or hybrid suggestions, but only when the task has samples or batch axes. Not built: the row "task asks to generalise to unseen parameters", because the task has no such flag. The suggestions are heuristics and do not look at signs or coefficients.
+Built (M6): `analysis/suggestions/`. A rule is a subclass of `Rule` (`base.py`) that sets `method` and `category` and implements `check(ctx)`, which reads the `AnalysisContext` and yields suggestions; defining the class registers it in `Rule.registry` under its class name, and `register=False` opts out. Families of rules that differ only in data fill in a small base class (`rules.py`): `BlockTypeRule` (one per block type: elliptic, parabolic, transport, wave, saddle point, ODE, algebraic), `BatchModeRule` (one per batch mode) and `TrainingRule` (one per training mode). The other rules are `Newton` (nonlinear operator), `ActiveSet` (inequality) and `StationarySolves` (time decoupled). Each `Suggestion(rule, method, why, evidence, category)` carries the facts it came from, and `report()` prints them in a Suggestions section. `suggest(task, rules=...)` runs only the given rules. Learning (added after M6): `problem.task(..., observed={u: Observed(on=, samples=, noisy=)})` records samples of an unknown without changing its role. `analysis/training.py` derives a `TrainingMode` per unknown (physics informed: no samples; data driven: samples cover its full-dimensional sets; hybrid: partial), and the `TrainingRule` subclasses turn it into PINN, supervised operator learning or hybrid suggestions, but only when the task has samples or batch axes. Not built: the row "task asks to generalise to unseen parameters", because the task has no such flag. The suggestions are heuristics and do not look at signs or coefficients.
 
 A rule table: conditions on facts produce a `Suggestion(method, evidence)`.
 
@@ -498,7 +500,7 @@ class WeakProblem:
     energy: Expr | None = None                 # J(u) = ½ a(u, u) − ℓ(u), if symmetric and coercive
 ```
 
-Algorithm (`compile/weak_form.py`):
+Algorithm (`compile/compiler.py`):
 
 1. **Pair constraints with test functions.** The coupling graph (6.4) gives a matching, but it only fixes the pairing for square, structurally nonsingular systems. Stokes: continuity div u = 0 does not contain p, so the matching is momentum ↔ p and continuity ↔ u. The test-space pairing (momentum tested with V, continuity tested with Q) is the inf-sup pairing, a modelling choice recorded explicitly, not derived from the matching.
 2. **Test and integrate.** For each interior constraint `lhs − rhs = 0` on S, add `Integral(inner(lhs − rhs, v), Measure(S))`. For constraints on S × I, the measure is over S only (method of lines; see step 5).

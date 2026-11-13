@@ -24,7 +24,7 @@ from qewton.equations.expr.nodes import (
 from qewton.equations.expr.ops import ShapeError
 from qewton.equations.expr.shapes import check_shape
 from qewton.equations.geometry.sets import SetNode
-from qewton.equations.printing.printable import Printable
+from qewton.equations.printable import Printable
 
 
 class Relation(Enum):

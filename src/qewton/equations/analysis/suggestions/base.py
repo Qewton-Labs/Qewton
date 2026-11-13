@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar
 
-from qewton.equations.analysis.classify.facts import Fact
+from qewton.equations.analysis.classification.facts import Fact
 from qewton.equations.model.task import Task
 
 if TYPE_CHECKING:

@@ -11,7 +11,9 @@ for instance a method for the equation type and one for the batching.
 built-in rules. Adding a method means adding one `Rule` subclass.
 """
 
-from qewton.equations.analysis.suggest import rules  # defining the rules registers them
-from qewton.equations.analysis.suggest.base import Category, Rule, Suggestion, suggest
+from qewton.equations.analysis.suggestions import (
+    rules,
+)  # defining the rules registers them
+from qewton.equations.analysis.suggestions.base import Category, Rule, Suggestion, suggest
 
-__all__ = ["Category", "Rule", "Suggestion", "rules", "suggest"]
+__all__ = ["Category", "Rule", "Suggestion", "suggest"]
