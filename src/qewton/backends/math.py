@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Any
+from typing import Any, Literal
 
 from qewton.backends.base import Backend, TensorType
 from qewton.config.devices import cpu, Device
@@ -1228,4 +1228,34 @@ class MathBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def narrow(x: Any, dim: int, start: int, length: int) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def rfftn(
+        x: Any,
+        s: tuple[int, ...] | None = None,
+        dim: tuple[int, ...] | None = None,
+        norm: Literal["forward", "backward", "ortho"] | None = None,
+    ) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def irfftn(
+        x: Any,
+        s: tuple[int, ...] | None = None,
+        dim: tuple[int, ...] | None = None,
+        norm: Literal["forward", "backward", "ortho"] | None = None,
+    ) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def fftshift(x: Any, dim: int | tuple[int, ...] | None = None) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def ifftshift(x: Any, dim: int | tuple[int, ...] | None = None) -> TensorType:
         pass

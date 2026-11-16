@@ -11,7 +11,10 @@ from qewton.config.axes import (
     GeometryAxes,
     EllipsisAxes,
 )
+from qewton.config.dtypes import Float32
 from qewton.algorithms.building_blocks.activation_functions import ReLU
+from qewton.algorithms.building_blocks.array_operations import Flatten, UnflattenLike
+from qewton.algorithms.building_blocks.creation import Identity
 from qewton.config.saving.loading import Deserializer
 from qewton.config.saving.saving import Serializer
 from qewton.optim.base import EvaluationPhase
@@ -473,6 +476,138 @@ class DoubleConv(GraphNode, Generic[TensorType]):
         self.set_state(NodeState.INITIALIZED)
 
     def forward(self, x):
+        self.input.set_value(x)
+        self.run()
+        return self.output.value
+
+
+def _current_value(value: int | HyperParameter) -> int:
+    """Returns `value`, or the current value if it is a hyperparameter."""
+    return value.value if isinstance(value, HyperParameter) else value
+
+
+class Flattened1dConv(GraphNode[TensorType]):
+    """A 1D convolution for inputs of shape `(batch, channels, x_1, ..., x_n)`.
+
+    All spatial dimensions are flattened into one, the 1D convolution is applied to
+    the flattened input, and the spatial dimensions are restored. Only `kernel_size=1`
+    is supported, which applies the same linear map to the channels at every position
+    of the domain.
+
+    The flattening and restoring are nodes of the inner graph (instead of reshapes in
+    `forward`), so they are also executed when this node is a part of another graph,
+    and the parameters of the convolution are visible to that graph.
+
+    Attributes:
+        conv (Conv1D): The convolution applied to the flattened input.
+
+    Args:
+        in_channels (int | HyperParameter): Number of input channels.
+        out_channels (int | HyperParameter): Number of output channels.
+        kernel_size (int): Size of the convolution kernel. Only 1 is supported, since
+            a larger kernel changes the length of the flattened axis.
+        bias (bool, optional): If the convolution has a bias. Defaults to False.
+        backend (type[DeepLearningBackend[TensorType]], optional): The backend used for
+            the computations. Defaults to DEFAULT_DL_BACKEND.
+        name (str, optional): Name of the node. Defaults to "flattened_1d_conv".
+
+    Note:
+        Weight and bias are initialized like `torch.nn.Conv1d`, i.e. uniformly in
+        `[-1/sqrt(in_channels), 1/sqrt(in_channels)]`.
+
+    Raises:
+        ValueError: If `kernel_size` is not 1.
+    """
+
+    # Index of the first spatial axis of an input `(batch, channels, *spatial_dims)`
+    FIRST_SPATIAL_AXIS = 2
+
+    def __init__(
+        self,
+        in_channels: int | HyperParameter,
+        out_channels: int | HyperParameter,
+        kernel_size: int,
+        bias: bool = False,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+        name: str = "flattened_1d_conv",
+    ) -> None:
+        if kernel_size != 1:
+            raise ValueError(f"Only kernel_size=1 is supported, got {kernel_size}.")
+
+        # Shape information for the data configurations: the spatial dimensions can be
+        # any number of dimensions, but are the same for the input and the output.
+        self.batch_axes = BatchAxes(AxesDim(None))
+        self.spatial_axes = EllipsisAxes()
+        self.feature_axes_x = FeatureAxes(shape=(_current_value(in_channels),))
+        self.feature_axes_out = FeatureAxes(shape=(_current_value(out_channels),))
+
+        self.input_node = Identity(backend=backend)
+        self.flatten = Flatten(start_dim=self.FIRST_SPATIAL_AXIS, backend=backend)
+        self.conv = Conv1D(
+            in_channels, out_channels, kernel_size, bias=bias, backend=backend
+        )
+        self._initialize_like_torch(
+            _current_value(in_channels), _current_value(out_channels), bias, backend
+        )
+        self.unflatten = UnflattenLike(start_dim=self.FIRST_SPATIAL_AXIS, backend=backend)
+
+        graph = Graph()
+        graph.connect(self.input_node.output_ports[0], self.flatten.input_ports[0])
+        graph.connect(self.input_node.output_ports[0], self.unflatten.input_ports[1])
+        graph.connect(self.flatten.output_ports[0], self.conv.input_ports[0])
+        graph.connect(self.conv.output_ports[0], self.unflatten.input_ports[0])
+
+        super().__init__(
+            graph=graph,
+            input_ports=[self.input_node.input_ports[0]],
+            output_ports=[self.unflatten.output_ports[0]],
+            name=name,
+            backend=backend,
+        )
+        self._graph.setup()
+        self.input = self.input_ports[0]
+        self.output = self.output_ports[0]
+
+    def _initialize_like_torch(
+        self,
+        in_channels: int,
+        out_channels: int,
+        bias: bool,
+        backend: type[DeepLearningBackend[TensorType]],
+    ) -> None:
+        """Draws kernel and bias like `torch.nn.Conv1d`, which the backend's default
+        parameter initialization does not do.
+
+        The parameters are set up again with these values on the next setup of the graph.
+        """
+        bound = in_channels**-0.5
+        dtype = backend.dtypes[Float32]
+        shapes = [(self.conv.kernel, (out_channels, in_channels, 1))]
+        if bias:
+            shapes.append((self.conv.bias, (out_channels,)))
+        for parameter, shape in shapes:
+            parameter.initial_value = backend.random.uniform(
+                shape, -bound, bound, dtype=dtype
+            )
+            parameter.set_state(NodeState.UNINITIALIZED)
+
+    def x_data_config(self) -> DC:
+        return DC(self.batch_axes, self.feature_axes_x, self.spatial_axes)
+
+    def out_data_config(self) -> DC:
+        return DC(self.batch_axes, self.feature_axes_out, self.spatial_axes)
+
+    def forward(
+        self, x: Annotated[TensorType, x_data_config]
+    ) -> Annotated[TensorType, out_data_config]:
+        """Applies the convolution along the flattened spatial axes.
+
+        Args:
+            x (TensorType): Input of shape `(batch, in_channels, x_1, ..., x_n)`.
+
+        Returns:
+            TensorType: Output of shape `(batch, out_channels, x_1, ..., x_n)`.
+        """
         self.input.set_value(x)
         self.run()
         return self.output.value

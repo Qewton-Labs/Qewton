@@ -83,3 +83,8 @@ score = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = ["examples", ".*", "build", "dist", "venv"]
+
+[dependency-groups]
+dev = [
+    "neuraloperator>=2.0.0",
+]
