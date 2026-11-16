@@ -163,9 +163,7 @@ class FenicsXMeshBackend(MeshBackend):
     def get_mesh_boundaries(mesh: Any) -> np.ndarray:
         tdim = mesh.topology.dim
         fdim = tdim - 1
-
         mesh.topology.create_connectivity(fdim, tdim)
-
         return fx_mesh.exterior_facet_indices(mesh.topology)
 
     @staticmethod
