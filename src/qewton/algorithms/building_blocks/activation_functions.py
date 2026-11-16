@@ -162,6 +162,40 @@ class Sigmoid(Node[TensorType]):
         return self.backend.nn.sigmoid(x)
 
 
+class GELU(Node[TensorType]):
+    """Gaussian Error Linear Unit (GELU) activation function.
+
+    Applies the GELU activation function element-wise to the input tensor.
+    Weights input values according to the cumulative distribution function
+    of a standard Gaussian distribution, providing a smooth nonlinear output.
+
+    Attributes:
+        ellipsis_axes (EllipsisAxes): Configuration for tensor axes handling.
+
+    Examples:
+        >>> gelu = GELU(backend)
+        >>> x = backend.library.array([[-2, 0], [2, 4]])
+        >>> output = gelu.forward(x)
+        >>> # output: approximately [[-0.05, 0], [1.95, 4.0]]
+    """
+
+    ellipsis_axes = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Number[TensorType, DataConfiguration(ellipsis_axes)],
+    ) -> Number[TensorType, DataConfiguration(ellipsis_axes)]:
+        """Forward pass of GELU activation.
+
+        Args:
+            x: Input tensor of any shape.
+
+        Returns:
+            TensorType: Output tensor with the same shape and dtype as the input.
+        """
+        return self.backend.nn.gelu(x)
+
+
 class SoftPlus(Node[TensorType]):
     """Softplus activation function.
 
