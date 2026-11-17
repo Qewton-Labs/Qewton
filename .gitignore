@@ -2,7 +2,8 @@
 .continue
 __pycache__/
 .pytest_cache/
-**tuner_results/
+tuner_results/
+train_results*/
 **examples/Tuning/results/**
 **data_generation/
 **test_code/
@@ -12,3 +13,4 @@ dist/
 *.egg-info/
 .eggs/
 .continue
+
