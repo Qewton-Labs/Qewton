@@ -296,11 +296,16 @@ class GraphBasedTrainer(Trainer):
         Raises:
             ValueError: If no node has trainable parameters.
         """
-        # setup all graphs and then move all nodes to the correct device:
-        for graph in self.graphs:
-            graph.setup()
+        # move nodes to device before setup (fit DataProcessingNode on device)
         for node in self.all_nodes:
             node.to(self.device)
+        # setup all graphs
+        for graph in self.graphs:
+            graph.setup()
+        # move added data
+        for node in self.all_nodes:
+            node.to(self.device)
+
         # Now also collect all trainable parameters inside the graph
         parameters = None
         for node in self.all_nodes:
