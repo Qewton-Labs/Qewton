@@ -9,6 +9,7 @@ import math
 from typing import TYPE_CHECKING
 import numpy as np
 
+from qewton.data.datasets.array_data.base import BackendDataSet
 from qewton.graphs.nodes import NodeState
 from qewton.backends import Backend, DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
 from qewton.config.devices import Device, cpu
@@ -362,6 +363,13 @@ class DataLoader(DataNode[TensorType]):
 
         self._batch_progress += bs
         return tuple(batch_data) if len(batch_data) > 1 else batch_data[0]
+
+    def to(self, device: str | Device):
+        super().to(device)
+        if isinstance(self.data_set, BackendDataSet) and self.data_set.data_set_loaded:
+            self.data_set.to(device)
+        if isinstance(self.test_data_set, BackendDataSet) and self.test_data_set.data_set_loaded:
+            self.test_data_set.to(device)
 
     def cache(self, n_batches=-1):
         return
