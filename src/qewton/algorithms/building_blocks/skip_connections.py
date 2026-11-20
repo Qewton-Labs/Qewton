@@ -89,7 +89,7 @@ class SoftGating(GraphNode, Generic[TensorType]):
             name=name,
             backend=backend,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
 
     def forward(
         self, x: Annotated[TensorType, DataConfiguration.empty()]
@@ -105,9 +105,7 @@ class SoftGating(GraphNode, Generic[TensorType]):
         Returns:
             TensorType: The gated input, same shape as `x`.
         """
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value  # type: ignore
+        return super().forward(x)
 
 
 def skip_connection(

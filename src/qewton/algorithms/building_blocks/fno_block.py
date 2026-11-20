@@ -36,7 +36,8 @@ class FNOBlock(GraphNode, Generic[TensorType]):
     channel MLP. The channel MLP always uses GELU between its two layers.
 
     All arguments but `name` and `backend` can be hyperparameters. The network is
-    rebuilt for their current values in `setup`, which re-initializes all weights.
+    rebuilt for their current values when the node is built (`build`), with
+    newly initialized weights.
 
     Attributes:
         in_channels, out_channels, n_modes, use_channel_mlp, channel_mlp_expansion,
@@ -151,7 +152,7 @@ class FNOBlock(GraphNode, Generic[TensorType]):
             name=name,
             backend=backend,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self._state = NodeState.UNINITIALIZED
 
     @property
@@ -170,8 +171,9 @@ class FNOBlock(GraphNode, Generic[TensorType]):
             self.fft_norm,
         ]
 
-    def setup(self) -> None:
-        """Rebuilds the network, which re-initializes all of its weights."""
+    def build(self) -> None:
+        """Builds the network for the current hyperparameter values, with newly
+        initialized weights."""
         self.channel_dim_in.update_size(self.in_channels.value)
         self.channel_dim_out.update_size(self.out_channels.value)
         graph, output_port = self._build_network(self.backend)
@@ -351,6 +353,4 @@ class FNOBlock(GraphNode, Generic[TensorType]):
         Returns:
             TensorType: Output of shape `(batch, out_channels, *spatial_dims)`.
         """
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value  # type: ignore
+        return super().forward(x)

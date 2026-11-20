@@ -55,7 +55,7 @@ class HarmonicEmbedding(GraphNode[TensorType]):
             backend=backend,
             **kwargs,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self._state = NodeState.UNINITIALIZED
 
     def _build_embedding_graph(self, backend):
@@ -98,14 +98,13 @@ class HarmonicEmbedding(GraphNode[TensorType]):
 
         return graph, identity_node.input_ports[0], concat_node.output_ports[0]
 
-    def setup(self):
+    def build(self):
         new_graph, new_in, new_out = self._build_embedding_graph(self.backend)
         self.setup_graph(
             new_graph,
             input_ports=[new_in],
             output_ports=[new_out],
         )
-        self.set_state(NodeState.INITIALIZED)
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -133,9 +132,7 @@ class HarmonicEmbedding(GraphNode[TensorType]):
     def forward(
         self, x: Annotated[TensorType, x_data_config]
     ) -> Annotated[TensorType, out_data_config]:
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value  # type: ignore
+        return super().forward(x)
 
 
 class HarmonicFCN(GraphNode[TensorType]):
@@ -195,8 +192,7 @@ class HarmonicFCN(GraphNode[TensorType]):
             backend=backend,
         )
         graph = Graph()
-        self._state = NodeState.UNINITIALIZED
-        self.setup()
+        self.build()
         graph.connect(self.embedding, self.fcn)
         super().__init__(
             name=name,
@@ -206,7 +202,7 @@ class HarmonicFCN(GraphNode[TensorType]):
             backend=backend,
             **kwargs,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self.set_state(NodeState.UNINITIALIZED)
 
     def _compute_network_input_dim(self) -> int:
@@ -223,12 +219,11 @@ class HarmonicFCN(GraphNode[TensorType]):
     def hyperparameters(self) -> list[HyperParameter]:
         return self.fcn.hyperparameters + self.embedding.hyperparameters
 
-    def setup(self) -> None:
-        if self.state == NodeState.UNINITIALIZED:
-            self.embedding.setup()
-            old_in_neurons = self.fcn.in_neurons.current_value
-            self.fcn.in_neurons.current_value = self._compute_network_input_dim()
-            self.fcn.reset()
-            self.fcn.setup()
-            self.fcn.in_neurons.current_value = old_in_neurons
-            self.set_state(NodeState.INITIALIZED)
+    def build(self) -> None:
+        self.embedding.reset()
+        self.embedding.setup()
+        old_in_neurons = self.fcn.in_neurons.current_value
+        self.fcn.in_neurons.current_value = self._compute_network_input_dim()
+        self.fcn.reset()
+        self.fcn.setup()
+        self.fcn.in_neurons.current_value = old_in_neurons
