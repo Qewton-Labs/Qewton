@@ -3,13 +3,11 @@ Base classes for data loading and node-based data sampling in the graph.
 """
 
 from copy import deepcopy
-from typing import Any
 from abc import abstractmethod
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 import numpy as np
 
-from qewton.data.datasets.array_data.base import BackendDataSet
 from qewton.graphs.nodes import NodeState
 from qewton.backends import Backend, DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
 from qewton.config.devices import Device, cpu
@@ -122,7 +120,7 @@ class DataNode(Node[TensorType]):
         self,
         mode: EvaluationPhase = EvaluationPhase.VALIDATION,
         plot_type: "type[DataPlot] | None" = None,
-        controls: "list[ControlAxis]" = (),
+        controls: "list[ControlAxis]" = [],
         default_control: "type[ControlAxis] | None" = None,
         **plot_kwargs,
     ) -> "Layout":
@@ -358,6 +356,8 @@ class DataLoader(DataNode[TensorType]):
         batch_data = self._phase_data_sets[self.mode].get_batch(indices)
 
         # Move batch to device if backend is specified
+        # (this is always needed in case the data could not be moved from the start
+        # or is created new on the fly)
         if self._device is not None and issubclass(self.backend, DeepLearningBackend):
             batch_data = [self.backend.to(b, self._device) for b in batch_data]
 
@@ -365,10 +365,15 @@ class DataLoader(DataNode[TensorType]):
         return tuple(batch_data) if len(batch_data) > 1 else batch_data[0]
 
     def to(self, device: str | Device):
+        """Move the data loader and its datasets to `device`, so batches are
+        sliced on the device and not copied there in every step.
+
+        Args:
+            device (str, Device): The target device (e.g., 'cpu', 'cuda').
+        """
         super().to(device)
-        if isinstance(self.data_set, BackendDataSet) and self.data_set.data_set_loaded:
-            self.data_set.to(device)
-        if isinstance(self.test_data_set, BackendDataSet) and self.test_data_set.data_set_loaded:
+        self.data_set.to(device)
+        if self.test_data_set is not None:
             self.test_data_set.to(device)
 
     def cache(self, n_batches=-1):

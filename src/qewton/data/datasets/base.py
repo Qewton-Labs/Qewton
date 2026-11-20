@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 
 
 from qewton.config.data_configurations import DataConfiguration
+from qewton.config.devices import Device
 from qewton.config.saving.saving import Serializable
 
 
@@ -69,6 +70,18 @@ class DataSet(ABC, Serializable):
     def setup(self):
         """Optional setup method for subclasses to override."""
         pass
+
+    def to(self, device: str | Device) -> "DataSet":
+        """Move the data to a device, e.g. 'cpu' or 'cuda'. Does nothing by
+        default, for datasets that can not be moved.
+
+        Args:
+            device (str | Device): The target device.
+
+        Returns:
+            DataSet: This dataset.
+        """
+        return self
 
     @property
     def metadata(self) -> dict:
