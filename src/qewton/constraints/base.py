@@ -69,13 +69,16 @@ class Constraint(Node):
         return self.output_ports[0]
 
     def get_loss(
-        self, add_weight: bool = True, training_iteration: int = 0
+        self, graph, add_weight: bool = True, training_iteration: int = 0
     ) -> TensorType:
-        """Return the current loss value of this constraint,
-        multiplied by the weight if add_weight is True.
+        """Return the loss value of this constraint in the last run of
+        `graph`, multiplied by the weight if add_weight is True.
 
         Args:
+            graph (Graph): The graph this constraint was evaluated in.
             add_weight (bool, optional): If to add the weight. Defaults to True.
+            training_iteration (int, optional): The current training iteration,
+                for the activation condition. Defaults to 0.
 
         Raises:
             ValueError: If the loss value is not computed yet.
@@ -83,7 +86,8 @@ class Constraint(Node):
         Returns:
             Number: The current loss value of this constraint.
         """
-        if self.loss_port.value is None:
+        loss = graph.value_of(self.loss_port)
+        if loss is None:
             raise ValueError(
                 "Loss value is not computed yet. Make sure to run the forward pass of the\
                     graph before getting the loss."
@@ -91,7 +95,7 @@ class Constraint(Node):
         weight = self.weight.value if add_weight else 1
         if add_weight and self.activation_condition is not None:
             weight *= self.activation_condition(training_iteration)
-        return self.loss_port.value * weight
+        return loss * weight
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -113,7 +117,3 @@ class Constraint(Node):
         """
         self.evaluated_in_mode = new_mode
 
-    def run(self) -> None:
-        if self.evaluated_in_mode not in (self.mode, EvaluationPhase.ALWAYS):
-            self.loss_port.set_value(None)
-        return super().run()

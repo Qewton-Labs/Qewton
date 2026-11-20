@@ -43,7 +43,7 @@ def test_dataloader_to_algorithm_flow():
     graph.run()
 
     # 7. Assertions
-    output_value = algo_node.output_ports[0].value
+    output_value = graph.value_of(algo_node.output_ports[0])
     assert output_value is not None, "Output port should contain data after run"
     assert output_value.shape == (
         batch_size,
@@ -51,7 +51,7 @@ def test_dataloader_to_algorithm_flow():
     ), f"Expected batch size {batch_size}, got {output_value.shape[0]}"
 
     # Verify logic: The output should be the square of the input batch
-    input_batch = dataloader.output_ports[0].value
+    input_batch = graph.value_of(dataloader.output_ports[0])
     assert torch.allclose(
         output_value, input_batch**2  # type: ignore
     ), "Algorithm logic was not applied correctly to the batch"
@@ -92,11 +92,11 @@ def test_dataloader_tracking_flow():
     graph.run()
 
     # 7. Assertions
-    output_value = algo_node.output_ports[0].value
+    output_value = graph.value_of(algo_node.output_ports[0])
     assert output_value is not None, "Output port should contain data after run"
     assert output_value.shape == (batch_size, n_features)
 
-    input_batch = dataloader.output_ports[0].value
+    input_batch = graph.value_of(dataloader.output_ports[0])
     assert torch.allclose(output_value, input_batch**2)  # type: ignore
 
 

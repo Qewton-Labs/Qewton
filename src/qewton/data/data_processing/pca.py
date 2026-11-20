@@ -77,18 +77,15 @@ class PCANode(DataProcessingNode[TensorType]):
 
     def reset(self):
         self._state = NodeState.UNINITIALIZED
-        self._set_port_values(None, None, None)
         return super().reset()
 
-    def setup(self, graph: Graph) -> None:
-        if self._state == NodeState.INITIALIZED:
-            return
+    def build(self, graph: Graph) -> None:
         self.refresh_port_data_configurations()
         # First collect all data:
         total_data = []
         for _ in range(self.data_source_node.training_batches):
             in_edge = graph.run_to(last_node=self, mode=EvaluationPhase.TRAIN)
-            total_data.append(in_edge[self.input_ports[0]].from_port.value)
+            total_data.append(graph.value_of(in_edge[self.input_ports[0]].from_port))
         self.fit(total_data)
 
     def fit(self, data_batch):
@@ -102,7 +99,6 @@ class PCANode(DataProcessingNode[TensorType]):
         self.pca_u, self.pca_s, self.pca_v = self.backend.linalg.pca(
             total_data, q=self.n.value
         )
-        self._set_port_values(self.pca_u, self.pca_s, self.pca_v)
 
         self.set_state(NodeState.INITIALIZED)
 
@@ -112,13 +108,7 @@ class PCANode(DataProcessingNode[TensorType]):
             self.pca_s = self.backend.to(self.pca_s, device=device)
             self.pca_v = self.backend.to(self.pca_v, device=device)
 
-            self._set_port_values(self.pca_u, self.pca_s, self.pca_v)
         return super().to(device)
-
-    def _set_port_values(self, pca_u, pca_s, pca_v):
-        self.port_u.set_value(pca_u)
-        self.port_s.set_value(pca_s)
-        self.port_v.set_value(pca_v)
 
     @property
     def memory_consumption(self) -> int:
@@ -189,13 +179,12 @@ class InversePCANode(DataProcessingNode[TensorType]):
         self.input_ports[0].update_static_data_configuration(self.x_data_config())
         self.output_ports[0].update_static_data_configuration(self.out_data_config())
 
-    def setup(self, graph: Graph) -> None:
+    def build(self, graph: Graph) -> None:
         if self.data_source_node.state == NodeState.UNINITIALIZED:
             raise RuntimeError(
                 f"PCA Node {self.data_source_node} has not been setup yet!"
             )
         self.refresh_port_data_configurations()
-        self._state = NodeState.INITIALIZED
 
     def x_data_config(self):
         return DataConfiguration(

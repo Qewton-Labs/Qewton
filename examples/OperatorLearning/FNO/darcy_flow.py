@@ -172,11 +172,11 @@ train_loader, test_loaders, data_processor = load_darcy_flow_small(
     test_resolutions=TEST_RESOLUTIONS,
     test_batch_sizes=TEST_BATCH_SIZES,
 )
-data_processor = data_processor.to(DEVICE)
-
 # neuralop trains on normalized targets, so Qewton gets the same ones
+# (normalized on the CPU, where the dataset is)
 train_inputs = train_loader.dataset.x
 train_targets = data_processor.out_normalizer.transform(train_loader.dataset.y)
+data_processor = data_processor.to(DEVICE)
 
 # %% Models
 neuralop_model = neuralop.models.FNO(

@@ -6,7 +6,7 @@ from qewton.backends.base import DeepLearningBackend, TensorType
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.trainable_parameters import TrainableParameters
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.axes import EllipsisAxes, FeatureAxes
+from qewton.config.axes import AxesDim, EllipsisAxes, FeatureAxes
 from qewton.graphs.nodes import Node, NodeState
 
 
@@ -27,34 +27,28 @@ class ParameterNode(Node[TensorType]):
         self.backend: DeepLearningBackend
         super().__init__(name, state=NodeState.UNINITIALIZED, backend=backend)
         self.output = self.output_ports[0]
-        self.output.make_persistent()
 
-    def setup(self) -> None:
-        if self.state == NodeState.UNINITIALIZED:
-            if self.initial_value is not None:
-                if not hasattr(self.initial_value, "shape"):
-                    raise ValueError(f"initial_value must have a 'shape' attribute,\
-                            got {type(self.initial_value)}")
-                self._trainable_parameter = self.backend.param.initialize(
-                    self.initial_value.shape, self.initial_value
-                )
-            else:
-                int_shape = tuple(hp.value for hp in self.shape)
-                self._trainable_parameter = self.backend.param.initialize(int_shape)
-            self.output.set_value(self._trainable_parameter)
-            self.set_state(NodeState.INITIALIZED)
+    def build(self) -> None:
+        if self.initial_value is not None:
+            if not hasattr(self.initial_value, "shape"):
+                raise ValueError(f"initial_value must have a 'shape' attribute,\
+                        got {type(self.initial_value)}")
+            self._trainable_parameter = self.backend.param.initialize(
+                self.initial_value.shape, self.initial_value
+            )
+        else:
+            int_shape = tuple(hp.value for hp in self.shape)
+            self._trainable_parameter = self.backend.param.initialize(int_shape)
 
     def set_trainable_parameter(self, new_value: TrainableParameters) -> None:
         if self.state == NodeState.FIXED:
             raise ValueError("Cannot set trainable parameter when node is fixed.")
         self._trainable_parameter = new_value.parameters
-        self.output.set_value(self._trainable_parameter)
 
     def output_config(self):
-        int_shape = tuple(hp.value for hp in self.shape)
         return DataConfiguration(
             EllipsisAxes(),
-            FeatureAxes(shape=int_shape),
+            FeatureAxes(shape=tuple(AxesDim(hp) for hp in self.shape)),
             dtype=self.backend.default_dtype,  # type: ignore
         )
 
@@ -66,7 +60,6 @@ class ParameterNode(Node[TensorType]):
 
     def reset(self):
         if not self.state == NodeState.FIXED:
-            self.output.reset_value()
             self._state = NodeState.UNINITIALIZED
             self._trainable_parameter = None
 
@@ -75,7 +68,6 @@ class ParameterNode(Node[TensorType]):
             self._trainable_parameter = self.backend.param.requires_grad(
                 self._trainable_parameter, False
             )
-            self.output.set_value(self._trainable_parameter)
         super().fix_node_state()
 
     def set_state(self, new_state: NodeState):
@@ -105,4 +97,3 @@ class ParameterNode(Node[TensorType]):
             self._trainable_parameter = self.backend.param.to(
                 self._trainable_parameter, device=device
             )
-            self.output.set_value(self._trainable_parameter)

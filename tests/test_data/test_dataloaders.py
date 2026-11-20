@@ -138,6 +138,24 @@ class TestDataNodeVisualize:
         assert isinstance(layout, Row)
         assert len(layout.plots) == 2
 
+    def test_all_outputs_share_one_slider_over_their_batch(self):
+        from qewton.data import GridDataSet
+        from qewton.visualization import SliderAxis
+
+        F, X, U = Variable("f", 1), Variable("x", 1), Variable("u", 1)
+        x = torch.linspace(0, 1, 10)[:, None]
+        dataset = GridDataSet(
+            data=[torch.rand(6, 10, 1), x.repeat(6, 1, 1), torch.rand(6, 10, 1)],
+            feature_variables=[F, X, U], geometry_variable=X, point_grid=x,
+        )
+        loader = DataLoader(
+            data_set=dataset, batch_size=3, splitting_ratio=(1.0, 0.0, 0.0), shuffle_data=False
+        )
+        layout = loader.visualize(mode=EvaluationPhase.TRAIN)
+        sliders = {id(c) for p in layout.plots for c in p.controls if isinstance(c, SliderAxis)}
+        assert len(layout.plots) == 3
+        assert len(sliders) == 1
+
     def test_respects_an_explicit_mode_without_a_graph(self):
         X = Variable("x", 1)
         loader = DataLoader(

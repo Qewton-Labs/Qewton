@@ -86,7 +86,7 @@ class TestVisualize:
         graph, sampler, model = connected_graph
         graph.run()
         config = model.output_ports[0].get_data_configuration(graph)
-        value = model.backend.to_numpy(model.output_ports[0].value)
+        value = model.backend.to_numpy(graph.value_of(model.output_ports[0]))
         plot = auto_plot(value, config)
         assert isinstance(plot, ScatterPlot)
 
@@ -844,7 +844,33 @@ class TestVisualizeReferenceOnProductDomain:
 
 class TestVisualizeWithDataLoaderReference:
     """Operator learning: the model output is compared with the true output
-    of its data loader, i.e. two ports with matching but separate axes."""
+    of its data loader, two ports whose batch axes matching made one."""
+
+    def test_several_ports_share_one_slider_over_the_batch(self):
+        import torch
+
+        from qewton.config.axes import BatchAxes
+        from qewton.data import ArrayLikeDataSet, DataLoader
+        from qewton.geometries.discrete.grid_geometry import GridGeometry
+        from qewton.visualization import SliderAxis
+
+        F, U = Variable("f", 1), Variable("u", 1)
+        grid = GridGeometry.build_unit_grid(Variable("x", 1), 5)
+        configs = [
+            DataConfiguration(BatchAxes(6), GeometryAxes(grid), FeatureAxes(v)) for v in (F, U)
+        ]
+        dataset = ArrayLikeDataSet([torch.rand(6, 5, 1), torch.rand(6, 5, 1)], configs)
+        loader = DataLoader(data_set=dataset, batch_size=3, splitting_ratio=(1.0, 0.0, 0.0))
+        model = FCN(in_neurons=F, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(loader.get_output_port(F), model)
+        graph.setup()
+
+        ports = [model.output_ports[0], loader.get_output_port(F), loader.get_output_port(U)]
+        layout = graph.visualize(ports, mode=EvaluationPhase.TRAIN)
+        sliders = {id(c) for p in layout.plots for c in p.controls if isinstance(c, SliderAxis)}
+        assert len(layout.plots) == 3
+        assert len(sliders) == 1
 
     def test_works_without_a_prediction_config(self):
         import torch

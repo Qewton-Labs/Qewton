@@ -417,11 +417,13 @@ class PlotlyRenderer(Renderer):
         indices = [i for key in keys for i in self.artist_of(key).trace_indices]
         indices += [self._colorbar_index(scale) for scale in scales]
         traces = {i: embedding.flatten(data[i].to_plotly_json()) for i in indices}
-        layout = self.backend_figure.layout.to_plotly_json()
+        # Only the axes of `cells`: the whole layout also holds the steps of
+        # controls embedded before.
+        layout = self.backend_figure.layout
         axes = {}
         for cell in cells:
             for name in _axis_names(self.backend_figure, cell):
-                axes.update(embedding.flatten(layout.get(name, {}), prefix=name))
+                axes.update(embedding.flatten(layout[name].to_plotly_json(), prefix=name))
         return traces, axes
 
     def animate(self, time_axis, snapshots) -> None:

@@ -87,4 +87,5 @@ norecursedirs = ["examples", ".*", "build", "dist", "venv"]
 [dependency-groups]
 dev = [
     "neuraloperator>=2.0.0",
+    "pytest-xdist>=3.6",
 ]

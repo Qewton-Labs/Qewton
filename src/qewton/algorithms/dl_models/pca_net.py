@@ -138,7 +138,7 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
             backend=backend,
             data_source_node=data_source_node,
         )
-        # self._graph.setup()
+        # self._graph.setup(plan=False)
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -185,23 +185,22 @@ class PCANet(GraphNode[TensorType], DataProcessingNode[TensorType]):
         self.fcn.reset()
         return super().reset()
 
-    def setup(self, graph: Graph):
-        if self.state == NodeState.UNINITIALIZED:
-            # First reset all internal nodes:
-            self.input_pca.reset()
-            self.output_pca.reset()
-            self.inverse_pca.reset()
-            self.fcn.reset()
-            # Now setup the nodes:
-            self.fcn.setup()
-            # Collect all data:
-            total_data_input = []
-            total_data_output = []
-            for _ in range(self.data_source_node.training_batches):
-                in_edge = graph.run_to(last_node=self, mode=EvaluationPhase.TRAIN)
-                total_data_input.append(in_edge[self.input_ports[0]].from_port.value)
-                total_data_output.append(in_edge[self.input_ports[1]].from_port.value)
-            self.fit(total_data_input, total_data_output)
+    def build(self, graph: Graph):
+        # First reset all internal nodes:
+        self.input_pca.reset()
+        self.output_pca.reset()
+        self.inverse_pca.reset()
+        self.fcn.reset()
+        # Now setup the nodes:
+        self.fcn.setup()
+        # Collect all data:
+        total_data_input = []
+        total_data_output = []
+        for _ in range(self.data_source_node.training_batches):
+            in_edge = graph.run_to(last_node=self, mode=EvaluationPhase.TRAIN)
+            total_data_input.append(graph.value_of(in_edge[self.input_ports[0]].from_port))
+            total_data_output.append(graph.value_of(in_edge[self.input_ports[1]].from_port))
+        self.fit(total_data_input, total_data_output)
 
     def fit(
         self, data_batch: list[TensorType], data_batch_output: list[TensorType]
