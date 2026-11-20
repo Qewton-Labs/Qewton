@@ -304,21 +304,19 @@ class GraphBasedTrainer(Trainer):
     def on_training_start(self):
         """Prepare the graphs for training.
 
-        Sets up all graphs, moves all nodes to the training device and
-        registers the trainable parameters of all nodes.
+        Moves all nodes to the training device, sets up all graphs (which
+        builds every node on that device) and registers the trainable
+        parameters of all nodes.
 
         Raises:
             ValueError: If no node has trainable parameters.
         """
-        # move nodes to device before setup (fit DataProcessingNode on device)
+        # Record the device first: setup builds every node on it, in order,
+        # so a DataProcessingNode fits on data that is already there.
         for node in self.all_nodes:
             node.to(self.device)
-        # setup all graphs
         for graph in self.graphs:
             graph.setup()
-        # move added data
-        for node in self.all_nodes:
-            node.to(self.device)
 
         # Now also collect all trainable parameters inside the graph
         parameters = None

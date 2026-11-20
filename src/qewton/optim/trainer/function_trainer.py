@@ -97,11 +97,10 @@ class FunctionBasedTrainer(Trainer):
         )
 
     def on_training_start(self):
-        # setup all graphs
+        # Record the device first, so setup builds the nodes on it.
         for node in self.model_nodes:
-            node.to(self.device)  #  fit DataProcessingNode on device
-            node.setup()
             node.to(self.device)
+            node.setup()
         # Now also collect all trainable parameters inside the graph
         parameters = None
         for node in self.model_nodes:
