@@ -44,13 +44,12 @@ One instance of a control, Selector, scale or position axis passed to
 several plots or overlays links them: one widget, one range, one colorbar,
 one zoom. Nothing is matched by name.
 
-### Batch axes are linked only within one configuration (C2, GI2)
+### Default controls are shared by identity of their axes (C2, GI2)
 
-Data configurations of a graph are matched once at setup, and their axes
-are copied, so two ports' batch axes cannot be recognized as the same
-afterwards. Controls on batch axes are therefore shared only between
-plots of one configuration; controls on Variables (geometries) are shared
-everywhere. This changes with the rework of configuration matching.
+With a reference, the default controls of the reference plot are passed to
+every panel whose configuration has the same axes object. Matching makes
+equal axes one object (e.g. the batch axes of a data loader and of the
+model behind it), so no names or shapes are compared.
 
 ## Scales
 

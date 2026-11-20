@@ -152,6 +152,6 @@ Status: done, partial (with the gap named), open.
 | ID | Requirement | From | Status |
 |---|---|---|---|
 | GI1 | `Graph.visualize` evaluates a port on a deterministic discretization of its samplers and draws it. | G1, S1 | done |
-| GI2 | With a reference (data, port or function), reference, prediction and error share views, controls and color range. | G4, S3 | partial: controls on batch axes are shared only within one configuration |
+| GI2 | With a reference (data, port or function), reference, prediction and error share views, controls and color range. | G4, S3 | done |
 | GI3 | Data nodes and `PlotNode` draw their own data. | G1, S7 | done |
 | GI4 | Computation graphs are drawn as node-link diagrams. | S9 | done |
