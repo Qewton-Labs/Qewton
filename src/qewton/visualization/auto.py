@@ -199,6 +199,33 @@ def _quantities(data_config: DataConfiguration) -> list[Variable]:
     return variable.quantities
 
 
+def controls_for(data_config: DataConfiguration, controls: list[ControlAxis]) -> list:
+    """The controls among `controls` that refer to `data_config`, e.g. the
+    default controls of one plot that apply to another: a Variable of its
+    data, or one of its axes. An axes is recognized by identity, as matching
+    makes equal axes one object.
+
+    Args:
+        data_config: A DataConfiguration.
+        controls: Control axes, each referencing an Axes or a Variable.
+
+    Returns:
+        list[ControlAxis]: The controls of `controls` that apply, in order.
+    """
+    applicable = []
+    for control in controls:
+        reference = control.variable_or_axes
+        if isinstance(reference, Variable):
+            try:
+                data_config.axes_of(reference)
+            except ValueError:
+                continue
+        elif not any(axes is reference for axes in data_config.axes):
+            continue
+        applicable.append(control)
+    return applicable
+
+
 def _controlled(data_config: DataConfiguration, controls: list[ControlAxis]) -> list:
     return [controlled_axes(data_config, c) for c in controls]
 

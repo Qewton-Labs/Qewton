@@ -86,7 +86,7 @@ class TestVisualize:
         graph, sampler, model = connected_graph
         graph.run()
         config = model.output_ports[0].get_data_configuration(graph)
-        value = model.backend.to_numpy(model.output_ports[0].value)
+        value = model.backend.to_numpy(graph.value_of(model.output_ports[0]))
         plot = auto_plot(value, config)
         assert isinstance(plot, ScatterPlot)
 
@@ -844,7 +844,7 @@ class TestVisualizeReferenceOnProductDomain:
 
 class TestVisualizeWithDataLoaderReference:
     """Operator learning: the model output is compared with the true output
-    of its data loader, i.e. two ports with matching but separate axes."""
+    of its data loader, two ports whose batch axes matching made one."""
 
     def test_works_without_a_prediction_config(self):
         import torch
