@@ -1,9 +1,9 @@
 from __future__ import annotations
-from copy import deepcopy
 from typing import Callable
 import inspect
+from copy import deepcopy
 
-from qewton.graphs.nodes import InputPort, Node, OutputPort, Port
+from qewton.graphs.nodes import InputPort, Node, NodeState, OutputPort, Port
 from qewton.graphs.graphs import Graph
 from qewton.backends import Backend, TensorType
 from qewton.optim.base import EvaluationPhase
@@ -21,7 +21,9 @@ class GraphNode(Node[TensorType]):
     node within a larger graph structure.
 
     Args:
-        graph (Graph): The graph to be encapsulated by this node.
+        graph (Graph | None): The graph to be encapsulated by this node; None
+            for a node that builds it later (in `build`, e.g. once sizes are
+            inferred). Its `forward` then declares all ports.
         input_ports (list[InputPort] | dict[InputPort, list[InputPort]]):
             Defines how the input ports of this GraphNode map to the input ports of
             the inner graph.
@@ -46,7 +48,7 @@ class GraphNode(Node[TensorType]):
 
     def __init__(
         self,
-        graph: Graph,
+        graph: Graph | None,
         input_ports: list[InputPort] | dict[InputPort, list[InputPort]],
         output_ports: list[OutputPort] | dict[OutputPort, Port],
         name: str = "GraphNode",
@@ -55,6 +57,9 @@ class GraphNode(Node[TensorType]):
     ) -> None:
         super().__init__(name=name, backend=backend, **kwargs)
 
+        if graph is None:
+            self._without_inner_graph()
+            return
         self._graph = graph
 
         self._input_ports = []
@@ -70,7 +75,8 @@ class GraphNode(Node[TensorType]):
                 if self.configs_defined_in_forward:
                     port_config = in_forward_ports[i].data_configuration
                 else:
-                    port_config = p.data_configuration
+                    # Its own copy: inner ports may share one declared object.
+                    port_config = deepcopy(p.data_configuration)
                 self._input_ports.append(
                     InputPort(
                         data_configuration=port_config,
@@ -94,7 +100,8 @@ class GraphNode(Node[TensorType]):
                 if self.configs_defined_in_forward:
                     port_config = out_forward_ports[i].data_configuration
                 else:
-                    port_config = p.data_configuration
+                    # Its own copy: inner ports may share one declared object.
+                    port_config = deepcopy(p.data_configuration)
                 self._output_ports.append(
                     OutputPort(
                         data_configuration=port_config,
@@ -103,6 +110,44 @@ class GraphNode(Node[TensorType]):
                     )
                 )
                 self._graph.connect_to_outside_of_graph(p, self._output_ports[-1])
+
+    def upgrade(self, version: int) -> None:
+        """See :meth:`Node.upgrade`; the inner nodes are upgraded first, and
+        ports not declared in :meth:`forward` copy the configuration of the
+        inner port they lead to.
+
+        Args:
+            version: The format version of the file.
+        """
+        if version >= 2:
+            return
+        for node in self._graph.nodes:
+            node.upgrade(version)
+        self.configs_defined_in_forward = self._configs_were_defined_in_forward()
+        super().upgrade(version)
+        if self.configs_defined_in_forward:
+            return
+        for edge in self._graph.edges_from_outside:
+            if edge.from_port.node is self:
+                edge.from_port.update_static_data_configuration(
+                    deepcopy(edge.to_port.data_configuration)
+                )
+        for edge in self._graph.edges_to_outside:
+            if edge.to_port.node is self:
+                edge.to_port.update_static_data_configuration(
+                    deepcopy(edge.from_port.data_configuration)
+                )
+
+    def _without_inner_graph(self) -> None:
+        """Keep the ports its `forward` declares (see `Node`) with an empty
+        inner graph, which `build` replaces."""
+        if not self._configs_were_defined_in_forward():
+            raise ValueError(
+                f"{self.name} has no inner graph yet, so its forward has to declare "
+                "all its ports."
+            )
+        self._graph = Graph()
+        self.configs_defined_in_forward = True
 
     def update_inner_input_ports(
         self, new_input_ports: list[InputPort] | dict[InputPort, list[InputPort]]
@@ -185,40 +230,32 @@ class GraphNode(Node[TensorType]):
         return self.trainable_parameters
 
     def forward(self, *args, **kwargs):
-        """
-        Executes the forward pass of the encapsulated graph.
+        """Evaluate the inner graph on the inputs.
 
-        Input values provided to this `GraphNode` are set on its input ports,
-        which then propagate to the inner graph. The inner graph is run, and
-        its output values are collected from this `GraphNode`'s output ports.
+        Subclasses override this method only to declare the data
+        configurations of their ports with ``typing.Annotated``; the body
+        stays ``return super().forward(...)``. Inside a graph, the steps of
+        the inner graph run in place of this node instead.
 
         Args:
-            *args: Positional arguments corresponding to the GraphNode's input ports.
-            **kwargs: Keyword arguments corresponding to the GraphNode's input ports.
+            *args: The values of the input ports, in order.
+            **kwargs: The values of input ports by name.
 
         Returns:
-            Any: The output of the encapsulated graph, either a single value or a
-                tuple of values.
+            Any: The value of the output port, or a tuple for several.
 
-        Note:
-            Opposite to the forward method of a normal Node, this method
-            is not the one that is called when the node is run inside a graph.
-            The forward method should always call the inner graph for
-            computations, and should only be overridden if the user wants to
-            speed up the argument passing to the inner graph. For custom
-            behavior, create a subclass of Node instead of overriding this
-            method.
+        Raises:
+            RuntimeError: If the node is not built and waits for sizes to be
+                inferred from connected data.
         """
-        for i, arg in enumerate(args):
-            self.input_ports[i].set_value(arg)  # type: ignore
-        for key, value in kwargs.items():
-            self.get_input_port(key).set_value(value)  # type: ignore
-
-        self._graph.run()
-        output_values = [port.value for port in self.output_ports]
-        if len(output_values) == 1:
-            return output_values[0]
-        return tuple(output_values)
+        if self.state == NodeState.UNINITIALIZED:
+            self.require_known_sizes()
+        inputs = dict(zip(self.input_ports, args))
+        inputs.update({self.get_input_port(key): value for key, value in kwargs.items()})
+        outputs = self._graph.evaluate(inputs, self.output_ports, self.mode)
+        if len(outputs) == 1:
+            return outputs[0]
+        return tuple(outputs)
 
     def setup_graph(
         self,
@@ -242,105 +279,7 @@ class GraphNode(Node[TensorType]):
         self._graph = graph
         self.update_inner_input_ports(input_ports)
         self.update_inner_output_ports(output_ports)
-        self._graph.setup()
-
-    def update_data_configs(self, updated_port, config_dict, dynamic_configs):
-        """
-        Updates the data configurations of the GraphNode's ports, propagating changes
-        to the inner graph if necessary.
-
-        If the GraphNode's configurations are defined in its `forward` method,
-        it delegates to the superclass's `update_data_configs`. Otherwise, it infers
-        updates from the inner graph's data configuration changes.
-
-        Args:
-            updated_port (Port): The port that triggered the update.
-            config_dict (dict): A dictionary containing configuration updates.
-            dynamic_configs (dict[Port, DataConfiguration]): The current dynamic data
-                configurations of the node's ports.
-        """
-
-        # Efficient case: the subclass has specified its configs, no need to traverse into
-        # the inner graph
-        if self.configs_defined_in_forward:
-            return super().update_data_configs(updated_port, config_dict, dynamic_configs)
-
-        # Otherwise: infer data configs updates from the inner graph
-        # search for inner ports at the beginning and end of the graph
-        inner_ports = []
-        if isinstance(updated_port, InputPort):
-            for e in self._graph.edges_from_outside:
-                if e.from_port == updated_port:
-                    inner_ports.append(e.to_port)
-        else:
-            for e in self._graph.edges_to_outside:
-                if e.to_port == updated_port:
-                    inner_ports.append(e.from_port)
-
-        # perform inner update
-        connected_to_outside_ports = {}
-        for e in self._graph.edges_from_outside:
-            connected_to_outside_ports[e.to_port] = e.from_port
-        for e in self._graph.edges_to_outside:
-            connected_to_outside_ports[e.from_port] = e.to_port
-
-        inner_updated_ports = set()
-        for inner_port in inner_ports:
-            inner_updated_ports.update(
-                self._graph.update_data_configurations(
-                    inner_port.node, inner_port, config_dict
-                )
-            )
-
-        outside_updated_inner_ports = (
-            connected_to_outside_ports.keys() & inner_updated_ports
-        )
-
-        outer_updated_ports = set(
-            connected_to_outside_ports[k] for k in outside_updated_inner_ports
-        )
-
-        # check for skip connections that have been updated
-        for e in self._graph.skip_connections:
-            if e.to_port in outer_updated_ports:
-                outer_updated_ports.add(e.from_port)
-            if e.from_port in outer_updated_ports:
-                outer_updated_ports.add(e.to_port)
-
-        # these data configs should be identical to the dynamic data configs
-        # of the outer graph, therefore these are automatically updated
-        return outer_updated_ports
-
-    def copy_data_configs(self):
-        """
-        Creates deep copies of the data configurations for all input and output ports of
-        this node.
-
-        If configurations are defined in `forward`, it uses the superclass method.
-        Otherwise, it retrieves configurations from the inner graph's dynamic data
-        configurations.
-        """
-        if self.configs_defined_in_forward:
-            return super().copy_data_configs()
-        dynamic_configs = {}
-        copy_memory = {}
-        for input_port in self.input_ports:
-            for e in self._graph.edges_from_outside + self._graph.skip_connections:
-                if e.from_port == input_port:
-                    inner_config = self._graph.dynamic_data_configs[e.to_port.node][
-                        e.to_port
-                    ]
-                    dynamic_configs[input_port] = deepcopy(inner_config, memo=copy_memory)
-        for output_port in self.output_ports:
-            for e in self._graph.edges_to_outside + self._graph.skip_connections:
-                if e.to_port == output_port:
-                    inner_config = self._graph.dynamic_data_configs[e.from_port.node][
-                        e.from_port
-                    ]
-                    dynamic_configs[output_port] = deepcopy(
-                        inner_config, memo=copy_memory
-                    )
-        return dynamic_configs
+        self._graph.setup(plan=False)
 
     def _configs_were_defined_in_forward(self):
         """
@@ -358,17 +297,17 @@ class GraphNode(Node[TensorType]):
                 return False
         return True
 
-    def run(self):
-        """
-        Executes the encapsulated graph.
-        """
-        self._graph.run(mode=self.mode)
+    _setup_of_library = True
 
-    def setup(self) -> None:
+    def setup(self, graph=None) -> None:
+        """Build this node (see :meth:`Node.setup`), then set up its inner
+        graph.
+
+        Args:
+            graph (Graph, optional): The graph being set up.
         """
-        Sets up the encapsulated graph.
-        """
-        self._graph.setup()
+        super().setup(graph)
+        self._graph.setup(plan=False)
 
     def set_mode(self, new_mode: EvaluationPhase):
         self._graph.mode = new_mode
@@ -377,11 +316,11 @@ class GraphNode(Node[TensorType]):
         return super().set_mode(new_mode)
 
     def reset(self):
-        """
-        Resets all nodes within the encapsulated graph.
-        """
+        """Make this node and every node of its inner graph unbuilt (see
+        :meth:`Node.reset`)."""
         for node in self._graph.nodes:
             node.reset()
+        super().reset()
 
     def to(self, device):
         """
@@ -418,7 +357,7 @@ class GraphNode(Node[TensorType]):
             for p in output_ports:
                 outer_output_ports.append(
                     OutputPort(
-                        p.data_configuration,
+                        deepcopy(p.data_configuration),
                         self,  # type: ignore
                         name=p.name,
                     )
@@ -471,7 +410,7 @@ class FromFunctionNode(GraphNode):
         super().__init__(
             graph, input_ports_dict, output_ports_dict, name=name, backend=backend
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
 
 
 class TrackedNode(FromFunctionNode):
@@ -488,13 +427,6 @@ class TrackedNode(FromFunctionNode):
     def __init__(self, name="TrackedNode", backend: type[Backend[TensorType]] = Backend):
         super().__init__(self.forward, name=name, backend=backend)
 
-        if self.run is TrackedNode.run:
-
-            def run() -> None:
-                Node.run(self)
-
-            self.run = run
-
     def unfreeze(self):
         """
         Unfreezes the node. For a TrackedNode, this currently does nothing,
@@ -502,16 +434,19 @@ class TrackedNode(FromFunctionNode):
         """
         # todo, this makes this a normal GraphNode and unfreezes it?
 
-    def setup(self) -> None:
+    def build(self) -> None:
         new_graph, input_ports_dict, output_ports_dict = self._build_graph_from_function(
             self.forward, backend=self.backend
         )
+        # Tracking builds new outer ports; the inner graph is connected to the
+        # ports this node already has, in the same order.
+        input_ports_dict = dict(zip(self.input_ports, input_ports_dict.values()))
+        output_ports_dict = dict(zip(self.output_ports, output_ports_dict.values()))
         self.setup_graph(
             new_graph,
             input_ports=input_ports_dict,
             output_ports=output_ports_dict,
         )
-
 
 class CopiedNode(GraphNode):
     """

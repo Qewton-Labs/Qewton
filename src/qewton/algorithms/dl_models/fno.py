@@ -1,6 +1,6 @@
 """Fourier Neural Operator (FNO)."""
 
-from typing import Generic, Literal
+from typing import Annotated, Generic, Literal
 
 from qewton.algorithms.building_blocks.activation_functions import GELU
 from qewton.algorithms.building_blocks.channel_mlp import ChannelMLP
@@ -8,6 +8,8 @@ from qewton.algorithms.building_blocks.embeddings import GridEmbeddingND
 from qewton.algorithms.building_blocks.fno_block import FNOBlock
 from qewton.algorithms.building_blocks.skip_connections import SkipType
 from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
+from qewton.config.axes import AxesDim, BatchAxes, FeatureAxes, GeometryAxes
+from qewton.config.data_configurations import DataConfiguration
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.graphs.graphs import SequentialGraph
 from qewton.graphs.nodes import Node, NodeState
@@ -25,7 +27,8 @@ class FNO(GraphNode, Generic[TensorType]):
     The Fourier layers apply `non_linearity` except for the last one.
 
     All arguments but `name` and `backend` can be hyperparameters. The network is
-    rebuilt for their current values in `setup`, which re-initializes all weights.
+    rebuilt for their current values when the node is built (`build`), with
+    newly initialized weights.
 
     Attributes:
         n_modes, in_channels, out_channels, hidden_channels, n_layers,
@@ -40,7 +43,8 @@ class FNO(GraphNode, Generic[TensorType]):
     Args:
         n_modes (tuple[int, ...] | HyperParameter): Number of Fourier modes kept in
             every spatial dimension. Its length is the number of spatial dimensions.
-        in_channels (int | HyperParameter): Number of input channels.
+        in_channels (int | HyperParameter | None): Number of input channels, or None
+            to infer it from the connected data.
         out_channels (int | HyperParameter): Number of output channels.
         hidden_channels (int | HyperParameter): Number of channels of the Fourier
             layers.
@@ -92,7 +96,7 @@ class FNO(GraphNode, Generic[TensorType]):
     def __init__(
         self,
         n_modes: tuple[int, ...] | HyperParameter,
-        in_channels: int | HyperParameter,
+        in_channels: int | HyperParameter | None,
         out_channels: int | HyperParameter,
         hidden_channels: int | HyperParameter,
         n_layers: int | HyperParameter = 4,
@@ -108,7 +112,7 @@ class FNO(GraphNode, Generic[TensorType]):
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
     ) -> None:
         self.n_modes = HyperParameter.from_value(n_modes, "FNO modes")
-        self.in_channels = HyperParameter.from_value(in_channels, "FNO input channels")
+        self.in_channels = HyperParameter.size_from(in_channels, "FNO input channels")
         self.out_channels = HyperParameter.from_value(out_channels, "FNO output channels")
         self.hidden_channels = HyperParameter.from_value(
             hidden_channels, "FNO hidden channels"
@@ -135,15 +139,19 @@ class FNO(GraphNode, Generic[TensorType]):
         )
         self.fno_skip = HyperParameter.from_value(fno_skip, "FNO skip")
 
-        self._graph = self._build_network(backend)
+        self.batch_axes = BatchAxes(AxesDim(None))
+        self.space = GeometryAxes(shape=tuple(AxesDim(None) for _ in self.n_modes.value))
+        # With an open size, the network is built once it is inferred.
+        graph = None if self.open_hyperparameters else self._build_network(backend)
         super().__init__(
             name=name,
-            graph=self._graph,
-            input_ports=self._graph.sorted_nodes[0].input_ports,
-            output_ports=self._graph.sorted_nodes[-1].output_ports,
+            graph=graph,
+            input_ports=[] if graph is None else graph.sorted_nodes[0].input_ports,
+            output_ports=[] if graph is None else graph.sorted_nodes[-1].output_ports,
             backend=backend,
         )
-        self._graph.setup()
+        if graph is not None:
+            self._graph.setup(plan=False)
         self._state = NodeState.UNINITIALIZED
 
     @property
@@ -174,8 +182,9 @@ class FNO(GraphNode, Generic[TensorType]):
         """Number of hidden channels of the projection channel MLP."""
         return int(self.projection_channel_ratio.value * self.hidden_channels.value)
 
-    def setup(self) -> None:
-        """Rebuilds the network, which re-initializes all of its weights."""
+    def build(self) -> None:
+        """Builds the network for the current hyperparameter values, with newly
+        initialized weights."""
         new_graph = self._build_network(self.backend)
         self.setup_graph(
             new_graph,
@@ -304,7 +313,25 @@ class FNO(GraphNode, Generic[TensorType]):
             for layer_idx in range(n_layers)
         ]
 
-    def forward(self, x: TensorType) -> TensorType:
+    def x_data_config(self) -> DataConfiguration:
+        """The batch, the input channels (bound to `in_channels`) and the
+        spatial dims."""
+        channels = FeatureAxes(shape=(AxesDim(self.in_channels),))
+        return DataConfiguration(
+            self.batch_axes, channels, self.space, dtype=self.backend.default_dtype
+        )
+
+    def out_data_config(self) -> DataConfiguration:
+        """The batch, the output channels (bound to `out_channels`) and the
+        spatial dims of the input."""
+        channels = FeatureAxes(shape=(AxesDim(self.out_channels),))
+        return DataConfiguration(
+            self.batch_axes, channels, self.space, dtype=self.backend.default_dtype
+        )
+
+    def forward(
+        self, x: Annotated[TensorType, x_data_config]
+    ) -> Annotated[TensorType, out_data_config]:
         """Applies the Fourier Neural Operator.
 
         Args:
@@ -313,6 +340,4 @@ class FNO(GraphNode, Generic[TensorType]):
         Returns:
             TensorType: Output of shape `(batch, out_channels, *spatial_dims)`.
         """
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value
+        return super().forward(x)

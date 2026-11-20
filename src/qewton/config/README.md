@@ -1,24 +1,90 @@
 # Config Submodule
 
-The `config` module handles the description of data shapes and descriptions within the graph. It allows for automatic inference and checking of tensor shapes, as well as the semantic meaning of different axes (e.g., batch, feature, spatial). This is crucial for ensuring that the computational graph is consistent and that operations are applied to compatible tensors. In addition, it simplifies methods such as plotting, since variables can be automatically inferred.
+Describes the data passed between nodes: its axes, their sizes and its
+dtype. Graphs match these descriptions when ports are connected, so
+mismatches are found while building and sizes are inferred from the
+connected data.
 
-Example: `DataConfiguration(BatchAxes(...), GeometryAxes(image_grid), FeatureAxes(Variable('f', 1)))` describes a tensor with arbitrary batch dimension(s), spatial dimensions corresponding to an image grid (e.g. 256x256), and a feature dimension function values on the image grid.
+```python
+DataConfiguration(BatchAxes(...), GeometryAxes(grid), FeatureAxes(Variable("f", 1)))
+```
 
-## Key Components
-- **`DataConfiguration`**: Encapsulates the expected structure of a tensor at a specific port, including its axes and dimensionality. Allows to include symbolic or non-specified dimensions (e.g., `EllipsisDim`) that can be inferred later.
-- **`Axes` & `AxesDim`**: Provide a rich type system for dimensions. There are three basic types of axes:
-    - `BatchAxes`: For sample/batch dimensions.
-    - `GeometryAxes`: For spatial/temporal coordinates. Is connected to a (possibly dummy) `Geometry` object that defines the underlying structure and variables.
-    - `FeatureAxes`: For channels or physical variables. Their names can be inferred from previously defined `Variable` objects. Every `DataConfiguration` can contain at most one `FeatureAxes` object.
-- **Unification System**: Compares and merges configurations from different nodes to ensure shape compatibility and infer missing dimensions (e.g., handling `EllipsisDim`).
-- **`Backend`**: Abstracts framework-specific details, allowing the same logic to target PyTorch or TensorFlow. This includes the data types such as torch.Tensor or tf.Tensor.
+describes a batch of fields `f` on the points of `grid`.
 
-## Goals
-1. **Strong Typing for Tensors**: Move beyond simple shape tuples to semantically meaningful axes.
-2. **Automatic Shape Inference**: Automatically propagate dimension sizes across the graph, reducing manual configuration.
-3. **Backend Agnosticism**: Provide a unified interface for tensor operations across different deep learning libraries.
-4. **Error Prevention**: Catch dimension mismatches or incompatible variable mappings at graph-build time rather than at runtime.
-5. **Enhanced Visualization**: Use the configuration information to automatically generate plots.
+## Configurations and axes
 
-## Axis Logic
-The module supports symbolic relationships between dimensions, such as `AddedDim` or `ProductDim`, allowing the system to understand that an output dimension is the sum or product of specific inputs.
+- **`DataConfiguration`**: a sequence of axes plus `dtype` and
+  `element_dtype`; at most one `FeatureAxes`.
+- **Axes**: `BatchAxes` (samples), `GeometryAxes` (points of a `Geometry`),
+  `FeatureAxes` (values, named by `Variable`s), `EllipsisAxes` (any sequence
+  of axes, possibly none).
+- **Dims**: `AxesDim(size)` with `size` an int, None (unknown) or a
+  `HyperParameter`; `EllipsisDim` for any sequence of dims.
+
+## Merging
+
+`config.merge(other)` makes both configurations describe the same data:
+corresponding axes and dims become one object, an ellipsis is bound to the
+part it stands for, the dtypes are merged. `config.resolve()` shows the
+result in place. A contradiction raises `DataConfigMismatchError`, naming
+the ports the conflicting values come from. Graphs merge along their edges
+(see `qewton.graphs`); the static configuration of a port is never changed.
+
+## Relations of nodes
+
+A node relates its ports in the annotations of `forward`: one object used
+in several annotations is the same at every place of the node.
+
+```python
+ellipsis = EllipsisAxes()
+
+def forward(self, x: Number[TensorType, DataConfiguration(ellipsis)]
+            ) -> Number[TensorType, DataConfiguration(ellipsis)]:
+```
+
+A node that changes dims by their index also implements `relate`, built
+from the shape operations of `DataConfiguration`: `drop`, `squeeze`,
+`set_size`, `unsqueeze`, `permute`, `flatten`, `unflatten`, `reshape`,
+`concat`, `split`, `broadcast`, `window`.
+
+```python
+def relate(self, inp: DataConfiguration) -> DataConfiguration:
+    return inp.flatten(self.start_dim, self.end_dim)
+```
+
+They reuse the input's objects and compute sizes with operation dims
+(`AddedDim`, `ProductDim`, `SequenceProductDim`, `WindowDim`,
+`BroadcastDim`, …), which solve for an operand where the answer is unique.
+`broadcast` makes size 1 and N compatible without merging them.
+
+## HyperParameters in configurations
+
+A size that fixes how a node is built is a `HyperParameter`; the dims of
+that size are bound to it with `AxesDim(hp)` and follow its value.
+`HyperParameter.size_from(x, name)` takes a given size, or None for one
+that is inferred from the connected data (`HyperParameter.inferred`). An
+inferred size is the same at all places of the node; places that disagree
+raise at connecting. Arithmetic on HyperParameters (`hp * 2`) gives a
+`HyperParameterOperation`, which is read but not inferred.
+
+## Sizes of data sources
+
+The outputs of a `DataLoader` or `PointSampler` share one batch axes, bound
+to its `batch_size` or `n_points`. Changing them, or switching a sampler to
+mesh mode or an active discretization, changes every dim behind it without
+matching. The size at run time is not checked.
+
+## dtypes
+
+`dtype` is `Any`, a Python type, `TensorType`, the tensor class of a
+backend, or a union of these; `element_dtype` is open, `Number` or a marker
+such as `Float32` or `Complex64`, given in annotations as
+`Complex64[TensorType, config]`. Two dtypes match if they have a common
+member; the more special one is kept.
+
+## Saving
+
+Static configurations are saved with their dtypes; matched configurations
+are rebuilt when the loaded graph is matched.
+
+See [REQUIREMENTS.md](REQUIREMENTS.md) and [DECISIONS.md](DECISIONS.md).

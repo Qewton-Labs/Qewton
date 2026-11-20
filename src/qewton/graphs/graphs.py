@@ -3,24 +3,23 @@ them from plain Python functions."""
 
 from __future__ import annotations
 from collections import deque
-from contextlib import contextmanager
-from copy import deepcopy
+from contextlib import contextmanager, ExitStack
 from typing import Any, Callable, TYPE_CHECKING
 from warnings import warn
 import inspect
 import numpy as np
 
 from qewton.config.axes import FeatureAxes
-from qewton.config.data_configurations import DataConfiguration
+from qewton.config.data_configurations import DataConfiguration, refining
 from qewton.config.devices import Device
-from qewton.config.errors import DataConfigMismatchError
+from qewton.config.errors import DataConfigMismatchError, StructureUnknown
 from qewton.config.variables import Variable
 from qewton.config.saving.saving import Serializable
 from qewton.graphs.nodes import (
-    GraphAwareNode,
     InputPort,
     Node,
     EvaluationPhase,
+    NodeState,
     OutputPort,
     Port,
 )
@@ -43,10 +42,14 @@ class Graph(Serializable):
     """Directed acyclic graph (DAG) of interconnected nodes.
 
     Nodes are connected port to port via :class:`~qewton.graphs.edges.Edge`
-    objects. Every connection unifies the data configurations of both
-    ports; the unified configurations are stored per graph in
-    `dynamic_data_configs`, the static configurations of the ports stay
-    untouched.
+    objects. Every connection merges the data configurations of both ports
+    (see :meth:`~qewton.config.data_configurations.DataConfiguration.merge`):
+    axes and dims that correspond become one object. A graph keeps the
+    matched configuration and the value of every port it contains, also of
+    the ports inside its GraphNodes, per *place*: a port together with the
+    path of GraphNodes leading to it, so one node may occur at several places
+    (see :meth:`config_of` and :meth:`value_of`). The static configurations
+    of the ports stay untouched.
 
     Attributes:
         nodes (set[Node]): All nodes of this graph.
@@ -68,8 +71,6 @@ class Graph(Serializable):
             graph into one of its nodes.
         edges_to_outside (list[Edge]): Edges from one of its nodes to a port
             outside of this graph.
-        dynamic_data_configs (dict[Node, dict[Port, DataConfiguration]]): The
-            unified data configuration of every port known to this graph.
     """
 
     def __init__(self):
@@ -87,7 +88,263 @@ class Graph(Serializable):
         self.edges_from_outside: list[Edge] = []
         self.edges_to_outside: list[Edge] = []
 
-        self.dynamic_data_configs: dict[Node, dict[Port, DataConfiguration]] = {}
+        # Per place of a node, (path of GraphNodes, node): the configurations
+        # of its ports. The places whose `relate` waits for more structure.
+        # Per place of a port, (path, port): its value in the last run. The
+        # evaluation steps in order; None until planned.
+        self._configs: dict[tuple, dict[Port, DataConfiguration]] = {}
+        self._waiting: list[tuple] = []
+        self._values: dict[tuple, Any] = {}
+        self._steps: list | None = None
+
+    #: Rebuilt from the structure when needed, never saved.
+    _TRANSIENT = ("_configs", "_waiting", "_values", "_steps")
+
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        keys = [k for k in self.__dict__ if k not in self._TRANSIENT]
+        return keys, [self.__dict__[k] for k in keys]
+
+    def load(self, serializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        self._configs, self._waiting, self._values, self._steps = {}, [], {}, None
+
+    def _invalidate(self) -> None:
+        self._steps = None
+
+    # region: Places
+
+    def _structure(self, path: tuple) -> Graph:
+        """The graph whose nodes are at `path`: this graph, or the inner
+        graph of the last GraphNode of `path`."""
+        return path[-1].inner_graph if path else self
+
+    def _paths_to(self, node: Node, path: tuple = ()) -> list[tuple]:
+        """All paths of GraphNodes leading to `node` in this graph."""
+        from qewton.graphs.control_nodes.graph_node import GraphNode
+
+        structure = self._structure(path)
+        found = [path] if node in structure.nodes else []
+        for inner in structure.nodes:
+            if isinstance(inner, GraphNode):
+                found += self._paths_to(node, path + (inner,))
+        return found
+
+    def _path_of(self, node: Node, within) -> tuple:
+        """The path leading to `node`: `within`, or the only one there is."""
+        if within is not None:
+            return tuple(within)
+        if node in self.nodes or ((), node) in self._configs:
+            return ()
+        paths = self._paths_to(node)
+        if len(paths) == 1:
+            return paths[0]
+        if not paths:
+            raise ValueError(f"{node.name} is not part of this graph.")
+        options = ", ".join("(" + ", ".join(n.name for n in p) + ")" for p in paths)
+        raise ValueError(
+            f"{node.name} occurs at several places of this graph; pass `within` "
+            f"with the GraphNodes leading to one of them: {options}."
+        )
+
+    def _source(self, path: tuple, port: Port) -> tuple:
+        """The place whose value the port at (path, port) carries: following
+        incoming edges and the boundaries of GraphNodes, to the output that
+        computes it, or to an unconnected input (its default)."""
+        from qewton.graphs.control_nodes.graph_node import GraphNode
+
+        structure = self._structure(path)
+        node = port.node
+        if isinstance(port, InputPort):
+            for edge in structure.incoming_edges.get(node, []):
+                if edge.to_port is port:
+                    return self._source(path, edge.from_port)
+            if path and node is path[-1]:
+                return self._source(path[:-1], port)
+            return (path, port)
+        if node in structure.nodes and isinstance(node, GraphNode):
+            return self._source(path + (node,), port)
+        for edge in structure.edges_to_outside + structure.skip_connections:
+            if edge.to_port is port:
+                return self._source(path, edge.from_port)
+        return (path, port)
+
+    def config_of(self, port: Port, within=None) -> DataConfiguration | None:
+        """The matched data configuration of `port` in this graph.
+
+        Args:
+            port: A port of a node in this graph or in the inner graph of
+                one of its GraphNodes, at any depth.
+            within (tuple[GraphNode, ...], optional): The GraphNodes, from
+                the outside in, leading to the node of `port`; needed only if
+                the node occurs at several places of this graph.
+
+        Returns:
+            DataConfiguration or None: The configuration, or None if the node
+                is not part of this graph.
+        """
+        try:
+            path = self._path_of(port.node, within)
+        except ValueError as error:
+            if "several places" in str(error):
+                raise
+            return None
+        if (path, port.node) not in self._configs:
+            self._ensure_plan()
+            if (path, port.node) not in self._configs:
+                return None
+        return self._config(path, port).resolve()
+
+    def value_of(self, port: Port, within=None) -> Any:
+        """The value of `port` in the last run of this graph.
+
+        Args:
+            port: A port of a node in this graph or in the inner graph of
+                one of its GraphNodes, at any depth.
+            within (tuple[GraphNode, ...], optional): The GraphNodes, from
+                the outside in, leading to the node of `port`; needed only if
+                the node occurs at several places of this graph, e.g. a node
+                whose weights are shared by two copies (:meth:`Node.copy`).
+
+        Returns:
+            Any: The value; None if it was not computed in the last run.
+
+        Raises:
+            ValueError: If the node of `port` is not part of this graph, or
+                occurs at several places and `within` is not given.
+        """
+        place = self._source(self._path_of(port.node, within), port)
+        if place in self._values:
+            return self._values[place]
+        return getattr(place[1], "default", None)
+
+    # endregion
+    # region: Matching
+
+    def _instantiate(self, path: tuple, node: Node, inside: bool = True) -> None:
+        """Give `node` its configurations at `path`: a copy of its declared
+        ones, matched inside a built GraphNode with its inner graph, related
+        by its `relate`. With `inside` False, only the copy (a node outside of this
+        graph that an edge leads to)."""
+        from qewton.graphs.control_nodes.graph_node import GraphNode
+
+        if (path, node) in self._configs:
+            return
+        configs = node.copy_data_configs()
+        for port, config in configs.items():
+            config.mark_origin(port)
+        self._configs[(path, node)] = configs
+        if not inside:
+            return
+        # The inner graph of an unbuilt GraphNode is not valid yet; until its
+        # setup builds it, only its declared ports count.
+        if isinstance(node, GraphNode) and node.state != NodeState.UNINITIALIZED:
+            inner_path = path + (node,)
+            for inner in node.inner_graph.nodes:
+                self._instantiate(inner_path, inner)
+            for edge in node.inner_graph.all_edges():
+                self._merge_edge(inner_path, edge)
+        self._relate(path, node, refine=False)
+
+    def _config(self, path: tuple, port: Port) -> DataConfiguration:
+        """The configuration of `port` at `path`; a port of the GraphNode
+        whose inner graph is at `path` is the one of its own place."""
+        node = port.node
+        if path and node is path[-1]:
+            return self._config(path[:-1], port)
+        if (path, node) not in self._configs:
+            self._instantiate(path, node, inside=False)
+        configs = self._configs[(path, node)]
+        if port not in configs:
+            configs[port] = node.copy_data_config_of_port(port, {})
+            configs[port].mark_origin(port)
+        return configs[port]
+
+    def _merge_edge(self, path: tuple, edge: Edge) -> None:
+        """Merge the configurations of both ends of `edge` at `path`."""
+        try:
+            self._config(path, edge.from_port).merge(self._config(path, edge.to_port))
+        except DataConfigMismatchError as error:
+            raise DataConfigMismatchError(
+                f"Connection of {edge.from_port.node.name} to "
+                f"{edge.to_port.node.name} failed: {error}"
+            ) from error
+
+    def _relate(self, path: tuple, node: Node, refine: bool) -> bool:
+        """Merge the outputs of `node` at `path` with what its `relate`
+        returns; False if it waits for more structure."""
+        configs = self._configs[(path, node)]
+        try:
+            with refining(refine):
+                related = node.relate(*(configs[port] for port in node.input_ports))
+        except StructureUnknown:
+            if (path, node) not in self._waiting:
+                self._waiting.append((path, node))
+            return False
+        if (path, node) in self._waiting:
+            self._waiting.remove((path, node))
+        if related is None:
+            return True
+        outputs = related if isinstance(related, tuple) else (related,)
+        for port, config in zip(node.output_ports, outputs):
+            try:
+                configs[port].merge(config)
+            except DataConfigMismatchError as error:
+                raise DataConfigMismatchError(
+                    f"The output {port.name} of {node.name} contradicts its "
+                    f"declaration: {error}"
+                ) from error
+        return True
+
+    def _relate_waiting(self, refine: bool = False) -> None:
+        """Run the waiting `relate`s again until none makes progress."""
+        progress = True
+        while progress:
+            progress = False
+            for path, node in list(self._waiting):
+                progress |= self._relate(path, node, refine)
+
+    def _merge_defaults(self) -> None:
+        """Merge every unconnected input that has a default with the
+        configuration of the default."""
+        for (path, node), configs in list(self._configs.items()):
+            structure = self._structure(path)
+            if node not in structure.nodes:
+                continue
+            connected = {edge.to_port for edge in structure.incoming_edges[node]}
+            for port in node.input_ports:
+                if port in connected or port.is_required:
+                    continue
+                default = DataConfiguration.of_value(port.default)
+                if default is not None:
+                    configs[port].merge(default)
+
+    def _rebuild(self, refine: bool) -> None:
+        """Match all configurations from the declarations. With `refine`,
+        as at the end of a setup, also defaults of unconnected inputs, and
+        `relate`s still waiting refine their unknown inputs."""
+        self._configs, self._waiting = {}, []
+        for node in self.nodes:
+            self._instantiate((), node)
+        for edge in self.all_edges():
+            self._merge_edge((), edge)
+        self._relate_waiting()
+        if refine:
+            self._merge_defaults()
+            self._relate_waiting()
+            self._relate_waiting(refine=True)
+
+    def all_edges(self) -> list[Edge]:
+        """Every edge of this graph, also those from and to outside and the
+        skip connections, once each."""
+        edges = []
+        for edge in [e for es in self.incoming_edges.values() for e in es] + (
+            self.edges_to_outside + self.skip_connections
+        ):
+            if edge not in edges:
+                edges.append(edge)
+        return edges
+
+    # endregion
 
     @classmethod
     def from_function(
@@ -194,10 +451,11 @@ class Graph(Serializable):
                             graph!"
                     )
         self.nodes.add(node)
+        self._invalidate()
         if not node in self.incoming_edges:
             self.incoming_edges[node] = list[Edge]()
             self.outgoing_edges[node] = list[Edge]()
-            self.dynamic_data_configs[node] = node.copy_data_configs()
+        self._instantiate((), node)
 
     def sort(self):
         """Sort the nodes topologically to determine the execution order.
@@ -262,6 +520,7 @@ class Graph(Serializable):
                 connected ports are incompatible.
         """
         self._check_graph_was_sorted()
+        self._invalidate()
 
         def get_ports(
             inp, return_output_ports=False
@@ -294,34 +553,19 @@ class Graph(Serializable):
         self.add_node(from_node, check_warning=False)
         self.add_node(to_node, check_warning=False)
 
-        # Configurations should match
+        # Configurations are merged
         for from_port, to_port in zip(from_ports, to_ports):
-            unified_config = self._unify_configs(from_node, to_node, to_port, from_port)
             edge = Edge(from_port, to_port)
+            self._merge_edge((), edge)
             self.incoming_edges[to_node].append(edge)
             self.outgoing_edges[from_node].append(edge)
-
-            self.update_data_configurations(from_node, from_port, unified_config[0])
-            self.update_data_configurations(to_node, to_port, unified_config[1])
-
-    def _unify_configs(self, from_node, to_node, to_port, from_port):
-        from_config = self.dynamic_data_configs[from_node][from_port]
-        to_config = self.dynamic_data_configs[to_node][to_port]
-        try:
-            unified_config = from_config.unify_with(to_config)
-        except DataConfigMismatchError as e:
-            raise DataConfigMismatchError(
-                f"Connection of {from_node.name} to {to_node.name} failed, "
-                + f"because {e}"
-            ) from e
-
-        return unified_config
+        self._relate_waiting()
 
     def remove(self, obj: Node | Edge):
         """Remove a node or edge from the graph.
 
         Removing a node also removes all edges connected to it. All data
-        configurations are recalculated afterwards and the graph is marked
+        configurations are matched again afterwards and the graph is marked
         as unsorted.
 
         Args:
@@ -332,7 +576,6 @@ class Graph(Serializable):
                 self.nodes.remove(obj)
                 self.incoming_edges.pop(obj, None)
                 self.outgoing_edges.pop(obj, None)
-                self.dynamic_data_configs.pop(obj, None)
                 # Remove edges connected to this node
                 self._remove_node_connections(self.edges_from_outside, obj)
                 self._remove_node_connections(self.edges_to_outside, obj)
@@ -359,9 +602,10 @@ class Graph(Serializable):
                 if obj.from_port.node in self.outgoing_edges:
                     if obj in self.outgoing_edges[obj.from_port.node]:
                         self.outgoing_edges[obj.from_port.node].remove(obj)
-        # Unification cannot be undone, so the configurations are rebuilt
-        # from the static ones.
-        self._recalculate_data_configurations()
+        # Merging cannot be undone, so the configurations are matched again
+        # from the declarations.
+        self._rebuild(refine=False)
+        self._invalidate()
         # A graph is never sorted after a node or edge was removed, since the
         # order might have changed.
         self.graph_was_sorted = False
@@ -404,14 +648,7 @@ class Graph(Serializable):
             new_graph.edges_from_outside.append(edge_copy(edge, edge_mapping))
         for edge in self.edges_to_outside:
             new_graph.edges_to_outside.append(edge_copy(edge, edge_mapping))
-        # Copy dynamic data configurations
-        config_dict = {}
-        for node, port_configs in self.dynamic_data_configs.items():
-            new_graph.dynamic_data_configs[node] = {}
-            for port, config in port_configs.items():
-                new_graph.dynamic_data_configs[node][port] = deepcopy(
-                    config, memo=config_dict
-                )
+        new_graph._rebuild(refine=False)
         # Sorting
         if self.graph_was_sorted:
             new_graph.sort()
@@ -480,14 +717,12 @@ class Graph(Serializable):
 
         # Transfer incoming edges from old_node to new_node
         for edge in self.incoming_edges[old_node]:
-            edge.to_port.node = new_node
             edge.to_port = input_port_mapping[edge.to_port]
             self.incoming_edges[new_node].append(edge)
         self.incoming_edges.pop(old_node)
 
         # Transfer outgoing edges from old_node to new_node
         for edge in self.outgoing_edges[old_node]:
-            edge.from_port.node = new_node
             edge.from_port = output_port_mapping[edge.from_port]
             self.outgoing_edges[new_node].append(edge)
         self.outgoing_edges.pop(old_node)
@@ -495,21 +730,16 @@ class Graph(Serializable):
         # Transfer skip connections involving old_node to new_node
         for edge in list(self.skip_connections):
             if edge.from_port.node == old_node:
-                edge.from_port.node = new_node
                 edge.from_port = output_port_mapping[edge.from_port]
             if edge.to_port.node == old_node:
-                edge.to_port.node = new_node
                 edge.to_port = input_port_mapping[edge.to_port]
-
-        # Update dynamic data configurations
-        self.dynamic_data_configs.pop(old_node)
-        self.dynamic_data_configs[new_node] = new_node.copy_data_configs()
 
         # Remove the old node from the graph
         self.nodes.remove(old_node)
 
-        # Recalculate data configurations after replacement
-        self._recalculate_data_configurations()
+        # Match the configurations again after replacement
+        self._rebuild(refine=False)
+        self._invalidate()
 
         # Mark the graph as unsorted since the structure has changed
         self.graph_was_sorted = False
@@ -520,92 +750,6 @@ class Graph(Serializable):
         for edge in edge_list:
             if edge.from_port.node == node or edge.to_port.node == node:
                 edge_container.remove(edge)
-
-    def _recalculate_data_configurations(self):
-        # Reset all data configurations
-        for node in self.dynamic_data_configs.keys():
-            self.dynamic_data_configs[node] = node.copy_data_configs()
-        # Pass information over the edges
-        for edges in self.incoming_edges.values():
-            for edge in edges:
-                from_node, from_port, to_node, to_port = edge.endpoints()
-                unified_config = self._unify_configs(
-                    from_node, to_node, to_port, from_port
-                )
-                self.update_data_configurations(from_node, from_port, unified_config[0])
-                self.update_data_configurations(to_node, to_port, unified_config[1])
-        for edge in self.skip_connections:
-            from_node, from_port, to_node, to_port = edge.endpoints()
-            self.dynamic_data_configs[from_node][from_port] = self.dynamic_data_configs[
-                to_node
-            ][to_port]
-        for edge in self.edges_from_outside:
-            self._propagate_outside_edge(edge, keep="to")
-        for edge in self.edges_to_outside:
-            self._propagate_outside_edge(edge, keep="from")
-
-    def _propagate_outside_edge(self, edge: Edge, keep="to"):
-        from_node, from_port, to_node, to_port = edge.endpoints()
-        from_config = self.dynamic_data_configs[from_node][from_port]
-        to_config = self.dynamic_data_configs[to_node][to_port]
-        from_result, to_result = from_config.unify_with(to_config)
-        unified = to_result if keep == "to" else from_result
-        self.update_data_configurations(from_node, from_port, unified)
-        self.update_data_configurations(to_node, to_port, unified)
-
-    def update_data_configurations(self, node: Node, port: Port, config_dict: dict):
-        """Update the data configuration of `port` and propagate the change.
-
-        Every port of `node` whose configuration became more concrete is
-        unified with the ports it is connected to inside this graph, and
-        the update continues recursively from there. Edges to or from
-        outside of the graph are not followed.
-
-        Args:
-            node: The node owning `port`.
-            port: The port whose data configuration is updated.
-            config_dict: Maps axes to their replacements, as returned by
-                :meth:`~qewton.config.data_configurations.base.DataConfiguration.unify_with`.
-
-        Returns:
-            set[Port]: All ports whose configuration changed.
-
-        Raises:
-            DataConfigMismatchError: If a propagated configuration is
-                incompatible with a connected port.
-        """
-        updated_ports = node.update_data_configs(
-            port, config_dict, self.dynamic_data_configs[node]
-        )
-        # If the config was made more concrete we have to pass this information to
-        # the remaining graph
-        if len(updated_ports) > 0 and node in self.nodes:
-            for e in self.incoming_edges[node] + self.outgoing_edges[node]:
-                if e.to_port not in updated_ports and e.from_port not in updated_ports:
-                    continue
-                # do not update outside of this graph context
-                if e.connects_to_outside:
-                    continue
-                # if e not in visited_edges:
-                first_config = self.dynamic_data_configs[e.from_port.node][e.from_port]
-                second_config = self.dynamic_data_configs[e.to_port.node][e.to_port]
-                try:
-                    new_config_dict = first_config.unify_with(second_config)
-                except DataConfigMismatchError as err:
-                    raise DataConfigMismatchError(
-                        f"Reconnection of {e.from_port.node.name} to "
-                        + f"{e.to_port.node.name} failed, because {err}"
-                    ) from err
-
-                # visited_edges.add(e)
-                # and e.to_port.node not in visited_nodes
-                updated_ports |= self.update_data_configurations(
-                    e.from_port.node, e.from_port, new_config_dict[0]
-                )
-                updated_ports |= self.update_data_configurations(
-                    e.to_port.node, e.to_port, new_config_dict[1]
-                )
-        return updated_ports
 
     def _check_graph_was_sorted(self):
         """Warn if the graph is sorted, since a new edge may invalidate the
@@ -665,32 +809,16 @@ class Graph(Serializable):
         self.add_node(to_node, check_warning=False)
 
         edge = Edge(from_port, to_port, connects_to_outside=True)
+        self._merge_edge((), edge)
         self.edges_from_outside.append(edge)
         self.incoming_edges[to_node].append(edge)
-
-        from_node = from_port.node
-        self._check_external_node_in_config_dict(from_port, from_node)
-
-        to_config = self.dynamic_data_configs[to_node][to_port]
-        from_config = self.dynamic_data_configs[from_node][from_port]
-
-        try:
-            _, unified_to_config = from_config.unify_with(to_config)
-        except DataConfigMismatchError as e:
-            self.edges_from_outside.remove(edge)
-            self.incoming_edges[to_node].remove(edge)
-            raise DataConfigMismatchError(
-                f"Connection of {from_node.name} to {to_node.name} failed: {e}"
-            ) from e
-
-        self.update_data_configurations(to_node, to_port, unified_to_config)
-        self.update_data_configurations(from_node, from_port, unified_to_config)
+        self._relate_waiting()
 
     def connect_to_outside_of_graph(self, from_port: OutputPort, to_port: Port):
         """Connect an output port inside this graph to a port outside of it.
 
-        The node of `from_port` is added to this graph. The value of
-        `from_port` is written to `to_port` at the end of :meth:`run`.
+        The node of `from_port` is added to this graph; `to_port` carries the
+        value of `from_port` (see :meth:`value_of`).
 
         Args:
             from_port: The output port inside this graph that provides the
@@ -705,60 +833,26 @@ class Graph(Serializable):
         from_node = from_port.node
         self.add_node(from_node, check_warning=False)
         edge = Edge(from_port, to_port, connects_to_outside=True)
+        self._merge_edge((), edge)
         self.edges_to_outside.append(edge)
         self.outgoing_edges[from_node].append(edge)
-
-        to_node = to_port.node
-        self._check_external_node_in_config_dict(to_port, to_node)
-
-        from_config = self.dynamic_data_configs[from_node][from_port]
-        to_config = self.dynamic_data_configs[to_node][to_port]
-
-        try:
-            unified_from_config, _ = from_config.unify_with(to_config)
-        except DataConfigMismatchError as e:
-            self.edges_to_outside.remove(edge)
-            self.outgoing_edges[from_node].remove(edge)
-            raise DataConfigMismatchError(
-                f"Connection of {from_node.name} to {to_node.name} failed: {e}"
-            ) from e
-
-        self.update_data_configurations(to_node, to_port, unified_from_config)
-        self.update_data_configurations(from_node, from_port, unified_from_config)
-
-    def _check_external_node_in_config_dict(self, port: Port, node: Node):
-        """Make sure `node` and `port` have an entry in
-        `dynamic_data_configs`, also if `node` is not part of `nodes`."""
-        if node not in self.dynamic_data_configs:
-            self.dynamic_data_configs[node] = node.copy_data_configs()
-        if port not in self.dynamic_data_configs[node]:
-            self.dynamic_data_configs[node][port] = node.copy_data_config_of_port(
-                port, {}
-            )
+        self._relate_waiting()
 
     def add_skip_connection(self, from_port: Port, to_port: Port):
         """Add a skip connection between two ports.
 
-        The edge is not part of the topological order; the value of
-        `from_port` is written to `to_port` at the end of :meth:`run`. The
-        data configuration of `from_port` in this graph is set to the one
-        of `to_port`.
+        The edge is not part of the topological order; `to_port` carries
+        the value of `from_port` (see :meth:`value_of`), and their data
+        configurations are merged.
 
         Args:
             from_port: The port providing the data.
             to_port: The port receiving the data.
         """
-        to_node = to_port.node
-        from_node = from_port.node
-        self._check_external_node_in_config_dict(to_port, to_node)
-        self._check_external_node_in_config_dict(from_port, from_node)
-
         edge = Edge(from_port, to_port, connects_to_outside=True)
+        self._merge_edge((), edge)
         self.skip_connections.append(edge)
-
-        self.dynamic_data_configs[from_node][from_port] = self.dynamic_data_configs[
-            to_node
-        ][to_port]
+        self._invalidate()
 
     def validate(self) -> None:
         """Check that every required input port of every node is connected.
@@ -780,46 +874,127 @@ class Graph(Serializable):
                             f"that is not connected!"
                         )
 
-    def setup(self):
-        """Sort the graph and set up all nodes for evaluation.
+    def setup(self, plan: bool = True):
+        """Sort the graph, set up all nodes for evaluation, in order, and
+        match their configurations.
 
-        A :class:`~qewton.graphs.nodes.GraphAwareNode` receives this graph
-        in its `setup`. A
+        Every node receives this graph in its `setup` (see
+        :meth:`~qewton.graphs.nodes.Node.setup`); a
+        :class:`~qewton.graphs.nodes.GraphAwareNode` builds with it. A
         :class:`~qewton.graphs.control_nodes.data_processing_node.DataProcessingNode`
-        also receives this graph, but is only set up if its data source
-        node is part of this graph.
+        is only set up if its data source node is part of this graph.
+
+        Args:
+            plan: Whether to match the configurations and plan the run now.
+                False for the inner graph of a GraphNode: a graph containing
+                the GraphNode matches it in place, and it plans itself when
+                it is run on its own.
         """
         self.sort()
+        if any(node.open_hyperparameters for node in self.nodes):
+            # Sizes still open are inferred before the nodes are built.
+            self._rebuild(refine=True)
         for node in self.sorted_nodes:
-            if isinstance(node, DataProcessingNode):
-                if node.data_source_node in self.nodes:
-                    node.setup(self)
-            elif isinstance(node, GraphAwareNode):
-                node.setup(self)
-            else:
-                node.setup()
+            if isinstance(node, DataProcessingNode) and node.data_source_node not in self.nodes:
+                continue
+            node.setup(self)
+        # A plan made during the setups (e.g. by run_to) may hold inner graphs
+        # that nodes have rebuilt since.
+        if plan:
+            self._plan()
+        else:
+            self._steps = None
+
+    # region: Planning and running
+
+    def _ensure_plan(self) -> None:
+        if self._steps is None:
+            self._plan()
+
+    def _plan(self) -> None:
+        """Match all configurations from the declarations and list the
+        evaluation steps.
+
+        The inner graph of a GraphNode is not run as a whole: its steps are
+        inserted at the place of the GraphNode, in the order of the inner
+        graph. Inputs read the place of the output that computes their
+        value (see :meth:`_source`).
+        """
+        self._rebuild(refine=True)
+        self._steps = []
+        self._list_steps(())
+
+    def _list_steps(self, path: tuple) -> None:
+        from qewton.graphs.control_nodes.graph_node import GraphNode
+
+        structure = self._structure(path)
+        if not structure.graph_was_sorted:
+            structure.sort()
+        owner = path[0] if path else None
+        for node in structure.sorted_nodes:
+            if isinstance(node, GraphNode):
+                self._list_steps(path + (node,))
+                continue
+            sources = tuple(self._source(path, port) for port in node.input_ports)
+            outputs = tuple((path, port) for port in node.output_ports)
+            self._steps.append((node, sources, outputs, owner or node))
+
+    def _execute(self, mode, owners=None) -> None:
+        """Evaluate the listed steps, only those of `owners` if given."""
+        values = self._values
+        for node, sources, outputs, owner in self._steps:
+            if owners is not None and owner not in owners:
+                continue
+            node.set_mode(mode)
+            result = node(
+                *[
+                    values[s] if s in values else getattr(s[1], "default", None)
+                    for s in sources
+                ]
+            )
+            if len(outputs) == 1:
+                values[outputs[0]] = result
+            elif outputs:
+                values.update(zip(outputs, result))
+
+    def evaluate(
+        self,
+        inputs: dict[Port, Any],
+        outputs: list[Port],
+        mode: EvaluationPhase = EvaluationPhase.ALWAYS,
+    ) -> list[Any]:
+        """Run this graph with the given values at ports outside of it, e.g.
+        the input ports of the GraphNode it is the inner graph of.
+
+        Args:
+            inputs: The value of each port outside of this graph that edges
+                lead from.
+            outputs: Ports whose values to return.
+            mode: The evaluation phase every node is set to.
+
+        Returns:
+            list: The value of each of `outputs` after the run.
+        """
+        self._ensure_plan()
+        for port, value in inputs.items():
+            self._values[((), port)] = value
+        self._execute(mode)
+        return [self._values.get(self._source((), port)) for port in outputs]
+
+    # endregion
 
     def run(self, mode: EvaluationPhase = EvaluationPhase.ALWAYS):
-        """Run all nodes in topological order.
+        """Run all nodes in execution order.
 
-        Before a node runs, each of its input ports receives the value of
-        its incoming edge, or its default if it has none. After all nodes
-        ran, values are passed along edges to outside of the graph and
-        skip connections. Requires :meth:`sort` (or :meth:`setup`) first.
+        Each input receives the value of its incoming edge, or its default
+        if it has none. The values are kept in this graph, see
+        :meth:`value_of`.
 
         Args:
             mode: The evaluation phase every node is set to.
         """
-        for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
-            node.set_mode(mode)
-            for in_port in node.input_ports:
-                if in_port in edges:
-                    in_port.set_value(edges[in_port].from_port.value)
-                else:
-                    in_port.clear_value()
-            node.run()
-        for edge in self.edges_to_outside + self.skip_connections:
-            edge.to_port.set_value(edge.from_port.value)
+        self._ensure_plan()
+        self._execute(mode)
 
     def _build_path_to_node(self, node: Node) -> set[Node]:
         """Unordered set of all nodes `node` depends on inside this graph,
@@ -856,18 +1031,11 @@ class Graph(Serializable):
                 nodes.
         """
         nodes_to_run = self._build_path_to_node(last_node)
+        self._ensure_plan()
+        self._execute(mode, owners=nodes_to_run)
         for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
             if node == last_node:
                 return edges
-            if node not in nodes_to_run:
-                continue
-            node.set_mode(mode)
-            for in_port in node.input_ports:
-                if in_port in edges:
-                    in_port.set_value(edges[in_port].from_port.value)
-                else:
-                    in_port.clear_value()
-            node.run()
         return {}
 
     def _nodes_needed_for(self, target_nodes: set[Node]) -> set[Node]:
@@ -893,21 +1061,13 @@ class Graph(Serializable):
         topological order, including the owning nodes of `ports`. Requires
         a sorted graph."""
         nodes_to_run = self._nodes_needed_for({p.node for p in ports})
-        for node, edges in zip(self.sorted_nodes, self.sorted_incoming_edges):
-            if node not in nodes_to_run:
-                continue
-            node.set_mode(mode)
-            for in_port in node.input_ports:
-                if in_port in edges:
-                    in_port.set_value(edges[in_port].from_port.value)
-                else:
-                    in_port.clear_value()
-            node.run()
+        self._ensure_plan()
+        self._execute(mode, owners=nodes_to_run)
 
     def diagram(self,
                 depth: int = 1,
                 show_port_names: bool = False,
-                show_edge_labels: bool = True) -> GraphPlot:
+                show_configs: bool = False) -> GraphPlot:
         """Build a diagram of this graph's structure.
 
         Args:
@@ -916,8 +1076,9 @@ class Graph(Serializable):
                 expanded inline instead of drawn as a single box.
             show_port_names: Whether nodes with more than one input or output
                 port also get a name label at each port.
-            show_edge_labels: Whether edges are labeled with their data
-                configuration.
+            show_configs: Whether every edge is labeled with the axes of
+                its matched data configuration; otherwise they are shown on
+                hover.
 
         Returns:
             GraphPlot: The node-link diagram of this graph.
@@ -927,7 +1088,7 @@ class Graph(Serializable):
         return GraphPlot(self,
                          depth=depth,
                          show_port_names=show_port_names,
-                         show_edge_labels=show_edge_labels)
+                         show_configs=show_configs)
 
     def visualize(
         self,
@@ -1006,10 +1167,11 @@ class Graph(Serializable):
                 own.
             controls: Control axes for chosen dimensions, e.g.
                 ``[TimeAxis(t)]``; a control on a 1D factor of a product
-                geometry steps through that factor. With `reference`, every
-                control is shared by all panels.
+                geometry steps through that factor.
             default_control: Control axis class for every other dimension
-                not drawn; None for auto_plot's default (a slider).
+                not drawn; None for auto_plot's default (a slider). Every
+                control is shared by all plots whose data has its axes or
+                Variable (see :class:`~qewton.visualization.auto.AutoPlots`).
             variables: Narrows `port` (and `reference`, unless it already has
                 exactly this combination) to the slice of these Variables of a
                 composed FeatureAxes before plotting. With more than one
@@ -1076,7 +1238,7 @@ class Graph(Serializable):
             )
 
         from qewton.data.dataloaders.sampler.point_sampler import discretization_mode
-        from qewton.visualization.auto import auto_plot
+        from qewton.visualization.auto import AutoPlots
         from qewton.visualization.layout import auto_layout
 
         nodes_to_run = self._nodes_needed_for({p.node for p in ports})
@@ -1085,61 +1247,31 @@ class Graph(Serializable):
                 node.to(device)
 
         samplers = self._samplers_on_path_to(ports)
+        combined_variable = Variable.compose(variables) if variables else None
+        value = self._shared_value(variables)
+        plots = AutoPlots(controls)
+        # The configurations are read in mesh mode: the dims bound to the
+        # number of points of a sampler have the number of mesh points.
         with discretization_mode(samplers, max_vertex_distance, device):
             self._run_nodes_needed_for(ports, mode=mode)
 
-        # Move right before plotting, not before running - the sampler(s)
-        # and model can stay on the set device
-        for sampler in samplers:
-            for sampled_geometry in sampler.sampled_geometries:
-                sampled_geometry.to_numpy()
+            # Move right before plotting, not before running - the sampler(s)
+            # and model can stay on the set device
+            for sampler in samplers:
+                for sampled_geometry in sampler.sampled_geometries:
+                    sampled_geometry.to_numpy()
 
-        combined_variable = Variable.compose(variables) if variables else None
-        value = self._shared_value(variables)
-        plots = []
-        for p in ports:
-            data = p.node.backend.to_numpy(p.value)
-            config = self._with_current_sizes(
-                p.get_data_configuration(self), samplers  # type: ignore
-            )
-            if combined_variable is not None:
-                data, config = self._narrow_to_variable(data, config, combined_variable)
-            plots.append(
-                auto_plot(
-                    data,
-                    config,
-                    plot_type,
-                    value=value,
-                    controls=controls,
-                    color_scale=color_scale,
-                    **plot_kwargs,
+            for p in ports:
+                data = p.node.backend.to_numpy(self.value_of(p))
+                config = p.get_data_configuration(self)
+                if combined_variable is not None:
+                    data, config = self._narrow_to_variable(
+                        data, config, combined_variable
+                    )
+                plots.add(
+                    data, config, plot_type, value=value, color_scale=color_scale, **plot_kwargs
                 )
-            )
-        return auto_layout(plots)
-
-    @staticmethod
-    def _with_current_sizes(config: DataConfiguration, samplers) -> DataConfiguration:
-        """`config` with the axes of the samplers' geometries sized to the
-        points they provide now, e.g. the vertices of a mesh in mesh mode
-        rather than the batch size the axes are declared with."""
-        from qewton.config.axes import GeometryAxes
-
-        sampled = [g for sampler in samplers for g in sampler.sampled_geometries]
-
-        def current(axes):
-            if not any(
-                isinstance(axes, GeometryAxes) and axes.geometry is g for g in sampled
-            ):
-                return axes
-            n_points = len(axes.geometry.coordinates())
-            if axes.shape[0].size == n_points:
-                return axes
-            return GeometryAxes(axes.geometry, (n_points,))
-
-        resized = [current(axes) for axes in config.axes]
-        if all(new is old for new, old in zip(resized, config.axes)):
-            return config
-        return DataConfiguration(*resized, dtype=config.dtype)
+        return auto_layout(plots.plots)
 
     @staticmethod
     def _shared_value(variables: list[Variable] | None) -> "Selector | None":
@@ -1215,240 +1347,208 @@ class Graph(Serializable):
             active_discretization_mode,
             discretization_mode,
         )
-        from qewton.visualization.auto import auto_plot
+        from qewton.visualization.auto import AutoPlots
         from qewton.visualization.layout import Overlay, auto_layout
         from qewton.visualization.scales import ColorScale
         from qewton.visualization.themes import cmaps
 
-        combined_variable = Variable.compose(variables) if variables else None
-        pred_config = prediction_config or port.get_data_configuration(self)
-        if pred_config is None:
-            raise ValueError(
-                f"{port} has no DataConfiguration - a callable reference "
-                "needs the model's own evaluation points to call itself at."
-            )
-        pred_variable = (
-            combined_variable
-            if combined_variable is not None
-            else (
-                pred_config.feature_axes.variables if pred_config.feature_axes else None
-            )
-        )
-
-        if callable(reference) and not isinstance(reference, Port):
-            nodes_to_run = self._nodes_needed_for({port.node})
-            if device is not None:
-                for node in nodes_to_run:
-                    node.to(device)
-
-            samplers = self._samplers_on_path_to((port,))
-            with discretization_mode(samplers, max_vertex_distance, device):
-                self._run_nodes_needed_for((port,), mode=mode)
-
-            for sampler in samplers:
-                for sampled_geometry in sampler.sampled_geometries:
-                    sampled_geometry.to_numpy()
-
-            pred_data = port.node.backend.to_numpy(port.value)
-            pred_config = self._with_current_sizes(pred_config, samplers)
-            geometry_axes = pred_config.geometry_axes
-            if geometry_axes is None:
-                raise ValueError(
-                    f"{port}'s own value has no GeometryAxes - a callable "
-                    "reference needs the model's own evaluation points to "
-                    "call itself at."
-                )
-            # One GeometryAxes per factor (a product sampler): every
-            # combination of their points, in the order of the data.
-            geometry = (
-                self._product_reference_geometry(geometry_axes, samplers)
-                if isinstance(geometry_axes, list)
-                else geometry_axes.geometry
-            )
-            ref_data = self._reference_to_numpy(reference(geometry.coordinates()), port)
-            ref_data = ref_data.reshape(*pred_data.shape[:-1], ref_data.shape[-1])
-            ref_config = pred_config
-        elif isinstance(reference, Port):
-            ref_port = reference
-            ref_config = reference_config or ref_port.get_data_configuration(self)
-            ref_variable = (
-                ref_config.feature_axes.variables if ref_config.feature_axes else None
-            )
-            self._check_reference_variable(
-                port, pred_variable, ref_variable, by_identity=False
-            )
-
-            nodes_to_run = self._nodes_needed_for({port.node, ref_port.node})
-            if device is not None:
-                for node in nodes_to_run:
-                    node.to(device)
-
-            self._run_nodes_needed_for((port, ref_port), mode=mode)
-
-            pred_data = port.node.backend.to_numpy(port.value)
+        # A callable reference keeps its samplers in mesh mode until the
+        # plots are built: the dims bound to their number of points have
+        # the number of mesh points meanwhile.
+        with ExitStack() as modes:
+            combined_variable = Variable.compose(variables) if variables else None
             pred_config = prediction_config or port.get_data_configuration(self)
-            ref_data = ref_port.node.backend.to_numpy(ref_port.value)
-            ref_config = reference_config or ref_port.get_data_configuration(self)
-            if (
-                prediction_config is None
-                and pred_config.matches(ref_config)
-                and pred_data.shape == ref_data.shape
-            ):
-                # Both ports describe the same data (e.g. a model output and
-                # the true output of its data loader) through separate axes
-                # objects. One configuration lets controls made for one panel,
-                # e.g. a slider over the batch axis, apply to every panel.
-                pred_config = ref_config
-        else:
-            assert reference_config is not None
-            ref_config = reference_config
-            ref_geometry_axes = ref_config.geometry_axes
-            if ref_geometry_axes is None:
-                raise ValueError("reference_config has no GeometryAxes.")
-            samplers = self._samplers_on_path_to((port,))
-            if isinstance(ref_geometry_axes, list):
-                # One GeometryAxes per factor of a product domain, e.g. the
-                # parameter values and a grid of space points.
-                ref_geometry = self._product_reference_geometry(
-                    ref_geometry_axes, samplers
+            if pred_config is None:
+                raise ValueError(
+                    f"{port} has no DataConfiguration - a callable reference "
+                    "needs the model's own evaluation points to call itself at."
                 )
-            else:
-                ref_geometry = ref_geometry_axes.geometry
-
-            ref_variable = (
-                ref_config.feature_axes.variables if ref_config.feature_axes else None
+            pred_variable = (
+                combined_variable
+                if combined_variable is not None
+                else (
+                    pred_config.feature_axes.variables if pred_config.feature_axes else None
+                )
             )
-            self._check_reference_variable(port, pred_variable, ref_variable)
 
-            nodes_to_run = self._nodes_needed_for({port.node})
-            if device is not None:
-                for node in nodes_to_run:
-                    node.to(device)
+            if callable(reference) and not isinstance(reference, Port):
+                nodes_to_run = self._nodes_needed_for({port.node})
+                if device is not None:
+                    for node in nodes_to_run:
+                        node.to(device)
 
-            with active_discretization_mode(samplers, ref_geometry):
+                samplers = self._samplers_on_path_to((port,))
+                modes.enter_context(discretization_mode(samplers, max_vertex_distance, device))
                 self._run_nodes_needed_for((port,), mode=mode)
 
-            for sampler in samplers:
-                for sampled_geometry in sampler.sampled_geometries:
-                    sampled_geometry.to_numpy()
+                for sampler in samplers:
+                    for sampled_geometry in sampler.sampled_geometries:
+                        sampled_geometry.to_numpy()
 
-            pred_data = port.node.backend.to_numpy(port.value)
-            if combined_variable is not None:
-                # Narrow using the port's own real config - pred_config is
-                # about to be replaced with ref_config below, which would
-                # otherwise already look narrowed (matching ref_variable)
-                # while pred_data itself is still shaped for the full,
-                # un-narrowed Variable.
-                pred_data, _ = self._narrow_to_variable(
-                    pred_data,
-                    prediction_config or port.get_data_configuration(self),
-                    combined_variable,
+                pred_data = port.node.backend.to_numpy(self.value_of(port))
+                pred_config = prediction_config or port.get_data_configuration(self)
+                geometry_axes = pred_config.geometry_axes
+                if geometry_axes is None:
+                    raise ValueError(
+                        f"{port}'s own value has no GeometryAxes - a callable "
+                        "reference needs the model's own evaluation points to "
+                        "call itself at."
+                    )
+                # One GeometryAxes per factor (a product sampler): every
+                # combination of their points, in the order of the data.
+                geometry = (
+                    self._product_reference_geometry(geometry_axes, samplers)
+                    if isinstance(geometry_axes, list)
+                    else geometry_axes.geometry
                 )
-            # The samplers evaluated ref_geometry's points as one flat batch -
-            # give the prediction the reference's structure back.
-            structure = tuple(ref_geometry.shape)
-            if pred_data.ndim == 2 and pred_data.shape[0] == int(np.prod(structure)):
-                pred_data = pred_data.reshape(*structure, pred_data.shape[-1])
-            # auto_plot() dispatches on a DataConfiguration's structural
-            # type (e.g. GridGeometry vs. a plain DiscreteGeometry) -
-            # port.get_data_configuration(self) still reflects the
-            # sampler's own geometry type even after active_discretization_
-            # mode gave it ref_geometry's points, so prediction reuses
-            # ref_config directly instead.
-            pred_config = ref_config
-            ref_data = self._reference_to_numpy(reference, port)
+                ref_data = self._reference_to_numpy(reference(geometry.coordinates()), port)
+                ref_data = ref_data.reshape(*pred_data.shape[:-1], ref_data.shape[-1])
+                ref_config = pred_config
+            elif isinstance(reference, Port):
+                ref_port = reference
+                ref_config = reference_config or ref_port.get_data_configuration(self)
+                ref_variable = (
+                    ref_config.feature_axes.variables if ref_config.feature_axes else None
+                )
+                self._check_reference_variable(
+                    port, pred_variable, ref_variable, by_identity=False
+                )
 
-        if combined_variable is not None:
-            pred_data, pred_config = self._narrow_to_variable(
-                pred_data, pred_config, combined_variable
-            )
-            ref_data, ref_config = self._narrow_to_variable(
-                ref_data, ref_config, combined_variable
-            )
+                nodes_to_run = self._nodes_needed_for({port.node, ref_port.node})
+                if device is not None:
+                    for node in nodes_to_run:
+                        node.to(device)
 
-        if pred_data.shape != ref_data.shape:
-            raise ValueError(
-                f"prediction shape {pred_data.shape} does not match "
-                f"reference shape {ref_data.shape} - both must be evaluated "
-                "at the same points."
-            )
+                self._run_nodes_needed_for((port, ref_port), mode=mode)
 
-        value = self._shared_value(variables)
-        reference_plot = auto_plot(
-            ref_data,
-            ref_config,
-            plot_type,
-            value=value,
-            controls=controls,
-            color_scale=color_scale,
-            **plot_kwargs,
-        )
-        # The controls of the reference, including the default ones, are
-        # shared by every panel that has their dimension: a Variable is one
-        # object everywhere, an axes only within one configuration (whether
-        # two configurations' batch axes are the same is not known).
-        def shared(config):
-            controls = [
-                c
-                for c in reference_plot.controls
-                if isinstance(c.variable_or_axes, Variable)
-                or any(a is c.variable_or_axes for a in config.axes)
-            ]
-            return dict(plot_type=plot_type, value=value, controls=controls)
-
-        # The reference's scale (None without color) is shared if asked for.
-        if share_scale or color_scale is not None:
-            color_scale = reference_plot.color_scale
-        prediction_plot = auto_plot(
-            pred_data,
-            pred_config,
-            color_scale=color_scale,
-            **shared(pred_config),
-            **plot_kwargs,
-        )
-        plots = [reference_plot, prediction_plot]
-        names = ["Reference", "Prediction"]
-
-        if error is not None:
-            if error == "signed":
-                error_data = pred_data - ref_data
-                error_scale = ColorScale(cmap=cmaps.diverging, symmetric=True)
-            elif error == "absolute":
-                error_data = np.abs(pred_data - ref_data)
-                error_scale = ColorScale(vmin=0.0)
-            elif error == "relative":
-                diff = pred_data - ref_data
-                threshold = 1e-8 * np.max(np.abs(ref_data))
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    error_data = diff / ref_data
-                error_data = np.where(np.abs(ref_data) < threshold, np.nan, error_data)
-                error_scale = ColorScale(cmap=cmaps.diverging, symmetric=True)
+                pred_data = port.node.backend.to_numpy(self.value_of(port))
+                pred_config = prediction_config or port.get_data_configuration(self)
+                ref_data = ref_port.node.backend.to_numpy(self.value_of(ref_port))
+                ref_config = reference_config or ref_port.get_data_configuration(self)
             else:
-                raise ValueError(
-                    'error must be "signed", "absolute", "relative", or '
-                    f"None, got {error!r}."
+                assert reference_config is not None
+                ref_config = reference_config
+                ref_geometry_axes = ref_config.geometry_axes
+                if ref_geometry_axes is None:
+                    raise ValueError("reference_config has no GeometryAxes.")
+                samplers = self._samplers_on_path_to((port,))
+                if isinstance(ref_geometry_axes, list):
+                    # One GeometryAxes per factor of a product domain, e.g. the
+                    # parameter values and a grid of space points.
+                    ref_geometry = self._product_reference_geometry(
+                        ref_geometry_axes, samplers
+                    )
+                else:
+                    ref_geometry = ref_geometry_axes.geometry
+
+                ref_variable = (
+                    ref_config.feature_axes.variables if ref_config.feature_axes else None
                 )
-            error_kwargs = {} if reference_plot.color_scale is None else {
-                "color_scale": error_scale
-            }
-            plots.append(
-                auto_plot(
-                    error_data,
-                    ref_config,
-                    **shared(ref_config),
-                    **error_kwargs,
+                self._check_reference_variable(port, pred_variable, ref_variable)
+
+                nodes_to_run = self._nodes_needed_for({port.node})
+                if device is not None:
+                    for node in nodes_to_run:
+                        node.to(device)
+
+                with active_discretization_mode(samplers, ref_geometry):
+                    self._run_nodes_needed_for((port,), mode=mode)
+
+                for sampler in samplers:
+                    for sampled_geometry in sampler.sampled_geometries:
+                        sampled_geometry.to_numpy()
+
+                pred_data = port.node.backend.to_numpy(self.value_of(port))
+                if combined_variable is not None:
+                    # Narrow using the port's own real config - pred_config is
+                    # about to be replaced with ref_config below, which would
+                    # otherwise already look narrowed (matching ref_variable)
+                    # while pred_data itself is still shaped for the full,
+                    # un-narrowed Variable.
+                    pred_data, _ = self._narrow_to_variable(
+                        pred_data,
+                        prediction_config or port.get_data_configuration(self),
+                        combined_variable,
+                    )
+                # The samplers evaluated ref_geometry's points as one flat batch -
+                # give the prediction the reference's structure back.
+                structure = tuple(ref_geometry.shape)
+                if pred_data.ndim == 2 and pred_data.shape[0] == int(np.prod(structure)):
+                    pred_data = pred_data.reshape(*structure, pred_data.shape[-1])
+                # auto_plot() dispatches on a DataConfiguration's structural
+                # type (e.g. GridGeometry vs. a plain DiscreteGeometry) -
+                # port.get_data_configuration(self) still reflects the
+                # sampler's own geometry type even after active_discretization_
+                # mode gave it ref_geometry's points, so prediction reuses
+                # ref_config directly instead.
+                pred_config = ref_config
+                ref_data = self._reference_to_numpy(reference, port)
+
+            if combined_variable is not None:
+                pred_data, pred_config = self._narrow_to_variable(
+                    pred_data, pred_config, combined_variable
+                )
+                ref_data, ref_config = self._narrow_to_variable(
+                    ref_data, ref_config, combined_variable
+                )
+
+            if pred_data.shape != ref_data.shape:
+                raise ValueError(
+                    f"prediction shape {pred_data.shape} does not match "
+                    f"reference shape {ref_data.shape} - both must be evaluated "
+                    "at the same points."
+                )
+
+            value = self._shared_value(variables)
+            panels = AutoPlots(controls)
+            reference_plot = panels.add(
+                ref_data, ref_config, plot_type, value=value, color_scale=color_scale,
+                **plot_kwargs,
+            )
+            # The reference's scale (None without color) is shared if asked for.
+            if share_scale or color_scale is not None:
+                color_scale = reference_plot.color_scale
+            panels.add(
+                pred_data, pred_config, plot_type, value=value, color_scale=color_scale,
+                **plot_kwargs,
+            )
+            names = ["Reference", "Prediction"]
+
+            if error is not None:
+                if error == "signed":
+                    error_data = pred_data - ref_data
+                    error_scale = ColorScale(cmap=cmaps.diverging, symmetric=True)
+                elif error == "absolute":
+                    error_data = np.abs(pred_data - ref_data)
+                    error_scale = ColorScale(vmin=0.0)
+                elif error == "relative":
+                    diff = pred_data - ref_data
+                    threshold = 1e-8 * np.max(np.abs(ref_data))
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        error_data = diff / ref_data
+                    error_data = np.where(np.abs(ref_data) < threshold, np.nan, error_data)
+                    error_scale = ColorScale(cmap=cmaps.diverging, symmetric=True)
+                else:
+                    raise ValueError(
+                        'error must be "signed", "absolute", "relative", or '
+                        f"None, got {error!r}."
+                    )
+                error_kwargs = {} if reference_plot.color_scale is None else {
+                    "color_scale": error_scale
+                }
+                panels.add(
+                    error_data, ref_config, plot_type, value=value, **error_kwargs,
                     **plot_kwargs,
                 )
-            )
-            names.append("Error")
+                names.append("Error")
 
-        layout = auto_layout(plots)
-        for plot, name in zip(plots, names):
-            if isinstance(layout, Overlay):
-                plot.label = name
-            else:
-                plot.title = name
-        return layout
+            layout = auto_layout(panels.plots)
+            for plot, name in zip(panels.plots, names):
+                if isinstance(layout, Overlay):
+                    plot.label = name
+                else:
+                    plot.title = name
+            return layout
 
     @staticmethod
     def _narrow_to_variable(data, config: DataConfiguration, variable: Variable):

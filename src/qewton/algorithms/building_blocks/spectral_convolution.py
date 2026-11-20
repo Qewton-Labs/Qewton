@@ -299,7 +299,7 @@ class SpectralConv(GraphNode[TensorType]):
             backend=backend,
         )
         self.functional_spectral_conv.fft_norm.default = self.fft_norm
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
 
@@ -340,6 +340,4 @@ class SpectralConv(GraphNode[TensorType]):
         Returns:
             TensorType: Output of shape `(batch, out_channels, *spatial_dims)`.
         """
-        self.input.set_value(x)
-        self.run()
-        return self.output.value
+        return super().forward(x)

@@ -28,14 +28,41 @@ with graph.tracker():
     data = dataloader()       # returns a TrackingObject for its output port
     prediction = model(data)  # connects dataloader -> model in `graph`
 
-graph.setup()  # sorts the graph and sets up all nodes
+graph.setup()  # builds all nodes and plans the run
 graph.run()
-result = model.output_ports[0].value
+result = graph.value_of(model.output_ports[0])
 ```
 
 Nodes can also be connected explicitly with `graph.connect(from_, to_)`.
-Each graph keeps the unified data configuration of every port in
-`graph.dynamic_data_configs`; the static configuration of a port
-(`port.data_configuration`) is never changed by connecting it.
 
-See [DECISIONS.md](DECISIONS.md) for design decisions.
+## Places
+
+A node can be part of several graphs and occur at several places of one
+graph; `node.copy()` gives another place sharing its weights. A graph
+keeps the matched configuration and the value of every port per place:
+
+```python
+graph.config_of(port, within=(graph_node, ...))  # DataConfiguration
+graph.value_of(port, within=(graph_node, ...))   # value of the last run
+```
+
+`within` names the GraphNodes leading to the port, from the outside in;
+it is needed only for a node at several places.
+
+## GraphNodes
+
+A graph matches and runs the inner graph of a `GraphNode` in place. A model
+whose input sizes are left open (e.g. `FCN(in_neurons=None, ...)`) has no
+inner graph until it is set up in a graph that infers them; its `forward`
+declares the ports. Called on its own, a GraphNode runs its inner graph in
+its own mode (`set_mode`).
+
+## Setup
+
+Order: create nodes → connect (matches the configurations) →
+`graph.setup()` (builds every node, matches again and plans the run) →
+`graph.run()`. A node implements `build()` to create what it computes
+with; `setup()` belongs to the library. Set the graph up again after
+changing hyperparameters or setting up nodes by hand.
+
+See [REQUIREMENTS.md](REQUIREMENTS.md) and [DECISIONS.md](DECISIONS.md).

@@ -41,6 +41,10 @@ class Serializer:
         self.file_counter = 0
         self.id_dictionary = {}
         self._id_idx_mapping = {}
+        # Every added object is kept alive while saving: objects are told
+        # apart by their id, which Python reuses for new objects once an
+        # object is freed (e.g. a temporary one made only to be saved).
+        self._added: list = []
 
         from qewton.backends import BACKEND_DICT
 
@@ -68,6 +72,7 @@ class Serializer:
         index_mapping = []
 
         if id(parent_obj) not in self.id_dictionary:
+            self._added.append(parent_obj)
             self.id_dictionary[id(parent_obj)] = parent_obj
             self._id_idx_mapping[id(parent_obj)] = len(self._id_idx_mapping)
 
@@ -79,6 +84,7 @@ class Serializer:
                 continue
 
             # Add the object to the dictionary and assign it an index
+            self._added.append(obj)
             self.id_dictionary[obj_id] = obj
             self._id_idx_mapping[obj_id] = len(self._id_idx_mapping)
             index_mapping.append(self._id_idx_mapping[obj_id])
@@ -185,7 +191,7 @@ class Serializer:
         # Save some general configuration data to a separate JSON file in the
         # temporary directory
         config_data = {
-            SavingKeys.VERSION: SavingKeys.KEY_VERSION,
+            SavingKeys.KEY_VERSION: SavingKeys.VERSION,
             SavingKeys.KEY_COMPRESSED: self.compress,
         }
         with open(self.path / SavingKeys.FILE_CONFIG, "w", encoding="utf-8") as f:
@@ -279,6 +285,15 @@ class Serializable(Protocol):
             serializer.ready_to_reference.get(v_id, False)
             for v_id in data_config[SavingKeys.KEY_SELF_ARGS].values()
         )
+
+    def upgrade(self, version: int) -> None:
+        """Bring this object, loaded from a file of the older format
+        `version`, up to date with its class. Called after every object of
+        the file is loaded. Does nothing by default.
+
+        Args:
+            version: The format version of the file.
+        """
 
     def load(self, serializer: Deserializer, data_config: dict) -> None:
         """Loads the object's state from the serialized data.

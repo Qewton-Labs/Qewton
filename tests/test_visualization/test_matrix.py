@@ -10,6 +10,11 @@ with Matplotlib, which embeds controls as frames (NOT_EMBEDDED: the
 controls it leaves in their current state), and connected outputs with
 the application of each renderer (APPLICATIONS).
 
+The REFERENCE variants run every case × plot × control. Every other
+variant runs every case × plot without a control, and every plot with
+the controls that change its output (OUTPUT_CONTROLS) on the first case of
+the plot: each pair of a variant with a case, a plot or a control occurs.
+
 A supported combination (MODEL in matrix_cases.py) evaluates to the
 expected Results, draws one artist per Result and cell, follows its
 control in every output and realizes it (or warns); an excluded one raises
@@ -19,6 +24,7 @@ KNOWN_GAPS.
 
 import dataclasses
 import io
+import itertools
 import re
 import warnings
 
@@ -64,6 +70,16 @@ VARIANTS = [
     ("draw", "plotly", "torch"),
     ("draw", "recording", "torch"),
 ]
+
+#: The variants that run every case × plot × control.
+REFERENCE = [("draw", "recording", "numpy"), ("self_contained", "recording", "numpy")]
+
+#: The controls that change what each output of a renderer does.
+OUTPUT_CONTROLS = {
+    "draw": ["facet", "overlay", "tuple"],
+    "self_contained": ["slider", "time", "selector"],
+    "connected": ["slider", "time", "selector"],
+}
 
 #: The application showing each renderer's figures as a connected output.
 APPLICATIONS = {"plotly": DashApplication, "matplotlib": WidgetApplication}
@@ -236,15 +252,31 @@ def _layout_of(figure, renderer_name):
     return (backend.layout.width, backend.layout.height), bars, legends
 
 
+def _combinations():
+    # (case, plot, control, variant) as described in the module docstring;
+    # an application shows the figures of a real renderer only.
+    for variant in VARIANTS:
+        output, renderer_name, _ = variant
+        if output == "connected" and renderer_name == "recording":
+            continue
+        if variant in REFERENCE:
+            for case, plot, control in itertools.product(CASES, PLOTS, CONTROLS):
+                yield case, plot, control, variant
+            continue
+        for case, plot in itertools.product(CASES, PLOTS):
+            if expected(plot, case) is not None:
+                yield case, plot, "none", variant
+        for plot in PLOTS:
+            case = next(c for c in CASES if expected(plot, c) is not None)
+            for control in OUTPUT_CONTROLS[output]:
+                yield case, plot, control, variant
+
+
 @pytest.mark.parametrize(
-    "output, renderer_name, backend", VARIANTS, ids=["-".join(v) for v in VARIANTS]
+    "case_name, plot_name, control, output, renderer_name, backend",
+    [pytest.param(c, p, k, *v, id="-".join((c, p, k, *v))) for c, p, k, v in _combinations()],
 )
-@pytest.mark.parametrize("control", CONTROLS)
-@pytest.mark.parametrize("plot_name", PLOTS)
-@pytest.mark.parametrize("case_name", list(CASES))
-def test_matrix(case_name, plot_name, control, output, renderer_name, backend, tmp_path, request):
-    if output == "connected" and renderer_name == "recording":
-        pytest.skip("an application shows the figures of a real renderer")
+def test_matrix(case_name, plot_name, control, output, renderer_name, backend, request):
     case = CASES[case_name]
     result_class = expected(plot_name, case_name)
     gap = _gap(case_name, plot_name, control, output, renderer_name)
@@ -270,9 +302,8 @@ def test_matrix(case_name, plot_name, control, output, renderer_name, backend, t
     if output == "draw":
         _check_drawn(figure, renderer_name, control)
     elif output == "self_contained":
-        _check_self_contained(
-            figure, renderer_name, control, control_object, tmp_path / "figure.html"
-        )
+        path = request.getfixturevalue("tmp_path") / "figure.html"
+        _check_self_contained(figure, renderer_name, control, control_object, path)
     else:
         _check_connected(figure, renderer_name, control, control_object)
 

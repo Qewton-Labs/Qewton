@@ -79,7 +79,7 @@ class ChannelMLP(GraphNode, Generic[TensorType]):
             output_ports=self._graph.sorted_nodes[-1].output_ports,
             backend=backend,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self._state = NodeState.UNINITIALIZED
 
     @property
@@ -96,8 +96,9 @@ class ChannelMLP(GraphNode, Generic[TensorType]):
             )
         )
 
-    def setup(self) -> None:
-        """Rebuilds the network, which re-initializes all of its weights."""
+    def build(self) -> None:
+        """Builds the network for the current hyperparameter values, with newly
+        initialized weights."""
         new_graph = self._build_network(self.backend)
         self.setup_graph(
             new_graph,
@@ -162,6 +163,4 @@ class ChannelMLP(GraphNode, Generic[TensorType]):
         Returns:
             TensorType: Output of shape `(batch, out_channels, *spatial_dims)`.
         """
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value
+        return super().forward(x)

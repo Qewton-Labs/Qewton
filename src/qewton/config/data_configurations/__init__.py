@@ -1,2 +1,2 @@
-from .base import DataConfiguration
+from .base import DataConfiguration, refining
 from .grid import GridDataConfiguration

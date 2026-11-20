@@ -10,6 +10,7 @@ from qewton.config.axes import (
     BatchAxes,
     GeometryAxes,
     EllipsisAxes,
+    WindowDim,
 )
 from qewton.config.dtypes import Float32
 from qewton.algorithms.building_blocks.activation_functions import ReLU
@@ -50,27 +51,7 @@ class FunctionalConv(Node[TensorType]):
         self.padding = padding if isinstance(padding, tuple) else (padding,) * dim
         self.dilation = dilation if isinstance(dilation, tuple) else (dilation,) * dim
         self.groups = groups
-
-        # Shape information for data configurations
-        self.batch_axes = BatchAxes(AxesDim(None))
-        channel_dim_in = AxesDim(None)
-        self.channel_dim_out = AxesDim(None)
-        kernel_dims = tuple(AxesDim(None) for _ in range(dim))
-        self.feature_axes_x = FeatureAxes(shape=(channel_dim_in,))
-        self.feature_axes_weight = FeatureAxes(
-            shape=(self.channel_dim_out, channel_dim_in) + kernel_dims
-        )
-        geo_shape = tuple(AxesDim(None) for _ in range(dim))
-        self.geo_axes = GeometryAxes(shape=geo_shape)
-        out_shape = []
-        for i, in_dim in enumerate(geo_shape):
-            out_dim = (
-                in_dim + 2 * self.padding[i] - self.dilation[i] * (kernel_dims[i] - 1) - 1
-            )
-            out_dim /= self.stride[i]
-            out_dim += 1
-            out_shape.append(out_dim)
-        self.geo_axes_out = GeometryAxes(shape=tuple(out_shape))
+        self._declare_axes()
 
         # Register the ports as own variables
         super().__init__(name, state, backend)
@@ -78,6 +59,35 @@ class FunctionalConv(Node[TensorType]):
         self.kernel = self.input_ports[1]
         self.bias = self.input_ports[2]
         self.output = self.output_ports[0]
+
+    def _declare_axes(self) -> None:
+        # The axes the annotations of `forward` are built from.
+        self.batch_axes = BatchAxes(AxesDim(None))
+        channel_dim_in = AxesDim(None)
+        self.channel_dim_out = AxesDim(None)
+        kernel_dims = tuple(AxesDim(None) for _ in range(self.dim))
+        self.feature_axes_x = FeatureAxes(shape=(channel_dim_in,))
+        self.feature_axes_weight = FeatureAxes(
+            shape=(self.channel_dim_out, channel_dim_in) + kernel_dims
+        )
+        geo_shape = tuple(AxesDim(None) for _ in range(self.dim))
+        self.geo_axes = GeometryAxes(shape=geo_shape)
+        out_shape = tuple(
+            WindowDim(in_dim, kernel_dims[i], self.stride[i], self.padding[i], self.dilation[i])
+            for i, in_dim in enumerate(geo_shape)
+        )
+        self.geo_axes_out = GeometryAxes(shape=out_shape)
+
+    def upgrade(self, version: int) -> None:
+        """See :meth:`~qewton.graphs.nodes.Node.upgrade`; the axes of files
+        of version 1 relate the sizes differently, so they are declared anew.
+
+        Args:
+            version: The format version of the file.
+        """
+        if version < 2:
+            self._declare_axes()
+        super().upgrade(version)
 
     def _pick_conv_fn(self):
         if self.dim == 1:
@@ -218,14 +228,12 @@ class Conv(GraphNode, Generic[TensorType]):
             name=name,
             **kwargs,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
 
     def forward(self, x):
-        self.input.set_value(x)
-        self.run()
-        return self.output.value
+        return super().forward(x)
 
 
 class Conv1D(Conv[TensorType]):
@@ -387,7 +395,7 @@ class DoubleConv(GraphNode, Generic[TensorType]):
             name=name,
             **kwargs,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self.set_state(NodeState.UNINITIALIZED)  # first setup is only a placeholder
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
@@ -462,9 +470,7 @@ class DoubleConv(GraphNode, Generic[TensorType]):
 
         return graph
 
-    def setup(self) -> None:
-        if self.state != NodeState.UNINITIALIZED:
-            return
+    def build(self) -> None:
         new_graph = self._build_network(self.backend)
         self.setup_graph(
             new_graph,
@@ -473,12 +479,9 @@ class DoubleConv(GraphNode, Generic[TensorType]):
         )
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
-        self.set_state(NodeState.INITIALIZED)
 
     def forward(self, x):
-        self.input.set_value(x)
-        self.run()
-        return self.output.value
+        return super().forward(x)
 
 
 def _current_value(value: int | HyperParameter) -> int:
@@ -564,7 +567,7 @@ class Flattened1dConv(GraphNode[TensorType]):
             name=name,
             backend=backend,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self.input = self.input_ports[0]
         self.output = self.output_ports[0]
 
@@ -608,9 +611,7 @@ class Flattened1dConv(GraphNode[TensorType]):
         Returns:
             TensorType: Output of shape `(batch, out_channels, x_1, ..., x_n)`.
         """
-        self.input.set_value(x)
-        self.run()
-        return self.output.value
+        return super().forward(x)
 
 
 # endregion
@@ -629,21 +630,39 @@ class PoolingNode(Node[TensorType]):
     ) -> None:
         self.backend: type[DeepLearningBackend[TensorType]] = backend
         self.kernel_size = kernel_size
-        # Axes for dataconfigs:
-        self.batch_axes = EllipsisAxes()
-        self.feature_axes = FeatureAxes(shape=(AxesDim(None),))
-        in_geo_dims, out_geo_dims = [], []
-        for i in range(len(kernel_size)):
-            in_geo_dims.append(AxesDim(None))
-            out_geo_dims.append(self._build_output_dim(in_geo_dims[-1], i))
-        self.in_geo_axes = GeometryAxes(shape=tuple(in_geo_dims))
-        self.out_geo_axes = GeometryAxes(shape=tuple(out_geo_dims))
+        self._declare_axes()
         super().__init__(name, state, backend)
 
+    def _declare_axes(self) -> None:
+        # The axes the annotations of `forward` are built from.
+        self.batch_axes = EllipsisAxes()
+        self.feature_axes = FeatureAxes(shape=(AxesDim(None),))
+        in_geo_dims = tuple(AxesDim(None) for _ in self.kernel_size)
+        self.in_geo_axes = GeometryAxes(shape=in_geo_dims)
+        self.out_geo_axes = GeometryAxes(
+            shape=tuple(self._build_output_dim(d, i) for i, d in enumerate(in_geo_dims))
+        )
+
+    def upgrade(self, version: int) -> None:
+        """See :meth:`~qewton.graphs.nodes.Node.upgrade`; the axes of files
+        of version 1 relate the sizes differently, so they are declared anew.
+
+        Args:
+            version: The format version of the file.
+        """
+        if version < 2:
+            self._declare_axes()
+        super().upgrade(version)
+
     def _build_output_dim(self, input_dim, dim_idx) -> AxesDim:
-        """Builds the coupling between the input and output axes, which
-        is influenced by this pooling operation."""
-        raise NotImplementedError
+        """The size of a spatial dim after this pooling."""
+        return WindowDim(
+            input_dim,
+            self.kernel_size[dim_idx],
+            self.stride[dim_idx],
+            self.padding[dim_idx],
+            self.dilation[dim_idx],
+        )
 
     def in_data_config(self):
         return DC(
@@ -692,16 +711,6 @@ class MaxPool1D(PoolingNode[TensorType]):
         self.padding = self._pack_tuple(padding)
         self.dilation = self._pack_tuple(dilation)
         super().__init__(kernel_size, name, NodeState.FIXED, backend)
-
-    def _build_output_dim(self, input_dim, dim_idx) -> AxesDim:
-        out_dim = (
-            input_dim
-            + 2 * self.padding[dim_idx]
-            - self.dilation[dim_idx] * (self.kernel_size[dim_idx] - 1)
-            - 1
-        )
-        out_dim /= self.stride[dim_idx]
-        return out_dim + 1
 
     def _pack_tuple(self, data: tuple[int, ...] | int) -> tuple[int]:
         return (data[0],) if isinstance(data, tuple) else (data,)
@@ -798,13 +807,20 @@ class AvgPool1D(PoolingNode[TensorType]):
             stride = kernel_size
         self.stride = self._pack_tuple(stride)
         self.padding = self._pack_tuple(padding)
+        self.dilation = self._pack_tuple(1)
         self.count_include_pad = count_include_pad
         super().__init__(kernel_size, name, NodeState.FIXED, backend)
 
-    def _build_output_dim(self, input_dim, dim_idx) -> AxesDim:
-        out_dim = input_dim + 2 * self.padding[dim_idx] - self.kernel_size[dim_idx] - 1
-        out_dim /= self.stride[dim_idx]
-        return out_dim + 1
+    def upgrade(self, version: int) -> None:
+        """See :meth:`~qewton.graphs.nodes.Node.upgrade`; files of version 1
+        have no dilation yet.
+
+        Args:
+            version: The format version of the file.
+        """
+        if version < 2:
+            self.dilation = self._pack_tuple(1)
+        super().upgrade(version)
 
     def _pack_tuple(self, data: tuple[int, ...] | int) -> tuple[int]:
         return (data[0],) if isinstance(data, tuple) else (data,)
@@ -1129,7 +1145,7 @@ class BatchNorm(GraphNode, Generic[TensorType]):
             backend=backend,
             name=name,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self.set_state(NodeState.UNINITIALIZED)  # first setup is only a placeholder
         self.running_mean.fix_node_state()  # no automatic gradient tracking
         self.running_var.fix_node_state()
@@ -1183,24 +1199,20 @@ class BatchNorm(GraphNode, Generic[TensorType]):
             graph.connect(self.bias_node, self.functional_batch_norm.input_ports[4])
         return graph
 
-    def setup(self) -> None:
-        if self.state == NodeState.UNINITIALIZED:
-            new_graph = self._build_graph(self.backend)  # type: ignore
-            self.setup_graph(
-                new_graph,
-                input_ports=[self.functional_batch_norm.input_ports[0]],
-                output_ports=[self.functional_batch_norm.output_ports[0]],
-            )
-            self.running_mean.fix_node_state()  # no automatic gradient tracking
-            self.running_var.fix_node_state()
-            self.input = self.input_ports[0]
-            self.output = self.output_ports[0]
-            self.set_state(NodeState.INITIALIZED)
+    def build(self) -> None:
+        new_graph = self._build_graph(self.backend)  # type: ignore
+        self.setup_graph(
+            new_graph,
+            input_ports=[self.functional_batch_norm.input_ports[0]],
+            output_ports=[self.functional_batch_norm.output_ports[0]],
+        )
+        self.running_mean.fix_node_state()  # no automatic gradient tracking
+        self.running_var.fix_node_state()
+        self.input = self.input_ports[0]
+        self.output = self.output_ports[0]
 
     def forward(self, x):
-        self.input.set_value(x)
-        self.run()
-        return self.output.value
+        return super().forward(x)
 
 
 class BatchNorm1D(BatchNorm[TensorType]):

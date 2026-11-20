@@ -9,7 +9,6 @@ from typing import Any, Generic
 
 import numpy as np
 
-from qewton.config.errors import DataConfigMismatchError
 from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
 from qewton.config.saving.saving import Serializable
@@ -205,86 +204,6 @@ class Geometry(Serializable, Generic[TensorType]):
     @property
     def dim(self) -> int | None:
         return self.variable.dim if not self.variable.is_empty else self._dim
-
-    def unify_with(self, other: Geometry) -> Geometry:
-        """Unify this geometry with `other`.
-
-        Placeholder values may appear for `variable`, `dim` and `shape`. If
-        one geometry is a discretization of the other, the discretization is
-        returned. Otherwise the placeholders are filled from the other
-        geometry and the more specific of the two objects (the instance of
-        the subclass) is refined in place and returned.
-
-        Args:
-            other: The geometry to unify with.
-
-        Returns:
-            Geometry: The unified geometry, either `self` or `other`.
-
-        Raises:
-            DataConfigMismatchError: If dimensions, variables or shapes are
-                incompatible.
-        """
-        if other is self or other == self:
-            return self
-
-        if self.is_discretization_of(other):
-            return self
-        if other.is_discretization_of(self):
-            return other
-
-        if self.dim is not None and other.dim is not None and self.dim != other.dim:
-            raise DataConfigMismatchError(
-                f"Cannot unify geometries with different dims: {self.dim} != {other.dim}"
-            )
-
-        try:
-            unified_variable = self.variable.unify(other.variable)
-        except ValueError as error:
-            raise DataConfigMismatchError(
-                f"Cannot unify geometry variables: {error}"
-            ) from error
-
-        unified_dim = self.dim if self.dim is not None else other.dim
-        if unified_dim is None and not unified_variable.is_empty:
-            unified_dim = unified_variable.dim
-
-        unified_shape = self._unify_shapes(self.shape, other.shape)
-
-        target: Geometry = self._preferred_refinement_target(other)
-        target.apply_unified(unified_variable, unified_dim, unified_shape)
-        return target
-
-    @staticmethod
-    def _unify_shapes(
-        shape_a: tuple[int | None, ...] | EllipsisType,
-        shape_b: tuple[int | None, ...] | EllipsisType,
-    ) -> tuple[int | None, ...] | EllipsisType:
-        if shape_a is ...:
-            return shape_b
-        if shape_b is ...:
-            return shape_a
-
-        if len(shape_a) != len(shape_b):
-            raise DataConfigMismatchError(
-                f"Cannot unify geometry shapes with different lengths: \
-                    {len(shape_a)} != {len(shape_b)}"
-            )
-
-        unified: list[int | None] = []
-        for index, (dim_a, dim_b) in enumerate(zip(shape_a, shape_b)):
-            if dim_a is None:
-                unified.append(dim_b)
-            elif dim_b is None:
-                unified.append(dim_a)
-            elif dim_a == dim_b:
-                unified.append(dim_a)
-            else:
-                raise DataConfigMismatchError(
-                    f"Cannot unify geometry shapes at index {index}: \
-                        {dim_a} != {dim_b}"
-                )
-        return tuple(unified)
 
     def _shape_is_placeholder(self, shape: tuple[int | None, ...] | EllipsisType) -> bool:
         if shape is ...:

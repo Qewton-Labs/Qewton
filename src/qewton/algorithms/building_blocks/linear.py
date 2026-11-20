@@ -50,14 +50,10 @@ class FunctionalLinear(GraphNode, Generic[TensorType]):
     def forward(
         self,
         x: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1,)))],
-        weight: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_1, dim_2)))],
-        bias: Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2,)))] = None,
+        weight: Annotated[TensorType, DC(EllipsisAxes(), FeatureAxes(shape=(dim_1, dim_2)))],
+        bias: Annotated[TensorType, DC(EllipsisAxes(), FeatureAxes(shape=(dim_2,)))] = None,
     ) -> Annotated[TensorType, DC(ell_ax, FeatureAxes(shape=(dim_2,)))]:
-        self.input.set_value(x)
-        self.weight.set_value(weight)
-        self.bias.set_value(bias)
-        self.run()
-        return self.output.value  # type: ignore
+        return super().forward(x, weight, bias)
 
 
 class Linear(GraphNode, Generic[TensorType]):
@@ -117,23 +113,21 @@ class Linear(GraphNode, Generic[TensorType]):
         self.ellipsis_axes = EllipsisAxes()
         return DC(
             self.ellipsis_axes,
-            FeatureAxes(shape=(self.weight.shape[0].value,)),
+            FeatureAxes(shape=(AxesDim(self.weight.shape[0]),)),
             dtype=self.weight.backend.default_dtype,
         )
 
     def out_data_config(self):
         return DC(
             self.ellipsis_axes,
-            FeatureAxes(shape=(self.weight.shape[1].value,)),
+            FeatureAxes(shape=(AxesDim(self.weight.shape[1]),)),
             dtype=self.weight.backend.default_dtype,
         )
 
     def forward(
         self, x: Annotated[TensorType, x_data_config]
     ) -> Annotated[TensorType, out_data_config]:
-        self.input.set_value(x)
-        self.run()
-        return self.output.value  # type: ignore
+        return super().forward(x)
 
 
 class Quadratic(Linear[TensorType]):

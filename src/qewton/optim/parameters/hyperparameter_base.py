@@ -88,9 +88,84 @@ class HyperParameter(Serializable):
     def is_fixed(self) -> bool:
         """
         Returns:
-            bool: Whether this parameter is fixed or should be optimized.
+            bool: Whether this parameter is left alone while tuning: it is
+                fixed, or inferred from data.
         """
-        return self.state == HyperParameterState.FIXED
+        return self.state != HyperParameterState.OPTIMIZE
+
+    @classmethod
+    def size_from(cls, x, name: str) -> HyperParameter:
+        """A size that fixes how a node is built: the given one (see
+        :meth:`from_value`), or, for None, an open one that is inferred from
+        the connected data (see :meth:`inferred`).
+
+        Args:
+            x: The size, a HyperParameter, or None.
+            name: Internal name of this parameter.
+
+        Returns:
+            HyperParameter: The size as a HyperParameter.
+        """
+        return cls.inferred(name) if x is None else cls.from_value(x, name)
+
+    @property
+    def is_open(self) -> bool:
+        """Whether this parameter waits to be inferred from the connected
+        data: state INFERRED and no value yet."""
+        return self.state == HyperParameterState.INFERRED and self.current_value is None
+
+    @classmethod
+    def inferred(cls, name: str) -> HyperParameter:
+        """A whole-number parameter that stays open (value None) until it is
+        inferred from the connected data (:meth:`infer`).
+
+        Args:
+            name: Internal name of this parameter.
+
+        Returns:
+            HyperParameter: The open parameter, in state INFERRED.
+        """
+        from .number_hyperparameter import (  # pylint: disable=import-outside-toplevel
+            DiscreteHyperparameter,
+        )
+
+        parameter = DiscreteHyperparameter(
+            (1, 1), 1, state=HyperParameterState.INFERRED, name=name
+        )
+        parameter.current_value = None
+        return parameter
+
+    def infer(self, value) -> bool:
+        """Learn the value from the connected data: an open parameter in
+        state INFERRED takes it; any other is compared with it. Called by
+        the dims bound to this parameter once their size is known.
+
+        Args:
+            value: The value the data needs.
+
+        Returns:
+            bool: Whether the value changed, i.e. an open parameter was
+                inferred.
+
+        Raises:
+            DataConfigMismatchError: If the parameter has another value, e.g.
+                inferred at another place of a graph.
+        """
+        from qewton.config.errors import DataConfigMismatchError
+
+        current = self.value
+        if current == value:
+            return False
+        if current is None:
+            if self.state != HyperParameterState.INFERRED:
+                # e.g. an operation of parameters that are still open
+                return False
+            self.current_value = value
+            return True
+        raise DataConfigMismatchError(
+            f"HyperParameter {self.name!r} is {current}, but the data at another "
+            f"place needs {value}."
+        )
 
     @property
     def value(self):
@@ -184,33 +259,69 @@ class HyperParameter(Serializable):
     def __ne__(self, other):  # type: ignore[override]
         return self._binary_condition(other, operator.ne)
 
-    def __add__(self, other):
-        def add(x, y):
-            return x + y
+    # Arithmetic: an operation on HyperParameters is a HyperParameter whose
+    # value follows theirs. A number operand is a constant of the operation,
+    # not a parameter of its own.
 
-        return HyperParameterOperation(add, dependencies=[self, other])
+    def _arithmetic(self, other, name: str, reflected: bool = False) -> HyperParameterOperation:
+        if isinstance(other, HyperParameter):
+            first, second = (other, self) if reflected else (self, other)
+            return HyperParameterOperation(Arithmetic(name), dependencies=[first, second])
+        return HyperParameterOperation(
+            Arithmetic(name, constant=other, reflected=reflected), dependencies=[self]
+        )
+
+    def __add__(self, other):
+        return self._arithmetic(other, "add")
+
+    def __radd__(self, other):
+        return self._arithmetic(other, "add", reflected=True)
 
     def __sub__(self, other):
-        def sub(x, y):
-            return x - y
+        return self._arithmetic(other, "sub")
 
-        return HyperParameterOperation(sub, dependencies=[self, other])
+    def __rsub__(self, other):
+        return self._arithmetic(other, "sub", reflected=True)
 
     def __mul__(self, other):
-        def mul(x, y):
-            return x * y
+        return self._arithmetic(other, "mul")
 
-        return HyperParameterOperation(mul, dependencies=[self, other])
+    def __rmul__(self, other):
+        return self._arithmetic(other, "mul", reflected=True)
 
     def __truediv__(self, other):
-        def div(x, y):
-            return x / y
+        return self._arithmetic(other, "truediv")
 
-        return HyperParameterOperation(div, dependencies=[self, other])
+    def __rtruediv__(self, other):
+        return self._arithmetic(other, "truediv", reflected=True)
 
     @property
     def dependencies(self) -> set[HyperParameter]:
         return set() if self.condition is None else self.condition.deps
+
+
+class Arithmetic(Serializable):
+    """An arithmetic operation (`operator.add`, `sub`, `mul`, `truediv`) of
+    the values of HyperParameters, with a constant number as one operand if
+    one is given. Saved by its name.
+
+    Args:
+        name (str): The name of the operation in the `operator` module.
+        constant (float | int | None, optional): A constant operand.
+        reflected (bool, optional): Whether the constant is the first operand.
+    """
+
+    def __init__(self, name: str, constant=None, reflected: bool = False):
+        self.name = name
+        self.constant = constant
+        self.reflected = reflected
+
+    def __call__(self, *values):
+        operation = getattr(operator, self.name)
+        if self.constant is None:
+            return operation(*values)
+        (value,) = values
+        return operation(self.constant, value) if self.reflected else operation(value, self.constant)
 
 
 class HyperParameterOperation(HyperParameter):
@@ -244,8 +355,16 @@ class HyperParameterOperation(HyperParameter):
         )
 
     @property
+    def is_open(self) -> bool:
+        """Whether one of the dependencies waits to be inferred."""
+        return any(hp.is_open for hp in self.hp_dependencies)
+
+    @property
     def value(self):
-        return self.operation(*[hp.value for hp in self.hp_dependencies])
+        """The operation on the values of the dependencies; None while one
+        of them is open."""
+        values = [hp.value for hp in self.hp_dependencies]
+        return None if None in values else self.operation(*values)
 
     def sample_parameter_random(self):
         values = [hp.sample_parameter_random() for hp in self.hp_dependencies]

@@ -351,8 +351,8 @@ class GraphLayoutResult(Result):
         clusters: The outline of every expanded composite.
         show_port_names: Whether the ports of multi-port nodes are named
             next to the node title.
-        show_edge_labels: Whether edges are labeled with the axes of their
-            data configuration.
+        show_configs: Whether every edge is labeled with the axes of its
+            matched data configuration; otherwise they are shown on hover.
 
     See Also:
         :meth:`~qewton.visualization.plots.graph.layout.GraphLayout.compute`
@@ -363,4 +363,4 @@ class GraphLayoutResult(Result):
     edges: list[EdgeLayout]
     clusters: list[ClusterBox]
     show_port_names: bool = False
-    show_edge_labels: bool = True
+    show_configs: bool = False

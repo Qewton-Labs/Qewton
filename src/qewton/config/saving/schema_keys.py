@@ -4,8 +4,10 @@ ALLOWED_MODULE_PREFIXES = ("qewton.",)
 class SavingKeys:
     """Helper class that defines the keys used in the saving and loading process."""
 
-    VERSION = "version"
-    KEY_VERSION = 1
+    KEY_VERSION = "version"
+    #: Format of the files written now. Version 1 (before structured dtypes)
+    #: is still loaded, see `Serializable.upgrade`.
+    VERSION = 2
 
     KEY_TYPE = "type"
     KEY_VALUES = "values"
