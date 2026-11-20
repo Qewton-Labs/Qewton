@@ -1,4 +1,6 @@
 import unittest
+
+import pytest
 from unittest.mock import MagicMock
 from typing import Annotated, Any
 
@@ -65,13 +67,16 @@ class TestGraphs(unittest.TestCase):
         self.assertEqual(edge.to_port, p2)
         self.assertTrue(edge.connects_to_outside)
 
-    def test_port_value_management(self):
-        port = Port(self.mock_config, self.node, "test_port")
-        self.assertIsNone(port.value)
-        port.set_value(10)
-        self.assertEqual(port.value, 10)
-        port.reset_value()
-        self.assertIsNone(port.value)
+    def test_a_graph_keeps_the_values_of_ports(self):
+        graph, n1, n2 = Graph(), MockNode(name="N1"), MockNode(name="N2")
+        graph.connect(n1.output_ports[0], n2.get_input_port("x"))
+        self.assertIsNone(graph.value_of(n2.output_ports[0]))
+        graph.setup()
+        n1.get_input_port("x").default = 5.0
+        graph.run()
+        self.assertEqual(graph.value_of(n1.output_ports[0]), 6.0)
+        self.assertEqual(graph.value_of(n2.get_input_port("x")), 6.0)
+        self.assertEqual(graph.value_of(n2.output_ports[0]), 7.0)
 
     def test_port_duplication(self):
         new_owner = MockNode(name="OtherNode")
@@ -89,18 +94,13 @@ class TestGraphs(unittest.TestCase):
         # 'y' has a default value of 1.0
         def_port = self.node.get_input_port("y")
         self.assertFalse(def_port.is_required)
-        self.assertEqual(def_port.value, 1.0)
-
-        def_port.set_value(10.0)
-        def_port.clear_value()
-        self.assertEqual(def_port.value, 1.0)
+        self.assertEqual(def_port.default, 1.0)
 
     def test_input_port_duplication(self):
         new_owner = MockNode(name="OtherNode")
         port = InputPort(self.mock_config, self.node, "original", default=42)
         duplicated = port.duplicate_with_new_owner(new_owner)
         self.assertEqual(duplicated.default, 42)
-        self.assertEqual(duplicated.value, 42)
 
     def test_node_port_generation(self):
         # MockNode.forward signature defines 2 inputs and 1 output
@@ -117,17 +117,10 @@ class TestGraphs(unittest.TestCase):
         self.assertEqual(node.output_ports[0].name, "output_0")
         self.assertEqual(node.output_ports[1].name, "output_1")
 
-        node.get_input_port("x").set_value(10.0)
-        node.run()
-        self.assertEqual(node.output_ports[0].value, 10.0)
-        self.assertEqual(node.output_ports[1].value, 20.0)
+        self.assertEqual(node(10.0), (10.0, 20.0))
 
     def test_node_execution(self):
-        self.node.get_input_port("x").set_value(5.0)
-        self.node.get_input_port("y").set_value(2.0)
-        self.node.run()
-        # Expected sum: 5.0 + 2.0 = 7.0
-        self.assertEqual(self.node.output_ports[0].value, 7.0)
+        self.assertEqual(self.node(5.0, 2.0), 7.0)
 
     def test_node_state_management(self):
         self.assertEqual(self.node.state, NodeState.FIXED)
@@ -198,22 +191,6 @@ class TestGraphs(unittest.TestCase):
         config, was_annotated = Node._unwrap_annotated(hint, self.node)
         self.assertIsInstance(config, DataConfiguration)
         self.assertTrue(was_annotated)
-
-    def test_update_data_configs(self):
-        node = MultiOutputNode()
-        out_port = node.output_ports[0]
-        mock_config = MagicMock(spec=DataConfiguration)
-        mock_config.update_config.return_value = True
-
-        dynamic_configs = {
-            p: MagicMock(spec=DataConfiguration) for p in node.output_ports
-        }
-        dynamic_configs[out_port] = mock_config
-
-        # Trigger update
-        updated = node.update_data_configs(out_port, {"key": "val"}, dynamic_configs)
-        self.assertIn(out_port, updated)
-        mock_config.update_config.assert_called()
 
     def test_base_node_forward_raises(self):
         with self.assertRaises(NotImplementedError):
@@ -299,7 +276,7 @@ class TestGraphLogic(unittest.TestCase):
         # 'y' is not required (has default 1.0), so validate should pass now
         self.graph.validate()
 
-    def test_run_clears_unused_ports(self):
+    def test_unconnected_inputs_take_their_default(self):
         class SourceNode(Node):
             def forward(self) -> float:
                 return 1.0
@@ -308,13 +285,11 @@ class TestGraphLogic(unittest.TestCase):
         self.graph.connect(src.output_ports[0], self.n1.input_ports[0])
         self.graph.connect(self.n1, self.n2.input_ports[0])
 
-        # Set value for y (which is not connected) to see if it clears to default
         self.graph.setup()
-        self.n2.get_input_port("y").set_value(99.0)
         self.graph.run()
 
-        # y should have been cleared to its default (1.0) during run
-        self.assertEqual(self.n2.get_input_port("y").value, 1.0)
+        self.assertEqual(self.graph.value_of(self.n2.get_input_port("y")), 1.0)
+        self.assertEqual(self.graph.value_of(self.n2.output_ports[0]), 3.0)
 
     def test_external_connections(self):
         ext_node = MockNode(name="External")
@@ -384,7 +359,7 @@ class TestGraphLogic(unittest.TestCase):
         self.assertNotIn(self.n1, self.graph.nodes)
         self.assertNotIn(self.n1, self.graph.incoming_edges)
         self.assertNotIn(self.n1, self.graph.outgoing_edges)
-        self.assertNotIn(self.n1, self.graph.dynamic_data_configs)
+        self.assertIsNone(self.graph.config_of(self.n1.output_ports[0]))
 
         self.assertEqual(self.graph.incoming_edges[self.n2], [])
         self.assertEqual(self.graph.edges_from_outside, [])
@@ -440,52 +415,90 @@ class TestGraphLogic(unittest.TestCase):
 
         self.assertEqual(self.graph.skip_connections, [])
 
+    def test_replace_node_moves_the_edges_to_the_new_node(self):
+        n3 = MockNode(name="N3")
+        self.graph.connect(self.n1.output_ports[0], self.n2.input_ports[0])
 
-class TestGraphAwareNodeSetup(unittest.TestCase):
-    """Graph.setup() special-cases DataProcessingNode by isinstance to pass
-    itself as an argument - GraphAwareNode generalizes that for any other
-    node needing graph context (e.g. PlotNode, to read
-    graph.dynamic_data_configs)."""
+        self.graph.replace_node(self.n2, n3)
 
-    def test_setup_receives_the_graph_instead_of_being_called_bare(self):
-        from qewton.graphs.nodes import GraphAwareNode
+        self.assertEqual(self.graph.nodes, {self.n1, n3})
+        (edge,) = self.graph.incoming_edges[n3]
+        self.assertIs(edge.from_port, self.n1.output_ports[0])
+        self.assertIs(edge.to_port, n3.input_ports[0])
+        self.assertEqual(self.graph.outgoing_edges[self.n1], [edge])
 
-        received = []
+    def test_replace_node_leaves_the_replaced_node_intact(self):
+        n3 = MockNode(name="N3")
+        self.graph.connect(self.n1.output_ports[0], self.n2.input_ports[0])
 
-        class Sink(GraphAwareNode):
-            def forward(self, x: float):
-                pass
+        self.graph.replace_node(self.n2, n3)
 
-            def setup(self, graph):
-                received.append(graph)
+        self.assertIs(self.n2.input_ports[0].node, self.n2)
 
-        graph = Graph()
-        source = MockNode(name="Source")
-        sink = Sink(name="Sink")
-        graph.connect(source.output_ports[0], sink.input_ports[0])
 
-        graph.setup()
+class TestNodeSetup(unittest.TestCase):
+    """`Node.setup` belongs to the library: it builds an unbuilt node once
+    (`build`), passes the graph to the build of a GraphAwareNode, and a
+    subclass overriding `setup` is rejected."""
 
-        self.assertEqual(received, [graph])
-
-    def test_ordinary_nodes_still_get_the_bare_no_arg_setup(self):
-        """Regression guard: adding the GraphAwareNode branch must not
-        change dispatch for every other node."""
+    @staticmethod
+    def _counting(base=Node, needs_graph=False):
         calls = []
 
-        class Plain(Node):
-            def forward(self) -> float:
-                return 1.0
+        if needs_graph:
 
-            def setup(self):
-                calls.append("bare")
+            class Counting(base):
+                def forward(self, x: float):
+                    pass
 
+                def build(self, graph):
+                    calls.append(graph)
+
+        else:
+
+            class Counting(base):
+                def forward(self) -> float:
+                    return 1.0
+
+                def build(self):
+                    calls.append("built")
+
+        return Counting(name="Counting", state=NodeState.UNINITIALIZED), calls
+
+    def test_a_graph_aware_node_builds_with_the_graph(self):
+        from qewton.graphs.nodes import GraphAwareNode
+
+        sink, received = self._counting(GraphAwareNode, needs_graph=True)
         graph = Graph()
-        graph.add_node(Plain(name="Plain"))
-
+        graph.connect(MockNode(name="Source").output_ports[0], sink.input_ports[0])
         graph.setup()
+        self.assertEqual(received, [graph])
 
-        self.assertEqual(calls, ["bare"])
+    def test_an_ordinary_node_builds_once(self):
+        node, calls = self._counting()
+        graph = Graph()
+        graph.add_node(node)
+        graph.setup()
+        graph.setup()
+        self.assertEqual(calls, ["built"])
+        self.assertEqual(node.state, NodeState.INITIALIZED)
+
+    def test_a_reset_node_is_built_again(self):
+        node, calls = self._counting()
+        node.setup()
+        node.reset()
+        node.setup()
+        self.assertEqual(calls, ["built", "built"])
+
+    def test_overriding_setup_is_rejected(self):
+        with self.assertRaises(TypeError):
+
+            class Overriding(Node):
+                def forward(self) -> float:
+                    return 1.0
+
+                def setup(self, graph=None):
+                    pass
 
 
 class TestTrackingObjectOps(unittest.TestCase):

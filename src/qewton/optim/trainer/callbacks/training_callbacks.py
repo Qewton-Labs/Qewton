@@ -64,6 +64,13 @@ class GraphEvalCallback(Callback):
         self.evaluation_interval = evaluation_interval
         self.constraints = constraints
 
+    def _graph_of(self, constraint: Constraint) -> Graph:
+        """The graph among `graphs` that contains `constraint`."""
+        for graph in self.graphs:
+            if constraint in graph.nodes:
+                return graph
+        raise ValueError(f"{constraint.name} is part of none of the graphs.")
+
     def training_step(self, phase_idx: int, state: TrainerState):
         """Run the graphs and record the losses, if the step is due.
 
@@ -86,6 +93,7 @@ class GraphEvalCallback(Callback):
                         c.name,
                         c,
                         c.get_loss(
+                            self._graph_of(c),
                             self.evaluation_phase == EvaluationPhase.TRAIN,
                             training_iteration=state.iteration,
                         ),

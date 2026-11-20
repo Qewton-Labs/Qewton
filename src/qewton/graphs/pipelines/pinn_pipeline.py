@@ -203,7 +203,7 @@ class PINNPipeline(Graph):
             Variable: The (composed) variable of the configuration.
         """
         if dynamic:
-            return self.dynamic_data_configs[port.node][port].variables
+            return self.config_of(port).variables
         else:
             return port.data_configuration.variables
 

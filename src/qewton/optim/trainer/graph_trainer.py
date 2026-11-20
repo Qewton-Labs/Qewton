@@ -10,7 +10,7 @@ from qewton.optim.trainer.training_controllers import OptimizationPhase
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.base import EvaluationPhase
 from qewton.graphs import Graph
-from qewton.graphs.nodes import Node
+from qewton.graphs.nodes import Node, NodeState
 from qewton.constraints.base import Constraint
 from qewton.config.devices import Device, cpu
 from qewton.data.dataloaders.base import DataNode
@@ -287,6 +287,20 @@ class GraphBasedTrainer(Trainer):
                 hyperparameter_set.add(hp)
         return hyperparameter_set
 
+    def set_hyperparameter(self, param_dict: dict) -> None:
+        """Update hyperparameter values from a dictionary; a node whose
+        hyperparameters change is built again at its next setup.
+
+        Args:
+            param_dict (dict[str, Any]): Mapping of hyperparameter names to new
+                values.
+        """
+        super().set_hyperparameter(param_dict)
+        for node in _nodes_inside(self.all_nodes):
+            changed = any(hp.name in param_dict for hp in node.hyperparameters)
+            if changed and node.state != NodeState.FIXED:
+                node.set_state(NodeState.UNINITIALIZED)
+
     def on_training_start(self):
         """Prepare the graphs for training.
 
@@ -327,3 +341,16 @@ class GraphBasedTrainer(Trainer):
         for constraints, eval_phase in zip(constraints_list, evaluation_phases):
             for constraint in constraints:
                 self.train_state.losses[eval_phase][constraint.name] = None
+
+
+def _nodes_inside(nodes) -> list[Node]:
+    """`nodes` and every node inside their GraphNodes, at any depth."""
+    from qewton.graphs.control_nodes.graph_node import GraphNode
+
+    found, todo = [], list(nodes)
+    while todo:
+        node = todo.pop()
+        found.append(node)
+        if isinstance(node, GraphNode):
+            todo.extend(node.inner_graph.nodes)
+    return found
