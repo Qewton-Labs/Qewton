@@ -136,8 +136,9 @@ class DataNode(Node[TensorType]):
             controls: Control axes for chosen dimensions, passed to
                 auto_plot for every port that has them.
             default_control: Control axis class for every other dimension
-                not drawn; None for auto_plot's default. A control made for
-                one port is shared by every port with the same axes.
+                not drawn; None for auto_plot's default. Every control is
+                shared by all ports whose data has its axes or Variable (see
+                :class:`~qewton.visualization.auto.AutoPlots`).
             **plot_kwargs: Passed to auto_plot for every port.
 
         Returns:
@@ -147,7 +148,7 @@ class DataNode(Node[TensorType]):
         Raises:
             ValueError: If this node provides no data in `mode`.
         """
-        from qewton.visualization.auto import auto_plot, controls_for
+        from qewton.visualization.auto import AutoPlots
         from qewton.visualization.layout import auto_layout
 
         if not self.provides_data_in_phase(mode):
@@ -163,22 +164,12 @@ class DataNode(Node[TensorType]):
 
         if default_control is not None:
             plot_kwargs["default_control"] = default_control
-        # A control made for one port is shared by every port with its axes,
-        # e.g. one slider over the batch axes of all outputs.
-        shared = list(controls)
-        plots = []
+        plots = AutoPlots(controls)
         for port, value in zip(self.output_ports, values):
-            config = port.data_configuration
-            plot = auto_plot(
-                self.backend.to_numpy(value),
-                config,
-                plot_type,
-                controls=controls_for(config, shared),
-                **plot_kwargs,
+            plots.add(
+                self.backend.to_numpy(value), port.data_configuration, plot_type, **plot_kwargs
             )
-            shared += [c for c in plot.controls if c not in shared]
-            plots.append(plot)
-        return auto_layout(plots)
+        return auto_layout(plots.plots)
 
 
 class DataLoader(DataNode[TensorType]):

@@ -1167,10 +1167,11 @@ class Graph(Serializable):
                 own.
             controls: Control axes for chosen dimensions, e.g.
                 ``[TimeAxis(t)]``; a control on a 1D factor of a product
-                geometry steps through that factor. With `reference`, every
-                control is shared by all panels.
+                geometry steps through that factor.
             default_control: Control axis class for every other dimension
-                not drawn; None for auto_plot's default (a slider).
+                not drawn; None for auto_plot's default (a slider). Every
+                control is shared by all plots whose data has its axes or
+                Variable (see :class:`~qewton.visualization.auto.AutoPlots`).
             variables: Narrows `port` (and `reference`, unless it already has
                 exactly this combination) to the slice of these Variables of a
                 composed FeatureAxes before plotting. With more than one
@@ -1237,7 +1238,7 @@ class Graph(Serializable):
             )
 
         from qewton.data.dataloaders.sampler.point_sampler import discretization_mode
-        from qewton.visualization.auto import auto_plot
+        from qewton.visualization.auto import AutoPlots
         from qewton.visualization.layout import auto_layout
 
         nodes_to_run = self._nodes_needed_for({p.node for p in ports})
@@ -1248,7 +1249,7 @@ class Graph(Serializable):
         samplers = self._samplers_on_path_to(ports)
         combined_variable = Variable.compose(variables) if variables else None
         value = self._shared_value(variables)
-        plots = []
+        plots = AutoPlots(controls)
         # The configurations are read in mesh mode: the dims bound to the
         # number of points of a sampler have the number of mesh points.
         with discretization_mode(samplers, max_vertex_distance, device):
@@ -1267,18 +1268,10 @@ class Graph(Serializable):
                     data, config = self._narrow_to_variable(
                         data, config, combined_variable
                     )
-                plots.append(
-                    auto_plot(
-                        data,
-                        config,
-                        plot_type,
-                        value=value,
-                        controls=controls,
-                        color_scale=color_scale,
-                        **plot_kwargs,
-                    )
+                plots.add(
+                    data, config, plot_type, value=value, color_scale=color_scale, **plot_kwargs
                 )
-        return auto_layout(plots)
+        return auto_layout(plots.plots)
 
     @staticmethod
     def _shared_value(variables: list[Variable] | None) -> "Selector | None":
@@ -1354,7 +1347,7 @@ class Graph(Serializable):
             active_discretization_mode,
             discretization_mode,
         )
-        from qewton.visualization.auto import auto_plot, controls_for
+        from qewton.visualization.auto import AutoPlots
         from qewton.visualization.layout import Overlay, auto_layout
         from qewton.visualization.scales import ColorScale
         from qewton.visualization.themes import cmaps
@@ -1507,32 +1500,18 @@ class Graph(Serializable):
                 )
 
             value = self._shared_value(variables)
-            reference_plot = auto_plot(
-                ref_data,
-                ref_config,
-                plot_type,
-                value=value,
-                controls=controls,
-                color_scale=color_scale,
+            panels = AutoPlots(controls)
+            reference_plot = panels.add(
+                ref_data, ref_config, plot_type, value=value, color_scale=color_scale,
                 **plot_kwargs,
             )
-            # The controls of the reference, including the default ones, are
-            # shared by every panel that has their dimension.
-            def shared(config):
-                controls = controls_for(config, reference_plot.controls)
-                return dict(plot_type=plot_type, value=value, controls=controls)
-
             # The reference's scale (None without color) is shared if asked for.
             if share_scale or color_scale is not None:
                 color_scale = reference_plot.color_scale
-            prediction_plot = auto_plot(
-                pred_data,
-                pred_config,
-                color_scale=color_scale,
-                **shared(pred_config),
+            panels.add(
+                pred_data, pred_config, plot_type, value=value, color_scale=color_scale,
                 **plot_kwargs,
             )
-            plots = [reference_plot, prediction_plot]
             names = ["Reference", "Prediction"]
 
             if error is not None:
@@ -1557,19 +1536,14 @@ class Graph(Serializable):
                 error_kwargs = {} if reference_plot.color_scale is None else {
                     "color_scale": error_scale
                 }
-                plots.append(
-                    auto_plot(
-                        error_data,
-                        ref_config,
-                        **shared(ref_config),
-                        **error_kwargs,
-                        **plot_kwargs,
-                    )
+                panels.add(
+                    error_data, ref_config, plot_type, value=value, **error_kwargs,
+                    **plot_kwargs,
                 )
                 names.append("Error")
 
-            layout = auto_layout(plots)
-            for plot, name in zip(plots, names):
+            layout = auto_layout(panels.plots)
+            for plot, name in zip(panels.plots, names):
                 if isinstance(layout, Overlay):
                     plot.label = name
                 else:

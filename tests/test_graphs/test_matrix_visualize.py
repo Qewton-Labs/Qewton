@@ -2,7 +2,7 @@
 
 Every domain builds a graph with a model and a second model of the same
 output Variable (the port reference), and gives reference data on its own
-points. Every combination checks the same: the panels and their names,
+points. The reference "ports" visualizes both models side by side instead. Every combination checks the same: the panels and their names,
 the shared color scale and the error panel's own one, the error computed
 from prediction and reference, the shared controls, and drawing with
 every renderer. Combinations that are not built (EXCLUSIONS) or raise (RAISES)
@@ -102,7 +102,7 @@ class ProductSampler(SpaceTime):
 
 
 DOMAINS = {"square": Square, "space_time": SpaceTime, "product_sampler": ProductSampler}
-REFERENCES = ["none", "data", "port", "callable"]
+REFERENCES = ["none", "data", "port", "callable", "ports"]
 ERRORS = ["signed", "absolute", "relative", None]
 
 #: (domain, reference) -> why it is not built.
@@ -143,23 +143,28 @@ RENDERERS = {"plotly": PlotlyRenderer, "matplotlib": MatplotlibRenderer}
 def test_visualize(domain_name, reference, error, renderer_name):
     if (domain_name, reference) in EXCLUSIONS:
         pytest.skip(EXCLUSIONS[(domain_name, reference)])
-    if reference == "none" and error is not None:
+    if reference in ("none", "ports") and error is not None:
         pytest.skip("the error needs a reference")
     domain = DOMAINS[domain_name]()
     graph, model, reference_model = domain.graph()
     options = dict(controls=domain.controls, max_vertex_distance=domain.max_vertex_distance)
-    if reference != "none":
+    if reference not in ("none", "ports"):
         options.update(_reference(domain, reference, reference_model), error=error)
+    ports = model.output_ports[0]
+    if reference == "ports":
+        ports = [model.output_ports[0], reference_model.output_ports[0]]
 
     if (domain_name, reference) in RAISES:
         with pytest.raises(ValueError, match="not a factor"):
-            graph.visualize(model.output_ports[0], **options)
+            graph.visualize(ports, **options)
         return
-    layout = graph.visualize(model.output_ports[0], **options)
+    layout = graph.visualize(ports, **options)
 
     plots = layout.plots
     if reference == "none":
         assert len(plots) == 1
+    elif reference == "ports":
+        assert len(plots) == 2 and plots[0].controls == plots[1].controls
     else:
         _check_panels(layout, error)
     for plot in plots:
