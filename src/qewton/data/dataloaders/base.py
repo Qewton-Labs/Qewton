@@ -3,10 +3,9 @@ Base classes for data loading and node-based data sampling in the graph.
 """
 
 from copy import deepcopy
-from typing import Any
 from abc import abstractmethod
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from qewton.graphs.nodes import NodeState
@@ -52,6 +51,9 @@ class DataNode(Node[TensorType]):
             (e.g., TorchBackend). Defaults to DEFAULT_DL_BACKEND.
     """
 
+    # A data node creates data, so it always has a device (see Node._device).
+    _device: Device | str = cpu
+
     def __init__(
         self,
         batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
@@ -62,7 +64,6 @@ class DataNode(Node[TensorType]):
         self._batch_size = HyperParameter.from_value(batch_size, name="batch_size")
         self._batch_progress = 0
         self._is_cached = False
-        self._device = cpu
         if backend is None:
             backend = Backend
         super().__init__(name, state, backend=backend)
@@ -115,13 +116,13 @@ class DataNode(Node[TensorType]):
             device (str, Device): The device to move the data node to
                 (e.g., 'cpu', 'cuda').
         """
-        self._device = device
+        super().to(device)
 
     def visualize(
         self,
         mode: EvaluationPhase = EvaluationPhase.VALIDATION,
         plot_type: "type[DataPlot] | None" = None,
-        controls: "list[ControlAxis]" = (),
+        controls: "list[ControlAxis]" = [],
         default_control: "type[ControlAxis] | None" = None,
         **plot_kwargs,
     ) -> "Layout":
@@ -214,6 +215,8 @@ class DataLoader(DataNode[TensorType]):
         name: str = "DataLoader",
         test_data_set: DataSet | None = None,
     ):
+        for checked_set in (data_set, test_data_set):
+            self._check_backend(checked_set, backend)
         self.data_set = data_set
         self.test_data_set = test_data_set
         self.splitting_ratio = splitting_ratio
@@ -264,6 +267,29 @@ class DataLoader(DataNode[TensorType]):
                     name=config.variable_name,
                 )
             )
+
+    @staticmethod
+    def _check_backend(data_set: DataSet | None, backend: type[Backend] | None):
+        """Raises a TypeError if the data set holds tensors of another
+        backend than this loader: the loader moves batches to its device,
+        but never converts them, which would copy every batch."""
+        data_backend = getattr(data_set, "backend", None)
+        if data_backend is None or backend is None:
+            return
+        if not hasattr(backend, "default_dtype") or not hasattr(
+            data_backend, "default_dtype"
+        ):
+            return  # abstract backends do not fix a tensor type
+        if issubclass(data_backend.default_dtype, backend.default_dtype):
+            return
+        raise TypeError(
+            f"The data set holds {data_backend.default_dtype.__name__} data "
+            f"({data_backend.__name__}), but this DataLoader uses "
+            f"{backend.__name__}. Create the data set with "
+            f"{backend.default_dtype.__name__} data (e.g. backend="
+            f"{backend.__name__} in from_file), or pass "
+            f"backend={data_backend.__name__} to the DataLoader."
+        )
 
     def _set_permutation(self):
         """Resets the data permutation based on shuffling settings."""
@@ -360,11 +386,25 @@ class DataLoader(DataNode[TensorType]):
         batch_data = self._phase_data_sets[self.mode].get_batch(indices)
 
         # Move batch to device if backend is specified
+        # (this is always needed in case the data could not be moved from the start
+        # or is created new on the fly)
         if self._device is not None and issubclass(self.backend, DeepLearningBackend):
             batch_data = [self.backend.to(b, self._device) for b in batch_data]
 
         self._batch_progress += bs
         return tuple(batch_data) if len(batch_data) > 1 else batch_data[0]
+
+    def to(self, device: str | Device):
+        """Move the data loader and its datasets to `device`, so batches are
+        sliced on the device and not copied there in every step.
+
+        Args:
+            device (str, Device): The target device (e.g., 'cpu', 'cuda').
+        """
+        super().to(device)
+        self.data_set.to(device)
+        if self.test_data_set is not None:
+            self.test_data_set.to(device)
 
     def cache(self, n_batches=-1):
         return

@@ -89,6 +89,7 @@ class MeshInterpolationNode(Node[TensorType]):
         Args:
             device (Device | str): The target device.
         """
+        super().to(device)
         self.mesh_geometry.to(device)
         self.target_geometry.to(device)
 

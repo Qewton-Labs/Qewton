@@ -210,3 +210,81 @@ class TestDataNodeVisualize:
         )
         with pytest.raises(ValueError, match="provides no data"):
             loader.visualize()
+
+
+class TestDataLoaderDevice:
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+    def test_to_moves_data_and_test_data_set(self):
+        X = Variable("x", 2)
+        loader = DataLoader(
+            data_set=_dataset(10, X, fill_value=1.0),
+            batch_size=5,
+            splitting_ratio=(1.0, 0.0, 0.0),
+            test_data_set=_dataset(5, X, fill_value=9.0),
+        )
+        loader.to("cuda")
+
+        assert loader.data_set.load_complete_data(data_item=0).is_cuda
+        assert loader.test_data_set.load_complete_data(data_item=0).is_cuda
+        loader.set_mode(EvaluationPhase.TRAIN)
+        assert loader.forward().is_cuda
+        loader.set_mode(EvaluationPhase.TEST)
+        assert loader.forward().is_cuda
+
+    def test_to_calls_to_of_both_datasets(self):
+        X = Variable("x", 2)
+        data_set = _dataset(10, X, fill_value=1.0)
+        test_data_set = _dataset(5, X, fill_value=9.0)
+        loader = DataLoader(data_set, batch_size=5, test_data_set=test_data_set)
+        moved = []
+        data_set.to = lambda device: moved.append(("data", device))
+        test_data_set.to = lambda device: moved.append(("test", device))
+
+        loader.to("cpu")
+
+        assert moved == [("data", "cpu"), ("test", "cpu")]
+
+    def test_to_before_data_is_loaded(self, tmp_path):
+        X = Variable("x", 2)
+        torch.save(torch.ones(10, 2), tmp_path / "x.pt")
+        from qewton.backends import TorchBackend
+
+        data_set = ArrayLikeDataSet.from_file(
+            str(tmp_path / "x.pt"),
+            DataConfiguration(BatchAxes(AxesDim(10)), FeatureAxes(X)),
+            TorchBackend,
+            load_on_setup=True,
+        )
+        loader = DataLoader(data_set, batch_size=5)
+
+        loader.to("cpu")  # must not fail on the missing data
+        loader.setup()
+
+        assert loader.forward().shape == (5, 2)
+
+
+class TestDataLoaderBackendCheck:
+    def _numpy_dataset(self, n=10):
+        X = Variable("x", 2)
+        config = DataConfiguration(BatchAxes(AxesDim(n)), FeatureAxes(X))
+        return ArrayLikeDataSet(np.random.rand(n, 2), config)
+
+    def test_other_backend_raises(self):
+        with pytest.raises(TypeError, match="pass backend=NumPyBackend"):
+            DataLoader(self._numpy_dataset(), batch_size=5)
+
+    def test_other_backend_in_test_data_set_raises(self):
+        X = Variable("x", 2)
+        with pytest.raises(TypeError, match="NumPyBackend"):
+            DataLoader(
+                _dataset(10, X, fill_value=1.0),
+                batch_size=5,
+                test_data_set=self._numpy_dataset(),
+            )
+
+    def test_same_backend_works(self):
+        from qewton.backends import NumPyBackend
+
+        loader = DataLoader(self._numpy_dataset(), batch_size=5, backend=NumPyBackend)
+        loader.setup()
+        assert isinstance(loader.forward(), np.ndarray)
