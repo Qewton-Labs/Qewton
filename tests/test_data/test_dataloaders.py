@@ -261,3 +261,30 @@ class TestDataLoaderDevice:
         loader.setup()
 
         assert loader.forward().shape == (5, 2)
+
+
+class TestDataLoaderBackendCheck:
+    def _numpy_dataset(self, n=10):
+        X = Variable("x", 2)
+        config = DataConfiguration(BatchAxes(AxesDim(n)), FeatureAxes(X))
+        return ArrayLikeDataSet(np.random.rand(n, 2), config)
+
+    def test_other_backend_raises(self):
+        with pytest.raises(TypeError, match="pass backend=NumPyBackend"):
+            DataLoader(self._numpy_dataset(), batch_size=5)
+
+    def test_other_backend_in_test_data_set_raises(self):
+        X = Variable("x", 2)
+        with pytest.raises(TypeError, match="NumPyBackend"):
+            DataLoader(
+                _dataset(10, X, fill_value=1.0),
+                batch_size=5,
+                test_data_set=self._numpy_dataset(),
+            )
+
+    def test_same_backend_works(self):
+        from qewton.backends import NumPyBackend
+
+        loader = DataLoader(self._numpy_dataset(), batch_size=5, backend=NumPyBackend)
+        loader.setup()
+        assert isinstance(loader.forward(), np.ndarray)

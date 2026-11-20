@@ -93,6 +93,7 @@ class ParameterNode(Node[TensorType]):
         return TrainableParameters(self.node_id, self._trainable_parameter)
 
     def to(self, device):
+        super().to(device)
         if not self._state == NodeState.UNINITIALIZED:
             self._trainable_parameter = self.backend.param.to(
                 self._trainable_parameter, device=device

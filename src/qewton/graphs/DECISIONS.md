@@ -86,6 +86,13 @@ anything; with an explicit `device` it moves the nodes and moves them back
 afterwards. A recorded device also lets `setup()` create parameters on the
 right device when `to()` was called before it.
 
-Status: planned. Today only a `DataNode` records its device, and
-`Graph.visualize` without `device` creates mesh points on each sampler's
-device.
+Status: partly done. Every node records its device (`device`); a
+`DataNode` defaults to the CPU, every other node to None. `Node.setup`
+moves a node to its recorded device right after `build`, so `to()` is
+called once, before `setup()`: a rebuilt node (e.g. by a tuner) stays on
+its device, and since a graph builds its nodes in order, a
+`DataProcessingNode` fits on data that is already there. A `GraphNode`
+passes its device on to its inner nodes. The device is not saved, since it
+is chosen where the node runs. Still planned: `ParameterNode`, `GraphNode`
+and `Graph` reporting the device of their data, and `Graph.visualize`
+running on the graph's device and moving nodes back.

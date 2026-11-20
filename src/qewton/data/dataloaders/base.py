@@ -51,6 +51,9 @@ class DataNode(Node[TensorType]):
             (e.g., TorchBackend). Defaults to DEFAULT_DL_BACKEND.
     """
 
+    # A data node creates data, so it always has a device (see Node._device).
+    _device: Device | str = cpu
+
     def __init__(
         self,
         batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
@@ -61,7 +64,6 @@ class DataNode(Node[TensorType]):
         self._batch_size = HyperParameter.from_value(batch_size, name="batch_size")
         self._batch_progress = 0
         self._is_cached = False
-        self._device = cpu
         if backend is None:
             backend = Backend
         super().__init__(name, state, backend=backend)
@@ -114,7 +116,7 @@ class DataNode(Node[TensorType]):
             device (str, Device): The device to move the data node to
                 (e.g., 'cpu', 'cuda').
         """
-        self._device = device
+        super().to(device)
 
     def visualize(
         self,
@@ -213,6 +215,8 @@ class DataLoader(DataNode[TensorType]):
         name: str = "DataLoader",
         test_data_set: DataSet | None = None,
     ):
+        for checked_set in (data_set, test_data_set):
+            self._check_backend(checked_set, backend)
         self.data_set = data_set
         self.test_data_set = test_data_set
         self.splitting_ratio = splitting_ratio
@@ -263,6 +267,29 @@ class DataLoader(DataNode[TensorType]):
                     name=config.variable_name,
                 )
             )
+
+    @staticmethod
+    def _check_backend(data_set: DataSet | None, backend: type[Backend] | None):
+        """Raises a TypeError if the data set holds tensors of another
+        backend than this loader: the loader moves batches to its device,
+        but never converts them, which would copy every batch."""
+        data_backend = getattr(data_set, "backend", None)
+        if data_backend is None or backend is None:
+            return
+        if not hasattr(backend, "default_dtype") or not hasattr(
+            data_backend, "default_dtype"
+        ):
+            return  # abstract backends do not fix a tensor type
+        if issubclass(data_backend.default_dtype, backend.default_dtype):
+            return
+        raise TypeError(
+            f"The data set holds {data_backend.default_dtype.__name__} data "
+            f"({data_backend.__name__}), but this DataLoader uses "
+            f"{backend.__name__}. Create the data set with "
+            f"{backend.default_dtype.__name__} data (e.g. backend="
+            f"{backend.__name__} in from_file), or pass "
+            f"backend={data_backend.__name__} to the DataLoader."
+        )
 
     def _set_permutation(self):
         """Resets the data permutation based on shuffling settings."""

@@ -325,11 +325,12 @@ class GraphNode(Node[TensorType]):
     def to(self, device):
         """
         Moves all nodes within the encapsulated graph to a specified device (e.g.,
-        GPU, CPU).
+        GPU, CPU), and records it, so a later build lands there, too.
 
         Args:
             device: The target device.
         """
+        super().to(device)
         for node in self._graph.nodes:
             node.to(device=device)
 
