@@ -42,6 +42,10 @@ dependencies = [
     "numpy>=2.2",
     "matplotlib>=3.10",
     "tqdm>=4.65",
+    # Loading mesh files (.msh, .vtk, .xdmf, ...) via MeshGeometry.load_mesh
+    "meshio>=5.3",
+    # Jupyter kernel: run notebooks (e.g. the examples) in Jupyter or VS Code
+    "ipykernel>=6.0",
 ]
 
 # Optional features. Extras combine with commas: pip install "qewton[torch,gmsh]"
@@ -49,10 +53,8 @@ dependencies = [
 # --- Deep learning backends ---
 torch = ["torch>=2.5"]
 # --- Geometries ---
-# Load mesh files (.msh, .vtk, .xdmf, ...) via MeshGeometry.load_mesh
-mesh = ["meshio>=5.3"]
 # Mesh CAD files (STEP, STL, BREP, ...) via create_mesh_geometry
-gmsh = ["gmsh>=4.11", "meshio>=5.3"]
+gmsh = ["gmsh>=4.11"]
 # --- Visualization ---
 # Plotly renderer, static image export (kaleido) and geometry cards (shapely)
 plotly = ["plotly>=6.1", "kaleido>=1.0", "shapely>=2.0"]
