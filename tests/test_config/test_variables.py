@@ -29,6 +29,18 @@ class TestQuantities:
         assert (u * v * p).quantities == [u, v, p]
 
 
+class TestQuantity:
+    def test_a_component_belongs_to_its_quantity(self):
+        x = Variable("x", 3)
+        assert x.leaves[2].quantity is x
+
+    def test_a_quantity_in_a_composition_stays_itself(self):
+        t, x = Variable("t", 1), Variable("x", 2)
+        t * x
+        assert t.quantity is t
+        assert x.leaves[0].quantity is x
+
+
 class TestGetSlice:
     def test_a_vector_is_found_in_a_product_of_several_variables(self):
         u, p, v, r = Variable("u", 1), Variable("p", 1), Variable("v", 2), Variable("r", 2)

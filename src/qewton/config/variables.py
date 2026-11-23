@@ -113,6 +113,16 @@ class Variable(Serializable):
         return [q for child in self.children for q in child.quantities]
 
     @property
+    def quantity(self) -> Variable:
+        """The quantity this variable is part of, e.g. ``x`` for its
+        component ``x_3``; the variable itself if it is no component of one
+        (see :attr:`quantities`)."""
+        variable, parent = self, self.parent
+        while parent is not None and parent.quantities == [parent]:
+            variable, parent = parent, parent.parent
+        return variable
+
+    @property
     def leaf_names(self) -> set[str]:
         """The names of every leaf in this Variable's tree."""
         return {leaf.name for leaf in self.leaves}

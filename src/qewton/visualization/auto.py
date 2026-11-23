@@ -66,16 +66,19 @@ class _Placeholder(Enum):
     VALUE = auto()
     FIRST = auto()
     SECOND = auto()
+    CONTROLLED = auto()
 
 
-D, V = _Placeholder.DOMAIN, _Placeholder.VALUE
+D, V, C = _Placeholder.DOMAIN, _Placeholder.VALUE, _Placeholder.CONTROLLED
 V0, V1 = _Placeholder.FIRST, _Placeholder.SECOND
 
 
 @dataclass(frozen=True)
 class Choice:
     """A plot type with its bindings; placeholders stand for the drawn
-    domain (``D``) and the value (``V``, or ``V0``/``V1`` for two)."""
+    domain (``D``), the value (``V``, or ``V0``/``V1`` for two) and the
+    controlled coordinate of the drawn quantity (``C``, e.g. ``x_3`` of a
+    slice through a grid of ``x``)."""
 
     plot_type: type[DataPlot]
     bindings: dict
@@ -88,6 +91,7 @@ CHOICES: dict[Kind, list[Choice]] = {
         Choice(LinePlot, dict(x=D, y=V)),
         Choice(BarPlot, dict(x=D, y=V)),
         Choice(SurfacePlot, dict(position=D, color=V)),
+        Choice(SurfacePlot, dict(position=D, z=C, color=V)),
         Choice(ScatterPlot, dict(position=D, color=V)),
     ],
     Kind.VECTOR: [Choice(VectorPlot, dict(position=D, vector=V, color=V))],
@@ -168,8 +172,9 @@ def auto_plot(
     scales = {"color_scale": color_scale, "vector_scale": vector_scale}
     scales = {name: scale for name, scale in scales.items() if scale is not None}
     reasons = []
+    controlled = _controlled_coordinate(drawn, controls)
     for choice in choices:
-        bindings = _bind(choice.bindings, drawn, value)
+        bindings = _bind(choice.bindings, drawn, value, controlled)
         if bindings is not None:
             bindings.update(explicit)
         reason = _mismatch(choice, bindings, drawn, domain, {**plot_kwargs, **scales})
@@ -358,10 +363,27 @@ def _product_hint(drawn: Axes | None) -> str:
     )
 
 
-def _bind(template: dict, drawn: Axes | None, value) -> dict | None:
+def _controlled_coordinate(drawn: Axes | None, controls: list) -> Variable | None:
+    # The one controlled coordinate of the quantity the drawn geometry is
+    # part of (e.g. x_3 for a slice through x); None if there is none or
+    # several.
+    if not isinstance(drawn, GeometryAxes):
+        return None
+    quantities = {leaf.quantity for leaf in drawn.geometry.variable.leaves}
+    candidates = [
+        c.variable_or_axes
+        for c in controls
+        if isinstance(c.variable_or_axes, Variable)
+        and c.variable_or_axes.dim == 1
+        and c.variable_or_axes.quantity in quantities
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _bind(template: dict, drawn: Axes | None, value, controlled=None) -> dict | None:
     # The bindings of a choice; None if a position channel would take a
     # reference with more than one component.
-    substitutes = {D: drawn, V: value}
+    substitutes = {D: drawn, V: value, C: controlled}
     if isinstance(value, list):
         substitutes.update({V0: value[0], V1: value[1]})
     bindings = {}
@@ -402,6 +424,8 @@ def _mismatch(choice, bindings, drawn, domain, arguments: dict) -> str | None:
     # it can.
     plot_type = choice.plot_type
     if bindings is None:
+        if C in choice.bindings.values():
+            return "draws a slice in space, but no control is on one coordinate of the drawn quantity"
         if drawn is not None and n_components(drawn) > 1:
             return (
                 f"puts the domain on one axis, but it has {n_components(drawn)} "

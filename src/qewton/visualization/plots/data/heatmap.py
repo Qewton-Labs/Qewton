@@ -71,7 +71,7 @@ class HeatmapPlot(DataPlot):
     ) -> Result:
         """See :meth:`~qewton.visualization.plots.data.base.DataPlot.build`."""
         if self.domain.structure is Structure.GRID:
-            x, y, values = grid_values(self.domain, color)
+            x, y, values = grid_values(self.domain, color, self.domain_columns)
             return HeatmapResult(x=x, y=y, values=values)
         return SurfaceResult(
             positions=positions,

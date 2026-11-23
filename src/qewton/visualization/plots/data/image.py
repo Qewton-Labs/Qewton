@@ -76,5 +76,5 @@ class ImagePlot(DataPlot):
         self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray
     ) -> Result:
         """See :meth:`~qewton.visualization.plots.data.base.DataPlot.build`."""
-        x, y, colors = grid_values(self.domain, np.clip(color, 0.0, 1.0))
+        x, y, colors = grid_values(self.domain, np.clip(color, 0.0, 1.0), self.domain_columns)
         return ImageResult(x=x, y=y, colors=colors)

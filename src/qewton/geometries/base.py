@@ -610,6 +610,16 @@ class DiscreteGeometry(Geometry[TensorType]):
             points = self.backend.to_numpy(points)
         return np.asarray(points).reshape(-1, points.shape[-1])
 
+    @property
+    def axis_components(self) -> tuple[int, ...]:
+        """The coordinate component varying along each axis of a rectilinear
+        grid, e.g. ``(1, 0)`` for a grid built with ``meshgrid(x, y)``.
+
+        Raises:
+            ValueError: If `structure` is not :attr:`Structure.GRID`.
+        """
+        raise ValueError(f"{type(self).__name__} is not a rectilinear grid.")
+
     def axis_coordinates(self) -> list[np.ndarray]:
         """Return the coordinates along each axis of a rectilinear grid.
 

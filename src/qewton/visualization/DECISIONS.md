@@ -27,8 +27,12 @@ A product geometry knows its factors in the order of its tensor axes
 (first factor slowest), so splitting it is a reshape:
 `GeometryAxes.split` gives one axes per named factor and keeps adjacent
 others as their product; `DataConfiguration.replace` describes the
-reshaped data. A plot splits when a binding or control names a factor;
-there is no separate restructuring step.
+reshaped data. Only controls split: the factors they name get axes of
+their own, all others stay one product (`subproduct`), the data permuted
+if they are not adjacent, so a slider on `x_2` draws the plane of `x_1`
+and `x_3`. Positions look factors up in the drawn product; a position on a
+controlled factor lies at its current coordinate, which moves a slice
+through space without a separate concept.
 
 ## Controls and selectors
 
@@ -62,11 +66,13 @@ Ranges are trained over all states of the controls before drawing, so
 they do not jump while stepping. Position axes bound to a Selector of
 table columns are the exception: their range follows the chosen column.
 
-### Drawn to scale by reference (SC6)
+### Drawn to scale by reference and quantity (SC6)
 
 Channels bound to components of one reference (e.g. the coordinates of a
-geometry) are drawn to one scale, so geometries are not distorted; a
-value over a geometry (e.g. a height) scales on its own.
+geometry) or of one quantity, also split into several axes (`x_1`, `x_2`,
+`x_3` of `x`), are drawn to one scale, so geometries and slices in space
+are not distorted; a value over a geometry (e.g. a height) scales on its
+own.
 
 ### Margins by kind of plot (SC7)
 
