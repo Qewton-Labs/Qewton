@@ -62,11 +62,8 @@ class IntersectionGeometry(ContinuousGeometry[TensorType]):
         )
 
     def _get_volume(self):
-        # warnings.warn("""Exact volume of this intersection is not known,
-        #     will use the estimate: volume = geometry_a.volume.
-        #     If you need the exact volume for sampling,
-        #     use geometry.set_volume()""")
-        return self.geometry_a.volume()
+        # The overlap is not known exactly, so the volume is estimated.
+        return self._estimate_volume()
 
     def create_boundary(self):
         return IntersectionBoundaryGeometry(self)
@@ -82,8 +79,8 @@ class IntersectionBoundaryGeometry(ContinuousBoundaryGeometry):
     def contains(self, points):
         in_a = self.geometry.geometry_a.contains(points)
         in_b = self.geometry.geometry_b.contains(points)
-        on_a_bound = self.geometry.geometry_a.create_boundary().contains(points)
-        on_b_bound = self.geometry.geometry_b.create_boundary().contains(points)
+        on_a_bound = self.geometry.geometry_a.boundary.contains(points)
+        on_b_bound = self.geometry.geometry_b.boundary.contains(points)
         on_a_part = self.backend.math.logical_and(on_a_bound, in_b)
         on_b_part = self.backend.math.logical_and(on_b_bound, in_a)
         return self.backend.math.logical_or(on_a_part, on_b_part)
@@ -93,8 +90,8 @@ class IntersectionBoundaryGeometry(ContinuousBoundaryGeometry):
         #     will use the estimate: volume = boundary_a + boundary_b.
         #     If you need the exact volume for sampling,
         #     use geometry.set_volume()""")
-        volume_a = self.geometry.geometry_a.create_boundary().volume()
-        volume_b = self.geometry.geometry_b.create_boundary().volume()
+        volume_a = self.geometry.geometry_a.boundary.volume()
+        volume_b = self.geometry.geometry_b.boundary.volume()
         return volume_a + volume_b
 
     def sample_random_uniform(
@@ -129,11 +126,11 @@ class IntersectionBoundaryGeometry(ContinuousBoundaryGeometry):
 
     def normal(self, points, device: Device | str | None = None):
         points, device = self._points_and_device(points, device)
-        on_a = self.geometry.geometry_a.create_boundary().contains(points)
-        a_normals = self.geometry.geometry_a.create_boundary().normal(
+        on_a = self.geometry.geometry_a.boundary.contains(points)
+        a_normals = self.geometry.geometry_a.boundary.normal(
             points, device=device
         )
-        b_normals = self.geometry.geometry_b.create_boundary().normal(
+        b_normals = self.geometry.geometry_b.boundary.normal(
             points, device=device
         )
         normals = self.backend.math.where(on_a, a_normals, b_normals)

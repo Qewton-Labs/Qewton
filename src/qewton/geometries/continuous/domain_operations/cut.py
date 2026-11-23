@@ -66,11 +66,8 @@ class CutGeometry(ContinuousGeometry[TensorType]):
 
     def _get_volume(self):
         if not self.contained:
-            # warnings.warn("""Exact volume of this cut is not known, will use the
-            #     estimate: volume = geometry_a.volume.
-            #     If you need the exact volume for sampling,
-            #     use geometry.set_volume()""")
-            return self.geometry_a.volume()
+            # The overlap is not known exactly, so the volume is estimated.
+            return self._estimate_volume()
         volume_a = self.geometry_a.volume()
         volume_b = self.geometry_b.volume()
         return volume_a - volume_b

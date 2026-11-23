@@ -1,3 +1,4 @@
+import math
 from qewton.geometries.continuous.base import (
     ContinuousGeometry,
     ContinuousBoundaryGeometry,
@@ -38,9 +39,8 @@ class UnionGeometry(ContinuousGeometry[TensorType]):
         return [self.geometry_a, self.geometry_b, *super()._related_geometries()]
 
     def _get_volume(self):
-        volume_a = self.geometry_a.volume()
-        volume_b = self.geometry_b.volume()
-        return volume_a + volume_b
+        # The overlap is not known exactly, so the volume is estimated.
+        return self._estimate_volume()
 
     def contains(self, points):
         in_a = self.geometry_a.contains(points)
@@ -57,25 +57,32 @@ class UnionGeometry(ContinuousGeometry[TensorType]):
         return self._bounds(bounds)
 
     def sample_random_uniform(self, n_points: int, device: Device = cpu):
-        # sample n points in both domains
-        points_a = self.geometry_a.sample_random_uniform(n_points=n_points, device=device)
-        points_b = self.geometry_b.sample_random_uniform(n_points=n_points, device=device)
-        # check which points of geometry b are in geometry a
-        in_a = self.geometry_a.contains(points_b)
-        # approximate volume of this geometry
-        volume_approx = self._get_volume()
-        volume_a = self.geometry_a.volume()
-        volume_ratio = float(volume_a / volume_approx)
-        # choose points depending of the proportion of the geometry w.r.t. the
-        # whole geometry union
-        rand_index = self.backend.random.uniform((n_points, 1), device=device)
-        rand_index = self.backend.math.logical_or(in_a, rand_index <= volume_ratio)
-        return self.backend.math.where(rand_index, points_a, points_b)
+        # Each point comes from a or b in proportion to their volumes; points
+        # of b inside a are discarded, since a covers that region already.
+        # Then every part of the union has the same density.
+        volume_a = float(self.geometry_a.volume())
+        volume_b = float(self.geometry_b.volume())
+        ratio_a = volume_a / (volume_a + volume_b)
+        # share of the drawn points that are kept
+        acceptance = float(self.volume()) / (volume_a + volume_b)
+        points = self.backend.math.empty((0, self.dim), device=device)
+        while len(points) < n_points:
+            n_draw = int(1.1 * (n_points - len(points)) / acceptance) + 1
+            points_a = self.geometry_a.sample_random_uniform(n_points=n_draw, device=device)
+            points_b = self.geometry_b.sample_random_uniform(n_points=n_draw, device=device)
+            use_a = self.backend.random.uniform((n_draw, 1), device=device) <= ratio_a
+            keep = self.backend.math.logical_or(
+                use_a, self.backend.math.logical_not(self.geometry_a.contains(points_b))
+            )
+            chosen = self.backend.math.where(use_a, points_a, points_b)
+            kept = chosen[self.backend.math.where(keep)[0]]
+            points = self.backend.math.concatenate([points, kept], axis=0)
+        return points[:n_points]
 
     def sample_grid(self, n_points: int, device: Device = cpu):
         volume_approx = self._get_volume()
         volume_a = self.geometry_a.volume()
-        scaled_n = int(self.backend.math.ceil(n_points * volume_a / volume_approx))
+        scaled_n = int(math.ceil(n_points * float(volume_a) / float(volume_approx)))
         points_a = self.geometry_a.sample_grid(n_points=scaled_n, device=device)
         if n_points > scaled_n:
             return self._sample_in_b(n_points, points_a, device=device)
