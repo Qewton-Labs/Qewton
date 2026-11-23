@@ -13,6 +13,18 @@ other dimension of the data must be reduced by a control, else
 construction raises; nothing is sliced or averaged implicitly, so a plot
 never shows a part of the data the user did not choose.
 
+### Masks are split like data (P8)
+
+Which points of a slice belong to a domain depends on the state of the
+control, so neither a geometry's point filter nor a mask can live in the
+factors. Both are split and reduced by the controls like the values: the
+point filter of the source geometry, and a feature bound to the `mask`
+channel for a domain that differs per sample. `auto_plot` therefore hands
+the unsplit data to the plot. Hidden points are dropped
+by each plot type in its own way (NaN cells, missing markers, cells
+without them) and are left out when scales are trained, so values outside
+a domain do not stretch the ranges.
+
 ### Domain or values, decided by the reference (P3)
 
 A binding's reference tells where positions come from: Variables and Axes
@@ -27,8 +39,12 @@ A product geometry knows its factors in the order of its tensor axes
 (first factor slowest), so splitting it is a reshape:
 `GeometryAxes.split` gives one axes per named factor and keeps adjacent
 others as their product; `DataConfiguration.replace` describes the
-reshaped data. A plot splits when a binding or control names a factor;
-there is no separate restructuring step.
+reshaped data. Only controls split: the factors they name get axes of
+their own, all others stay one product (`subproduct`), the data permuted
+if they are not adjacent, so a slider on `x_2` draws the plane of `x_1`
+and `x_3`. Positions look factors up in the drawn product; a position on a
+controlled factor lies at its current coordinate, which moves a slice
+through space without a separate concept.
 
 ## Controls and selectors
 
@@ -44,13 +60,15 @@ One instance of a control, Selector, scale or position axis passed to
 several plots or overlays links them: one widget, one range, one colorbar,
 one zoom. Nothing is matched by name.
 
-### Batch axes are linked only within one configuration (C2, GI2)
+### Default controls are shared by identity of their axes (C2, GI2)
 
-Data configurations of a graph are matched once at setup, and their axes
-are copied, so two ports' batch axes cannot be recognized as the same
-afterwards. Controls on batch axes are therefore shared only between
-plots of one configuration; controls on Variables (geometries) are shared
-everywhere. This changes with the rework of configuration matching.
+The plots of one visualization are built together (`AutoPlots`), so a
+default control made for one plot is passed to every later plot whose
+configuration has the same axes object. Matching makes equal axes one
+object (e.g. the batch axes of a data loader and of the model behind it),
+so no names or shapes are compared. Sharing happens where plots are built,
+not in `Figure`, which would have to tell default controls from chosen
+ones and replace them in finished plots.
 
 ## Scales
 
@@ -60,11 +78,13 @@ Ranges are trained over all states of the controls before drawing, so
 they do not jump while stepping. Position axes bound to a Selector of
 table columns are the exception: their range follows the chosen column.
 
-### Drawn to scale by reference (SC6)
+### Drawn to scale by reference and quantity (SC6)
 
 Channels bound to components of one reference (e.g. the coordinates of a
-geometry) are drawn to one scale, so geometries are not distorted; a
-value over a geometry (e.g. a height) scales on its own.
+geometry) or of one quantity, also split into several axes (`x_1`, `x_2`,
+`x_3` of `x`), are drawn to one scale, so geometries and slices in space
+are not distorted; a value over a geometry (e.g. a height) scales on its
+own.
 
 ### Margins by kind of plot (SC7)
 

@@ -1,0 +1,105 @@
+name: Publish to PyPI
+
+# Publishing a GitHub release uploads the package to PyPI.
+# Running this workflow manually ("Run workflow" in the Actions tab) uploads
+# it to TestPyPI instead, to try out a release first.
+#
+# Authentication uses PyPI "trusted publishing" (no API token needed). One-time
+# setup on pypi.org / test.pypi.org -> "Publishing" -> add a GitHub publisher:
+#   owner: Qewton-Labs, repository: Qewton, workflow: publish.yml,
+#   environment: pypi (resp. testpypi)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Check that the release tag matches the package version
+        if: github.event_name == 'release'
+        run: |
+          python - <<'EOF'
+          import os, tomllib
+          from packaging.version import Version
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          with open("pyproject.toml", "rb") as f:
+              version = tomllib.load(f)["project"]["version"]
+          if Version(tag) != Version(version):
+              raise SystemExit(
+                  f"::error::Release tag {tag!r} does not match version "
+                  f"{version!r} in pyproject.toml"
+              )
+          EOF
+
+      - name: Smoke test the wheel (core dependencies only)
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/venv/bin/python" -c "import qewton; print('qewton', qewton.__version__)"
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-pypi:
+    name: Publish to PyPI
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/qewton
+    permissions:
+      id-token: write  # required for trusted publishing
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/qewton
+    permissions:
+      id-token: write  # required for trusted publishing
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/

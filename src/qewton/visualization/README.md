@@ -22,8 +22,21 @@ to references: Variables or Axes of the configuration.
   reduced by a control, else construction raises `ValueError`.
 - `color=` binds the color channel, `vector=` the arrows of a
   `VectorPlot`. A tuple in `y` or `z` draws one copy per reference.
-- On a product geometry (e.g. a meshed space-time domain in one
-  `GeometryAxes`), naming a factor in a binding or control splits it off.
+- Points outside the domain are not drawn (empty cells, no markers,
+  arrows or cells through them) and do not train the scales: those the
+  `point_filter` of the geometry excludes (e.g. a rectilinear grid in a
+  domain that is no box), and those where the feature bound to `mask=`
+  is 0 or NaN (e.g. a domain given per sample). Slices keep both.
+  `Graph.visualize(..., mask=port)` takes the mask from another port,
+  e.g. the domain mask of a data loader, for every panel.
+- On a product geometry (a meshed space-time domain, a rectilinear grid
+  with the components of its Variable as factors), a control on a factor
+  splits it off; the other factors are drawn. On a 3D grid of `x`,
+  `controls=[SliderAxis(x_2)]` draws slices over `position=(x_1, x_3)`.
+- Positions may name parts of the drawn geometry in any order, e.g.
+  `x=x_2, y=x_1`. A position bound to a controlled factor lies at its
+  current coordinate: `SurfacePlot(position=(x_1, x_2, x_3),
+  controls=[SliderAxis(x_3)])` moves the slice through space.
 
 | Plot | Draws |
 |---|---|
@@ -88,9 +101,17 @@ the drawn domain: a scalar over a 2D domain is a heatmap, over a 1D
 domain a line, over a volume a surface; a vector with one component per
 coordinate gives arrows; the coordinates of the domain give points;
 several scalars become a Selector. Dimensions not drawn get
-`default_control` (a slider); `controls=` sets them explicitly.
-`plot_type=`, `value=`, bindings and plot options (e.g. `z=u`) take part
-in the choice; if nothing fits, the error names every plot type tried.
+`default_control` (a slider); `controls=` sets them explicitly. A control
+on one coordinate of a grid gives a heatmap of the slice;
+`plot_type=SurfacePlot` draws the slice in space. `plot_type=`, `value=`,
+bindings and plot options (e.g. `z=u`) take part in the choice; if nothing
+fits, the error names every plot type tried.
+
+`AutoPlots(controls)` builds several plots with `auto_plot` (`add(data,
+config, ...)`) that share their controls: a control made for one plot
+reaches every later plot whose data has its axes (by identity) or
+Variable, e.g. one slider over the batch of a model output and of its
+data. `Graph.visualize` and `DataNode.visualize` build their plots so.
 
 `auto_layout(plots)` overlays plots that read well together (no two show
 values the same way at the points of the domain, e.g. arrows over a

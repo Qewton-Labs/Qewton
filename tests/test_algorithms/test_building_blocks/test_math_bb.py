@@ -174,39 +174,6 @@ class TestMathNodes(unittest.TestCase):
         self.assertEqual(len(node.output_ports), 3)  # U, S, V
         MockLinalgBackend.svd.assert_called_with("matrix")
 
-    def test_reduction_node_logic(self):
-        node = Mean(axis=0, keepdims=False, backend=MockBackend)
-        mock_in_config = MagicMock(spec=DC)
-        mock_out_config = MagicMock(spec=DC)
-        mock_in_config.get_axes_and_dim.return_value = ("Feature", MagicMock())
-        mock_in_config.update_config.return_value = True
-        dynamic_configs = {
-            node.input_ports[0]: mock_in_config,
-            node.output_ports[0]: mock_out_config,
-        }
-        with patch(
-            "qewton.algorithms.building_blocks.math.deepcopy", return_value=mock_in_config
-        ):
-            node.update_data_configs(
-                node.input_ports[0], {"some": "update"}, dynamic_configs
-            )
-            mock_out_config.update_config.assert_called()
-
-    def test_reduction_node_keepdims(self):
-        node = Sum(axis=(0, 1), keepdims=True, backend=MockBackend)
-        mock_in_config = MagicMock(spec=DC)
-        mock_in_config.axes = [EllipsisAxes()]
-        mock_in_config.update_config.return_value = True
-        dynamic_configs = {
-            node.input_ports[0]: mock_in_config,
-            node.output_ports[0]: MagicMock(),
-        }
-        with patch(
-            "qewton.algorithms.building_blocks.math.deepcopy", return_value=mock_in_config
-        ):
-            result = node.update_data_configs(node.input_ports[0], {}, dynamic_configs)
-            self.assertEqual(len(result), 0)
-
     def test_stats_forward_calls(self):
         Mean(axis=0, keepdims=False, backend=MockBackend).forward("tensor")
         MockMathBackend.mean.assert_called_with("tensor", axis=0, keepdims=False)

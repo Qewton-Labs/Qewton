@@ -1,4 +1,4 @@
-from typing import Generic, Literal
+from typing import Annotated, Generic, Literal
 
 from qewton.algorithms.building_blocks.conv import (
     Conv,
@@ -19,11 +19,30 @@ from qewton.algorithms.building_blocks.array_operations import (
 )
 from qewton.algorithms.building_blocks.creation import Identity
 from qewton.backends import DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
+from qewton.config.axes import AxesDim, BatchAxes, FeatureAxes, GeometryAxes
+from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.graphs.graphs import SequentialGraph, Graph
 from qewton.graphs.nodes import Node, NodeState
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
+
+
+def _image_config(
+    batch: BatchAxes,
+    channels: HyperParameter,
+    variable: Variable | None,
+    space: GeometryAxes,
+    backend: type[DeepLearningBackend],
+) -> DataConfiguration:
+    """The configuration of images: the batch, the channels (of the
+    variable, or bound to `channels`) and the spatial dims."""
+    channel_axes = (
+        FeatureAxes(variable)
+        if variable is not None
+        else FeatureAxes(shape=(AxesDim(channels),))
+    )
+    return DataConfiguration(batch, channel_axes, space, dtype=backend.default_dtype)
 
 
 class CNN(GraphNode, Generic[TensorType]):
@@ -35,8 +54,9 @@ class CNN(GraphNode, Generic[TensorType]):
     an activation function, except for the last layer.
 
     Args:
-        in_channels (int | HyperParameter | Variable): The number of input channels,
-            or a variable that defines the input channels.
+        in_channels (int | HyperParameter | Variable | None): The number of input
+            channels, or a variable that defines the input channels, or None to
+            infer it from the connected data.
         hidden_channels (int | HyperParameter): The number of hidden channels in
             the convolutional layers.
         out_channels (int | HyperParameter | Variable): The number of output channels,
@@ -57,7 +77,7 @@ class CNN(GraphNode, Generic[TensorType]):
 
     def __init__(
         self,
-        in_channels: int | HyperParameter | Variable,
+        in_channels: int | HyperParameter | Variable | None,
         hidden_channels: int | HyperParameter,
         out_channels: int | HyperParameter | Variable,
         n_hidden_layers: int | HyperParameter,
@@ -79,7 +99,7 @@ class CNN(GraphNode, Generic[TensorType]):
         else:
             self.output_var = None
         # Transform everything into HyperParameters
-        self.in_channels = HyperParameter.from_value(in_channels, "CCN Input Channels")
+        self.in_channels = HyperParameter.size_from(in_channels, "CCN Input Channels")
         self.hidden_channels = HyperParameter.from_value(
             hidden_channels, "CCN Hidden Channels"
         )
@@ -98,15 +118,19 @@ class CNN(GraphNode, Generic[TensorType]):
                 self.kernel_size[i].value % 2 == 1
             ), f"Kernel size must be always odd, got {self.kernel_size[i]}"
 
-        self._graph = self._build_network(backend)
+        self.batch_axes = BatchAxes(AxesDim(None))
+        self.space = GeometryAxes(shape=tuple(AxesDim(None) for _ in self.kernel_size))
+        # With an open size, the network is built once it is inferred.
+        graph = None if self.open_hyperparameters else self._build_network(backend)
         super().__init__(
             name=name,
-            graph=self._graph,
-            input_ports=self._graph.sorted_nodes[0].input_ports,
-            output_ports=self._graph.sorted_nodes[-1].output_ports,
+            graph=graph,
+            input_ports=[] if graph is None else graph.sorted_nodes[0].input_ports,
+            output_ports=[] if graph is None else graph.sorted_nodes[-1].output_ports,
             backend=backend,
         )
-        self._graph.setup()
+        if graph is not None:
+            self._graph.setup(plan=False)
         self._state = NodeState.UNINITIALIZED
 
     def _build_network(self, backend):
@@ -135,7 +159,7 @@ class CNN(GraphNode, Generic[TensorType]):
                 nodes.append(self.activation.value(backend=backend))
         return SequentialGraph(*nodes)
 
-    def setup(self):
+    def build(self):
         """Initializes the neural network itself for the current
         set of parameters.
         """
@@ -157,10 +181,32 @@ class CNN(GraphNode, Generic[TensorType]):
             self.activation,
         ] + self.kernel_size
 
-    def forward(self, x):
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value
+    def x_data_config(self) -> DataConfiguration:
+        return _image_config(
+            self.batch_axes, self.in_channels, self.input_var, self.space, self.backend
+        )
+
+    def out_data_config(self) -> DataConfiguration:
+        return _image_config(
+            self.batch_axes, self.out_channels, self.output_var, self.space, self.backend
+        )
+
+    def upgrade(self, version: int) -> None:
+        """See :meth:`~qewton.graphs.control_nodes.graph_node.GraphNode.upgrade`;
+        files of version 1 have no batch and space axes yet.
+
+        Args:
+            version: The format version of the file.
+        """
+        if version < 2:
+            self.batch_axes = BatchAxes(AxesDim(None))
+            self.space = GeometryAxes(shape=tuple(AxesDim(None) for _ in self.kernel_size))
+        super().upgrade(version)
+
+    def forward(
+        self, x: Annotated[TensorType, x_data_config]
+    ) -> Annotated[TensorType, out_data_config]:
+        return super().forward(x)
 
 
 class UNet(GraphNode, Generic[TensorType]):
@@ -171,7 +217,8 @@ class UNet(GraphNode, Generic[TensorType]):
     where height and depth are optional.
 
     Args:
-        in_channels (int | HyperParameter | Variable): The number of input channels.
+        in_channels (int | HyperParameter | Variable | None): The number of input
+            channels, or None to infer it from the connected data.
         channels (tuple[int  |  HyperParameter, ...]): The number of hidden channels.
             Should be given as an tuple. Only the encoding channels should be
             provided, the decoding use the channels backwards. E.g. a
@@ -198,7 +245,7 @@ class UNet(GraphNode, Generic[TensorType]):
 
     def __init__(
         self,
-        in_channels: int | HyperParameter | Variable,
+        in_channels: int | HyperParameter | Variable | None,
         channels: tuple[int | HyperParameter, ...],
         out_channels: int | HyperParameter | Variable,
         conv_kernel_size: HyperParameter | tuple[int, ...],
@@ -227,7 +274,7 @@ class UNet(GraphNode, Generic[TensorType]):
         else:
             self.image_dim = len(conv_kernel_size)
         # Register all parameters
-        self.in_channels = HyperParameter.from_value(in_channels, "UNet Input Channels")
+        self.in_channels = HyperParameter.size_from(in_channels, "UNet Input Channels")
         self.out_channels = HyperParameter.from_value(
             out_channels, "UNet Output Channels"
         )
@@ -249,16 +296,21 @@ class UNet(GraphNode, Generic[TensorType]):
         self.activation = HyperParameter.from_value(activation, "UNet Activations")
         self.pooling_node = self._pick_pooling_type(pooling_type=pooling_type)
         self.pooling_type = pooling_type
-        # Build a starting graph/network
-        self._graph, in_node, out_node = self._build_network(backend)
+        self.batch_axes = BatchAxes(AxesDim(None))
+        self.space = GeometryAxes(shape=tuple(AxesDim(None) for _ in range(self.image_dim)))
+        # With an open size, the network is built once it is inferred.
+        graph, in_node, out_node = (
+            (None, None, None) if self.open_hyperparameters else self._build_network(backend)
+        )
         super().__init__(
             name=name,
-            graph=self._graph,
-            input_ports=in_node.input_ports,
-            output_ports=out_node.output_ports,
+            graph=graph,
+            input_ports=[] if graph is None else in_node.input_ports,
+            output_ports=[] if graph is None else out_node.output_ports,
             backend=backend,
         )
-        self._graph.setup()
+        if graph is not None:
+            self._graph.setup(plan=False)
         self._state = NodeState.UNINITIALIZED
 
     def _pick_pooling_type(self, pooling_type: Literal["average", "maximum"]):
@@ -402,7 +454,7 @@ class UNet(GraphNode, Generic[TensorType]):
         else:
             graph.connect(interpolate_list[i], conv_block_list_up[i])
 
-    def setup(self):
+    def build(self):
         new_graph, in_node, out_node = self._build_network(self.backend)
         self.setup_graph(
             new_graph,
@@ -421,3 +473,30 @@ class UNet(GraphNode, Generic[TensorType]):
             self.conv_kernel_size,
             self.pooling_kernel_size,
         ] + self.channels
+
+    def x_data_config(self) -> DataConfiguration:
+        return _image_config(
+            self.batch_axes, self.in_channels, self.input_var, self.space, self.backend
+        )
+
+    def out_data_config(self) -> DataConfiguration:
+        return _image_config(
+            self.batch_axes, self.out_channels, self.output_var, self.space, self.backend
+        )
+
+    def upgrade(self, version: int) -> None:
+        """See :meth:`~qewton.graphs.control_nodes.graph_node.GraphNode.upgrade`;
+        files of version 1 have no batch and space axes yet.
+
+        Args:
+            version: The format version of the file.
+        """
+        if version < 2:
+            self.batch_axes = BatchAxes(AxesDim(None))
+            self.space = GeometryAxes(shape=tuple(AxesDim(None) for _ in range(self.image_dim)))
+        super().upgrade(version)
+
+    def forward(
+        self, x: Annotated[TensorType, x_data_config]
+    ) -> Annotated[TensorType, out_data_config]:
+        return super().forward(x)

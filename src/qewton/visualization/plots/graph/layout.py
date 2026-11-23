@@ -72,11 +72,11 @@ class GraphLayout:
             "graph.setup()) first."
         )
         nodes, ports, clusters, port_anchor, levels = [], [], [], {}, []
-        _place_level(graph, depth, 0.0, 0.0, nodes, ports, clusters, port_anchor, levels)
+        _place_level(graph, (), depth, 0.0, 0.0, nodes, ports, clusters, port_anchor, levels)
 
         edges = []
-        for graph_like in levels:
-            _build_edges(graph_like, port_anchor, edges)
+        for path, graph_like in levels:
+            _build_edges(graph, path, graph_like, port_anchor, edges)
         return GraphLayoutResult(nodes=nodes, ports=ports, edges=edges, clusters=clusters)
 
 
@@ -266,14 +266,15 @@ def _reduce_node_crossings(
 
 
 def _place_level(
-    graph_like, remaining_depth, offset_x, offset_y, nodes_out, ports_out, clusters_out, port_anchor, levels_out
+    graph_like, path, remaining_depth, offset_x, offset_y, nodes_out, ports_out, clusters_out, port_anchor,
+    levels_out,
 ) -> tuple[float, float]:
     """Pass 1 of GraphLayout.compute(): positions every node/port of this
     level, recursing into expanded composites, and appends the globally
     positioned NodeLayout/PortLayout/ClusterBox entries to the *_out
-    accumulators. Records every visited level in levels_out for pass 2.
-    Returns this level's (width, height)."""
-    levels_out.append(graph_like)
+    accumulators. Records every visited level with its path of GraphNodes
+    in levels_out for pass 2. Returns this level's (width, height)."""
+    levels_out.append((path, graph_like))
     level_nodes = graph_like.sorted_nodes
     rank = _rank_nodes(graph_like, level_nodes)
     by_rank: dict[int, list] = {}
@@ -307,7 +308,8 @@ def _place_level(
 
             if isinstance(node, GraphNode) and remaining_depth > 0 and node.inner_graph.sorted_nodes:
                 _place_cluster(
-                    node, x, y, remaining_depth, nodes_out, ports_out, clusters_out, port_anchor, levels_out
+                    node, path, x, y, remaining_depth, nodes_out, ports_out, clusters_out, port_anchor,
+                    levels_out,
                 )
                 continue
 
@@ -384,11 +386,11 @@ def _measure_level_height(graph_like, remaining_depth) -> float:
     return max(len(nodes) for nodes in by_rank.values()) * row_height
 
 
-def _build_edges(graph_like, port_anchor, edges_out) -> None:
-    """Pass 2 of GraphLayout.compute(): builds every edge of this level
-    whose two ports have an anchor. Covers outgoing_edges, the
-    edges_from_outside (whose source is the outer composite, so they are
-    not in outgoing_edges) and skip_connections."""
+def _build_edges(graph, path, graph_like, port_anchor, edges_out) -> None:
+    """Pass 2 of GraphLayout.compute(): builds every edge of the level
+    `graph_like` at `path` in `graph` whose two ports have an anchor. Covers
+    outgoing_edges, the edges_from_outside (whose source is the outer
+    composite, so they are not in outgoing_edges) and skip_connections."""
     for node in graph_like.sorted_nodes:
         for edge in graph_like.outgoing_edges.get(node, []):
             if edge.from_port not in port_anchor or edge.to_port not in port_anchor:
@@ -396,7 +398,7 @@ def _build_edges(graph_like, port_anchor, edges_out) -> None:
             edges_out.append(
                 EdgeLayout(
                     points=[port_anchor[edge.from_port], port_anchor[edge.to_port]],
-                    label=_edge_label(graph_like, node, edge),
+                    label=_edge_label(graph, path, edge),
                 )
             )
     for edge in graph_like.edges_from_outside:
@@ -404,7 +406,7 @@ def _build_edges(graph_like, port_anchor, edges_out) -> None:
             edges_out.append(
                 EdgeLayout(
                     points=[port_anchor[edge.from_port], port_anchor[edge.to_port]],
-                    label=_edge_label(graph_like, edge.from_port.node, edge),
+                    label=_edge_label(graph, path, edge),
                 )
             )
     for edge in graph_like.skip_connections:
@@ -412,15 +414,19 @@ def _build_edges(graph_like, port_anchor, edges_out) -> None:
             edges_out.append(EdgeLayout(points=[port_anchor[edge.from_port], port_anchor[edge.to_port]]))
 
 
-def _edge_label(graph_like, source_node, edge) -> str:
-    config = graph_like.dynamic_data_configs.get(source_node, {}).get(edge.from_port)
+def _edge_label(graph, path, edge) -> str:
+    # The configuration matched by `graph` at the place of the edge's
+    # source; a port of the composite itself has the composite's place.
+    port = edge.from_port
+    within = path[:-1] if path and port.node is path[-1] else path
+    config = graph.config_of(port, within=within)
     if config is None:
         return ""
     return f"[{', '.join(str(axis) for axis in config.axes)}]"
 
 
 def _place_cluster(
-    node, x, y, remaining_depth, nodes_out, ports_out, clusters_out, port_anchor, levels_out
+    node, path, x, y, remaining_depth, nodes_out, ports_out, clusters_out, port_anchor, levels_out
 ) -> None:
     """Places a composite node's inner graph inline inside a labeled
     cluster centered at (x, y), with the composite's own ports on the
@@ -443,7 +449,7 @@ def _place_cluster(
     inner_offset_x = cluster_x0 + CLUSTER_MARGIN + gap_in
 
     inner_width, inner_height = _place_level(
-        inner_graph, remaining_depth - 1, inner_offset_x, y, nodes_out, ports_out, clusters_out, port_anchor,
+        inner_graph, path + (node,), remaining_depth - 1, inner_offset_x, y, nodes_out, ports_out, clusters_out, port_anchor,
         levels_out,
     )
 

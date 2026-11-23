@@ -59,7 +59,7 @@ class TestGraphConfigPropagation:
 
         # Both should now have (Batch, Feature(10))
         for node, port in [(n1, n1.output_ports[0]), (n2, n2.input_ports[0])]:
-            config = g.dynamic_data_configs[node][port]
+            config = g.config_of(port)
             assert len(config.axes) == 3
             assert isinstance(config.axes[0], BatchAxes)
             assert isinstance(config.axes[1], EllipsisAxes)
@@ -96,7 +96,7 @@ class TestGraphConfigPropagation:
         g.connect(n2.output_ports[0], n3.input_ports[0])
 
         # Configuration from n3 should have reached n1
-        n1_out = g.dynamic_data_configs[n1][n1.output_ports[0]]
+        n1_out = g.config_of(n1.output_ports[0])
         assert len(n1_out.axes) == 2
         assert isinstance(n1_out.axes[0], BatchAxes)
         assert isinstance(n1_out.axes[1], FeatureAxes)
@@ -125,7 +125,7 @@ class TestGraphConfigPropagation:
 
         g.connect(n1.output_ports[0], n2.input_ports[0])
 
-        n1_out = g.dynamic_data_configs[n1][n1.output_ports[0]]
+        n1_out = g.config_of(n1.output_ports[0])
         assert n1_out.axes[0].shape[0].size == 32
         assert n1_out.axes[1].shape[0].size == 128
 
@@ -152,7 +152,7 @@ class TestGraphConfigPropagation:
 
         g.connect(n1.output_ports[0], n2.input_ports[0])
 
-        config = g.dynamic_data_configs[n1][n1.output_ports[0]]
+        config = g.config_of(n1.output_ports[0])
         # Expected axes: BatchAxes, GeometryAxes, FeatureAxes
         assert len(config.axes) == 4
         assert isinstance(config.axes[0], BatchAxes)
@@ -192,7 +192,7 @@ class TestGraphConfigPropagation:
 
         g.connect(n1.output_ports[0], n2.input_ports[0])
 
-        config = g.dynamic_data_configs[n1][n1.output_ports[0]]
+        config = g.config_of(n1.output_ports[0])
         # Expected axes: BatchAxes, GeometryAxes, FeatureAxes
         assert len(config.axes) == 3
         assert isinstance(config.axes[0], BatchAxes)
@@ -239,8 +239,8 @@ class TestGraphConfigPropagation:
         g.connect(b.output_ports[0], d.input_ports[0])
 
         # Constraint from D (64) should have reached A via B
-        config_a = g.dynamic_data_configs[a][a.output_ports[0]]
-        config_c_out = g.dynamic_data_configs[c][c.output_ports[0]]
+        config_a = g.config_of(a.output_ports[0])
+        config_c_out = g.config_of(c.output_ports[0])
 
         assert config_a.axes[2].shape[0].size == 64
         assert config_c_out.axes[2].shape[0].size == 64
@@ -300,7 +300,7 @@ class TestGraphConfigPropagation:
 
         # 4. Assertions for main graph ports
         # n_start output should be (Batch, Feature(10))
-        n_start_out_config = g_main.dynamic_data_configs[n_start][n_start.output_ports[0]]
+        n_start_out_config = g_main.config_of(n_start.output_ports[0])
 
         assert len(n_start_out_config.axes) == 2
         assert isinstance(n_start_out_config.axes[0], BatchAxes)
@@ -308,23 +308,21 @@ class TestGraphConfigPropagation:
         assert n_start_out_config.axes[1].shape[0].size == 10
 
         # graph_node input should be (Batch, Feature(10))
-        gn_in_config = g_main.dynamic_data_configs[graph_node][graph_node.input_ports[0]]
+        gn_in_config = g_main.config_of(graph_node.input_ports[0])
         assert len(gn_in_config.axes) == 2
         assert isinstance(gn_in_config.axes[0], BatchAxes)
         assert isinstance(gn_in_config.axes[1], FeatureAxes)
         assert gn_in_config.axes[1].shape[0].size == 10
 
         # graph_node output should be (Batch, Feature(10))
-        gn_out_config = g_main.dynamic_data_configs[graph_node][
-            graph_node.output_ports[0]
-        ]
+        gn_out_config = g_main.config_of(graph_node.output_ports[0])
         assert len(gn_out_config.axes) == 2
         assert isinstance(gn_out_config.axes[0], BatchAxes)
         assert isinstance(gn_out_config.axes[1], FeatureAxes)
         assert gn_out_config.axes[1].shape[0].size == 10
 
         # n_end input should be (Batch, Feature(10))
-        n_end_in_config = g_main.dynamic_data_configs[n_end][n_end.input_ports[0]]
+        n_end_in_config = g_main.config_of(n_end.input_ports[0])
         assert len(n_end_in_config.axes) == 2
         assert isinstance(n_end_in_config.axes[0], BatchAxes)
         assert isinstance(n_end_in_config.axes[1], FeatureAxes)
@@ -332,18 +330,14 @@ class TestGraphConfigPropagation:
 
         # 5. Assertions for internal nodes of graph_node
         # inner_n1 output should be (Batch, Feature(10))
-        inner_n1_out_config = g_inner.dynamic_data_configs[inner_n1][
-            inner_n1.output_ports[0]
-        ]
+        inner_n1_out_config = g_inner.config_of(inner_n1.output_ports[0])
         assert len(inner_n1_out_config.axes) == 2
         assert isinstance(inner_n1_out_config.axes[0], BatchAxes)
         assert isinstance(inner_n1_out_config.axes[1], FeatureAxes)
         assert inner_n1_out_config.axes[1].shape[0].size == 10
 
         # inner_n2 input should be (Batch, Feature(10))
-        inner_n2_in_config = g_inner.dynamic_data_configs[inner_n2][
-            inner_n2.input_ports[0]
-        ]
+        inner_n2_in_config = g_inner.config_of(inner_n2.input_ports[0])
         assert len(inner_n2_in_config.axes) == 2
         assert isinstance(inner_n2_in_config.axes[0], BatchAxes)
         assert isinstance(inner_n2_in_config.axes[1], FeatureAxes)

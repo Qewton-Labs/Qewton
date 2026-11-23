@@ -1,5 +1,5 @@
-"""Data plots on product geometries: a factor named by a binding or a
-control gets tensor axes of its own."""
+"""Data plots on product geometries: a factor named by a control gets
+tensor axes of its own."""
 
 import numpy as np
 import pytest
@@ -11,13 +11,16 @@ from qewton.data.dataloaders.sampler.grid_sampler import GridSampler
 from qewton.data.dataloaders.sampler.point_sampler import discretization_mode
 from qewton.geometries.continuous.domains_1d.interval import Interval
 from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
+from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.visualization import (
     Figure,
     HeatmapPlot,
     LinePlot,
     SliderAxis,
+    SurfacePlot,
     TimeAxis,
     VectorPlot,
+    auto_plot,
 )
 
 from recording_renderer import RecordingRenderer
@@ -118,3 +121,134 @@ def test_a_sampler_on_a_product_in_mesh_mode():
     assert plot.data.shape == (n_times, len(points) // n_times, 1)
     backend = Figure(plot, renderer=RecordingRenderer()).draw(embedded=[time])
     assert len(backend["embedded"][id(time)]) == n_times
+
+
+class TestGridAxes:
+    """A rectilinear grid is the product of its axes: a control steps
+    through one axis, the others are drawn."""
+
+    @staticmethod
+    def _on_grid(shape=(4, 3, 2)):
+        x = Variable("x", len(shape))
+        lines = [np.linspace(0.0, 1.0, n) for n in shape]
+        points = np.stack(np.meshgrid(*lines, indexing="ij"), axis=-1)
+        geometry = GridGeometry(x, points)
+        data = _field(points.reshape(-1, len(shape))).reshape(*shape, 1)
+        return data, DataConfiguration(GeometryAxes(geometry), FeatureAxes(U)), x
+
+    def test_a_slider_steps_through_one_axis(self):
+        data, config, x = self._on_grid()
+        x_1, x_2, x_3 = x.leaves
+        layer = SliderAxis(x_3, init_state=1)
+        plot = HeatmapPlot(data, config, position=(x_1, x_2), color=U, controls=[layer])
+        (result,) = plot.evaluate()
+        np.testing.assert_allclose(result.values, data[:, :, 1, 0].T)
+        np.testing.assert_allclose(layer.coordinates, [0.0, 1.0])
+
+    def test_positions_take_any_order(self):
+        data, config, x = self._on_grid()
+        x_1, x_2, x_3 = x.leaves
+        plot = HeatmapPlot(data, config, x=x_2, y=x_1, color=U, controls=[SliderAxis(x_3)])
+        (result,) = plot.evaluate()
+        np.testing.assert_allclose(result.values, data[:, :, 0, 0])
+        assert plot.scaled_channels == ("x", "y")
+
+    def test_a_line_through_the_grid(self):
+        data, config, x = self._on_grid()
+        x_1, x_2, x_3 = x.leaves
+        plot = LinePlot(
+            data, config, x=x_2, y=U, controls=[SliderAxis(x_1, 3), SliderAxis(x_3, 1)]
+        )
+        (result,) = plot.evaluate()
+        np.testing.assert_allclose(result.positions[:, 1], data[3, :, 1, 0])
+
+    def test_auto_plot_draws_the_axes_not_controlled(self):
+        data, config, x = self._on_grid()
+        plot = auto_plot(data, config, controls=[SliderAxis(x.leaves[0])])
+        assert isinstance(plot, HeatmapPlot)
+        assert tuple(plot.domain.shape) == (3, 2)
+
+    def test_a_slider_through_the_middle_axis_draws_the_outer_ones(self):
+        data, config, x = self._on_grid()
+        x_1, x_2, x_3 = x.leaves
+        plot = HeatmapPlot(
+            data, config, position=(x_1, x_3), color=U, controls=[SliderAxis(x_2, 2)]
+        )
+        (result,) = plot.evaluate()
+        np.testing.assert_allclose(result.values, data[:, 2, :, 0].T)
+        assert isinstance(auto_plot(data, config, controls=[SliderAxis(x_2)]), HeatmapPlot)
+
+    def test_a_controlled_axis_bound_as_position_moves_the_slice_through_space(self):
+        data, config, x = self._on_grid()
+        x_1, x_2, x_3 = x.leaves
+        layer = SliderAxis(x_2, init_state=1)
+        plot = SurfacePlot(data, config, position=(x_1, x_2, x_3), color=U, controls=[layer])
+        (result,) = plot.evaluate()
+        np.testing.assert_allclose(result.positions[:, 1], 0.5)
+        np.testing.assert_allclose(result.values, data[:, 1, :, 0].ravel())
+        assert plot.scaled_channels == ("x", "y", "z")
+
+    def test_auto_plot_moves_a_surface_through_space(self):
+        data, config, x = self._on_grid()
+        plot = auto_plot(data, config, plot_type=SurfacePlot, controls=[SliderAxis(x.leaves[2])])
+        assert plot.n_positions == 3
+
+    def test_auto_plot_names_the_missing_control_of_a_slice_in_space(self):
+        data, config, _ = self._on_grid((4, 3))
+        with pytest.raises(ValueError, match="no control is on one coordinate"):
+            auto_plot(data, config, plot_type=SurfacePlot)
+
+    @staticmethod
+    def _in_a_ball(shape=(6, 5, 4)):
+        # A rectilinear grid whose point filter keeps a ball, with values
+        # far out of range outside it.
+        data, config, x = TestGridAxes._on_grid(shape)
+        grid = config.axes[0].geometry
+        points = np.asarray(grid.discretization_points)
+        inside = ((points - 0.5) ** 2).sum(axis=-1, keepdims=True) < 0.3
+        filtered = GridGeometry(x, points, point_filter=inside)
+        data = np.where(inside, data, 1e6)
+        return data, DataConfiguration(GeometryAxes(filtered), FeatureAxes(U)), x, inside
+
+    def test_a_slice_shows_the_points_of_the_geometry_only(self):
+        data, config, x = self._in_a_ball()[:3]
+        inside = self._in_a_ball()[3]
+        x_1, x_2, x_3 = x.leaves
+        plot = HeatmapPlot(
+            data, config, position=(x_1, x_3), color=U, controls=[SliderAxis(x_2, 1)]
+        )
+        (result,) = plot.evaluate()
+        np.testing.assert_array_equal(np.isnan(result.values), ~inside[:, 1, :, 0].T)
+        Figure(plot).draw()
+        assert plot.color_scale.range[1] < 1e6
+
+    def test_auto_plot_keeps_the_point_filter(self):
+        data, config, x, inside = self._in_a_ball()
+        plot = auto_plot(data, config, controls=[SliderAxis(x.leaves[2], 2)])
+        (result,) = plot.evaluate()
+        assert np.isnan(result.values).sum() == (~inside[:, :, 2]).sum()
+
+    def test_a_mask_hides_points_in_addition_to_the_point_filter(self):
+        data, config, x, inside = self._in_a_ball()
+        m = Variable("m", 1)
+        mask = np.ones_like(data)
+        mask[0] = 0
+        config = DataConfiguration(config.axes[0], FeatureAxes(U * m))
+        x_1, x_2, x_3 = x.leaves
+        plot = HeatmapPlot(
+            np.concatenate([data, mask], axis=-1),
+            config,
+            position=(x_1, x_3),
+            color=U,
+            mask=m,
+            controls=[SliderAxis(x_2, 1)],
+        )
+        (result,) = plot.evaluate()
+        hidden = ~inside[:, 1, :, 0]
+        hidden[0] = True
+        np.testing.assert_array_equal(np.isnan(result.values), hidden.T)
+
+    def test_a_grid_without_controls_is_drawn_whole(self):
+        data, config, _ = self._on_grid()
+        assert isinstance(auto_plot(data, config), SurfacePlot)
+

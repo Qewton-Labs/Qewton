@@ -43,7 +43,7 @@ from .plots.geometry import GeometryPlot
 from .plots.graph import GraphPlot
 from .plots.table import TablePlot, TableScatter, TableHeatMap, ParallelCoordinatesPlot
 from .layout import Layout, Overlay, Row, Column, auto_layout
-from .auto import auto_plot
+from .auto import AutoPlots, auto_plot
 from .renderers.base import Artist, Renderer
 from .applications import RenderApplication, DashApplication, WidgetApplication
 from .themes import Theme, DEFAULT_THEME, LIGHT_THEME, DARK_THEME, cmaps

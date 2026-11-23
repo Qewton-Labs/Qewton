@@ -17,7 +17,7 @@ class BarPlot(DataPlot):
 
     Args:
         data, data_config, position, x, y, color, color_scale, controls,
-            title, label, opacity: As for
+            title, label, opacity, mask: As for
             :class:`~qewton.visualization.plots.data.base.DataPlot`.
     """
 
@@ -43,6 +43,7 @@ class BarPlot(DataPlot):
         title: str | None = None,
         label: str | None = None,
         opacity: float | None = None,
+        mask: Variable | None = None,
     ) -> None:
         super().__init__(
             data,
@@ -56,6 +57,7 @@ class BarPlot(DataPlot):
             title=title,
             label=label,
             opacity=opacity,
+            mask=mask,
         )
 
     def train_scales(self, axes: dict[str, Scale]) -> None:
@@ -65,7 +67,14 @@ class BarPlot(DataPlot):
         axes["y"].train([0.0])
 
     def build(
-        self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray
+        self,
+        positions: np.ndarray,
+        color: np.ndarray | None,
+        features: np.ndarray,
+        visible: np.ndarray,
     ) -> Result:
         """See :meth:`~qewton.visualization.plots.data.base.DataPlot.build`."""
-        return BarResult(positions=positions, values=color)
+        return BarResult(
+            positions=positions[visible],
+            values=color[visible] if color is not None else None,
+        )

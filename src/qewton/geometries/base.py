@@ -9,7 +9,6 @@ from typing import Any, Generic
 
 import numpy as np
 
-from qewton.config.errors import DataConfigMismatchError
 from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
 from qewton.config.saving.saving import Serializable
@@ -205,86 +204,6 @@ class Geometry(Serializable, Generic[TensorType]):
     @property
     def dim(self) -> int | None:
         return self.variable.dim if not self.variable.is_empty else self._dim
-
-    def unify_with(self, other: Geometry) -> Geometry:
-        """Unify this geometry with `other`.
-
-        Placeholder values may appear for `variable`, `dim` and `shape`. If
-        one geometry is a discretization of the other, the discretization is
-        returned. Otherwise the placeholders are filled from the other
-        geometry and the more specific of the two objects (the instance of
-        the subclass) is refined in place and returned.
-
-        Args:
-            other: The geometry to unify with.
-
-        Returns:
-            Geometry: The unified geometry, either `self` or `other`.
-
-        Raises:
-            DataConfigMismatchError: If dimensions, variables or shapes are
-                incompatible.
-        """
-        if other is self or other == self:
-            return self
-
-        if self.is_discretization_of(other):
-            return self
-        if other.is_discretization_of(self):
-            return other
-
-        if self.dim is not None and other.dim is not None and self.dim != other.dim:
-            raise DataConfigMismatchError(
-                f"Cannot unify geometries with different dims: {self.dim} != {other.dim}"
-            )
-
-        try:
-            unified_variable = self.variable.unify(other.variable)
-        except ValueError as error:
-            raise DataConfigMismatchError(
-                f"Cannot unify geometry variables: {error}"
-            ) from error
-
-        unified_dim = self.dim if self.dim is not None else other.dim
-        if unified_dim is None and not unified_variable.is_empty:
-            unified_dim = unified_variable.dim
-
-        unified_shape = self._unify_shapes(self.shape, other.shape)
-
-        target: Geometry = self._preferred_refinement_target(other)
-        target.apply_unified(unified_variable, unified_dim, unified_shape)
-        return target
-
-    @staticmethod
-    def _unify_shapes(
-        shape_a: tuple[int | None, ...] | EllipsisType,
-        shape_b: tuple[int | None, ...] | EllipsisType,
-    ) -> tuple[int | None, ...] | EllipsisType:
-        if shape_a is ...:
-            return shape_b
-        if shape_b is ...:
-            return shape_a
-
-        if len(shape_a) != len(shape_b):
-            raise DataConfigMismatchError(
-                f"Cannot unify geometry shapes with different lengths: \
-                    {len(shape_a)} != {len(shape_b)}"
-            )
-
-        unified: list[int | None] = []
-        for index, (dim_a, dim_b) in enumerate(zip(shape_a, shape_b)):
-            if dim_a is None:
-                unified.append(dim_b)
-            elif dim_b is None:
-                unified.append(dim_a)
-            elif dim_a == dim_b:
-                unified.append(dim_a)
-            else:
-                raise DataConfigMismatchError(
-                    f"Cannot unify geometry shapes at index {index}: \
-                        {dim_a} != {dim_b}"
-                )
-        return tuple(unified)
 
     def _shape_is_placeholder(self, shape: tuple[int | None, ...] | EllipsisType) -> bool:
         if shape is ...:
@@ -627,6 +546,9 @@ class DiscreteGeometry(Geometry[TensorType]):
             discretizes, if known.
         discretization_points (TensorType or None): The discrete points of this
             geometry.
+        point_filter (TensorType or None): Whether each point belongs to the
+            geometry, shape ``(*shape, 1)``, e.g. the points of a
+            rectilinear grid inside a non-box domain; None if all do.
         structure (Structure): How its points are connected.
         topological_dim (int): Dimension of its cells: 0 for points, 1 for
             curves, 2 for surfaces, 3 for volumes. `dim` is the number of
@@ -658,6 +580,7 @@ class DiscreteGeometry(Geometry[TensorType]):
         super().__init__(variable=variable, dim=dim, shape=shape, backend=backend)
         self.discretization_of: Geometry | None = None
         self.discretization_points = discretization_points
+        self.point_filter: TensorType | None = None
 
     @property
     def structure(self) -> Structure:
@@ -690,6 +613,16 @@ class DiscreteGeometry(Geometry[TensorType]):
         if not isinstance(points, np.ndarray):
             points = self.backend.to_numpy(points)
         return np.asarray(points).reshape(-1, points.shape[-1])
+
+    @property
+    def axis_components(self) -> tuple[int, ...]:
+        """The coordinate component varying along each axis of a rectilinear
+        grid, e.g. ``(1, 0)`` for a grid built with ``meshgrid(x, y)``.
+
+        Raises:
+            ValueError: If `structure` is not :attr:`Structure.GRID`.
+        """
+        raise ValueError(f"{type(self).__name__} is not a rectilinear grid.")
 
     def axis_coordinates(self) -> list[np.ndarray]:
         """Return the coordinates along each axis of a rectilinear grid.

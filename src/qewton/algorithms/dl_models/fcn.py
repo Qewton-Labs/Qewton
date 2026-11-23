@@ -9,7 +9,7 @@ from qewton.algorithms.building_blocks.activation_functions import ReLU, Tanh
 from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.config.axes import FeatureAxes, EllipsisAxes
+from qewton.config.axes import AxesDim, FeatureAxes, EllipsisAxes
 from qewton.graphs.graphs import SequentialGraph, Graph
 from qewton.graphs.nodes import Node, NodeState
 from qewton.graphs.control_nodes.graph_node import GraphNode
@@ -29,7 +29,8 @@ class FFN(GraphNode, Generic[TensorType]):
             called with ``in_neurons``, ``out_neurons``, ``bias`` and
             ``backend``.
         in_neurons: The number of input neurons, or a variable whose dimension
-            gives it and which is then used as the input feature variable.
+            gives it and which is then used as the input feature variable,
+            or None to infer it from the connected data.
         hidden_neurons: The number of neurons in each hidden layer.
         out_neurons: The number of output neurons, or a variable whose
             dimension gives it and which is then used as the output feature
@@ -64,7 +65,7 @@ class FFN(GraphNode, Generic[TensorType]):
     def __init__(
         self,
         layer_blocks: type[Node[TensorType]],
-        in_neurons: int | HyperParameter | Variable,
+        in_neurons: int | HyperParameter | Variable | None,
         hidden_neurons: int | HyperParameter,
         out_neurons: int | HyperParameter | Variable,
         n_hidden_layers: int | HyperParameter,
@@ -85,7 +86,7 @@ class FFN(GraphNode, Generic[TensorType]):
             self.output_var = None
 
         self.layer_blocks = layer_blocks
-        self.in_neurons = HyperParameter.from_value(in_neurons, "FCN Input Neurons")
+        self.in_neurons = HyperParameter.size_from(in_neurons, "FCN Input Neurons")
         self.hidden_neurons = HyperParameter.from_value(
             hidden_neurons, "FCN Hidden Neurons"
         )
@@ -96,16 +97,18 @@ class FFN(GraphNode, Generic[TensorType]):
         self.bias = HyperParameter.from_value(bias, "FCN Bias")
         self.activation = HyperParameter.from_value(activation, "FCN Activations")
 
-        self._graph = self._build_network(backend)
         self.ellipsis_axes: EllipsisAxes
+        # With an open size, the network is built once it is inferred.
+        graph = None if self.open_hyperparameters else self._build_network(backend)
         super().__init__(
             name=name,
-            graph=self._graph,
-            input_ports=self._graph.sorted_nodes[0].input_ports,
-            output_ports=self._graph.sorted_nodes[-1].output_ports,
+            graph=graph,
+            input_ports=[] if graph is None else graph.sorted_nodes[0].input_ports,
+            output_ports=[] if graph is None else graph.sorted_nodes[-1].output_ports,
             backend=backend,
         )
-        self._graph.setup()
+        if graph is not None:
+            self._graph.setup(plan=False)
         self.set_state(NodeState.UNINITIALIZED)
 
     def reset(self):
@@ -136,22 +139,18 @@ class FFN(GraphNode, Generic[TensorType]):
                 nodes.append(self.activation.value(backend=backend))
         return SequentialGraph(*nodes)
 
-    def setup(self):
+    def build(self):
         """Build the network for the current hyperparameter values.
 
         Only acts if the node is uninitialized. Sets the input and output
         data configurations and marks the node as initialized.
         """
-        if self.state == NodeState.UNINITIALIZED:
-            new_graph = self._build_network(self.backend)
-            self.input_ports[0].update_static_data_configuration(self.x_data_config())
-            self.output_ports[0].update_static_data_configuration(self.out_data_config())
-            self.setup_graph(
-                new_graph,
-                input_ports=new_graph.sorted_nodes[0].input_ports,
-                output_ports=new_graph.sorted_nodes[-1].output_ports,
-            )
-            self.set_state(NodeState.INITIALIZED)
+        new_graph = self._build_network(self.backend)
+        self.setup_graph(
+            new_graph,
+            input_ports=new_graph.sorted_nodes[0].input_ports,
+            output_ports=new_graph.sorted_nodes[-1].output_ports,
+        )
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -180,7 +179,7 @@ class FFN(GraphNode, Generic[TensorType]):
             )
         return DataConfiguration(
             self.ellipsis_axes,
-            FeatureAxes(shape=(self.in_neurons.value,)),
+            FeatureAxes(shape=(AxesDim(self.in_neurons),)),
             dtype=self.backend.default_dtype,
         )
 
@@ -201,7 +200,7 @@ class FFN(GraphNode, Generic[TensorType]):
             )
         return DataConfiguration(
             self.ellipsis_axes,
-            FeatureAxes(shape=(self.out_neurons.value,)),
+            FeatureAxes(shape=(AxesDim(self.out_neurons),)),
             dtype=b_end,
         )
 
@@ -216,9 +215,7 @@ class FFN(GraphNode, Generic[TensorType]):
         Returns:
             TensorType: The output, see :meth:`out_data_config`.
         """
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value  # type: ignore
+        return super().forward(x)
 
 
 class FCN(FFN[TensorType]):
@@ -226,7 +223,8 @@ class FCN(FFN[TensorType]):
 
     Args:
         in_neurons: The number of input neurons, or a variable whose dimension
-            gives it and which is then used as the input feature variable.
+            gives it and which is then used as the input feature variable,
+            or None to infer it from the connected data.
         hidden_neurons: The number of neurons in each hidden layer.
         out_neurons: The number of output neurons, or a variable whose
             dimension gives it and which is then used as the output feature
@@ -240,7 +238,7 @@ class FCN(FFN[TensorType]):
 
     def __init__(
         self,
-        in_neurons: int | HyperParameter | Variable,
+        in_neurons: int | HyperParameter | Variable | None,
         hidden_neurons: int | HyperParameter,
         out_neurons: int | HyperParameter | Variable,
         n_hidden_layers: int | HyperParameter,
@@ -267,7 +265,8 @@ class QRES(FFN[TensorType]):
 
     Args:
         in_neurons: The number of input neurons, or a variable whose dimension
-            gives it and which is then used as the input feature variable.
+            gives it and which is then used as the input feature variable,
+            or None to infer it from the connected data.
         hidden_neurons: The number of neurons in each hidden layer.
         out_neurons: The number of output neurons, or a variable whose
             dimension gives it and which is then used as the output feature
@@ -288,7 +287,7 @@ class QRES(FFN[TensorType]):
 
     def __init__(
         self,
-        in_neurons: int | HyperParameter | Variable,
+        in_neurons: int | HyperParameter | Variable | None,
         hidden_neurons: int | HyperParameter,
         out_neurons: int | HyperParameter | Variable,
         n_hidden_layers: int | HyperParameter,
@@ -319,7 +318,8 @@ class DeepRitzNet(FCN[TensorType]):
 
     Args:
         in_neurons: The number of input neurons, or a variable whose dimension
-            gives it and which is then used as the input feature variable.
+            gives it and which is then used as the input feature variable,
+            or None to infer it from the connected data.
         out_neurons: The number of output neurons, or a variable whose
             dimension gives it and which is then used as the output feature
             variable.
@@ -340,7 +340,7 @@ class DeepRitzNet(FCN[TensorType]):
 
     def __init__(
         self,
-        in_neurons: int | HyperParameter | Variable,
+        in_neurons: int | HyperParameter | Variable | None,
         out_neurons: int | HyperParameter | Variable,
         width: int | HyperParameter,
         depth: int | HyperParameter,

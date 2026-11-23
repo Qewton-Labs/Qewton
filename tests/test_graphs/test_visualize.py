@@ -86,7 +86,7 @@ class TestVisualize:
         graph, sampler, model = connected_graph
         graph.run()
         config = model.output_ports[0].get_data_configuration(graph)
-        value = model.backend.to_numpy(model.output_ports[0].value)
+        value = model.backend.to_numpy(graph.value_of(model.output_ports[0]))
         plot = auto_plot(value, config)
         assert isinstance(plot, ScatterPlot)
 
@@ -844,7 +844,33 @@ class TestVisualizeReferenceOnProductDomain:
 
 class TestVisualizeWithDataLoaderReference:
     """Operator learning: the model output is compared with the true output
-    of its data loader, i.e. two ports with matching but separate axes."""
+    of its data loader, two ports whose batch axes matching made one."""
+
+    def test_several_ports_share_one_slider_over_the_batch(self):
+        import torch
+
+        from qewton.config.axes import BatchAxes
+        from qewton.data import ArrayLikeDataSet, DataLoader
+        from qewton.geometries.discrete.grid_geometry import GridGeometry
+        from qewton.visualization import SliderAxis
+
+        F, U = Variable("f", 1), Variable("u", 1)
+        grid = GridGeometry.build_unit_grid(Variable("x", 1), 5)
+        configs = [
+            DataConfiguration(BatchAxes(6), GeometryAxes(grid), FeatureAxes(v)) for v in (F, U)
+        ]
+        dataset = ArrayLikeDataSet([torch.rand(6, 5, 1), torch.rand(6, 5, 1)], configs)
+        loader = DataLoader(data_set=dataset, batch_size=3, splitting_ratio=(1.0, 0.0, 0.0))
+        model = FCN(in_neurons=F, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(loader.get_output_port(F), model)
+        graph.setup()
+
+        ports = [model.output_ports[0], loader.get_output_port(F), loader.get_output_port(U)]
+        layout = graph.visualize(ports, mode=EvaluationPhase.TRAIN)
+        sliders = {id(c) for p in layout.plots for c in p.controls if isinstance(c, SliderAxis)}
+        assert len(layout.plots) == 3
+        assert len(sliders) == 1
 
     def test_works_without_a_prediction_config(self):
         import torch
@@ -881,3 +907,116 @@ class TestVisualizeWithDataLoaderReference:
         sliders = {id(c) for p in plots for c in p.controls if isinstance(c, SliderAxis)}
         assert len(sliders) == 1  # one slider over the samples, shared by all panels
         Figure(layout).draw()
+
+
+class TestVisualizeWithAMaskPort:
+    """A mask from another port, e.g. a per-sample domain mask of a data
+    loader, hides points in every panel."""
+
+    @staticmethod
+    def _operator_graph():
+        import torch
+
+        from qewton.algorithms.dl_models.deeponet.deeponet_fcn import FCNDeepONet
+        from qewton.data import DataLoader, GridDataSet
+
+        F, X, U, M = Variable("f", 1), Variable("x", 1), Variable("u", 1), Variable("m", 1)
+        x = torch.linspace(0, 1, 10)[None, :, None].repeat(4, 1, 1)
+        # sample k hides its first k points; u is huge there
+        m = (torch.arange(10)[None, :, None] >= torch.arange(4)[:, None, None]).float()
+        u = torch.where(m > 0, torch.rand(4, 10, 1), torch.tensor(1e6))
+        dataset = GridDataSet(
+            data=[torch.rand(4, 10, 1), x, u, m],
+            feature_variables=[F, X, U, M],
+            geometry_variable=X,
+            point_grid=x[0],
+        )
+        loader = DataLoader(
+            data_set=dataset, batch_size=4, splitting_ratio=(1.0, 0.0, 0.0), shuffle_data=False
+        )
+        model = FCNDeepONet(
+            trunk_input=X, branch_input=F, output=U, trunk_hidden_neurons=4,
+            branch_hidden_neurons=4, trunk_hidden_layers=1, branch_hidden_layers=1,
+            intermediate_neurons=4,
+        )
+        graph = Graph()
+        with graph.tracker(0):
+            f_out, x_out, _, _ = loader()
+            model(f_out, x_out)
+        graph.setup()
+        return graph, loader, model, U, M
+
+    def test_every_panel_hides_the_masked_points_of_each_sample(self):
+        from qewton.visualization import SliderAxis
+
+        graph, loader, model, U, M = self._operator_graph()
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=loader.get_output_port(U),
+            mask=loader.get_output_port(M),
+            mode=EvaluationPhase.TRAIN,
+        )
+        figure = Figure(layout)
+        figure.draw()
+        assert figure.cell_at(1, 1).axis_range("y")[1] < 1e6
+        (slider,) = {c for p in layout.plots for c in p.controls if isinstance(c, SliderAxis)}
+        for k in range(4):
+            slider.state = k
+            for plot in layout.plots:
+                # sample k shows its points k..9, joined by 9 - k segments
+                assert len(plot.evaluate()[0].segments) == 9 - k
+
+    def test_a_port_alone_is_masked(self):
+        from qewton.visualization import SliderAxis
+
+        graph, loader, _, U, M = self._operator_graph()
+        layout = graph.visualize(
+            [loader.get_output_port(U)], mask=loader.get_output_port(M), mode=EvaluationPhase.TRAIN
+        )
+        figure = Figure(layout)
+        figure.draw()
+        assert figure.cell_at(1, 1).axis_range("y")[1] < 1e6
+        (plot,) = layout.plots
+        (slider,) = [c for c in plot.controls if isinstance(c, SliderAxis)]
+        slider.state = 3
+        assert len(plot.evaluate()[0].segments) == 6
+
+    def test_a_mask_needs_one_value_per_point(self):
+        import torch
+
+        from qewton.config.axes import BatchAxes
+        from qewton.data import ArrayLikeDataSet, DataLoader
+        from qewton.geometries.discrete.grid_geometry import GridGeometry
+
+        U, M = Variable("u", 1), Variable("m", 1)
+        configs = [
+            DataConfiguration(
+                BatchAxes(2), GeometryAxes(GridGeometry.build_unit_grid(Variable("x", 1), n)),
+                FeatureAxes(v),
+            )
+            for v, n in ((U, 5), (M, 4))
+        ]
+        dataset = ArrayLikeDataSet([torch.rand(2, 5, 1), torch.ones(2, 4, 1)], configs)
+        loader = DataLoader(data_set=dataset, batch_size=2, splitting_ratio=(1.0, 0.0, 0.0))
+        graph = Graph()
+        with graph.tracker(0):
+            loader()
+        graph.setup()
+        with pytest.raises(ValueError, match="one value per point"):
+            graph.visualize(
+                [loader.get_output_port(U)],
+                mask=loader.get_output_port(M),
+                mode=EvaluationPhase.TRAIN,
+            )
+
+    def test_a_control_on_no_plotted_data_fails(self):
+        from qewton.visualization import SliderAxis
+
+        graph, loader, model, U, _ = self._operator_graph()
+        with pytest.raises(ValueError, match="y is not part of the plotted data"):
+            graph.visualize(
+                model.output_ports[0],
+                reference=loader.get_output_port(U),
+                controls=[SliderAxis(Variable("y", 1))],
+                mode=EvaluationPhase.TRAIN,
+            )

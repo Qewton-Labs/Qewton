@@ -10,6 +10,7 @@ from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Bool
+from qewton.geometries.discrete.product_mesh_geometry import product_of
 
 
 def _grid_cells(shape: tuple[int, ...]) -> np.ndarray:
@@ -69,6 +70,11 @@ class GridGeometry(DiscreteGeometry[TensorType]):
         axis_components (tuple of int): For a rectilinear grid, the
             coordinate component varying along each grid axis, e.g.
             ``(1, 0)`` for a grid built with ``meshgrid(x, y)``.
+        factors (list of GridGeometry or None): For a rectilinear grid of
+            two or more axes, one 1D grid per grid axis, in the order of the
+            axes, with the leaf of its coordinate as variable (e.g. ``x_1``
+            of ``Variable("x", 3)``); None otherwise. The factors carry no
+            point filter.
     """
 
     def __init__(
@@ -107,11 +113,10 @@ class GridGeometry(DiscreteGeometry[TensorType]):
                 shape=point_grid.shape[:-1] + (1,), dtype=self.backend.dtypes[Bool]
             )
         else:
-            self.point_filter = self.backend.cast_dtype(
-                point_filter, dtype=self.backend.dtypes[Bool]
-            )
+            self.point_filter = self.backend.build_tensor(point_filter, dtype=Bool)
 
         self.cell_volumes: TensorType | None = None
+        self._factors: list[GridGeometry] | None = None
 
     def _move_data(self, device: Device | str) -> None:
         self.discretization_points = self.backend.to(
@@ -120,6 +125,7 @@ class GridGeometry(DiscreteGeometry[TensorType]):
         self.point_filter = self.backend.to(self.point_filter, device=device)
         if self.cell_volumes is not None:
             self.cell_volumes = self.backend.to(self.cell_volumes, device=device)
+        self._factors = None
 
     @property
     def structure(self) -> Structure:
@@ -143,6 +149,35 @@ class GridGeometry(DiscreteGeometry[TensorType]):
     def axis_coordinates(self) -> list[np.ndarray]:
         """See :meth:`~qewton.geometries.base.DiscreteGeometry.axis_coordinates`."""
         return self._require_rectilinear()[1]
+
+    @property
+    def factors(self) -> list[GridGeometry] | None:
+        if self._factors is None:
+            self._factors = self._build_factors()
+        return self._factors or None
+
+    def _build_factors(self) -> list[GridGeometry]:
+        # One 1D grid per axis of a rectilinear grid, named by the leaf of
+        # the coordinate along it; empty if the grid is no such product.
+        rectilinear = self._rectilinear()
+        if len(self.shape) < 2 or rectilinear is None:
+            return []
+        leaves = self.variable.leaves
+        return [
+            self._line(leaves[component], coordinates)
+            for component, coordinates in zip(*rectilinear)
+        ]
+
+    def _line(self, variable: Variable, coordinates: np.ndarray) -> GridGeometry:
+        points = self.backend.build_tensor(
+            np.asarray(coordinates).reshape(-1, 1), device=self.device
+        )
+        return GridGeometry(variable, point_grid=points, backend=self.backend)
+
+    def subproduct(self, factors: list[GridGeometry]) -> DiscreteGeometry:
+        """See :meth:`~qewton.geometries.base.DiscreteGeometry.subproduct`;
+        the grid over the axes of `factors`."""
+        return product_of(self.variable, factors, self.backend)
 
     def _require_rectilinear(self) -> tuple[tuple[int, ...], list[np.ndarray]]:
         rectilinear = self._rectilinear()

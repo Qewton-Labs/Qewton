@@ -530,3 +530,33 @@ class TestIntegration:
         hp_list = ContinuousHyperparameter(parameter_range=[0.0, 10.0])
 
         assert hp_tuple.sample_parameter_grid(3) == hp_list.sample_parameter_grid(3)
+
+
+def _three():
+    return HyperParameter.from_value(3, "three")
+
+
+#: name -> (operation, its value)
+ARITHMETIC = {
+    "add_parameter": (lambda: _three() + _three(), 6),
+    "add_number": (lambda: _three() + 1, 4),
+    "number_add": (lambda: 1 + _three(), 4),
+    "sub_number": (lambda: _three() - 1, 2),
+    "number_sub": (lambda: 10 - _three(), 7),
+    "mul_number": (lambda: _three() * 2, 6),
+    "number_mul": (lambda: 2 * _three(), 6),
+    "div_number": (lambda: _three() / 2, 1.5),
+    "number_div": (lambda: 6 / _three(), 2.0),
+    "open_stays_open": (lambda: HyperParameter.inferred("open") * 2, None),
+}
+
+
+@pytest.mark.parametrize("name", ARITHMETIC)
+def test_arithmetic(name):
+    operation, expected = ARITHMETIC[name]
+    assert operation().value == expected
+
+
+def test_a_number_operand_is_no_dependency():
+    three = _three()
+    assert (three * 2).dependencies == {three}
