@@ -92,6 +92,12 @@ several scalars become a Selector. Dimensions not drawn get
 `plot_type=`, `value=`, bindings and plot options (e.g. `z=u`) take part
 in the choice; if nothing fits, the error names every plot type tried.
 
+`AutoPlots(controls)` builds several plots with `auto_plot` (`add(data,
+config, ...)`) that share their controls: a control made for one plot
+reaches every later plot whose data has its axes (by identity) or
+Variable, e.g. one slider over the batch of a model output and of its
+data. `Graph.visualize` and `DataNode.visualize` build their plots so.
+
 `auto_layout(plots)` overlays plots that read well together (no two show
 values the same way at the points of the domain, e.g. arrows over a
 heatmap) and places the others side by side with linked axes.

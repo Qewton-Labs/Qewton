@@ -55,7 +55,7 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
             name=name,
             backend=backend,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self.data_source_node: DataNode = data_source_node
         self.backend: type[ComputingBackend[TensorType]] = backend
 
@@ -64,14 +64,12 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
         self._set_port_values(None, None)
         return super().reset()
 
-    def setup(self, graph: Graph) -> None:
-        if self._state == NodeState.INITIALIZED:
-            return
+    def build(self, graph: Graph) -> None:
         # First collect all data:
         total_data = []
         for _ in range(self.data_source_node.training_batches):
             in_edge = graph.run_to(last_node=self, mode=EvaluationPhase.TRAIN)
-            total_data.append(in_edge[self.input_ports[0]].from_port.value)
+            total_data.append(graph.value_of(in_edge[self.input_ports[0]].from_port))
         self.fit(total_data)
 
     def fit(self, data_batch):
@@ -111,9 +109,7 @@ class StdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]
     def forward(
         self, x: Annotated[TensorType, DataConfiguration(batch_axes, data_axes)]
     ) -> Annotated[TensorType, DataConfiguration(batch_axes, data_axes)]:
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value  # type: ignore
+        return super().forward(x)
 
 
 class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[TensorType]):
@@ -147,17 +143,16 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
             name=name,
             backend=std_node.backend,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self.data_source_node: StdNormalizationNode = std_node
 
-    def setup(self, graph: Graph) -> None:  # pylint: disable=W0613
+    def build(self, graph: Graph) -> None:  # pylint: disable=W0613
         if self.data_source_node.state == NodeState.UNINITIALIZED:
             raise RuntimeError(
                 f"Connected StdNormalizationNode {self.data_source_node} has not \
                     been setup yet!"
             )
         self._set_port_values(self.data_source_node.mean, self.data_source_node.std)
-        self.set_state(NodeState.INITIALIZED)
 
     def _set_port_values(self, mean, std):
         self.add_node.input_ports[1].default = mean
@@ -172,6 +167,4 @@ class InverseStdNormalizationNode(GraphNode[TensorType], DataProcessingNode[Tens
     def forward(
         self, x: Annotated[TensorType, DataConfiguration(batch_axes, data_axes)]
     ) -> Annotated[TensorType, DataConfiguration(batch_axes, data_axes)]:
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value  # type: ignore
+        return super().forward(x)

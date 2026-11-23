@@ -1,4 +1,4 @@
-from typing import Generic, Literal
+from typing import Annotated, Generic, Literal
 import math
 
 from qewton.algorithms.building_blocks.conv import (
@@ -14,6 +14,8 @@ from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.algorithms.building_blocks.array_operations import Flatten
 from qewton.algorithms.dl_models.fcn import FCN
 from qewton.backends import DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
+from qewton.config.axes import AxesDim, BatchAxes, FeatureAxes, GeometryAxes
+from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.graphs.graphs import SequentialGraph
 from qewton.graphs.nodes import Node, NodeState
@@ -29,8 +31,8 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
     and outputs data of shape (batch_size, out_channels).
 
     Args:
-        in_channels (int | HyperParameter | Variable): The number of
-            input channels.
+        in_channels (int | HyperParameter | Variable | None): The number of
+            input channels, or None to infer it from the connected data.
         channels (tuple[int | HyperParameter, ...]): A tuple specifying
             the number of channels for each convolutional layer.
         out_channels (int | HyperParameter | Variable): The number of
@@ -42,10 +44,9 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
             in the hidden layer of the fully connected network.
         fcn_hidden_layers (int | HyperParameter): The number of hidden
             layers in the fully connected network.
-        input_shape (tuple[int, ...] | None): The shape of the input data
-            excluding the batch and channel dimensions. If None, the input
-            shape will be inferred from the connection in the graph or
-            from the first input data received in forward.
+        input_shape (tuple[int | HyperParameter, ...] | None): The spatial
+            shape of the input data, i.e. without the batch and channel
+            dimensions. If None, it is inferred from the connected data.
         pooling_kernel_size (int | HyperParameter | tuple[int, ...]): The
             size of the pooling kernel. Can be an int or a tuple of ints.
             The stride in the pooling operation will be equal to the
@@ -64,13 +65,13 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
 
     def __init__(
         self,
-        in_channels: int | HyperParameter | Variable,
+        in_channels: int | HyperParameter | Variable | None,
         channels: tuple[int | HyperParameter, ...],
         out_channels: int | HyperParameter | Variable,
         conv_kernel_size: HyperParameter | tuple[int, ...],
         fcn_hidden_neurons: int | HyperParameter = 50,
         fcn_hidden_layers: int | HyperParameter = 1,
-        input_shape: tuple[int, ...] | None = None,
+        input_shape: tuple[int | HyperParameter, ...] | None = None,
         pooling_kernel_size: int | HyperParameter | tuple[int, ...] = 2,
         pooling_type: Literal["average", "maximum"] = "average",
         bias: bool | HyperParameter = True,
@@ -96,9 +97,7 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
             self.image_dim = len(conv_kernel_size)
 
         # Register all parameters
-        self.in_channels = HyperParameter.from_value(
-            in_channels, "Encoder Input Channels"
-        )
+        self.in_channels = HyperParameter.size_from(in_channels, "Encoder Input Channels")
         self.out_channels = HyperParameter.from_value(
             out_channels, "Encoder Output Channels"
         )
@@ -123,21 +122,51 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
         self.fcn_hidden_layers = HyperParameter.from_value(
             fcn_hidden_layers, "Encoder FCN Hidden Layers"
         )
-        self.input_shape = input_shape
-        self._graph = self._build_network(backend)
+        self.input_shape = tuple(
+            HyperParameter.size_from(
+                None if input_shape is None else input_shape[i], f"Encoder Input Size {i}"
+            )
+            for i in range(self.image_dim)
+        )
+        self.batch_axes = BatchAxes(AxesDim(None))
+        # With an open size, the network is built once it is inferred.
+        graph = None if self.open_hyperparameters else self._build_network(backend)
         super().__init__(
             name=name,
-            graph=self._graph,
-            input_ports=self._graph.sorted_nodes[0].input_ports,
-            output_ports=self._graph.sorted_nodes[-1].output_ports,
+            graph=graph,
+            input_ports=[] if graph is None else graph.sorted_nodes[0].input_ports,
+            output_ports=[] if graph is None else graph.sorted_nodes[-1].output_ports,
             backend=backend,
         )
-        self._graph.setup()
+        if graph is not None:
+            self._graph.setup(plan=False)
         self._state = NodeState.UNINITIALIZED
 
-    def reset(self):
-        self.set_state(NodeState.UNINITIALIZED)
-        return super().reset()
+    @property
+    def hyperparameters(self) -> list[HyperParameter]:
+        return [
+            self.in_channels,
+            *self.channels,
+            self.out_channels,
+            self.conv_kernel_size,
+            self.pooling_kernel_size,
+            self.fcn_hidden_neurons,
+            self.fcn_hidden_layers,
+            self.bias,
+            self.activation,
+            *self.input_shape,
+        ]
+
+    def fcn_input_size(self) -> int:
+        """The input size of the fully connected network: the channels of
+        the last convolution times the spatial size left after pooling."""
+        n_poolings = len(self.channels)
+        pooling = self.pooling_kernel_size.value
+        pools = pooling if isinstance(pooling, tuple) else (pooling,) * len(self.input_shape)
+        return self.channels[-1].value * math.prod(
+            math.floor(size.value / (pool**n_poolings))
+            for size, pool in zip(self.input_shape, pools)
+        )
 
     def _pick_pooling_type(self, pooling_type: Literal["average", "maximum"]):
         if pooling_type == "average":
@@ -168,21 +197,8 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
         # Then we flatten the output and add a fully connected layer
         nodes.append(Flatten(start_dim=1, backend=backend))
 
-        fcn_input_dim = self.channels[-1].value
-        if self.input_shape is not None:
-            pooling_n = len(self.channels)  # Number of pooling operations
-            if isinstance(self.pooling_kernel_size.value, int):
-                for dim in self.input_shape[1:]:
-                    fcn_input_dim *= math.floor(
-                        dim / (self.pooling_kernel_size.value**pooling_n)
-                    )
-            elif isinstance(self.pooling_kernel_size.value, tuple):
-                for dim, pool in zip(
-                    self.input_shape[1:], self.pooling_kernel_size.value
-                ):
-                    fcn_input_dim *= math.floor(dim / (pool**pooling_n))
         fcn_encoding = FCN(
-            in_neurons=fcn_input_dim,
+            in_neurons=self.fcn_input_size(),
             hidden_neurons=self.fcn_hidden_neurons,
             out_neurons=self.out_channels,
             n_hidden_layers=self.fcn_hidden_layers,
@@ -192,44 +208,58 @@ class ConvolutionalEncoder(GraphNode, Generic[TensorType]):
         nodes.append(fcn_encoding)
         return SequentialGraph(*nodes)
 
-    def setup(self):
+    def build(self):
         """Initializes the neural network itself for the current
         set of parameters.
         """
-        if self.state == NodeState.UNINITIALIZED:
-            new_graph = self._build_network(self.backend)
-            # Update the static data configurations of the input and output ports
-            self.input_ports[0].update_static_data_configuration(
-                new_graph.sorted_nodes[0].input_ports[0].data_configuration
-            )
-            self.output_ports[0].update_static_data_configuration(
-                new_graph.sorted_nodes[-1].output_ports[0].data_configuration
-            )
-            self.setup_graph(
-                new_graph,
-                input_ports=new_graph.sorted_nodes[0].input_ports,
-                output_ports=new_graph.sorted_nodes[-1].output_ports,
-            )
+        new_graph = self._build_network(self.backend)
+        self.setup_graph(
+            new_graph,
+            input_ports=new_graph.sorted_nodes[0].input_ports,
+            output_ports=new_graph.sorted_nodes[-1].output_ports,
+        )
 
-            self.set_state(NodeState.INITIALIZED)
 
-    def update_data_configs(self, updated_port, config_dict, dynamic_configs):
-        ports = super().update_data_configs(updated_port, config_dict, dynamic_configs)
-        # Read the expected input shape from the dynamic configs if it is not set yet
-        if self.input_shape is None and updated_port == self._input_ports[0]:
-            branch_config_shape = dynamic_configs[updated_port].shape[1:]
-            if len(branch_config_shape) > 0 and all(
-                isinstance(dim, int) for dim in branch_config_shape
-            ):
-                self.input_shape = branch_config_shape
-        return ports
+    def x_data_config(self) -> DataConfiguration:
+        """The batch, the input channels and the spatial dims, bound to
+        `in_channels` and `input_shape`."""
+        channels = (
+            FeatureAxes(self.input_var)
+            if self.input_var is not None
+            else FeatureAxes(shape=(AxesDim(self.in_channels),))
+        )
+        space = GeometryAxes(shape=tuple(AxesDim(size) for size in self.input_shape))
+        return DataConfiguration(
+            self.batch_axes, channels, space, dtype=self.backend.default_dtype
+        )
 
-    def forward(self, x):
-        if self.input_shape is None:
-            self.input_shape = x.shape[1:]
-            self.setup()
-        elif self.state == NodeState.UNINITIALIZED:
-            self.setup()
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value
+    def out_data_config(self) -> DataConfiguration:
+        """The batch and the output channels, bound to `out_channels`."""
+        channels = (
+            FeatureAxes(self.output_var)
+            if self.output_var is not None
+            else FeatureAxes(shape=(AxesDim(self.out_channels),))
+        )
+        return DataConfiguration(self.batch_axes, channels, dtype=self.backend.default_dtype)
+
+    def upgrade(self, version: int) -> None:
+        """See :meth:`~qewton.graphs.control_nodes.graph_node.GraphNode.upgrade`;
+        files of version 1 have no batch axes yet and an input shape with the
+        channels, as numbers.
+
+        Args:
+            version: The format version of the file.
+        """
+        if version < 2:
+            self.batch_axes = BatchAxes(AxesDim(None))
+            shape = self.input_shape or (None,) * (self.image_dim + 1)
+            self.input_shape = tuple(
+                HyperParameter.size_from(size, f"Encoder Input Size {i}")
+                for i, size in enumerate(shape[1:])
+            )
+        super().upgrade(version)
+
+    def forward(
+        self, x: Annotated[TensorType, x_data_config]
+    ) -> Annotated[TensorType, out_data_config]:
+        return super().forward(x)

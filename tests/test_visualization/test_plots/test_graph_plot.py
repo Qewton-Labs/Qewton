@@ -22,7 +22,18 @@ class TestGraphPlot:
         plot = GraphPlot(simple_graph, show_port_names=True)
         assert plot.controls == []
         (result,) = plot.evaluate()
-        assert result.show_port_names and result.show_edge_labels
+        assert result.show_port_names and not result.show_configs
+
+    @needs_shapely
+    @pytest.mark.parametrize("show_configs", [False, True])
+    def test_configs_show_on_hover_and_on_the_edges_on_request(self, simple_graph, show_configs):
+        (result,) = GraphPlot(simple_graph).evaluate()
+        labels = {edge.label for edge in result.edges if edge.label}
+        backend_figure = Figure(GraphPlot(simple_graph, show_configs=show_configs)).draw()
+        edge_trace = backend_figure.data[2]
+        texts = {annotation.text for annotation in backend_figure.layout.annotations}
+        assert labels and labels <= set(edge_trace.hovertext)
+        assert (labels <= texts) is show_configs
 
     @needs_shapely
     def test_a_graph_is_drawn_in_a_2d_cell_with_hidden_axes(self, simple_graph):

@@ -199,6 +199,56 @@ def _quantities(data_config: DataConfiguration) -> list[Variable]:
     return variable.quantities
 
 
+class AutoPlots:
+    """Plots of one visualization built by :func:`auto_plot`, sharing their
+    controls: a control made for one plot, e.g. a default slider over a
+    batch axis, is passed to every later plot whose data has its axes or
+    Variable. An axes is recognized by identity, as matching makes equal
+    axes one object.
+
+    Args:
+        controls: Control axes for chosen dimensions, passed to every plot
+            whose data has them.
+
+    Attributes:
+        plots (list[DataPlot]): The plots built so far, in order.
+    """
+
+    def __init__(self, controls: list[ControlAxis] = ()) -> None:
+        self._controls = list(controls)
+        self.plots = []
+
+    def add(self, data, data_config: DataConfiguration, *args, **kwargs) -> DataPlot:
+        """Build the next plot with :func:`auto_plot`.
+
+        Args:
+            data: The data, as for :func:`auto_plot`.
+            data_config: Its DataConfiguration.
+            *args: Passed to :func:`auto_plot`.
+            **kwargs: Passed to :func:`auto_plot`, except `controls`.
+
+        Returns:
+            DataPlot: The plot.
+        """
+        controls = [c for c in self._controls if _refers_to(c, data_config)]
+        plot = auto_plot(data, data_config, *args, controls=controls, **kwargs)
+        self._controls += [c for c in plot.controls if c not in self._controls]
+        self.plots.append(plot)
+        return plot
+
+
+def _refers_to(control: ControlAxis, data_config: DataConfiguration) -> bool:
+    # Whether `control` steps through a Variable or an axes of `data_config`.
+    reference = control.variable_or_axes
+    if isinstance(reference, Variable):
+        try:
+            data_config.axes_of(reference)
+        except ValueError:
+            return False
+        return True
+    return any(axes is reference for axes in data_config.axes)
+
+
 def _controlled(data_config: DataConfiguration, controls: list[ControlAxis]) -> list:
     return [controlled_axes(data_config, c) for c in controls]
 

@@ -74,6 +74,21 @@ class TestGraphLayoutCompute:
         result = GraphLayout.compute(simple_graph, depth=0)
         assert any(edge.label for edge in result.edges)
 
+    def test_edges_inside_a_composite_carry_the_configuration_of_its_place(self):
+        from qewton.algorithms import FCN
+        from qewton.config.variables import Variable
+        from qewton.data.dataloaders.sampler.grid_sampler import GridSampler
+        from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
+
+        X, U = Variable("x", 2), Variable("u", 1)
+        model = FCN(in_neurons=X, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(GridSampler(Rectangle(X, [0.0, 0.0], 1.0, 1.0), 5), model)
+        graph.setup()
+        result = GraphLayout.compute(graph, depth=1)
+        assert len(result.edges) > 2
+        assert all("GeometryAxes([5])" in edge.label for edge in result.edges)
+
     def test_ports_are_flat_across_leaf_and_cluster_boundary_alike(self, simple_graph):
         collapsed = GraphLayout.compute(simple_graph, depth=0)
         expanded = GraphLayout.compute(simple_graph, depth=1)

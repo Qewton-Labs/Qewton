@@ -1,3 +1,10 @@
+from importlib.metadata import PackageNotFoundError, version as _version
+
+try:
+    __version__ = _version("qewton")
+except PackageNotFoundError:  # running from a source tree without installing
+    __version__ = "unknown"
+
 from .algorithms import *
 from .algorithms import building_blocks as bb
 from .config import *

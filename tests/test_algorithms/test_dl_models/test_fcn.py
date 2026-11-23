@@ -639,6 +639,7 @@ class TestHarmonicFCNSetupMethod:
 
         original_embedding_graph = model.embedding._graph
         original_fcn_graph = model.fcn._graph
+        model.reset()
         model.setup()
 
         assert model.embedding._graph is not original_embedding_graph

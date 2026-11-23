@@ -166,7 +166,7 @@ class NodeLinkArtist(Artist):
     @classmethod
     def _shapes_and_annotations(cls, layout, theme):
         show_port_names = layout.show_port_names
-        show_edge_labels = layout.show_edge_labels
+        show_configs = layout.show_configs
         shapes, annotations = [], []
         cards = (*layout.nodes, *layout.clusters)
 
@@ -233,7 +233,7 @@ class NodeLinkArtist(Artist):
                     fillcolor=theme.line_color, line=dict(width=0), layer="above",
                 )
             )
-            if show_edge_labels and edge.label:
+            if show_configs and edge.label:
                 p1 = tuple(edge.points[0])
                 mid = cg.edge_label_point(p1, p2, card_boxes)
                 bx0, by0, bx1, by1 = cg.edge_label_box(edge.label, *mid)

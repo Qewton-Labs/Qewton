@@ -84,4 +84,4 @@ class GridDataSet(ArrayLikeDataSet):
         for b, v in zip(batch_sizes, feature_variables):
             configs.append(DataConfiguration(BatchAxes(b), geometry_axes, FeatureAxes(v)))
 
-        super().__init__(data, configs)
+        super().__init__(data, configs, backend)

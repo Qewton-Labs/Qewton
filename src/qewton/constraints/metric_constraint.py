@@ -6,7 +6,7 @@ from qewton.optim.parameters.categorical_hyperparameter import (
     BooleanHyperparameter,
 )
 from qewton.optim.parameters.number_hyperparameter import ContinuousHyperparameter
-from qewton.graphs.nodes import InputPort
+from qewton.graphs.nodes import InputPort, NodeState
 from qewton.graphs.graphs import Graph
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.backends import DEFAULT_DL_BACKEND
@@ -118,8 +118,9 @@ class MSEConstraint(MetricConstraint, GraphNode):
             epsilon=epsilon,
             evaluated_in_mode=evaluated_in_mode,
         )
+        self.set_state(NodeState.UNINITIALIZED)
 
-        self._graph.setup()
+        self._graph.setup(plan=False)
 
     def _build_graph(self, use_relative: bool):
         new_graph = Graph()
@@ -145,6 +146,6 @@ class MSEConstraint(MetricConstraint, GraphNode):
 
         return new_graph, in_ports, self.mean_node.output_ports
 
-    def setup(self):
+    def build(self):
         new_graph, in_ports, out_ports = self._build_graph(self.relative.value)
         self.setup_graph(new_graph, input_ports=in_ports, output_ports=out_ports)

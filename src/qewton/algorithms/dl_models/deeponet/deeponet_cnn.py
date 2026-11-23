@@ -1,19 +1,17 @@
 from typing import Annotated, Literal
 
-from qewton.algorithms.dl_models.deeponet.base import DeepONet
+from qewton.algorithms.dl_models.deeponet.base import DeepONet, feature_axes
 from qewton.algorithms.dl_models.deeponet.merge_nodes import DefaultMerger
 from qewton.algorithms.dl_models.fcn import FCN
 from qewton.algorithms.dl_models.convolutions.encoding import ConvolutionalEncoder
-from qewton.algorithms.building_blocks.array_operations import ReshapeAtDim, Unsqueeze
 from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.backends import DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
 from qewton.graphs.nodes import Node, NodeState
-from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.graphs.graphs import Graph
 from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
 from qewton.config.data_configurations import DataConfiguration as DC
-from qewton.config.axes import EllipsisAxes, FeatureAxes, BatchAxes, AxesDim
+from qewton.config.axes import EllipsisAxes, BatchAxes, AxesDim, GeometryAxes
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 
 
@@ -30,9 +28,13 @@ class CNNDeepONet(DeepONet[TensorType]):
     - Output: (batch_size, discretization_shape_trunk, output_dim)
 
     Args:
-        trunk_input (int | Variable): The input dimension for
-            the trunk network.
-        branch_input (int | Variable): The
+        trunk_input (int | Variable | HyperParameter): The number of features
+            of a trunk point, or the trunk input variable.
+        branch_input (int | Variable | HyperParameter): The number of
+            channels of the branch input, or the branch input variable.
+        branch_shape (tuple[int | HyperParameter, ...] | None): The spatial
+            shape of a branch sample (`discretization_shape_branch`); None
+            to infer it from the connected data.
     """
 
     def __init__(
@@ -51,6 +53,7 @@ class CNNDeepONet(DeepONet[TensorType]):
         pooling_type: Literal["average", "maximum"] = "average",
         output_strategy: DefaultMerger.MERGE_TYPES = "split",
         activations: type[Node] | HyperParameter = ReLU,
+        branch_shape: tuple[int | HyperParameter, ...] | None = None,
         name="CNNDeepONet",
         backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
         **kwargs,
@@ -58,22 +61,27 @@ class CNNDeepONet(DeepONet[TensorType]):
         # Data config info:
         self.batch_axes = BatchAxes(AxesDim(None))
         self.trunk_ellipsis_axes = EllipsisAxes()
-        self.feature_axes_branch = self._build_feature_axis(branch_input)
-        self.feature_axes_trunk = self._build_feature_axis(trunk_input)
-        self.output_axes = self._build_feature_axis(output)
+        self.feature_axes_branch = feature_axes(branch_input)
+        self.feature_axes_trunk = feature_axes(trunk_input)
+        self.output_axes = feature_axes(output)
 
         self.intermediate_neurons = HyperParameter.from_value(
             intermediate_neurons, "Intermediate neurons"
         )
         self.activations = HyperParameter.from_value(activations, "Activations")
-        self.output_dim = output if isinstance(output, int) else output.dim
+        self.output_dim = HyperParameter.from_value(
+            output if isinstance(output, int) else output.dim, "Output dim"
+        )
         self.output_strategy: DefaultMerger.MERGE_TYPES = output_strategy
+        trunk_out, branch_out = DefaultMerger.output_sizes(
+            self.intermediate_neurons, self.output_dim, output_strategy
+        )
         self.current_device: Device = cpu  # Default device; can be changed later
 
         self.trunk_net = FCN(
             in_neurons=trunk_input,
             hidden_neurons=trunk_hidden_neurons,
-            out_neurons=self.intermediate_neurons,
+            out_neurons=trunk_out,
             n_hidden_layers=trunk_hidden_layers,
             activation=self.activations,
             backend=backend,
@@ -81,18 +89,17 @@ class CNNDeepONet(DeepONet[TensorType]):
         self.branch_net = ConvolutionalEncoder(
             in_channels=branch_input,
             channels=channels,
-            out_channels=self.intermediate_neurons,
+            out_channels=branch_out,
             conv_kernel_size=conv_kernel_size,
             fcn_hidden_neurons=branch_fcn_hidden_neurons,
             fcn_hidden_layers=branch_fcn_hidden_layers,
-            input_shape=None,  # Input shape will be inferred from the first input data
+            input_shape=branch_shape,
             pooling_kernel_size=pooling_kernel_size,
             pooling_type=pooling_type,
             activation=self.activations,
             backend=backend,
         )
-        self.trunk_input: tuple[int, ...] | None = None
-        merge_node = self._build_merge_and_update_neurons(backend)
+        merge_node = self._build_merge(backend)
 
         super().__init__(
             branch_net=self.branch_net,
@@ -102,7 +109,6 @@ class CNNDeepONet(DeepONet[TensorType]):
             backend=backend,
             **kwargs,
         )
-        self._graph.setup()
         self.set_state(NodeState.UNINITIALIZED)
 
         self.branch_port = self.input_ports[0]
@@ -114,100 +120,42 @@ class CNNDeepONet(DeepONet[TensorType]):
         self.branch_net.to(device)
         return super().to(device)
 
-    def _build_feature_axis(self, input_value):
-        if isinstance(input_value, Variable):
-            return FeatureAxes(variable=input_value)
-        elif isinstance(input_value, int):
-            return FeatureAxes(shape=(input_value,))
-        elif isinstance(input_value, HyperParameter):
-            return FeatureAxes(shape=(input_value.value,))
-        else:
-            raise TypeError(
-                "Input value must be an int, Variable, or HyperParameter, "
-                f"but got {type(input_value)}"
-            )
-
-    def _build_merge_and_update_neurons(self, backend):
-        merge_node = DefaultMerger(
+    def _build_merge(self, backend):
+        return DefaultMerger(
             output_dim=self.output_dim,
             intermediate_neurons=self.intermediate_neurons,
             output_strategy=self.output_strategy,
             backend=backend,
         )
-        neurons_value = self.intermediate_neurons.value
-        trunk_out = merge_node.trunk_out
-        branch_out = merge_node.branch_out
-        # The branch network now always needs to unsqueeze the output shape to
-        # add missing dimensions, depending on the trunk input:
-        if self.trunk_input is not None and len(self.trunk_input) > 1:
-            merge_graph = Graph()
-            branch_unsqueeze_dim = Unsqueeze(dim=-2, backend=backend)
-            branch_add_dim = ReshapeAtDim(
-                dim=-2,
-                new_shape=(1,)
-                * (len(self.trunk_input) - 1),  # -1, since channels are also included
-                backend=backend,
-            )
-            merge_graph.connect(branch_unsqueeze_dim, branch_add_dim)
-            merge_graph.connect(branch_add_dim, merge_node.input_ports[0])
-
-            merge_node = GraphNode(
-                graph=merge_graph,
-                input_ports=[
-                    branch_unsqueeze_dim.input_ports[0],
-                    merge_node.input_ports[1],
-                ],
-                output_ports=merge_node.output_ports,
-                name="Merge",
-                backend=backend,
-            )
-
-        # Reset the trunk and branch networks to ensure they are properly
-        # initialized with the new output dimensions
-        self.trunk_net.reset()
-        self.trunk_net.out_neurons.set_value(trunk_out)
-        self.trunk_net.setup()
-        self.branch_net.reset()
-        self.branch_net.out_channels.set_value(branch_out)
-        self.branch_net.setup()
-        self.intermediate_neurons.set_value(neurons_value)
-
-        return merge_node
-
-    def update_data_configs(self, updated_port, config_dict, dynamic_configs):
-        ports = super().update_data_configs(updated_port, config_dict, dynamic_configs)
-        if len(self._input_ports) == 2 and updated_port == self._input_ports[1]:
-            trunk_config_shape = dynamic_configs[updated_port].shape[1:]
-            if len(trunk_config_shape) > 0 and all(
-                isinstance(dim, int) for dim in trunk_config_shape
-            ):
-                self.trunk_input = trunk_config_shape
-        return ports
 
     def reset(self):
         self.set_state(NodeState.UNINITIALIZED)
         return super().reset()
 
-    def setup(self) -> None:
-        if self.state == NodeState.UNINITIALIZED:
-            self.merge_node = self._build_merge_and_update_neurons(self.backend)
-            new_graph = Graph()
-            new_graph.connect(self.branch_net, self.merge_node.input_ports[0])
-            new_graph.connect(self.trunk_net, self.merge_node.input_ports[1])
-            self.setup_graph(
-                new_graph,
-                input_ports=self.branch_net.input_ports + self.trunk_net.input_ports,
-                output_ports=self.merge_node.output_ports,
-            )
-            self.set_state(NodeState.INITIALIZED)
-            if self.current_device != cpu:
-                self.to(self.current_device)
+    def build(self) -> None:
+        # Trunk and branch are built again with the merge node.
+        self.trunk_net.reset()
+        self.trunk_net.setup()
+        self.branch_net.reset()
+        self.branch_net.setup()
+        self.merge_node = self._build_merge(self.backend)
+        new_graph = Graph()
+        new_graph.connect(self.branch_net, self.merge_node.input_ports[0])
+        new_graph.connect(self.trunk_net, self.merge_node.input_ports[1])
+        self.setup_graph(
+            new_graph,
+            input_ports=self.branch_net.input_ports + self.trunk_net.input_ports,
+            output_ports=self.merge_node.output_ports,
+        )
+        if self.current_device != cpu:
+            self.to(self.current_device)
 
     def _branch_config(self):
+        space = GeometryAxes(shape=tuple(AxesDim(s) for s in self.branch_net.input_shape))
         return DC(
             self.batch_axes,
             self.feature_axes_branch,
-            EllipsisAxes(),
+            space,
             dtype=self.backend.default_dtype,
         )
 
@@ -232,14 +180,4 @@ class CNNDeepONet(DeepONet[TensorType]):
         branch_input: Annotated[TensorType, _branch_config],
         trunk_input: Annotated[TensorType, _trunk_config],
     ) -> Annotated[TensorType, _output_config]:
-        if self.trunk_input is None or self.branch_net.input_shape is None:
-            self.trunk_input = trunk_input.shape[1:]
-            self.branch_net.input_shape = branch_input.shape[1:]
-            self.set_state(NodeState.UNINITIALIZED)
-            self.setup()
-        elif self.state == NodeState.UNINITIALIZED:
-            self.setup()
-        self.input_ports[0].set_value(branch_input)
-        self.input_ports[1].set_value(trunk_input)
-        self.run()
-        return self.output_ports[0].value  # type: ignore
+        return super().forward(branch_input, trunk_input)
