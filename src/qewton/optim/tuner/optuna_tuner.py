@@ -86,7 +86,8 @@ def optuna_objective(
     local_trainer.train_state.losses = local_trainer.train_state.detach_data(
         local_trainer.train_state.losses
     )
-    result_queue.put(TrainResult(config, local_trainer.train_state))
+    # Send no tensors of the model (see TrainerState.detached_copy).
+    result_queue.put(TrainResult(config, local_trainer.train_state.detached_copy()))
 
     # TODO: Allow for multiple constraints to be optimized
     total_loss = None

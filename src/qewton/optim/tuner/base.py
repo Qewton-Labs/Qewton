@@ -1,10 +1,11 @@
+from contextlib import contextmanager
 from copy import deepcopy
 import os
 import multiprocessing as mp
 import sys
 import gc
 
-from typing import Any
+from typing import Any, Iterator
 
 from qewton.optim.tuner.tuning_callbacks.state import TuningState
 from qewton.optim.tuner.tuning_callbacks.tuning_callback import TuningCallback
@@ -12,6 +13,45 @@ from qewton.optim.trainer.base_trainer import Trainer
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.dag import HyperParameterDAG
 from qewton.optim.tuner.results.tune_results import TrainResult, TuneResultCollector
+
+# Read by torch, numpy and their math libraries when they are imported.
+THREAD_ENV_VARS = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
+
+
+def available_cpus() -> int:
+    """The number of CPUs this process may run on."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:  # not available on macOS and Windows
+        return os.cpu_count() or 1
+
+
+@contextmanager
+def thread_limit(n_threads: int | None) -> Iterator[None]:
+    """Limit the threads of processes started inside this context.
+
+    Sets the thread environment variables, which a spawned process inherits
+    and reads when it imports torch or numpy, and restores them afterwards.
+    Each process would otherwise start one thread per CPU, so several
+    workers would compete for the same CPUs.
+
+    Args:
+        n_threads: The threads per process. None leaves the environment as
+            it is.
+    """
+    if n_threads is None:
+        yield
+        return
+    previous = {name: os.environ.get(name) for name in THREAD_ENV_VARS}
+    os.environ.update({name: str(n_threads) for name in THREAD_ENV_VARS})
+    try:
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def worker(
@@ -52,11 +92,12 @@ def worker(
                 result_queue.put(TrainResult(params=params, train_state=None))
         finally:
             if local_trainer is not None:
-                local_trainer.train_state.losses = local_trainer.train_state.detach_data(
-                    local_trainer.train_state.losses
-                )
+                # Send no tensors of the model: they would be shared with the
+                # main process, while this worker frees them.
                 result_queue.put(
-                    TrainResult(params=params, train_state=local_trainer.train_state)
+                    TrainResult(
+                        params=params, train_state=local_trainer.train_state.detached_copy()
+                    )
                 )
                 gpu_cleanup_fn = local_trainer.cleanup()
                 del local_trainer
@@ -97,6 +138,7 @@ class Tuner:
         save_path: str = "tuner",
         result_collector: TuneResultCollector = TuneResultCollector(),
         use_multiprocessing: bool = True,
+        threads_per_worker: int | None = None,
     ) -> None:
         """
         Initializes the Tuner.
@@ -110,6 +152,10 @@ class Tuner:
                 on each device. Defaults to 1.
             save_path (str, optional): The base directory to save tuning results.
                 Defaults to "tuner_results".
+            threads_per_worker (int | None, optional): The CPU threads of each
+                worker process. If None, the available CPUs are split evenly
+                between the workers, unless OMP_NUM_THREADS is set already.
+                Defaults to None.
         """
         self.tuning_state = None
         if isinstance(track_tune_state, TuningState):
@@ -136,6 +182,11 @@ class Tuner:
         self.trial_number = trial_number
         self.tuning_objectives = tuning_objectives
         self.use_multiprocessing = use_multiprocessing
+        if threads_per_worker is not None and threads_per_worker < 1:
+            raise ValueError(
+                f"threads_per_worker must be positive, got {threads_per_worker}."
+            )
+        self.threads_per_worker = threads_per_worker
 
         if isinstance(devices, str):
             devices = [devices]
@@ -260,6 +311,20 @@ class Tuner:
 
         self._multiprocess_tune(context_str, done_counter)
 
+    def worker_threads(self) -> int | None:
+        """The CPU threads each worker process is started with.
+
+        Returns:
+            int | None: `threads_per_worker` if given, else the available CPUs
+                split evenly between the workers; None if OMP_NUM_THREADS is
+                set already, to keep the choice of the user.
+        """
+        if self.threads_per_worker is not None:
+            return self.threads_per_worker
+        if "OMP_NUM_THREADS" in os.environ:
+            return None
+        return max(1, available_cpus() // self.process_number)
+
     def _multiprocess_tune(self, context_str, done_counter):
         try:
             ctx = mp.get_context(context_str)
@@ -282,8 +347,9 @@ class Tuner:
                 )
                 for device in self.devices
             ]
-            for w in self.workers:
-                w.start()
+            with thread_limit(self.worker_threads()):
+                for w in self.workers:
+                    w.start()
 
             trial_params = self._get_trial_parameters()
 

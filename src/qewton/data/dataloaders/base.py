@@ -109,15 +109,6 @@ class DataNode(Node[TensorType]):
         """
         return False
 
-    def to(self, device: str | Device):
-        """Move the data node to the specified device.
-
-        Args:
-            device (str, Device): The device to move the data node to
-                (e.g., 'cpu', 'cuda').
-        """
-        super().to(device)
-
     def visualize(
         self,
         mode: EvaluationPhase = EvaluationPhase.VALIDATION,
@@ -199,6 +190,11 @@ class DataLoader(DataNode[TensorType]):
             for the Test split instead of the portion of `data_set` that
             `splitting_ratio` would otherwise reserve for it. Must provide
             the same variables as `data_set`. Defaults to None.
+        move_data_to_device (bool, optional): If True, `to()` moves the
+            whole datasets to the device once, so batches are sliced there.
+            If False, the datasets stay where they are and every batch is
+            moved on its own: this saves device memory for large datasets,
+            but slices every batch on the CPU. Defaults to True.
     """
 
     # TODO: parallelize this, similar to pytorch dataloader
@@ -214,11 +210,13 @@ class DataLoader(DataNode[TensorType]):
         backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
         name: str = "DataLoader",
         test_data_set: DataSet | None = None,
+        move_data_to_device: bool = True,
     ):
         for checked_set in (data_set, test_data_set):
             self._check_backend(checked_set, backend)
         self.data_set = data_set
         self.test_data_set = test_data_set
+        self.move_data_to_device = move_data_to_device
         self.splitting_ratio = splitting_ratio
         self.shuffle_data = HyperParameter.from_value(shuffle_data, "shuffle_data")
         self.shuffle_seed = shuffle_seed
@@ -395,16 +393,31 @@ class DataLoader(DataNode[TensorType]):
         return tuple(batch_data) if len(batch_data) > 1 else batch_data[0]
 
     def to(self, device: str | Device):
-        """Move the data loader and its datasets to `device`, so batches are
-        sliced on the device and not copied there in every step.
+        """Move the data loader to `device`. With `move_data_to_device`, its
+        datasets are moved, too, so batches are sliced on the device and not
+        copied there in every step.
 
         Args:
             device (str, Device): The target device (e.g., 'cpu', 'cuda').
+
+        Raises:
+            MemoryError: If the datasets do not fit on the device.
         """
         super().to(device)
-        self.data_set.to(device)
-        if self.test_data_set is not None:
-            self.test_data_set.to(device)
+        if not self.move_data_to_device:
+            return
+        try:
+            self.data_set.to(device)
+            if self.test_data_set is not None:
+                self.test_data_set.to(device)
+        except (RuntimeError, MemoryError) as e:
+            if "out of memory" not in str(e).lower():
+                raise
+            raise MemoryError(
+                f"The data of {self.name} does not fit on {device}. Pass "
+                "move_data_to_device=False to the DataLoader to keep it where "
+                "it is and move every batch on its own."
+            ) from e
 
     def cache(self, n_batches=-1):
         return
