@@ -121,7 +121,7 @@ class UnionBoundaryDomain(ContinuousBoundaryGeometry[TensorType]):
         # via a normal test
         overlap_points = self.backend.math.ones_like(on_both, dtype=Bool)
         if self.backend.math.any(on_both):
-            index_tensor = on_both.copy().flatten()
+            index_tensor = on_both.reshape(-1)
 
             normals_a = self.geometry.geometry_a.boundary.normal(points[index_tensor])
             normals_b = self.geometry.geometry_b.boundary.normal(points[index_tensor])
@@ -172,7 +172,8 @@ class UnionBoundaryDomain(ContinuousBoundaryGeometry[TensorType]):
             return points, normals
         return points
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         a_normals = self.geometry.geometry_a.boundary.normal(points, device=device)
         b_normals = self.geometry.geometry_b.boundary.normal(points, device=device)
         on_a = self.geometry.geometry_a.boundary.contains(points)

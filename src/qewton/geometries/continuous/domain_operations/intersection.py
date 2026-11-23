@@ -125,8 +125,10 @@ class IntersectionBoundaryGeometry(ContinuousBoundaryGeometry):
         if include_normals:
             normals = self.normal(points, device=device)
             return points, normals
+        return points
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         on_a = self.geometry.geometry_a.create_boundary().contains(points)
         a_normals = self.geometry.geometry_a.create_boundary().normal(
             points, device=device

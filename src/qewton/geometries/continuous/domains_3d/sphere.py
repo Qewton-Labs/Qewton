@@ -163,7 +163,8 @@ class SphereBoundary(ContinuousBoundaryGeometry[TensorType]):
             return points, normals
         return points
 
-    def normal(self, points: TensorType, device: Device = cpu):
+    def normal(self, points: TensorType, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         center = self._on(self.geometry.center, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 3)
         normal = points - center

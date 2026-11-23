@@ -141,7 +141,8 @@ class CutBoundaryGeometry(ContinuousBoundaryGeometry):
             return points, normals
         return points
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         a_normals = self.geometry.geometry_a.boundary.normal(points, device=device)
         b_normals = self.geometry.geometry_b.boundary.normal(points, device=device)
         on_a = self.geometry.geometry_a.boundary.contains(points)

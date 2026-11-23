@@ -166,7 +166,8 @@ class IntervalBoundary(ContinuousBoundaryGeometry[TensorType]):
             return points, normals
         return points
 
-    def normal(self, points, device: Device | str = cpu) -> TensorType:
+    def normal(self, points, device: Device | str | None = None) -> TensorType:
+        points, device = self._points_and_device(points, device)
         close_left = self.backend.math.isclose(
             points, self.backend.build_tensor(self.geometry.lower_bound)
         )
@@ -220,7 +221,8 @@ class IntervalSingleBoundaryPoint(ContinuousBoundaryGeometry[TensorType]):
             n_points=n_points, device=device, include_normals=include_normals
         )
 
-    def normal(self, points, device: Device | str = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         return self.normal_vec * self.backend.math.ones((len(points), 1), device=device)
 
     def _get_volume(self):

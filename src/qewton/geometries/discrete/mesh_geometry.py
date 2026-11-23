@@ -639,7 +639,8 @@ class MeshBoundaryGeometry(BoundaryGeometry[TensorType]):
                 self.backend.math.max(vertices, axis=1) + self.geometry.contains_tol
             )
 
-    def normal(self, points, device: Device | str = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         points_device = self._device_of(points)
         points = self._transfer(points, self.device)
         point_found, cell_idx = self._search_here(points)

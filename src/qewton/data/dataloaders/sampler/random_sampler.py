@@ -20,15 +20,16 @@ class RandomUniformSampler(PointSampler):
             points = self.backend.math.concatenate((points, new_points), axis=0)
             if self.compute_normals:
                 normals = self.backend.math.concatenate((normals, new_normals), axis=0)
-            # Increase sampling number to get more points
-            num_of_new_points = len(new_points)
-            current_n = int(
-                1.1
-                * (self.batch_size - num_of_new_points)
-                * total_sampled_points
-                / num_of_new_points
-            )
-            current_n = max(min(1.0e6, current_n), 100)
+            # Sample as many points as the acceptance rate so far suggests
+            # are still needed; without accepted points, sample more.
+            accepted = len(points)
+            if accepted == 0:
+                current_n = 10 * current_n
+            else:
+                current_n = int(
+                    1.1 * (self.batch_size - accepted) * total_sampled_points / accepted
+                )
+            current_n = int(max(min(1.0e6, current_n), 100))
         if self.compute_normals:
             return points[: self.batch_size], normals[: self.batch_size]
         return points[: self.batch_size], None

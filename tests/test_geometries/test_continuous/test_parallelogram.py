@@ -154,3 +154,25 @@ def test_degenerate(backend):
         para = Parallelogram(X, [0, 0], [1, 0], [2, 0], backend=backend)
         # contains calls solve_barycentric which raises the error
         para.contains(backend.build_tensor([[0.5, 0.0]]))
+
+
+@pytest.mark.parametrize("device", devices)
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_slanted_boundary_recognizes_its_own_points(backend, device):
+    # On slanted edges the float32 barycentric coordinates miss 0 and 1 by
+    # about 1e-7, more than the default tolerance of isclose.
+    if device != cpu and not issubclass(backend, DeepLearningBackend):
+        pytest.skip("Device transfer only relevant for DeepLearningBackend")
+    boundary = Parallelogram(X, [0, 0], [1.0, 0.2], [0.3, 1.0], backend=backend).boundary
+    for sample in (boundary.sample_random_uniform, boundary.sample_grid):
+        points, normals = sample(500, device=device, include_normals=True)
+        assert backend.math.all(boundary.contains(points))
+        norms = backend.linalg.norm(normals, order=2, axis=1)
+        assert backend.math.all(norms > 0.5)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_slanted_boundary_rejects_inner_points(backend):
+    boundary = Parallelogram(X, [0, 0], [1.0, 0.2], [0.3, 1.0], backend=backend).boundary
+    inner = backend.build_tensor([[0.5, 0.5], [0.4, 0.3], [0.7, 0.8]])
+    assert not backend.math.any(boundary.contains(inner))

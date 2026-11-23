@@ -288,3 +288,57 @@ class TestDataLoaderBackendCheck:
         loader = DataLoader(self._numpy_dataset(), batch_size=5, backend=NumPyBackend)
         loader.setup()
         assert isinstance(loader.forward(), np.ndarray)
+
+
+class TestMoveDataToDevice:
+    def test_flag_keeps_datasets_in_place(self):
+        X = Variable("x", 2)
+        data_set = _dataset(10, X, fill_value=1.0)
+        test_data_set = _dataset(5, X, fill_value=9.0)
+        moved = []
+        data_set.to = lambda device: moved.append(device)
+        test_data_set.to = lambda device: moved.append(device)
+        loader = DataLoader(
+            data_set, batch_size=5, test_data_set=test_data_set, move_data_to_device=False
+        )
+
+        loader.to("cpu")
+
+        assert not moved
+        assert loader.device == "cpu"
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+    def test_flag_moves_batches_instead(self):
+        X = Variable("x", 2)
+        loader = DataLoader(
+            _dataset(10, X, fill_value=1.0), batch_size=5, move_data_to_device=False
+        )
+        loader.to("cuda")
+        loader.setup()
+
+        assert not loader.data_set.load_complete_data(data_item=0).is_cuda
+        assert loader.forward().is_cuda
+
+    def test_out_of_memory_points_to_the_flag(self):
+        X = Variable("x", 2)
+        data_set = _dataset(10, X, fill_value=1.0)
+
+        def fail(device):
+            raise RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
+
+        data_set.to = fail
+        loader = DataLoader(data_set, batch_size=5)
+        with pytest.raises(MemoryError, match="move_data_to_device=False"):
+            loader.to("cuda")
+
+    def test_other_errors_are_not_changed(self):
+        X = Variable("x", 2)
+        data_set = _dataset(10, X, fill_value=1.0)
+
+        def fail(device):
+            raise RuntimeError("Invalid device string")
+
+        data_set.to = fail
+        loader = DataLoader(data_set, batch_size=5)
+        with pytest.raises(RuntimeError, match="Invalid device string"):
+            loader.to("cuda")

@@ -400,3 +400,49 @@ def test_random_uniform_sampler_with_filter_in_circle(backend, device):
         center = backend.to(center, device=device)
     distances = backend.math.sqrt(backend.math.sum((points - center) ** 2, axis=1))
     assert backend.math.all(distances <= 0.5 + 1e-6)
+
+
+@pytest.mark.parametrize("device", devices)
+def test_grid_sampler_with_filter_on_a_mesh(device):
+    """A grid that does not satisfy the filter is completed by random points,
+    whose number must be a plain int for a mesh to sample it."""
+    mesh = Circle(Variable("xy", 2), [0.5, 0.5], 0.3).create_mesh(0.1)
+    xy = mesh.variable
+
+    def right_half(p: xy):
+        return p[..., :1] > 0.5
+
+    sampler = GridSampler(mesh, 40, filter_fn=right_half)
+    sampler.to(device)
+    points = sampler.forward()
+    assert points.shape == (40, 2)
+    assert bool((points[:, 0] > 0.5).all())
+
+
+@pytest.mark.parametrize("device", devices)
+def test_grid_sampler_returns_only_points_fulfilling_the_filter(device):
+    xy = Variable("xy", 2)
+
+    def right_part(p: xy):
+        return p[..., :1] > 0.7
+
+    sampler = GridSampler(Rectangle(xy, [0.0, 0.0], 1.0, 1.0), 40, filter_fn=right_part)
+    sampler.to(device)
+    points = sampler.forward()
+    assert points.shape == (40, 2)
+    assert bool((points[:, 0] > 0.7).all())
+
+
+@pytest.mark.parametrize("device", devices)
+def test_random_sampler_with_a_rarely_fulfilled_filter(device):
+    """A first batch without any accepted point must not stop the sampling."""
+    x = Variable("x", 1)
+
+    def tiny_part(p: x):
+        return p > 0.999
+
+    sampler = RandomUniformSampler(Interval(x, 0.0, 1.0), 5, filter_fn=tiny_part)
+    sampler.to(device)
+    points = sampler.forward()
+    assert points.shape == (5, 1)
+    assert bool((points > 0.999).all())
