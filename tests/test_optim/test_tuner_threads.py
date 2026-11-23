@@ -12,9 +12,7 @@ from qewton.optim.tuner.base import THREAD_ENV_VARS, Tuner, thread_limit
 
 
 def _report_threads(queue):
-    import torch  # pylint: disable=import-outside-toplevel
-
-    queue.put((torch.get_num_threads(), os.environ.get("OMP_NUM_THREADS")))
+    queue.put({name: os.environ.get(name) for name in THREAD_ENV_VARS})
 
 
 @pytest.fixture
@@ -23,17 +21,18 @@ def clean_env(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
-def test_spawned_process_uses_the_limit(clean_env):
+def test_spawned_process_gets_the_limit(clean_env):
+    # Only the environment is checked: how many threads torch then uses
+    # depends on its build and the machine (e.g. on GitHub runners).
     ctx = mp.get_context("spawn")
     queue = ctx.Queue()
     with thread_limit(3):
         process = ctx.Process(target=_report_threads, args=(queue,))
         process.start()
-    threads, env_value = queue.get(timeout=120)
+    child_env = queue.get(timeout=120)
     process.join()
 
-    assert threads == 3
-    assert env_value == "3"
+    assert child_env == {name: "3" for name in THREAD_ENV_VARS}
 
 
 def test_limit_is_restored(clean_env, monkeypatch):
