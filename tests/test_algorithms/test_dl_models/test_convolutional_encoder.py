@@ -12,7 +12,10 @@ from qewton.algorithms.dl_models.convolutions.encoding import ConvolutionalEncod
 from qewton.algorithms.building_blocks.activation_functions import ReLU, Tanh
 from qewton.backends.base import DeepLearningBackend
 from qewton.config.devices import cpu, cuda, cuda_available
+from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
+from qewton.graphs.graphs import Graph
+from qewton.graphs.nodes import Node, NodeState, OutputPort
 
 
 def all_subclasses(cls):
@@ -28,6 +31,20 @@ BACKENDS = all_subclasses(DeepLearningBackend)
 devices = [cpu, cuda(0)] if cuda_available() else [cpu]
 
 
+class Values(Node):
+    """A node providing a fixed value."""
+
+    def __init__(self, value):
+        super().__init__(name="values")
+        self.value = value
+        self._output_ports = [
+            OutputPort(DataConfiguration.of_value(value), node=self, name="out")
+        ]
+
+    def forward(self):
+        return self.value
+
+
 class TestConvolutionalEncoderInitialization:
     """Test encoder initialization with different configurations."""
 
@@ -38,7 +55,7 @@ class TestConvolutionalEncoderInitialization:
             channels=(8, 16),
             out_channels=5,
             conv_kernel_size=(3,),
-            input_shape=(3, 32),
+            input_shape=(32,),
             backend=backend,
         )
         assert encoder is not None
@@ -53,7 +70,7 @@ class TestConvolutionalEncoderInitialization:
             channels=(8, 16),
             out_channels=10,
             conv_kernel_size=(3, 3),
-            input_shape=(1, 16, 16),
+            input_shape=(16, 16),
             backend=backend,
         )
         assert encoder is not None
@@ -67,7 +84,7 @@ class TestConvolutionalEncoderInitialization:
             channels=(4, 8),
             out_channels=6,
             conv_kernel_size=(3, 3, 3),
-            input_shape=(1, 8, 8, 8),
+            input_shape=(8, 8, 8),
             backend=backend,
         )
         assert encoder is not None
@@ -82,7 +99,7 @@ class TestConvolutionalEncoderInitialization:
             channels=(8,),
             out_channels=out_var,
             conv_kernel_size=(3,),
-            input_shape=(2, 20),
+            input_shape=(20,),
             backend=backend,
         )
         assert encoder.input_var == in_var
@@ -102,7 +119,7 @@ class TestConvolutionalEncoderHyperparameters:
             out_channels=3,
             conv_kernel_size=(3,),
             activation=ReLU,
-            input_shape=(1, 16),
+            input_shape=(16,),
             backend=backend,
         )
         assert encoder_relu.activation.value == ReLU
@@ -113,7 +130,7 @@ class TestConvolutionalEncoderHyperparameters:
             out_channels=3,
             conv_kernel_size=(3,),
             activation=Tanh,
-            input_shape=(1, 16),
+            input_shape=(16,),
             backend=backend,
         )
         assert encoder_tanh.activation.value == Tanh
@@ -130,7 +147,7 @@ class TestConvolutionalEncoderForwardPass:
             out_channels=5,
             conv_kernel_size=(3,),
             pooling_kernel_size=2,
-            input_shape=(3, 32),
+            input_shape=(32,),
             backend=TorchBackend,
         )
         x = torch.randn(4, 3, 32)
@@ -144,7 +161,7 @@ class TestConvolutionalEncoderForwardPass:
             out_channels=6,
             conv_kernel_size=(3, 3),
             pooling_kernel_size=(2, 2),
-            input_shape=(1, 16, 16),
+            input_shape=(16, 16),
             backend=TorchBackend,
         )
         x = torch.randn(2, 1, 16, 16)
@@ -158,14 +175,14 @@ class TestConvolutionalEncoderForwardPass:
             out_channels=3,
             conv_kernel_size=(3, 3, 3),
             pooling_kernel_size=(2, 2, 2),
-            input_shape=(1, 8, 8, 8),
+            input_shape=(8, 8, 8),
             backend=TorchBackend,
         )
         x = torch.randn(1, 1, 8, 8, 8)
         y = encoder.forward(x)
         assert y.shape == (1, 3)
 
-    def test_encoder_forward_infers_input_shape(self):
+    def test_encoder_infers_its_input_shape_in_a_graph(self):
         encoder = ConvolutionalEncoder(
             in_channels=2,
             channels=(8,),
@@ -175,9 +192,14 @@ class TestConvolutionalEncoderForwardPass:
             backend=TorchBackend,
         )
         x = torch.randn(3, 2, 20)
-        y = encoder.forward(x)
-        assert encoder.input_shape == (2, 20)
-        assert y.shape == (3, 4)
+        with pytest.raises(RuntimeError, match="Encoder Input Size 0"):
+            encoder.forward(x)
+        graph = Graph()
+        graph.connect(Values(x), encoder)
+        graph.setup()
+        graph.run()
+        assert encoder.input_shape[0].value == 20
+        assert graph.value_of(encoder.output_ports[0]).shape == (3, 4)
 
 
 @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
@@ -190,7 +212,7 @@ class TestConvolutionalEncoderSetupMethod:
             channels=(8, 16),
             out_channels=5,
             conv_kernel_size=(3,),
-            input_shape=(2, 24),
+            input_shape=(24,),
             backend=TorchBackend,
         )
         old_graph = encoder._graph
@@ -206,11 +228,13 @@ class TestConvolutionalEncoderSetupMethod:
             channels=(8,),
             out_channels=3,
             conv_kernel_size=(3,),
-            input_shape=(1, 16),
+            input_shape=(16,),
             backend=TorchBackend,
         )
         encoder.setup()
         encoder.reset()
+        assert encoder.state == NodeState.UNINITIALIZED
+        encoder.setup()
         x = torch.randn(1, 1, 16)
         y = encoder.forward(x)
         assert y.shape == (1, 3)
@@ -228,7 +252,7 @@ class TestConvolutionalEncoderEdgeCases:
             conv_kernel_size=(3, 3),
             pooling_type="maximum",
             pooling_kernel_size=(2, 2),
-            input_shape=(1, 12, 12),
+            input_shape=(12, 12),
             backend=TorchBackend,
         )
         x = torch.randn(1, 1, 12, 12)
@@ -241,7 +265,7 @@ class TestConvolutionalEncoderEdgeCases:
             channels=(8, 16),
             out_channels=4,
             conv_kernel_size=(3,),
-            input_shape=(3, 32),
+            input_shape=(32,),
             backend=TorchBackend,
         )
         x = torch.randn(16, 3, 32)

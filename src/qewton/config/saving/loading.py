@@ -32,10 +32,13 @@ class Deserializer:
         # Check for version mismatch
         with config_path.open("r", encoding="utf-8") as f:
             self.config_data: dict = json.load(f)
-        assert self.config_data.get(SavingKeys.KEY_VERSION) != SavingKeys.VERSION, (
-            f"Schema version mismatch: expected {SavingKeys.VERSION}, "
-            f"found {self.config_data.get(SavingKeys.KEY_VERSION)}"
-        )
+        #: Format version of the file.
+        self.version: int = self.config_data.get(SavingKeys.KEY_VERSION)
+        if self.version not in range(1, SavingKeys.VERSION + 1):
+            raise ValueError(
+                f"Files of format version {self.version} can not be loaded; versions "
+                f"1 to {SavingKeys.VERSION} are supported."
+            )
 
         self.obj_finished_loading: dict[int, bool] = {}
         self.ready_to_reference: dict[int, bool] = {}
@@ -140,6 +143,11 @@ class Deserializer:
                     f"in the queue: {remaining_queue}"
                 )
             queue = remaining_queue
+
+        if self.version < SavingKeys.VERSION:
+            for obj in self.id_to_obj.values():
+                if isinstance(obj, Serializable) and not isinstance(obj, type):
+                    obj.upgrade(self.version)
 
         # Update the node counter
         if self.reference_node is not None:

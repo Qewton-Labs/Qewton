@@ -6,7 +6,7 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.geometries.base import Structure
 from qewton.visualization.axes import ControlAxis, Selector
-from qewton.visualization.plots.data.base import DataPlot
+from qewton.visualization.plots.data.base import DataPlot, visible_cells
 from qewton.visualization.plots.base import PointEncoding
 from qewton.visualization.plots.result import Result, SurfaceResult
 from qewton.visualization.scales import ColorScale
@@ -20,7 +20,7 @@ class SurfacePlot(DataPlot):
 
     Args:
         data, data_config, position, x, y, z, color, color_scale, controls,
-            title, label, opacity: As for
+            title, label, opacity, mask: As for
             :class:`~qewton.visualization.plots.data.base.DataPlot`.
         show_edges: Whether the cell edges are drawn.
 
@@ -54,6 +54,7 @@ class SurfacePlot(DataPlot):
         title: str | None = None,
         label: str | None = None,
         opacity: float | None = None,
+        mask: Variable | None = None,
         show_edges: bool = False,
     ) -> None:
         super().__init__(
@@ -69,6 +70,7 @@ class SurfacePlot(DataPlot):
             title=title,
             label=label,
             opacity=opacity,
+            mask=mask,
         )
         self.show_edges = show_edges
         self.cells = (
@@ -78,12 +80,16 @@ class SurfacePlot(DataPlot):
         )
 
     def build(
-        self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray
+        self,
+        positions: np.ndarray,
+        color: np.ndarray | None,
+        features: np.ndarray,
+        visible: np.ndarray,
     ) -> Result:
         """See :meth:`~qewton.visualization.plots.data.base.DataPlot.build`."""
         return SurfaceResult(
             positions=positions,
-            cells=self.cells,
+            cells=visible_cells(self.cells, visible),
             values=color,
             show_edges=self.show_edges,
         )

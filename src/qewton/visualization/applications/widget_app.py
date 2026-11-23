@@ -1,14 +1,36 @@
 """Interactive notebook application for a Figure, with ipywidgets."""
 
+import functools
+
 from qewton.visualization.applications.base import RenderApplication, require
 from qewton.visualization.axes import Control, Selector, SliderAxis, TimeAxis
+from qewton.visualization.renderers.matplotlib import MatplotlibRenderer
 from qewton.visualization.renderers.text import as_plain
 
-try:
-    import ipywidgets as widgets
-    from ipympl.backend_nbagg import Canvas, FigureManager
+# ipywidgets and ipympl are imported on first use, not with this module:
+# importing ipympl after Matplotlib switches Matplotlib's global backend (see
+# _ipympl_classes), and both are slow to import.
 
-    from qewton.visualization.renderers.matplotlib import MatplotlibRenderer
+
+@functools.cache
+def _ipympl_classes() -> tuple[type, type]:
+    """The themed ipympl canvas class and ipympl's FigureManager.
+
+    Importing ipympl when Matplotlib is already imported calls
+    ``matplotlib.use("module://ipympl.backend_nbagg")``: the user's backend
+    would be replaced (e.g. ``plt.show()`` in a script no longer opens a
+    window). The application draws on a canvas of its own and needs no
+    global backend, so that call is suppressed during the import.
+    """
+    # pylint: disable=import-outside-toplevel
+    import matplotlib
+
+    use = matplotlib.use
+    matplotlib.use = lambda *args, **kwargs: None
+    try:
+        from ipympl.backend_nbagg import Canvas, FigureManager
+    finally:
+        matplotlib.use = use
 
     class _ThemedCanvas(Canvas):
         # An ipympl canvas that renders in the renderer's style: Matplotlib
@@ -23,8 +45,7 @@ try:
             with self._style():
                 super().draw()
 
-except ImportError:  # optional packages; create() names the missing ones
-    pass
+    return _ThemedCanvas, FigureManager
 
 
 class WidgetApplication(RenderApplication):
@@ -67,11 +88,14 @@ class WidgetApplication(RenderApplication):
             TypeError: If the figure is not drawn by a MatplotlibRenderer.
         """
         require(cls.__name__, "ipywidgets", "ipympl")
+        import ipywidgets as widgets  # pylint: disable=import-outside-toplevel
+
         cls.check_renderer(figure)
+        themed_canvas, figure_manager = _ipympl_classes()
         controls = cls.interactive_controls(figure)
         backend_figure = figure.draw(embedded=cls.embedded_controls(figure))
-        canvas = _ThemedCanvas(backend_figure, figure.renderer.style)
-        FigureManager(canvas, id(figure))
+        canvas = themed_canvas(backend_figure, figure.renderer.style)
+        figure_manager(canvas, id(figure))
         rows, values = [], []
         for control in controls:
             row, value = cls.widget(control)
@@ -100,7 +124,9 @@ class WidgetApplication(RenderApplication):
             tuple: The row (``ipywidgets.HBox``) and the widget whose
                 ``value`` is the state.
         """
-        options = [(as_plain(control.label(s)), s) for s in control.states]
+        import ipywidgets as widgets  # pylint: disable=import-outside-toplevel
+
+        options =[(as_plain(control.label(s)), s) for s in control.states]
         if isinstance(control, Selector):
             value = widgets.Dropdown(options=options, value=control.state)
             return widgets.HBox([widgets.HTMLMath(control.name), value]), value

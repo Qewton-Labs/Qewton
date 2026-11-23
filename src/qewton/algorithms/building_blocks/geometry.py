@@ -9,20 +9,11 @@ from qewton.graphs.nodes import InputPort, Node, OutputPort
 
 
 class MeshInterpolationNode(Node[TensorType]):
-    """Interpolates a per-vertex mesh field onto arbitrary target points,
-    linearly (barycentric) within whichever simplex contains each point.
-    Points outside the mesh come back NaN - either because
-    MeshGeometry.interpolate_to() didn't find a containing cell, or because
-    target_geometry carries its own point_filter (GridGeometry and
-    subclasses, e.g. PlaneSliceGeometry), which is masked to NaN here too.
-
-    Generic over the target: a plane slice (PlaneSliceGeometry), a regular 3D
-    resampling grid, a scattered comparison point set, or another mesh's
-    vertices for mesh-to-mesh transfer all work the same way through this one
-    node - only the target geometry differs, and none of that difference is
-    plane-specific. See geometries.discrete.plane_slice.PlaneSliceGeometry for
-    building the plane-stack target specifically; this node has no knowledge
-    of planes at all.
+    """Interpolates a per-vertex mesh field onto the points of a target
+    geometry, linearly (barycentric) within the simplex containing each
+    point, e.g. onto a rectilinear GridGeometry, a point set or the vertices
+    of another mesh. Points outside the mesh, and points a GridGeometry's
+    point_filter excludes, are NaN.
 
     The source mesh geometry and target geometry are structural constants,
     fixed at construction time - like PointSampler.geometry, not something
@@ -103,7 +94,7 @@ class MeshInterpolationNode(Node[TensorType]):
             interpolated, (*self.target_geometry.shape, *feature_shape)
         )
 
-        point_filter = getattr(self.target_geometry, "point_filter", None)
+        point_filter = self.target_geometry.point_filter
         if point_filter is not None:
             # point_filter's shape is (*target_geometry.shape, 1) - reshape
             # its trailing axis to one singleton per feature dim instead, so

@@ -66,16 +66,19 @@ class _Placeholder(Enum):
     VALUE = auto()
     FIRST = auto()
     SECOND = auto()
+    CONTROLLED = auto()
 
 
-D, V = _Placeholder.DOMAIN, _Placeholder.VALUE
+D, V, C = _Placeholder.DOMAIN, _Placeholder.VALUE, _Placeholder.CONTROLLED
 V0, V1 = _Placeholder.FIRST, _Placeholder.SECOND
 
 
 @dataclass(frozen=True)
 class Choice:
     """A plot type with its bindings; placeholders stand for the drawn
-    domain (``D``) and the value (``V``, or ``V0``/``V1`` for two)."""
+    domain (``D``), the value (``V``, or ``V0``/``V1`` for two) and the
+    controlled coordinate of the drawn quantity (``C``, e.g. ``x_3`` of a
+    slice through a grid of ``x``)."""
 
     plot_type: type[DataPlot]
     bindings: dict
@@ -88,6 +91,7 @@ CHOICES: dict[Kind, list[Choice]] = {
         Choice(LinePlot, dict(x=D, y=V)),
         Choice(BarPlot, dict(x=D, y=V)),
         Choice(SurfacePlot, dict(position=D, color=V)),
+        Choice(SurfacePlot, dict(position=D, z=C, color=V)),
         Choice(ScatterPlot, dict(position=D, color=V)),
     ],
     Kind.VECTOR: [Choice(VectorPlot, dict(position=D, vector=V, color=V))],
@@ -144,6 +148,7 @@ def auto_plot(
     controls = list(controls)
     explicit = {c: plot_kwargs.pop(c) for c in _CHANNELS if c in plot_kwargs}
     references = [c.variable_or_axes for c in controls]
+    source = data, data_config
     data, data_config = split_products(data, data_config, references)
     selector = value if isinstance(value, Selector) else None
     if selector is not None:
@@ -158,8 +163,16 @@ def auto_plot(
     kind, value = _kind(drawn, quantities, selector)
     if kind is not Kind.VALUES:
         controls += [
-            default_control(_control_reference(axes, data_config)) for axes in leftover
+            default_control(_reference(axes, data_config)) for axes in leftover
         ]
+    # The plot splits the source data by its controls itself, so what the
+    # geometry knows beyond its factors (e.g. its point filter) is kept;
+    # the drawn domain is bound by its Variable where it names it.
+    domain_reference = _reference(drawn, data_config) if drawn is not None else None
+    if not isinstance(domain_reference, Axes) or any(
+        a is domain_reference for a in source[1].axes
+    ):
+        data, data_config = source
 
     choices = [
         c for c in CHOICES[kind] if plot_type is None or c.plot_type is plot_type
@@ -168,8 +181,9 @@ def auto_plot(
     scales = {"color_scale": color_scale, "vector_scale": vector_scale}
     scales = {name: scale for name, scale in scales.items() if scale is not None}
     reasons = []
+    controlled = _controlled_coordinate(drawn, controls)
     for choice in choices:
-        bindings = _bind(choice.bindings, drawn, value)
+        bindings = _bind(choice.bindings, domain_reference, value, controlled)
         if bindings is not None:
             bindings.update(explicit)
         reason = _mismatch(choice, bindings, drawn, domain, {**plot_kwargs, **scales})
@@ -197,6 +211,75 @@ def _quantities(data_config: DataConfiguration) -> list[Variable]:
             "auto_plot needs a FeatureAxes of a named Variable to choose what to draw."
         )
     return variable.quantities
+
+
+class AutoPlots:
+    """Plots of one visualization built by :func:`auto_plot`, sharing their
+    controls: a control made for one plot, e.g. a default slider over a
+    batch axis, is passed to every later plot whose data has its axes or
+    Variable. An axes is recognized by identity, as matching makes equal
+    axes one object.
+
+    Args:
+        controls: Control axes for chosen dimensions, passed to every plot
+            whose data has them.
+
+    Attributes:
+        plots (list[DataPlot]): The plots built so far, in order.
+    """
+
+    def __init__(self, controls: list[ControlAxis] = ()) -> None:
+        self._given = list(controls)
+        self._controls = list(controls)
+        self._sources = []
+        self.plots = []
+
+    def add(self, data, data_config: DataConfiguration, *args, **kwargs) -> DataPlot:
+        """Build the next plot with :func:`auto_plot`.
+
+        Args:
+            data: The data, as for :func:`auto_plot`.
+            data_config: Its DataConfiguration.
+            *args: Passed to :func:`auto_plot`.
+            **kwargs: Passed to :func:`auto_plot`, except `controls`.
+
+        Returns:
+            DataPlot: The plot.
+        """
+        controls = [c for c in self._controls if _refers_to(c, data_config)]
+        self._sources.append(data_config.describe())
+        plot = auto_plot(data, data_config, *args, controls=controls, **kwargs)
+        self._controls += [c for c in plot.controls if c not in self._controls]
+        self.plots.append(plot)
+        return plot
+
+    def check_controls(self) -> None:
+        """Check that every given control steps through the data of a plot.
+
+        Raises:
+            ValueError: If a given control refers to the data of no plot.
+        """
+        for control in self._given:
+            if not any(control in plot.controls for plot in self.plots):
+                reference = control.variable_or_axes
+                name = reference.name if isinstance(reference, Variable) else reference
+                held = "; ".join(dict.fromkeys(self._sources))
+                raise ValueError(
+                    f"{name} is not part of the plotted data: it holds {held}. Control "
+                    "one of these, e.g. a leaf of the Variable of a geometry."
+                )
+
+
+def _refers_to(control: ControlAxis, data_config: DataConfiguration) -> bool:
+    # Whether `control` steps through a Variable or an axes of `data_config`.
+    reference = control.variable_or_axes
+    if isinstance(reference, Variable):
+        try:
+            data_config.axes_of(reference)
+        except ValueError:
+            return False
+        return True
+    return any(axes is reference for axes in data_config.axes)
 
 
 def _controlled(data_config: DataConfiguration, controls: list[ControlAxis]) -> list:
@@ -234,10 +317,11 @@ def _drawn_axes(data, data_config, controls, quantities) -> tuple:
     return drawn, data, data_config, leftover
 
 
-def _control_reference(axes: Axes, data_config: DataConfiguration) -> Variable | Axes:
-    # A geometry is controlled through its Variable, so the control fits
-    # every configuration of that Variable (e.g. shared by several plots),
-    # unless the Variable names data values too.
+def _reference(axes: Axes, data_config: DataConfiguration) -> Variable | Axes:
+    # A geometry is controlled and drawn through its Variable, so the
+    # reference fits every configuration of that Variable (e.g. shared by
+    # several plots, or before a product is split), unless the Variable
+    # names data values too.
     if not isinstance(axes, GeometryAxes) or axes.geometry.variable.is_empty:
         return axes
     variable = axes.geometry.variable
@@ -308,10 +392,27 @@ def _product_hint(drawn: Axes | None) -> str:
     )
 
 
-def _bind(template: dict, drawn: Axes | None, value) -> dict | None:
+def _controlled_coordinate(drawn: Axes | None, controls: list) -> Variable | None:
+    # The one controlled coordinate of the quantity the drawn geometry is
+    # part of (e.g. x_3 for a slice through x); None if there is none or
+    # several.
+    if not isinstance(drawn, GeometryAxes):
+        return None
+    quantities = {leaf.quantity for leaf in drawn.geometry.variable.leaves}
+    candidates = [
+        c.variable_or_axes
+        for c in controls
+        if isinstance(c.variable_or_axes, Variable)
+        and c.variable_or_axes.dim == 1
+        and c.variable_or_axes.quantity in quantities
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _bind(template: dict, drawn: Axes | None, value, controlled=None) -> dict | None:
     # The bindings of a choice; None if a position channel would take a
     # reference with more than one component.
-    substitutes = {D: drawn, V: value}
+    substitutes = {D: drawn, V: value, C: controlled}
     if isinstance(value, list):
         substitutes.update({V0: value[0], V1: value[1]})
     bindings = {}
@@ -352,6 +453,8 @@ def _mismatch(choice, bindings, drawn, domain, arguments: dict) -> str | None:
     # it can.
     plot_type = choice.plot_type
     if bindings is None:
+        if C in choice.bindings.values():
+            return "draws a slice in space, but no control is on one coordinate of the drawn quantity"
         if drawn is not None and n_components(drawn) > 1:
             return (
                 f"puts the domain on one axis, but it has {n_components(drawn)} "

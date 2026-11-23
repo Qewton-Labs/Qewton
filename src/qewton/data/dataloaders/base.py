@@ -135,9 +135,11 @@ class DataNode(Node[TensorType]):
             plot_type: Passed to
                 :func:`~qewton.visualization.auto.auto_plot` for every port.
             controls: Control axes for chosen dimensions, passed to
-                auto_plot for every port.
+                auto_plot for every port that has them.
             default_control: Control axis class for every other dimension
-                not drawn; None for auto_plot's default.
+                not drawn; None for auto_plot's default. Every control is
+                shared by all ports whose data has its axes or Variable (see
+                :class:`~qewton.visualization.auto.AutoPlots`).
             **plot_kwargs: Passed to auto_plot for every port.
 
         Returns:
@@ -147,7 +149,7 @@ class DataNode(Node[TensorType]):
         Raises:
             ValueError: If this node provides no data in `mode`.
         """
-        from qewton.visualization.auto import auto_plot
+        from qewton.visualization.auto import AutoPlots
         from qewton.visualization.layout import auto_layout
 
         if not self.provides_data_in_phase(mode):
@@ -157,21 +159,18 @@ class DataNode(Node[TensorType]):
             )
 
         self.set_mode(mode)
-        self.run()
+        values = self()
+        if len(self.output_ports) == 1:
+            values = (values,)
 
         if default_control is not None:
             plot_kwargs["default_control"] = default_control
-        plots = [
-            auto_plot(
-                self.backend.to_numpy(port.value),
-                port.data_configuration,
-                plot_type,
-                controls=controls,
-                **plot_kwargs,
+        plots = AutoPlots(controls)
+        for port, value in zip(self.output_ports, values):
+            plots.add(
+                self.backend.to_numpy(value), port.data_configuration, plot_type, **plot_kwargs
             )
-            for port in self.output_ports
-        ]
-        return auto_layout(plots)
+        return auto_layout(plots.plots)
 
 
 class DataLoader(DataNode[TensorType]):
@@ -229,7 +228,9 @@ class DataLoader(DataNode[TensorType]):
         if self.data_set.data_set_loaded:
             self._setup_iteration()
 
-        super().__init__(batch_size=batch_size, name=name, backend=backend)
+        super().__init__(
+            batch_size=batch_size, name=name, state=NodeState.UNINITIALIZED, backend=backend
+        )
 
         if self.test_data_set is not None:
             assert (
@@ -239,9 +240,11 @@ class DataLoader(DataNode[TensorType]):
                 c.variable_name for c in self.data_set.data_configs
             ], "test_data_set must provide the same variables as data_set."
 
-        # Build output ports based on dataset configurations
+        # Build output ports based on dataset configurations. All outputs
+        # share one batch axes, bound to the batch size.
         self._output_ports = []
         copy_memo = {}
+        self.batch_axes = BatchAxes(AxesDim(self._batch_size))
         for config in self.data_set.data_configs:
             axes = deepcopy(list(config.axes), memo=copy_memo)
             assert isinstance(axes[0], BatchAxes), "In DataSets, \
@@ -251,7 +254,7 @@ class DataLoader(DataNode[TensorType]):
             assert (
                 axes[0].shape[0].size >= self.batch_size
             ), "Batch can not be larger than dataset size."
-            axes[0] = BatchAxes(AxesDim(self.batch_size))
+            axes[0] = self.batch_axes
             new_config = DataConfiguration(
                 *axes, dtype=backend.default_dtype if backend else Any
             )
@@ -330,7 +333,7 @@ class DataLoader(DataNode[TensorType]):
             self._batch_progress = 0  # reset batch
         self.mode = new_mode
 
-    def setup(self) -> None:
+    def build(self) -> None:
         if not self.data_set.data_set_loaded:
             self.data_set.setup()
             self._setup_iteration()

@@ -97,8 +97,9 @@ class FunctionBasedTrainer(Trainer):
         )
 
     def on_training_start(self):
-        # setup all graphs and then move all nodes to the correct device:
+        # setup all graphs
         for node in self.model_nodes:
+            node.to(self.device)  #  fit DataProcessingNode on device
             node.setup()
             node.to(self.device)
         # Now also collect all trainable parameters inside the graph

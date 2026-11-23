@@ -95,3 +95,23 @@ class TestGridDataSetExplicitPointGrid:
         point_grid = np.random.rand(4, 5, 2)  # wrong second grid dim
         with pytest.raises(AssertionError, match="point grid shape"):
             GridDataSet(data=[data], feature_variables=[F], point_grid=point_grid)
+
+    def test_a_point_filter_marks_the_points_of_the_domain(self):
+        F = Variable("f", 1)
+        data = np.random.rand(5, 4, 3, 1)
+        point_grid = np.random.rand(4, 3, 2)
+        point_filter = np.random.rand(4, 3, 1) > 0.5
+        ds = GridDataSet(
+            data=[data], feature_variables=[F], point_grid=point_grid, point_filter=point_filter
+        )
+        geometry = ds.data_configs[0].geometry_axes.geometry
+        np.testing.assert_array_equal(np.asarray(geometry.point_filter), point_filter)
+
+    def test_a_point_filter_needs_a_point_grid(self):
+        F = Variable("f", 1)
+        with pytest.raises(ValueError, match="point_filter needs the point_grid"):
+            GridDataSet(
+                data=[np.random.rand(5, 4, 3, 1)],
+                feature_variables=[F],
+                point_filter=np.ones((4, 3, 1), dtype=bool),
+            )

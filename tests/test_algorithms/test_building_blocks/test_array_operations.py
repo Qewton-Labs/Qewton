@@ -53,8 +53,8 @@ class TestSplitVariables:
         graph.setup()
         graph.run()
 
-        assert torch.allclose(split.output_ports[0].value, data[:, :1])
-        assert torch.allclose(split.output_ports[1].value, data[:, 1:])
+        assert torch.allclose(graph.value_of(split.output_ports[0]), data[:, :1])
+        assert torch.allclose(graph.value_of(split.output_ports[1]), data[:, 1:])
 
     def test_a_multi_component_piece_can_stay_whole(self):
         """A piece doesn't have to be a single leaf - an auto-expanded
@@ -73,8 +73,8 @@ class TestSplitVariables:
         graph.setup()
         graph.run()
 
-        assert torch.allclose(split.output_ports[0].value, data[:, :3])
-        assert torch.allclose(split.output_ports[1].value, data[:, 3:])
+        assert torch.allclose(graph.value_of(split.output_ports[0]), data[:, :3])
+        assert torch.allclose(graph.value_of(split.output_ports[1]), data[:, 3:])
 
 
 class TestConcatVariables:
@@ -113,4 +113,4 @@ class TestConcatVariables:
         graph.setup()
         graph.run()
 
-        assert torch.allclose(join.output_ports[0].value, torch.cat([x_data, y_data], dim=-1))
+        assert torch.allclose(graph.value_of(join.output_ports[0]), torch.cat([x_data, y_data], dim=-1))

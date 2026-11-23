@@ -1,4 +1,6 @@
 import inspect
+
+import numpy as np
 import pytest
 
 from qewton.backends.base import ComputingBackend
@@ -121,3 +123,46 @@ def test_gridgeometry_contains_identifies_point_membership(
     assert inside_mask.shape[0] == 1
     assert bool(inside_mask[0])
     assert not bool(outside_mask[0])
+
+
+class TestFactors:
+    @staticmethod
+    def _grid(variable, indexing="ij"):
+        lines = [np.linspace(0.0, 1.0, n) for n in (4, 3, 2)]
+        points = np.stack(np.meshgrid(*lines, indexing=indexing), axis=-1)
+        return GridGeometry(variable, points)
+
+    def test_a_rectilinear_grid_is_the_product_of_its_axes(self):
+        x = Variable("x", 3)
+        grid = self._grid(x)
+        assert [f.variable for f in grid.factors] == x.leaves
+        assert [tuple(f.shape) for f in grid.factors] == [(4,), (3,), (2,)]
+
+    def test_a_factor_takes_the_leaf_of_the_coordinate_along_its_axis(self):
+        x = Variable("x", 3)
+        grid = self._grid(x, indexing="xy")  # axis 0 runs along x_2
+        assert [f.variable.name for f in grid.factors] == ["x_2", "x_1", "x_3"]
+
+    def test_a_subproduct_is_the_grid_over_the_axes_of_its_factors(self):
+        t, x = Variable("t", 1), Variable("x", 2)
+        grid = self._grid(t * x)
+        _, x_1, x_2 = grid.factors
+        plane = grid.subproduct([x_1, x_2])
+        assert plane.variable == x
+        assert tuple(plane.shape) == (3, 2)
+        assert plane.axis_coordinates()[1].tolist() == [0.0, 1.0]
+
+    def test_a_subproduct_of_no_node_composes_the_leaves(self):
+        x = Variable("x", 3)
+        grid = self._grid(x)
+        x_1, _, x_3 = grid.factors
+        assert grid.subproduct([x_1, x_3]).variable == x.leaves[0] * x.leaves[2]
+
+    def test_a_line_has_no_factors(self):
+        assert self._grid(Variable("x", 3)).factors[0].factors is None
+
+    def test_no_factors_for_a_rotated_grid(self):
+        u = np.linspace(0.0, 1.0, 3)
+        a, b = np.meshgrid(u, u, indexing="ij")
+        points = np.stack([a + b, a - b], axis=-1)
+        assert GridGeometry(Variable("x", 2), points).factors is None

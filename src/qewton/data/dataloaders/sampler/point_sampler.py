@@ -4,6 +4,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from contextlib import contextmanager
 import inspect
+import math
 from typing import Callable
 
 import numpy as np
@@ -160,8 +161,10 @@ class PointSampler(DataNode[TensorType]):
         self.sampled_geometry = SampledGeometry(self.geometry, n_points)
         self._mesh_cache: dict[tuple, Geometry] = {}
 
-        # clear automatically build ports:
+        # clear automatically build ports; all outputs share the axes of the
+        # sampled points, bound to the number of points:
         self._output_ports = []
+        self.points_axes = GeometryAxes(self.sampled_geometry, (AxesDim(self._batch_size),))
         self._build_port(self.geometry.variable)
         if self.compute_normals:
             if isinstance(normal_name, str):
@@ -190,6 +193,9 @@ class PointSampler(DataNode[TensorType]):
         self.current_mesh_max_vertex_distance = None
         self.current_mesh_device: Device | str | None = None
         self._active_discretization: Geometry | None = None
+        # The number of points to sample, kept while the sampler provides the
+        # points of a mesh or of an active discretization instead.
+        self._n_points_to_sample: int | None = None
 
     @property
     def active_discretization(self) -> Geometry | None:
@@ -199,6 +205,8 @@ class PointSampler(DataNode[TensorType]):
     def active_discretization(self, geometry: Geometry | None) -> None:
         if geometry is not None:
             self._validate_active_discretization(geometry)
+        else:
+            self._sample_again()
         self._active_discretization = geometry
 
     def _validate_active_discretization(self, geometry: Geometry) -> None:
@@ -313,6 +321,21 @@ class PointSampler(DataNode[TensorType]):
     def unset_mesh_mode(self):
         """Leave mesh mode and return to normal sampling."""
         self.mesh_mode = False
+        self._sample_again()
+
+    def _provide(self, points: TensorType) -> None:
+        """Make the number of points (`n_points`, and with it every dim bound
+        to it) that of `points`, which are provided instead of sampled ones;
+        the number to sample is kept for :meth:`_sample_again`."""
+        if self._n_points_to_sample is None:
+            self._n_points_to_sample = self._batch_size.value
+        self._batch_size.set_value(math.prod(self.backend.math.shape(points)[:-1]))
+
+    def _sample_again(self) -> None:
+        """Return to the number of points to sample (see :meth:`_provide`)."""
+        if self._n_points_to_sample is not None:
+            self._batch_size.set_value(self._n_points_to_sample)
+            self._n_points_to_sample = None
 
     def _check_normal_sampling_possible(self):
         if not self.has_boundary_geometry:
@@ -327,10 +350,7 @@ class PointSampler(DataNode[TensorType]):
         return self.backend.math.where(filter_output)[0]
 
     def _build_port(self, variable: Variable):
-        axes = [
-            GeometryAxes(self.sampled_geometry, (AxesDim(self.batch_size),)),
-            FeatureAxes(variable=variable),
-        ]
+        axes = [self.points_axes, FeatureAxes(variable=variable)]
         self._output_ports.append(
             OutputPort(
                 DataConfiguration(
@@ -478,6 +498,7 @@ class PointSampler(DataNode[TensorType]):
         return points
 
     def _store_discretization(self, geometry: Geometry, points: TensorType):
+        self._provide(points)
         # A product mesh is passed on as such, so its cells are only built
         # when needed.
         if isinstance(geometry, ProductMeshGeometry):

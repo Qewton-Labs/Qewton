@@ -1,13 +1,13 @@
-from qewton.graphs.nodes import Node, NodeState
+from qewton.graphs.nodes import GraphAwareNode, Node, NodeState
 from qewton.backends.base import Backend, TensorType
 from qewton.backends import DEFAULT_DL_BACKEND
 
 
-class DataProcessingNode(Node[TensorType]):
+class DataProcessingNode(GraphAwareNode[TensorType]):
     """A node that processes data from a data source node.
     The data source node is typically a *DataNode*, but can be
     any node that provides data.
-    The idea is that, in the setup phase the data is run through the graph
+    The idea is that, when it is built, the data is run through the graph
     to collect all input data to this node, and then the data is processed
     in the fit-method.
 
@@ -30,15 +30,13 @@ class DataProcessingNode(Node[TensorType]):
         self.data_source_node = data_source_node
         super().__init__(name, NodeState.UNINITIALIZED, backend, **kwargs)
 
-    def setup(self, graph) -> None:
-        """This node also obtains the graph it belongs to, so that it can
-        run the graph in the setup phase to collect all input data to
-        this node.
+    def build(self, graph) -> None:
+        """Build the node from the data of the graph it belongs to: run the
+        graph up to this node to collect its input data, then fit to it.
 
         Args:
             graph (Graph): The graph this node belongs to.
         """
-        pass
 
     def fit(self, data_batch: list[TensorType]) -> None:
         """The main fitting behavior of the node.

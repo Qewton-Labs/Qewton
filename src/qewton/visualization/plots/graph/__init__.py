@@ -18,15 +18,15 @@ class GraphPlot(Plot):
             drawn as a single box. 0 collapses every composite.
         show_port_names: Whether the ports of multi-port nodes are named
             next to the node title.
-        show_edge_labels: Whether edges are labeled with the axes of their
-            data configuration.
+        show_configs: Whether every edge is labeled with the axes of its
+            matched data configuration; otherwise they are shown on hover.
         title: Heading of the plot's cell.
 
     Attributes:
         graph (Graph): The drawn graph.
         depth (int): Number of expanded composite levels.
         show_port_names (bool): Whether port names are drawn.
-        show_edge_labels (bool): Whether edges are labeled.
+        show_configs (bool): Whether every edge is labeled.
     """
 
     dim = 2
@@ -36,14 +36,14 @@ class GraphPlot(Plot):
         graph,
         depth: int = 0,
         show_port_names: bool = False,
-        show_edge_labels: bool = True,
+        show_configs: bool = False,
         title: str | None = None,
     ) -> None:
         super().__init__(title=title)
         self.graph = graph
         self.depth = depth
         self.show_port_names = show_port_names
-        self.show_edge_labels = show_edge_labels
+        self.show_configs = show_configs
 
     margin = 0.0
 
@@ -63,5 +63,5 @@ class GraphPlot(Plot):
         """
         result = GraphLayout.compute(self.graph, depth=self.depth)
         result.show_port_names = self.show_port_names
-        result.show_edge_labels = self.show_edge_labels
+        result.show_configs = self.show_configs
         return [result]

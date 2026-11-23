@@ -42,12 +42,10 @@ class PlotNode(GraphAwareNode[TensorType]):
         self.show = show
         self.save_path = save_path
         self.plot_kwargs = plot_kwargs
-        self._graph = (
-            None  # set by setup(), below - forward() has no other way to reach it
-        )
-        super().__init__(name=name, state=NodeState.FIXED, backend=backend)
+        self._graph = None  # set by build(), below; forward() has no other way to reach it
+        super().__init__(name=name, state=NodeState.UNINITIALIZED, backend=backend)
 
-    def setup(self, graph) -> None:
+    def build(self, graph) -> None:
         self._graph = graph
 
     # No return annotation at all (not even `-> None`): Node._build_ports

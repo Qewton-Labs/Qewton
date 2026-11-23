@@ -28,6 +28,11 @@ class NNBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
+    def gelu(x: Any, /) -> TensorType:
+        pass
+
+    @staticmethod
+    @abstractmethod
     def softmax(x: Any, /, dim: int = -1) -> TensorType:
         pass
 
