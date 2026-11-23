@@ -11,6 +11,8 @@ from qewton.geometries.continuous.domains_3d.box import Box
 from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.visualization import (
     BarPlot,
+    HeatmapPlot,
+    LinePlot,
     ColorScale,
     Figure,
     ImagePlot,
@@ -20,6 +22,7 @@ from qewton.visualization import (
     SurfacePlot,
     VectorPlot,
     VectorScale,
+    auto_plot,
 )
 from qewton.visualization.renderers import PlotlyRenderer
 
@@ -193,3 +196,67 @@ class TestScatterOnALine:
         (result,) = plot.evaluate()
         np.testing.assert_allclose(result.positions[:, 0], np.linspace(0, 1, 5))
         np.testing.assert_allclose(result.positions[:, 1], 0.0)
+
+
+class TestMask:
+    """Points where the mask is 0 or NaN are not drawn and do not train the
+    scales."""
+
+    M = Variable("m", 1)
+
+    def _masked(self, features=None):
+        # u on a 4 x 4 grid, hidden where x_1 > 0.5, with a huge value there.
+        grid = GridGeometry.build_unit_grid(X, 4)
+        points = np.asarray(grid.discretization_points).reshape(-1, 2)
+        visible = points[:, 0] <= 0.5
+        u = np.where(visible, points.sum(axis=1), 1e6)
+        v = np.stack([points[:, 0], np.ones(len(points))], axis=1)
+        mask = np.where(visible, 1.0, 0.0)
+        data = np.column_stack([u, mask, v, np.full((len(points), 3), 0.5)])
+        config = DataConfiguration(GeometryAxes(grid), FeatureAxes(U * self.M * V * RGB))
+        return data.reshape(*grid.shape, -1), config, visible
+
+    def test_a_heatmap_leaves_hidden_cells_empty(self):
+        data, config, visible = self._masked()
+        plot = HeatmapPlot(data, config, position=X, color=U, mask=self.M)
+        (result,) = plot.evaluate()
+        assert np.isnan(result.values).sum() == (~visible).sum()
+        Figure(plot).draw()
+        assert plot.color_scale.range[1] < 1e6
+
+    def test_markers_bars_and_arrows_of_hidden_points_are_dropped(self):
+        data, config, visible = self._masked()
+        marker = ScatterPlot(data, config, position=X, color=U, mask=self.M).evaluate()[0]
+        arrow = VectorPlot(data, config, position=X, vector=V, mask=self.M).evaluate()[0]
+        assert len(marker.positions) == len(arrow.positions) == visible.sum()
+        np.testing.assert_array_less(marker.values, 1e6)
+
+    def test_cells_with_a_hidden_point_are_dropped(self):
+        data, config, visible = self._masked()
+        plot = SurfacePlot(data, config, position=X, z=U, mask=self.M)
+        (result,) = plot.evaluate()
+        assert len(result.cells) > 0
+        assert visible[result.cells].all()
+
+    def test_an_image_is_transparent_where_hidden(self):
+        data, config, visible = self._masked()
+        (result,) = ImagePlot(data, config, position=X, color=RGB, mask=self.M).evaluate()
+        assert (result.colors[..., 3] == 0).sum() == (~visible).sum()
+
+    def test_nan_hides_a_point(self):
+        data, config, visible = self._masked()
+        data[..., 1] = np.where(data[..., 1] == 0, np.nan, 1.0)
+        (result,) = ScatterPlot(data, config, position=X, mask=self.M).evaluate()
+        assert len(result.positions) == visible.sum()
+
+    def test_auto_plot_passes_the_mask_on(self):
+        data, config, _ = self._masked()
+        plot = auto_plot(data, config, value=U, mask=self.M)
+        assert plot.evaluate()[0].values.dtype == float
+        assert np.isnan(plot.evaluate()[0].values).any()
+
+    @pytest.mark.parametrize("mask", [X, V])
+    def test_a_mask_is_a_feature_with_one_component(self, mask):
+        data, config, _ = self._masked()
+        with pytest.raises(ValueError, match="mask= takes a feature"):
+            LinePlot(data, config, x=U, y=U, mask=mask)

@@ -215,6 +215,43 @@ class Binding:
         return component_titles(reference, n_components(reference))[self.component]
 
 
+def _split_point_filter(data_config: DataConfiguration, references: list):
+    # Whether each element of the data (one trailing axis for the features)
+    # is a point of its geometry, split like the data; None if all are.
+    shape = [d.size for a in data_config.axes if not isinstance(a, FeatureAxes) for d in a.shape]
+    point_filter = np.ones(shape, dtype=bool)
+    offset = 0
+    for axes in data_config.axes:
+        if isinstance(axes, FeatureAxes):
+            continue
+        n = len(axes.shape)
+        geometry = axes.geometry if isinstance(axes, GeometryAxes) else None
+        if isinstance(geometry, DiscreteGeometry) and geometry.point_filter is not None:
+            own = np.asarray(geometry.backend.to_numpy(geometry.point_filter), dtype=bool)
+            own = own.reshape([1] * offset + shape[offset : offset + n] + [1] * (len(shape) - offset - n))
+            point_filter &= own
+        offset += n
+    if point_filter.all():
+        return None
+    axes = [a for a in data_config.axes if not isinstance(a, FeatureAxes)]
+    config = DataConfiguration(*axes, FeatureAxes(Variable("point_filter", 1)))
+    split, _ = split_products(point_filter[..., None], config, references)
+    return split
+
+
+def visible_cells(cells: np.ndarray, visible: np.ndarray) -> np.ndarray:
+    """The cells whose points are all drawn.
+
+    Args:
+        cells: Point indices per cell, shape ``(n_cells, k)``.
+        visible: Whether each point is drawn, shape ``(n_points,)``.
+
+    Returns:
+        numpy.ndarray: The rows of `cells` without a hidden point.
+    """
+    return cells[visible[cells].all(axis=1)]
+
+
 def n_components(reference: Variable | Axes) -> int:
     """The number of values a reference gives per point.
 
@@ -271,6 +308,9 @@ class DataPlot(Plot):
         title, label: As for
             :class:`~qewton.visualization.plots.base.Plot`.
         opacity: Opacity of every element.
+        mask: A feature with one component; points where it is 0 or NaN
+            are not drawn and do not train the scales, e.g. the points
+            outside a domain given per sample.
 
     Raises:
         ValueError: At construction, if a binding names a channel the plot
@@ -333,14 +373,17 @@ class DataPlot(Plot):
         title: str | None = None,
         label: str | None = None,
         opacity: float | None = None,
+        mask: Variable | None = None,
     ) -> None:
         super().__init__(title=title, label=label, controls=controls)
         _check_axes(data, data_config)
         references = [c.variable_or_axes for c in self.controls]
+        self._point_filter = _split_point_filter(data_config, references)
         self.data, self.data_config = split_products(data, data_config, references)
         self.opacity = opacity
         self._variants = self._position_variants(position, x, y, z)
         self._color = self._bind("color", color, None) if color is not None else None
+        self._mask = self._bind_mask(mask) if mask is not None else None
         self._color_scales = self._candidate_scales(color, color_scale)
         self._check_channels()
         self._control_of = self._resolve_controls()
@@ -422,6 +465,14 @@ class DataPlot(Plot):
             )
         if self.domain_positions and not all(b.in_domain for b in self._variants[0]):
             raise ValueError(f"{type(self).__name__} draws positions of the domain only.")
+
+    def _bind_mask(self, mask: Variable) -> Binding:
+        binding = self._bind("mask", mask, 0)
+        if binding.in_domain or isinstance(mask, Selector) or n_components(mask) != 1:
+            raise ValueError(
+                f"mask= takes a feature with one component, got {mask}."
+            )
+        return binding
 
     def _candidate_scales(self, color, color_scale) -> list[ColorScale]:
         # One ColorScale per candidate of the color binding (one for a
@@ -668,11 +719,13 @@ class DataPlot(Plot):
     def train_scales(self, axes: dict[str, Scale]) -> None:
         """See :meth:`~qewton.visualization.plots.base.Plot.train_scales`."""
         for bindings, overlay_states in self._trained_copies():
-            positions, color, _ = self._collect(bindings, overlay_states)
+            positions, color, _, visible = self._collect(bindings, overlay_states)
+            if not visible.any():
+                continue
             for k, binding in enumerate(bindings):
-                axes[binding.channel].train(positions[:, k])
+                axes[binding.channel].train(positions[visible, k])
             if self.color_scale is not None:
-                self.color_scale.train(color)
+                self.color_scale.train(color[visible])
 
     def _trained_copies(self):
         # Every copy in every trained state of the controls and selectors;
@@ -692,8 +745,8 @@ class DataPlot(Plot):
         """See :meth:`~qewton.visualization.plots.base.Plot.evaluate`."""
         results = []
         for index, (bindings, overlay_states) in enumerate(self._copies()):
-            positions, color, features = self._collect(bindings, overlay_states)
-            result = self.build(positions, color, features)
+            positions, color, features, visible = self._collect(bindings, overlay_states)
+            result = self.build(positions, color, features, visible)
             result.label = self._copy_label(bindings, overlay_states)
             result.opacity = self.opacity if self.opacity is not None else 1.0
             result.color_index = self.color_index + index
@@ -704,10 +757,15 @@ class DataPlot(Plot):
         return results
 
     def build(
-        self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray
+        self,
+        positions: np.ndarray,
+        color: np.ndarray | None,
+        features: np.ndarray,
+        visible: np.ndarray,
     ) -> Result:
         """The Result of one copy in one state, without the common fields
-        (label, colors, opacity), which :meth:`evaluate` sets.
+        (label, colors, opacity), which :meth:`evaluate` sets; points not
+        `visible` are not drawn.
 
         Args:
             positions: Shape ``(n, dim)``, one row per point of `domain`
@@ -718,6 +776,8 @@ class DataPlot(Plot):
             features: The values of every feature in the copy's state,
                 shape ``(n, n_features)``, for plot types drawing further
                 features.
+            visible: Whether each point is drawn (see `mask`), shape
+                ``(n,)``.
 
         Returns:
             Result: An instance of :meth:`result_type`.
@@ -727,8 +787,8 @@ class DataPlot(Plot):
     # --- evaluation ----------------------------------------------------------
 
     def _collect(self, bindings: list[Binding], overlay_states: dict) -> tuple:
-        # Positions (n, dim), color values (n,) or None, and the feature
-        # matrix of one copy.
+        # Positions (n, dim), color values (n,) or None, the feature matrix
+        # and whether each point is drawn, of one copy.
         features = self._features(overlay_states)
         columns = [self._channel_values(b, features, overlay_states) for b in bindings]
         positions = np.stack(columns, axis=1)
@@ -737,7 +797,13 @@ class DataPlot(Plot):
             color = self.feature_values(self._color.current, features)
             if self.color_scale is not None:
                 color = self.color_scale.reduce_components(color)
-        return positions, color, features
+        visible = np.ones(len(features), dtype=bool)
+        if self._point_filter is not None:
+            visible &= self._point_filter[self._state_index(overlay_states)].reshape(-1)
+        if self._mask is not None:
+            mask = self.feature_values(self._mask.current, features)[:, 0]
+            visible &= np.isfinite(mask) & (mask != 0)
+        return positions, color, features, visible
 
     @property
     def domain_columns(self) -> tuple[int, ...]:
@@ -794,8 +860,8 @@ class DataPlot(Plot):
         feature_axes = self.data_config.feature_axes
         return features[:, feature_axes.variables.get_slice(variable)]
 
-    def _features(self, overlay_states: dict) -> np.ndarray:
-        # The data in the current states, shape (n_points, n_features).
+    def _state_index(self, overlay_states: dict) -> tuple:
+        # The index of the current states into the data.
         index = []
         for dim in range(len(self.data.shape)):
             control = self._control_of.get(dim)
@@ -803,7 +869,12 @@ class DataPlot(Plot):
                 index.append(slice(None))
             else:
                 index.append(overlay_states.get(control, control.state))
-        reduced = np.asarray(resolve_backend(self.data).to_numpy(self.data[tuple(index)]))
+        return tuple(index)
+
+    def _features(self, overlay_states: dict) -> np.ndarray:
+        # The data in the current states, shape (n_points, n_features).
+        index = self._state_index(overlay_states)
+        reduced = np.asarray(resolve_backend(self.data).to_numpy(self.data[index]))
         n_features = reduced.shape[-1] if self.data_config.feature_axes is not None else 1
         return reduced.reshape(-1, n_features).astype(float)
 

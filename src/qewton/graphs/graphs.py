@@ -1095,6 +1095,7 @@ class Graph(Serializable):
         port: Port | list[Port],
         reference: "Port | Callable | Any" = None,
         error: str | None = "signed",
+        mask: Port | None = None,
         plot_type: type["Plot"] | None = None,
         max_vertex_distance: float | dict[Variable, float] = 0.05,
         device: Device | str | None = None,
@@ -1147,6 +1148,11 @@ class Graph(Serializable):
                 ``"relative"`` (difference divided by the reference, NaN where
                 the reference is close to 0, diverging, symmetric), or None for
                 no error panel. Ignored without `reference`.
+            mask: A port of this graph, run together with `port`, whose
+                value has one component per point of the plotted data,
+                e.g. the domain mask of a data loader. Points where it is 0
+                or NaN are not drawn in any panel and do not train the
+                scales. None (default) draws every point.
             plot_type: Plot type passed to
                 :func:`~qewton.visualization.auto.auto_plot` for every plot.
                 None (default) selects it automatically.
@@ -1199,7 +1205,8 @@ class Graph(Serializable):
             ValueError: If `reference` is given for a list of ports, plain
                 reference data is given without `reference_config`, the
                 Variables or shapes of prediction and reference do not match,
-                `error` is unknown, or auto_plot raises.
+                `mask` has not one value per point of the data, `error` is
+                unknown, or auto_plot raises.
         """
         if default_control is not None:
             plot_kwargs["default_control"] = default_control
@@ -1224,6 +1231,7 @@ class Graph(Serializable):
                 ports[0],
                 reference,
                 error,
+                mask,
                 plot_type,
                 max_vertex_distance,
                 device,
@@ -1241,7 +1249,8 @@ class Graph(Serializable):
         from qewton.visualization.auto import AutoPlots
         from qewton.visualization.layout import auto_layout
 
-        nodes_to_run = self._nodes_needed_for({p.node for p in ports})
+        run_ports = (*ports, mask) if mask is not None else tuple(ports)
+        nodes_to_run = self._nodes_needed_for({p.node for p in run_ports})
         if device is not None:
             for node in nodes_to_run:
                 node.to(device)
@@ -1253,7 +1262,8 @@ class Graph(Serializable):
         # The configurations are read in mesh mode: the dims bound to the
         # number of points of a sampler have the number of mesh points.
         with discretization_mode(samplers, max_vertex_distance, device):
-            self._run_nodes_needed_for(ports, mode=mode)
+            self._run_nodes_needed_for(run_ports, mode=mode)
+            mask_values = self._mask_values(mask)
 
             # Move right before plotting, not before running - the sampler(s)
             # and model can stay on the set device
@@ -1268,10 +1278,53 @@ class Graph(Serializable):
                     data, config = self._narrow_to_variable(
                         data, config, combined_variable
                     )
+                data, config, panel_kwargs = self._with_mask(data, config, value, mask_values)
                 plots.add(
-                    data, config, plot_type, value=value, color_scale=color_scale, **plot_kwargs
+                    data, config, plot_type, color_scale=color_scale, **panel_kwargs,
+                    **plot_kwargs,
                 )
+        plots.check_controls()
         return auto_layout(plots.plots)
+
+    def _mask_values(self, mask: Port | None) -> "tuple[np.ndarray, Variable] | None":
+        """The value of the run port `mask` as numpy, with its Variable;
+        None without a mask."""
+        if mask is None:
+            return None
+        config = mask.get_data_configuration(self)
+        variable = config.feature_axes.variables if config.feature_axes else None
+        if variable is None:
+            raise ValueError(f"mask {mask} has no feature Variable.")
+        return np.asarray(mask.node.backend.to_numpy(self.value_of(mask))), variable
+
+    @staticmethod
+    def _with_mask(
+        data: np.ndarray,
+        config: DataConfiguration,
+        value: "Selector | None",
+        mask: "tuple[np.ndarray, Variable] | None",
+    ) -> tuple[np.ndarray, DataConfiguration, dict]:
+        """`data` and `config` of one panel with the mask as one more
+        feature channel, and the auto_plot arguments drawing the panel's
+        own value hidden by that channel."""
+        if mask is None:
+            return data, config, {"value": value}
+        mask_data, mask_variable = mask
+        if mask_data.shape[:-1] != data.shape[:-1]:
+            raise ValueError(
+                f"mask has shape {mask_data.shape} for data of shape {data.shape} - "
+                "it needs one value per point of the plotted data."
+            )
+        variable = config.feature_axes.variables
+        axes = tuple(
+            FeatureAxes(variable * mask_variable) if isinstance(axes, FeatureAxes) else axes
+            for axes in config.axes
+        )
+        data = np.concatenate([data, mask_data.astype(data.dtype)], axis=-1)
+        value = value if value is not None else variable
+        return data, DataConfiguration(*axes, dtype=config.dtype), {
+            "value": value, "mask": mask_variable
+        }
 
     @staticmethod
     def _shared_value(variables: list[Variable] | None) -> "Selector | None":
@@ -1322,6 +1375,7 @@ class Graph(Serializable):
         port: Port,
         reference: "Port | Callable | Any",
         error: str | None,
+        mask: Port | None,
         plot_type,
         max_vertex_distance: float | dict[Variable, float],
         device,
@@ -1372,14 +1426,15 @@ class Graph(Serializable):
             )
 
             if callable(reference) and not isinstance(reference, Port):
-                nodes_to_run = self._nodes_needed_for({port.node})
+                run_ports = (port, mask) if mask is not None else (port,)
+                nodes_to_run = self._nodes_needed_for({p.node for p in run_ports})
                 if device is not None:
                     for node in nodes_to_run:
                         node.to(device)
 
                 samplers = self._samplers_on_path_to((port,))
                 modes.enter_context(discretization_mode(samplers, max_vertex_distance, device))
-                self._run_nodes_needed_for((port,), mode=mode)
+                self._run_nodes_needed_for(run_ports, mode=mode)
 
                 for sampler in samplers:
                     for sampled_geometry in sampler.sampled_geometries:
@@ -1414,12 +1469,13 @@ class Graph(Serializable):
                     port, pred_variable, ref_variable, by_identity=False
                 )
 
-                nodes_to_run = self._nodes_needed_for({port.node, ref_port.node})
+                run_ports = (port, ref_port, mask) if mask is not None else (port, ref_port)
+                nodes_to_run = self._nodes_needed_for({p.node for p in run_ports})
                 if device is not None:
                     for node in nodes_to_run:
                         node.to(device)
 
-                self._run_nodes_needed_for((port, ref_port), mode=mode)
+                self._run_nodes_needed_for(run_ports, mode=mode)
 
                 pred_data = port.node.backend.to_numpy(self.value_of(port))
                 pred_config = prediction_config or port.get_data_configuration(self)
@@ -1446,13 +1502,14 @@ class Graph(Serializable):
                 )
                 self._check_reference_variable(port, pred_variable, ref_variable)
 
-                nodes_to_run = self._nodes_needed_for({port.node})
+                run_ports = (port, mask) if mask is not None else (port,)
+                nodes_to_run = self._nodes_needed_for({p.node for p in run_ports})
                 if device is not None:
                     for node in nodes_to_run:
                         node.to(device)
 
                 with active_discretization_mode(samplers, ref_geometry):
-                    self._run_nodes_needed_for((port,), mode=mode)
+                    self._run_nodes_needed_for(run_ports, mode=mode)
 
                 for sampler in samplers:
                     for sampled_geometry in sampler.sampled_geometries:
@@ -1500,18 +1557,18 @@ class Graph(Serializable):
                 )
 
             value = self._shared_value(variables)
+            mask_values = self._mask_values(mask)
             panels = AutoPlots(controls)
-            reference_plot = panels.add(
-                ref_data, ref_config, plot_type, value=value, color_scale=color_scale,
-                **plot_kwargs,
-            )
+
+            def add_panel(data, config, **kwargs):
+                data, config, panel_kwargs = self._with_mask(data, config, value, mask_values)
+                return panels.add(data, config, plot_type, **panel_kwargs, **kwargs, **plot_kwargs)
+
+            reference_plot = add_panel(ref_data, ref_config, color_scale=color_scale)
             # The reference's scale (None without color) is shared if asked for.
             if share_scale or color_scale is not None:
                 color_scale = reference_plot.color_scale
-            panels.add(
-                pred_data, pred_config, plot_type, value=value, color_scale=color_scale,
-                **plot_kwargs,
-            )
+            add_panel(pred_data, pred_config, color_scale=color_scale)
             names = ["Reference", "Prediction"]
 
             if error is not None:
@@ -1536,12 +1593,10 @@ class Graph(Serializable):
                 error_kwargs = {} if reference_plot.color_scale is None else {
                     "color_scale": error_scale
                 }
-                panels.add(
-                    error_data, ref_config, plot_type, value=value, **error_kwargs,
-                    **plot_kwargs,
-                )
+                add_panel(error_data, ref_config, **error_kwargs)
                 names.append("Error")
 
+            panels.check_controls()
             layout = auto_layout(panels.plots)
             for plot, name in zip(panels.plots, names):
                 if isinstance(layout, Overlay):

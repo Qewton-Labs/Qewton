@@ -13,6 +13,18 @@ other dimension of the data must be reduced by a control, else
 construction raises; nothing is sliced or averaged implicitly, so a plot
 never shows a part of the data the user did not choose.
 
+### Masks are split like data (P8)
+
+Which points of a slice belong to a domain depends on the state of the
+control, so neither a geometry's point filter nor a mask can live in the
+factors. Both are split and reduced by the controls like the values: the
+point filter of the source geometry, and a feature bound to the `mask`
+channel for a domain that differs per sample. `auto_plot` therefore hands
+the unsplit data to the plot. Hidden points are dropped
+by each plot type in its own way (NaN cells, missing markers, cells
+without them) and are left out when scales are trained, so values outside
+a domain do not stretch the ranges.
+
 ### Domain or values, decided by the reference (P3)
 
 A binding's reference tells where positions come from: Variables and Axes

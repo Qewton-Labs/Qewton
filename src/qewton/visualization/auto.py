@@ -148,6 +148,7 @@ def auto_plot(
     controls = list(controls)
     explicit = {c: plot_kwargs.pop(c) for c in _CHANNELS if c in plot_kwargs}
     references = [c.variable_or_axes for c in controls]
+    source = data, data_config
     data, data_config = split_products(data, data_config, references)
     selector = value if isinstance(value, Selector) else None
     if selector is not None:
@@ -162,8 +163,16 @@ def auto_plot(
     kind, value = _kind(drawn, quantities, selector)
     if kind is not Kind.VALUES:
         controls += [
-            default_control(_control_reference(axes, data_config)) for axes in leftover
+            default_control(_reference(axes, data_config)) for axes in leftover
         ]
+    # The plot splits the source data by its controls itself, so what the
+    # geometry knows beyond its factors (e.g. its point filter) is kept;
+    # the drawn domain is bound by its Variable where it names it.
+    domain_reference = _reference(drawn, data_config) if drawn is not None else None
+    if not isinstance(domain_reference, Axes) or any(
+        a is domain_reference for a in source[1].axes
+    ):
+        data, data_config = source
 
     choices = [
         c for c in CHOICES[kind] if plot_type is None or c.plot_type is plot_type
@@ -174,7 +183,7 @@ def auto_plot(
     reasons = []
     controlled = _controlled_coordinate(drawn, controls)
     for choice in choices:
-        bindings = _bind(choice.bindings, drawn, value, controlled)
+        bindings = _bind(choice.bindings, domain_reference, value, controlled)
         if bindings is not None:
             bindings.update(explicit)
         reason = _mismatch(choice, bindings, drawn, domain, {**plot_kwargs, **scales})
@@ -220,7 +229,9 @@ class AutoPlots:
     """
 
     def __init__(self, controls: list[ControlAxis] = ()) -> None:
+        self._given = list(controls)
         self._controls = list(controls)
+        self._sources = []
         self.plots = []
 
     def add(self, data, data_config: DataConfiguration, *args, **kwargs) -> DataPlot:
@@ -236,10 +247,27 @@ class AutoPlots:
             DataPlot: The plot.
         """
         controls = [c for c in self._controls if _refers_to(c, data_config)]
+        self._sources.append(data_config.describe())
         plot = auto_plot(data, data_config, *args, controls=controls, **kwargs)
         self._controls += [c for c in plot.controls if c not in self._controls]
         self.plots.append(plot)
         return plot
+
+    def check_controls(self) -> None:
+        """Check that every given control steps through the data of a plot.
+
+        Raises:
+            ValueError: If a given control refers to the data of no plot.
+        """
+        for control in self._given:
+            if not any(control in plot.controls for plot in self.plots):
+                reference = control.variable_or_axes
+                name = reference.name if isinstance(reference, Variable) else reference
+                held = "; ".join(dict.fromkeys(self._sources))
+                raise ValueError(
+                    f"{name} is not part of the plotted data: it holds {held}. Control "
+                    "one of these, e.g. a leaf of the Variable of a geometry."
+                )
 
 
 def _refers_to(control: ControlAxis, data_config: DataConfiguration) -> bool:
@@ -289,10 +317,11 @@ def _drawn_axes(data, data_config, controls, quantities) -> tuple:
     return drawn, data, data_config, leftover
 
 
-def _control_reference(axes: Axes, data_config: DataConfiguration) -> Variable | Axes:
-    # A geometry is controlled through its Variable, so the control fits
-    # every configuration of that Variable (e.g. shared by several plots),
-    # unless the Variable names data values too.
+def _reference(axes: Axes, data_config: DataConfiguration) -> Variable | Axes:
+    # A geometry is controlled and drawn through its Variable, so the
+    # reference fits every configuration of that Variable (e.g. shared by
+    # several plots, or before a product is split), unless the Variable
+    # names data values too.
     if not isinstance(axes, GeometryAxes) or axes.geometry.variable.is_empty:
         return axes
     variable = axes.geometry.variable

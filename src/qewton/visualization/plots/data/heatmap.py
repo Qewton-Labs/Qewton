@@ -6,7 +6,7 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.geometries.base import Structure
 from qewton.visualization.axes import ControlAxis, Selector
-from qewton.visualization.plots.data.base import DataPlot, grid_values
+from qewton.visualization.plots.data.base import DataPlot, grid_values, visible_cells
 from qewton.visualization.plots.base import PointEncoding
 from qewton.visualization.plots.result import HeatmapResult, Result, SurfaceResult
 from qewton.visualization.scales import ColorScale
@@ -18,7 +18,7 @@ class HeatmapPlot(DataPlot):
 
     Args:
         data, data_config, position, x, y, color, color_scale, controls,
-            title, label, opacity: As for
+            title, label, opacity, mask: As for
             :class:`~qewton.visualization.plots.data.base.DataPlot`; the
             positions are the domain's coordinates and `color` is required.
         show_edges: Whether the cell edges of a mesh are drawn.
@@ -49,6 +49,7 @@ class HeatmapPlot(DataPlot):
         title: str | None = None,
         label: str | None = None,
         opacity: float | None = None,
+        mask: Variable | None = None,
         show_edges: bool = False,
     ) -> None:
         super().__init__(
@@ -63,19 +64,25 @@ class HeatmapPlot(DataPlot):
             title=title,
             label=label,
             opacity=opacity,
+            mask=mask,
         )
         self.show_edges = show_edges
 
     def build(
-        self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray
+        self,
+        positions: np.ndarray,
+        color: np.ndarray | None,
+        features: np.ndarray,
+        visible: np.ndarray,
     ) -> Result:
         """See :meth:`~qewton.visualization.plots.data.base.DataPlot.build`."""
         if self.domain.structure is Structure.GRID:
+            color = np.where(visible, color, np.nan)
             x, y, values = grid_values(self.domain, color, self.domain_columns)
             return HeatmapResult(x=x, y=y, values=values)
         return SurfaceResult(
             positions=positions,
-            cells=self.domain.cells,
+            cells=visible_cells(self.domain.cells, visible),
             values=color,
             show_edges=self.show_edges,
         )

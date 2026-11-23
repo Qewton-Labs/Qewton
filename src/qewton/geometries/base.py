@@ -546,6 +546,9 @@ class DiscreteGeometry(Geometry[TensorType]):
             discretizes, if known.
         discretization_points (TensorType or None): The discrete points of this
             geometry.
+        point_filter (TensorType or None): Whether each point belongs to the
+            geometry, shape ``(*shape, 1)``, e.g. the points of a
+            rectilinear grid inside a non-box domain; None if all do.
         structure (Structure): How its points are connected.
         topological_dim (int): Dimension of its cells: 0 for points, 1 for
             curves, 2 for surfaces, 3 for volumes. `dim` is the number of
@@ -577,6 +580,7 @@ class DiscreteGeometry(Geometry[TensorType]):
         super().__init__(variable=variable, dim=dim, shape=shape, backend=backend)
         self.discretization_of: Geometry | None = None
         self.discretization_points = discretization_points
+        self.point_filter: TensorType | None = None
 
     @property
     def structure(self) -> Structure:

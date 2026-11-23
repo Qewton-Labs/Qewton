@@ -71,6 +71,7 @@ Status: done, partial (with the gap named), open.
 | P5 | Data of any backend and device is drawn as given. | G8 | partial: a node's device is not yet its own property (strict xfail) |
 | P6 | Families: data (`DataConfiguration`), tables (named columns), geometries, computation graphs; one Plot interface for all. | G1 | done |
 | P7 | A plot declares how it shows values at the points of its domain (color, arrows, by position), so layouts can tell which plots read well together. | G4, G11 | done |
+| P8 | Points outside the domain are hidden: those a geometry's point filter excludes, and those a mask from the data hides (e.g. a domain given per sample); hidden points are not drawn and do not train the scales. | G1, G4 | done |
 
 ## Controls and selectors (`axes.py`)
 
@@ -81,6 +82,7 @@ Status: done, partial (with the gap named), open.
 | C3 | A Selector chooses which reference fills a channel (Variables of the data or table columns). | G2 | done |
 | C4 | States are labeled by coordinates or categories; animation frames last in proportion to their time step. | G2, G3 | done |
 | C5 | A control steps through a whole one-dimensional geometry, a factor of a product (e.g. an axis of a rectilinear grid), a batch axis or a table column. | G2 | done |
+| C6 | A control given for several plots that steps through none of them fails with an error naming what the data holds. | G11 | done |
 
 ## Scales (`scales.py`)
 

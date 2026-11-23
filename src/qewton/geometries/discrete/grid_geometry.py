@@ -113,9 +113,7 @@ class GridGeometry(DiscreteGeometry[TensorType]):
                 shape=point_grid.shape[:-1] + (1,), dtype=self.backend.dtypes[Bool]
             )
         else:
-            self.point_filter = self.backend.cast_dtype(
-                point_filter, dtype=self.backend.dtypes[Bool]
-            )
+            self.point_filter = self.backend.build_tensor(point_filter, dtype=Bool)
 
         self.cell_volumes: TensorType | None = None
         self._factors: list[GridGeometry] | None = None

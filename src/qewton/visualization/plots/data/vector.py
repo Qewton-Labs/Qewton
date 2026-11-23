@@ -20,7 +20,7 @@ class VectorPlot(DataPlot):
 
     Args:
         data, data_config, position, x, y, z, color, color_scale, controls,
-            title, label, opacity: As for
+            title, label, opacity, mask: As for
             :class:`~qewton.visualization.plots.data.base.DataPlot`.
         vector: The vector feature.
         vector_scale: Scale of the arrows; a new one if None. Share one
@@ -58,6 +58,7 @@ class VectorPlot(DataPlot):
         title: str | None = None,
         label: str | None = None,
         opacity: float | None = None,
+        mask: Variable | None = None,
     ) -> None:
         super().__init__(
             data,
@@ -72,6 +73,7 @@ class VectorPlot(DataPlot):
             title=title,
             label=label,
             opacity=opacity,
+            mask=mask,
         )
         if isinstance(vector, Selector) or self._in_domain(vector):
             raise ValueError("vector= takes one feature (a Variable of the values).")
@@ -95,22 +97,29 @@ class VectorPlot(DataPlot):
         also trains the vector scale on the magnitudes."""
         super().train_scales(axes)
         for bindings, overlay_states in self._trained_copies():
-            _, _, features = self._collect(bindings, overlay_states)
-            vectors = self.feature_values(self._vector, features)
-            self.vector_scale.train(np.linalg.norm(vectors, axis=-1))
+            _, _, features, visible = self._collect(bindings, overlay_states)
+            vectors = self.feature_values(self._vector, features)[visible]
+            if len(vectors):
+                self.vector_scale.train(np.linalg.norm(vectors, axis=-1))
 
     def build(
-        self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray
+        self,
+        positions: np.ndarray,
+        color: np.ndarray | None,
+        features: np.ndarray,
+        visible: np.ndarray,
     ) -> Result:
         """See :meth:`~qewton.visualization.plots.data.base.DataPlot.build`."""
         vectors = self.vector_scale.arrows(
             self.feature_values(self._vector, features), _spacing(positions)
         )
-        step = self.subsample
+        shown = np.zeros_like(visible)
+        shown[:: self.subsample] = True
+        shown &= visible
         return ArrowResult(
-            positions=positions[::step],
-            vectors=vectors[::step],
-            values=color[::step] if color is not None else None,
+            positions=positions[shown],
+            vectors=vectors[shown],
+            values=color[shown] if color is not None else None,
         )
 
 

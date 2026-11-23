@@ -22,6 +22,13 @@ to references: Variables or Axes of the configuration.
   reduced by a control, else construction raises `ValueError`.
 - `color=` binds the color channel, `vector=` the arrows of a
   `VectorPlot`. A tuple in `y` or `z` draws one copy per reference.
+- Points outside the domain are not drawn (empty cells, no markers,
+  arrows or cells through them) and do not train the scales: those the
+  `point_filter` of the geometry excludes (e.g. a rectilinear grid in a
+  domain that is no box), and those where the feature bound to `mask=`
+  is 0 or NaN (e.g. a domain given per sample). Slices keep both.
+  `Graph.visualize(..., mask=port)` takes the mask from another port,
+  e.g. the domain mask of a data loader, for every panel.
 - On a product geometry (a meshed space-time domain, a rectilinear grid
   with the components of its Variable as factors), a control on a factor
   splits it off; the other factors are drawn. On a 3D grid of `x`,

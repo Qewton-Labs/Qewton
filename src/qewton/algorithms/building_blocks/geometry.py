@@ -94,7 +94,7 @@ class MeshInterpolationNode(Node[TensorType]):
             interpolated, (*self.target_geometry.shape, *feature_shape)
         )
 
-        point_filter = getattr(self.target_geometry, "point_filter", None)
+        point_filter = self.target_geometry.point_filter
         if point_filter is not None:
             # point_filter's shape is (*target_geometry.shape, 1) - reshape
             # its trailing axis to one singleton per feature dim instead, so

@@ -16,7 +16,8 @@ follows from the factors: a product of rectilinear grids is a grid, of
 point sets a point set, anything else the mesh of the products of factor
 cells. A rectilinear `GridGeometry` answers `factors` with its axes, so a
 grid can be sliced without being built as a product; a curvilinear grid is
-no product of point sets and has no factors.
+no product of point sets and has no factors. A point filter is no product
+either and stays with the grid; its factors have none.
 
 ## `SampledGeometry` is shared, not copied
 `SampledGeometry.__deepcopy__` returns the object itself. Data configurations

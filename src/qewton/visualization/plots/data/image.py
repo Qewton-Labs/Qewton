@@ -18,7 +18,7 @@ class ImagePlot(DataPlot):
 
     Args:
         data, data_config, position, x, y, controls, title, label,
-            opacity: As for
+            opacity, mask: As for
             :class:`~qewton.visualization.plots.data.base.DataPlot`; the
             positions are the domain's coordinates.
         color: A feature (or a Selector of features) with 3 or 4
@@ -51,6 +51,7 @@ class ImagePlot(DataPlot):
         title: str | None = None,
         label: str | None = None,
         opacity: float | None = None,
+        mask: Variable | None = None,
     ) -> None:
         super().__init__(
             data,
@@ -63,6 +64,7 @@ class ImagePlot(DataPlot):
             title=title,
             label=label,
             opacity=opacity,
+            mask=mask,
         )
         candidates = color.candidates if isinstance(color, Selector) else [color]
         for candidate in candidates:
@@ -73,8 +75,16 @@ class ImagePlot(DataPlot):
                 )
 
     def build(
-        self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray
+        self,
+        positions: np.ndarray,
+        color: np.ndarray | None,
+        features: np.ndarray,
+        visible: np.ndarray,
     ) -> Result:
         """See :meth:`~qewton.visualization.plots.data.base.DataPlot.build`."""
-        x, y, colors = grid_values(self.domain, np.clip(color, 0.0, 1.0), self.domain_columns)
+        colors = np.clip(color, 0.0, 1.0)
+        if not visible.all():
+            alpha = colors[:, 3] if colors.shape[1] == 4 else np.ones(len(colors))
+            colors = np.column_stack([colors[:, :3], np.where(visible, alpha, 0.0)])
+        x, y, colors = grid_values(self.domain, colors, self.domain_columns)
         return ImageResult(x=x, y=y, colors=colors)

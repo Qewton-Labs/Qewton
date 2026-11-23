@@ -6,7 +6,7 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.geometries.base import DiscreteGeometry, Structure
 from qewton.visualization.axes import ControlAxis, Selector
-from qewton.visualization.plots.data.base import DataPlot
+from qewton.visualization.plots.data.base import DataPlot, visible_cells
 from qewton.visualization.plots.result import LineResult, Result
 from qewton.visualization.scales import ColorScale
 
@@ -19,7 +19,7 @@ class LinePlot(DataPlot):
 
     Args:
         data, data_config, position, x, y, z, color, color_scale, controls,
-            title, label, opacity: As for
+            title, label, opacity, mask: As for
             :class:`~qewton.visualization.plots.data.base.DataPlot`.
         width: Line width, or None for the theme's.
         dash: Dash pattern, e.g. ``"dash"``, or None for a solid line.
@@ -50,6 +50,7 @@ class LinePlot(DataPlot):
         title: str | None = None,
         label: str | None = None,
         opacity: float | None = None,
+        mask: Variable | None = None,
         width: float | None = None,
         dash: str | None = None,
     ) -> None:
@@ -66,6 +67,7 @@ class LinePlot(DataPlot):
             title=title,
             label=label,
             opacity=opacity,
+            mask=mask,
         )
         self.width = width
         self.dash = dash
@@ -79,12 +81,16 @@ class LinePlot(DataPlot):
         return super().draws(domain)
 
     def build(
-        self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray
+        self,
+        positions: np.ndarray,
+        color: np.ndarray | None,
+        features: np.ndarray,
+        visible: np.ndarray,
     ) -> Result:
         """See :meth:`~qewton.visualization.plots.data.base.DataPlot.build`."""
         return LineResult(
             positions=positions,
-            segments=self._segments(),
+            segments=visible_cells(self._segments(), visible),
             values=color,
             width=self.width,
             dash=self.dash,
