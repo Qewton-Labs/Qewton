@@ -1020,3 +1020,60 @@ class TestVisualizeWithAMaskPort:
                 controls=[SliderAxis(Variable("y", 1))],
                 mode=EvaluationPhase.TRAIN,
             )
+
+
+class TestVisualizeABatchOfADataLoader:
+    """Each visualize() draws the next batch of a data loader."""
+
+    @staticmethod
+    def _graph(n_samples=5, batch_size=3):
+        import torch
+
+        from qewton.data import DataLoader, GridDataSet
+
+        F, X, U = Variable("f", 1), Variable("x", 1), Variable("u", 2)
+        x = torch.linspace(0, 1, 6)[None, :, None].repeat(n_samples, 1, 1)
+        dataset = GridDataSet(
+            data=[torch.rand(n_samples, 6, 1), x, torch.rand(n_samples, 6, 2)],
+            feature_variables=[F, X, U],
+            geometry_variable=X,
+            point_grid=x[0],
+        )
+        loader = DataLoader(
+            data_set=dataset, batch_size=batch_size, splitting_ratio=(1.0, 0.0, 0.0),
+            shuffle_data=False,
+        )
+        model = FCN(in_neurons=F, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(loader.get_output_port(F), model)
+        graph.setup()
+        return graph, loader, model, U
+
+    def test_the_last_smaller_batch_is_drawn_with_one_shared_slider(self):
+        from qewton.visualization import SliderAxis
+
+        graph, loader, model, U = self._graph()
+        for n_samples in (3, 2):
+            layout = graph.visualize(
+                model.output_ports[0],
+                reference=loader.get_output_port(U),
+                variables=[U.leaves[0]],
+                mode=EvaluationPhase.TRAIN,
+            )
+            Figure(layout).draw()
+            (slider,) = {
+                c for p in layout.plots for c in p.controls if isinstance(c, SliderAxis)
+            }
+            assert len(slider.states) == n_samples
+
+    def test_a_component_is_compared_with_the_one_of_a_reference_port(self):
+        graph, loader, model, U = self._graph(batch_size=5)
+        layout = graph.visualize(
+            model.output_ports[0],
+            reference=loader.get_output_port(U),
+            variables=[U.leaves[1]],
+            mode=EvaluationPhase.TRAIN,
+        )
+        reference = np.asarray(graph.value_of(loader.get_output_port(U)))[0, :, 1]
+        (result,) = layout.plots[0].evaluate()
+        np.testing.assert_allclose(np.sort(result.positions[:, 1]), np.sort(reference), rtol=1e-6)

@@ -96,6 +96,7 @@ def load_data(
             x_var,
             # pressure_var,
         ],
+        geometry_variable=x_var,
         point_grid=data["domain_coords"][0],
     )
     data_loader = DataLoader(

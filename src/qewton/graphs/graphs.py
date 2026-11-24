@@ -9,7 +9,7 @@ from warnings import warn
 import inspect
 import numpy as np
 
-from qewton.config.axes import FeatureAxes
+from qewton.config.axes import BatchAxes, FeatureAxes
 from qewton.config.data_configurations import DataConfiguration, refining
 from qewton.config.devices import Device
 from qewton.config.errors import DataConfigMismatchError, StructureUnknown
@@ -1271,9 +1271,10 @@ class Graph(Serializable):
                 for sampled_geometry in sampler.sampled_geometries:
                     sampled_geometry.to_numpy()
 
+            fitted = {}
             for p in ports:
                 data = p.node.backend.to_numpy(self.value_of(p))
-                config = p.get_data_configuration(self)
+                config = self._fit_batch_axes(data, p.get_data_configuration(self), fitted)
                 if combined_variable is not None:
                     data, config = self._narrow_to_variable(
                         data, config, combined_variable
@@ -1285,6 +1286,26 @@ class Graph(Serializable):
                 )
         plots.check_controls()
         return auto_layout(plots.plots)
+
+    @staticmethod
+    def _fit_batch_axes(
+        data: np.ndarray, config: DataConfiguration, fitted: dict
+    ) -> DataConfiguration:
+        """`config` with its batch axes sized like `data`, e.g. for the last,
+        smaller batch of a data loader. A batch axes gets one new axes for
+        all configurations, kept in `fitted`, so panels keep sharing it."""
+        shape = config.shape
+        if Ellipsis in shape or len(shape) != np.ndim(data) or shape == np.shape(data):
+            return config
+        axes, start = [], 0
+        for old in config.axes:
+            end = start + len(old.shape)
+            sizes = tuple(np.shape(data)[start:end])
+            if isinstance(old, BatchAxes) and sizes != shape[start:end]:
+                old = fitted.setdefault(id(old), (old, BatchAxes(*sizes)))[1]
+            axes.append(old)
+            start = end
+        return DataConfiguration(*axes, dtype=config.dtype)
 
     def _mask_values(self, mask: Port | None) -> "tuple[np.ndarray, Variable] | None":
         """The value of the run port `mask` as numpy, with its Variable;
@@ -1465,8 +1486,12 @@ class Graph(Serializable):
                 ref_variable = (
                     ref_config.feature_axes.variables if ref_config.feature_axes else None
                 )
+                # Both ports are narrowed to `variables` alike below.
+                own_variable = (
+                    pred_config.feature_axes.variables if pred_config.feature_axes else None
+                )
                 self._check_reference_variable(
-                    port, pred_variable, ref_variable, by_identity=False
+                    port, own_variable, ref_variable, by_identity=False
                 )
 
                 run_ports = (port, ref_port, mask) if mask is not None else (port, ref_port)
@@ -1549,6 +1574,9 @@ class Graph(Serializable):
                     ref_data, ref_config, combined_variable
                 )
 
+            fitted = {}
+            pred_config = self._fit_batch_axes(pred_data, pred_config, fitted)
+            ref_config = self._fit_batch_axes(ref_data, ref_config, fitted)
             if pred_data.shape != ref_data.shape:
                 raise ValueError(
                     f"prediction shape {pred_data.shape} does not match "

@@ -1,13 +1,13 @@
 from qewton.config.axes import BatchAxes, FeatureAxes, GeometryAxes
 from qewton.config.data_configurations.base import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.data.datasets.array_data.base import BackendDataSet
+from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.geometries.discrete.index_grid_geometry import IndexGridGeometry
 from qewton.backends import resolve_backend
 
 
-class GridDataSet(BackendDataSet):
+class GridDataSet(ArrayLikeDataSet):
     """A dataset of one or more array-like data items sharing the same
     grid geometry, each with shape [batch, *grid, feature].
 
