@@ -69,6 +69,7 @@ class IndexGridGeometry(GridGeometry[TensorType]):
 
         self.discretization_of = None  # not a discretization of a continuous domain
         self.cell_volumes: TensorType | None = None
+        self._factors = None
 
     # -- lazy coordinates ---------------------------------------------------
 

@@ -7,6 +7,9 @@ origin is
 - `fixed`: given as the size of the data,
 - `tuned`: a HyperParameter to optimize, created with another value, which
   a tuner sets to the size of the data before the graph is connected,
+- `tuned_on_a_copy`: the same on a deep copy of the model and its
+  HyperParameter, as a tuner copies the trainer per trial; the original
+  keeps its other value,
 - `inferred`: left open (None) and inferred from the connected data.
 
 The model is fed by one graph (`one`), by two graphs with data of the same
@@ -16,6 +19,7 @@ data; where they disagree, connecting the second graph fails. Cases that
 do not hold yet are listed in GAPS with their reason.
 """
 
+from copy import deepcopy
 from typing import Any, Callable
 
 import pytest
@@ -105,14 +109,13 @@ def _value(size) -> Any:
 
 #: model -> (factory taking the size, data of a size, the size of a model,
 #: the size of the data, origins that apply)
+TUNABLE = ("fixed", "tuned", "tuned_on_a_copy", "inferred")
+
 SIZES: dict[str, tuple[Callable, Callable, Callable, int, tuple[str, ...]]] = {
-    "fcn": (_fcn, _fcn_data, lambda m: _value(m.in_neurons), 3, ("fixed", "tuned", "inferred")),
+    "fcn": (_fcn, _fcn_data, lambda m: _value(m.in_neurons), 3, TUNABLE),
     "deeponet": (_deeponet, _deeponet_data, lambda m: _value(m.branch_size), 6, ("inferred",)),
-    "encoding": (
-        _encoding, _encoding_data, lambda m: _value(m.input_shape[0]), 12,
-        ("fixed", "tuned", "inferred"),
-    ),
-    "fno": (_fno, _fno_data, lambda m: _value(m.in_channels), 2, ("fixed", "tuned", "inferred")),
+    "encoding": (_encoding, _encoding_data, lambda m: _value(m.input_shape[0]), 12, TUNABLE),
+    "fno": (_fno, _fno_data, lambda m: _value(m.in_channels), 2, TUNABLE),
 }
 
 PLACES = ("one", "two_agreeing", "two_disagreeing")
@@ -130,6 +133,8 @@ def _model(name: str, origin: str) -> Node:
         (1, 64), n + 1, state=HyperParameterState.OPTIMIZE, name=f"{name} input size"
     )
     model = factory(parameter)
+    if origin == "tuned_on_a_copy":
+        model, parameter = deepcopy((model, parameter))
     parameter.set_value(n)
     model.reset()
     return model

@@ -11,7 +11,7 @@ from unittest import mock
 import pytest
 from model_kinds import fcn, sampled, wrapped
 
-from qewton.config.data_configurations import DataConfiguration
+from qewton.config.matching import Matching
 from qewton.graphs.graphs import Graph
 
 DEPTHS = (0, 2, 4)
@@ -39,7 +39,7 @@ def test_running_runs_no_inner_graph_as_a_whole(depth):
 def test_building_grows_at_most_linearly_with_the_depth():
     counts = []
     for depth in (1, 2, 4):
-        with _counting(DataConfiguration, "merge") as merge:
+        with _counting(Matching, "merge_configurations") as merge:
             sampled(_nested(depth), n_points=7)
         counts.append(merge.call_count)
     assert counts[2] <= 2.5 * counts[1]

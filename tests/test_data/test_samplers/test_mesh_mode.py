@@ -63,13 +63,16 @@ class TestVisualizationGeometry:
         )
 
     def test_a_copied_sampler_meshes_its_own_geometry(self):
-        """In tuning, every trial deep-copies the trainer. The copy shares the
-        SampledGeometry with the original, but meshes (and moves) only its
-        own geometry."""
+        """In tuning, every trial deep-copies the trainer. The copy has its
+        own SampledGeometry, which its port declares, and meshes (and moves)
+        only its own geometry."""
         import copy
 
         sampler = _sampler()
         copied = copy.deepcopy(sampler)
-        assert copied.sampled_geometry is sampler.sampled_geometry
+        assert copied.sampled_geometry is not sampler.sampled_geometry
+        assert copied.output_ports[0].data_configuration.geometry_axes.geometry is (
+            copied.sampled_geometry
+        )
         assert copied.geometry is not sampler.geometry
         assert copied.visualization_geometry(0.5).discretization_of is copied.geometry

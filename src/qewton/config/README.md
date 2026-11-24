@@ -21,14 +21,27 @@ describes a batch of fields `f` on the points of `grid`.
 - **Dims**: `AxesDim(size)` with `size` an int, None (unknown) or a
   `HyperParameter`; `EllipsisDim` for any sequence of dims.
 
-## Merging
+## Matching
 
-`config.merge(other)` makes both configurations describe the same data:
-corresponding axes and dims become one object, an ellipsis is bound to the
-part it stands for, the dtypes are merged. `config.resolve()` shows the
-result in place. A contradiction raises `DataConfigMismatchError`, naming
-the ports the conflicting values come from. Graphs merge along their edges
-(see `qewton.graphs`); the static configuration of a port is never changed.
+Declared configurations never change. A `Matching` holds what matching
+finds, e.g. for one graph:
+
+- `matching.place(key, {port: declaration})` instantiates declarations at a
+  place: open objects (unknown dims, ellipses and what contains them) get a
+  stand-in there, every other object is used as it is;
+- `config.merge(other)` (or `matching.merge(a, b)` for axes and dims) makes
+  both describe the same data: corresponding axes and dims become one
+  group, an ellipsis is bound to the part it stands for, the dtypes are
+  merged;
+- `config.resolve()` gives the configuration as known so far: every object
+  replaced by the representative of its group, equal axes as one object.
+
+Configurations of a matching are `DynamicDataConfiguration`s (a
+`DataConfiguration` with its `matching`): only they have `merge`,
+`merge_dim`, `resolve` and the shape operations, and the results of those
+belong to the same matching. A contradiction raises
+`DataConfigMismatchError`, naming the ports the conflicting values come
+from. Graphs match along their edges (see `qewton.graphs`).
 
 ## Relations of nodes
 
@@ -43,7 +56,7 @@ def forward(self, x: Number[TensorType, DataConfiguration(ellipsis)]
 ```
 
 A node that changes dims by their index also implements `relate`, built
-from the shape operations of `DataConfiguration`: `drop`, `squeeze`,
+from the shape operations of the `DynamicDataConfiguration`s it gets: `drop`, `squeeze`,
 `set_size`, `unsqueeze`, `permute`, `flatten`, `unflatten`, `reshape`,
 `concat`, `split`, `broadcast`, `window`.
 

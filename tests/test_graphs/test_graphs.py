@@ -196,12 +196,6 @@ class TestGraphs(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             super(MockNode, self.node).forward()
 
-    def test_copy_data_configs(self):
-        configs = self.node.copy_data_configs()
-        self.assertEqual(len(configs), 3)  # x, y, output_0
-        for port in self.node.input_ports:
-            self.assertIn(port, configs)
-
     def test_tracking_toggle(self):
         Node.set_tracking(True)
         self.assertTrue(Node._tracking_phase)

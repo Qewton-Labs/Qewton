@@ -165,6 +165,35 @@ class TestCopiesInOneGraph:
         assert out.get_data_configuration(graph, within=(first,)).shape == (7, 1)
         assert out.get_data_configuration(graph, within=(second,)).shape == (5, 1)
 
+    def test_each_copy_takes_the_variable_of_what_it_is_connected_to(self):
+        """What a model declares open (here: its output features have no
+        Variable) becomes concrete per place: one copy gives `u`, the other
+        `v`."""
+        from qewton.algorithms.dl_models.fcn import FCN
+        from qewton.config.axes import EllipsisAxes, FeatureAxes
+        from qewton.config.data_configurations import DataConfiguration
+        from qewton.config.variables import Variable
+        from qewton.graphs.nodes import InputPort, Node
+
+        class Sink(Node):
+            def __init__(self, variable):
+                super().__init__(name=f"sink_{variable.name}")
+                config = DataConfiguration(EllipsisAxes(), FeatureAxes(variable))
+                self._input_ports = [InputPort(config, node=self, name="x")]
+
+            def forward(self, x):
+                return x
+
+        model = FCN(in_neurons=DOMAIN.variable, hidden_neurons=4, out_neurons=1, n_hidden_layers=1)
+        first, second = model.copy(), model.copy()
+        graph = Graph()
+        for copy, name in ((first, "u"), (second, "v")):
+            graph.connect(RandomUniformSampler(DOMAIN, n_points=5), copy)
+            graph.connect(copy.output_ports[0], Sink(Variable(name, 1)).input_ports[0])
+        out = model.output_ports[0]
+        assert out.get_data_configuration(graph, within=(first,)).variables.name == "u"
+        assert out.get_data_configuration(graph, within=(second,)).variables.name == "v"
+
     def test_a_node_at_several_places_needs_within(self):
         graph, model, _, _ = self._graph()
         with pytest.raises(ValueError, match="several places"):
