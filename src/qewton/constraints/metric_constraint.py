@@ -1,5 +1,9 @@
+from copy import deepcopy
+
 from qewton.constraints.base import Constraint, ConstraintObjective
 from qewton.config.data_configurations import DataConfiguration
+from qewton.config.errors import StructureUnknown
+from qewton.config.sequences import expand
 from qewton.constraints.weight_functions import ConstraintWeightFunction
 from qewton.optim.parameters.categorical_hyperparameter import (
     HyperParameter,
@@ -66,9 +70,21 @@ class MetricConstraint(Constraint):
 
     def _build_input_ports(self, input_config: DataConfiguration):
         if not hasattr(self, "_input_ports"):
+            # The target gets a configuration of its own: `relate` ties it to
+            # the first input, unless it is a Python number.
             self.input_1 = InputPort(input_config, self, name="input1")
-            self.input_2 = InputPort(input_config, self, name="input2")
+            self.input_2 = InputPort(deepcopy(input_config), self, name="input2")
             self._input_ports = [self.input_1, self.input_2]
+
+    def relate(self, input1: DataConfiguration, input2: DataConfiguration) -> None:
+        """Data compared with the first input must have its configuration:
+        the same dims and Variables. A target without dims, e.g. the ``0.0``
+        in ``constraint(residual, 0.0)``, is compared with every value."""
+        axes = expand(input2.axes)
+        if any(a.is_ellipsis for a in axes):
+            raise StructureUnknown(f"The target {input2} is not known yet.")
+        if axes:
+            input1.merge(input2)
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:

@@ -14,6 +14,7 @@ from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort, Node
 class SetItem(Node[TensorType]):
     """Set item node that assigns values to specific indices of an input tensor.
     Has variable input ports for tensor and indices, and one output port.
+    The value may be a tensor or a Python number, e.g. ``x[:, :1] = 1.0``.
     """
 
     data_axis = EllipsisAxes()
@@ -22,7 +23,7 @@ class SetItem(Node[TensorType]):
         self,
         inp: Annotated[TensorType, DataConfiguration(data_axis)],
         key: Annotated[Any, DataConfiguration.empty()],
-        value: Annotated[TensorType, DataConfiguration.empty()],
+        value: Annotated[TensorType | float, DataConfiguration.empty()],
     ) -> Annotated[TensorType, DataConfiguration(data_axis)]:
         inp[key] = value
         return inp
@@ -230,6 +231,61 @@ class ConcatVariables(Node[TensorType]):
 
     def forward(self, *inp):
         return self.backend.math.concatenate(inp, axis=self.concat_dim)
+
+
+class AsVariable(Node[TensorType]):
+    """Declares that the features of its input are `variable`, e.g. that an
+    exact solution computed from ``t`` is a value of ``u``, to compare it with
+    the output of a model of ``u``.
+
+    Merging configurations never changes their Variables, so data of ``t``
+    can not be connected where ``u`` is expected; this node passes the data
+    on unchanged under the new Variable. The input may have any Variable (or
+    none) with the same feature size as `variable`.
+
+    Args:
+        variable (Variable): The Variable of the output's features.
+    """
+
+    def __init__(
+        self,
+        variable: Variable,
+        name=None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ):
+        super().__init__(
+            name if name is not None else f"As{variable.name}", backend=backend
+        )
+        self.backend: type[DeepLearningBackend[TensorType]] = backend
+        self.variable = variable
+        # All axes but the features (the last axes) pass through; the
+        # Variable is declared statically, as for SplitVariables.
+        ellipsis_axes = EllipsisAxes()
+        self._input_ports = [
+            InputPort(
+                DataConfiguration(
+                    ellipsis_axes,
+                    FeatureAxes(shape=variable.shape),
+                    dtype=backend.default_dtype,
+                ),
+                node=self,
+                name="inp",
+            )
+        ]
+        self._output_ports = [
+            OutputPort(
+                DataConfiguration(
+                    ellipsis_axes,
+                    FeatureAxes(variable=variable),
+                    dtype=backend.default_dtype,
+                ),
+                node=self,
+                name=variable.name,
+            )
+        ]
+
+    def forward(self, inp: Annotated[TensorType, DataConfiguration.empty()]):
+        return inp
 
 
 class ConcatNode(Node[TensorType]):

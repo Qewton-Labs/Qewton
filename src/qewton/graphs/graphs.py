@@ -1866,6 +1866,21 @@ class TrackingObject:
         unsqueeze_node = Unsqueeze(dim)
         return unsqueeze_node(self)
 
+    def as_variable(self, variable):
+        """Track declaring that the features of this value are `variable`,
+        e.g. ``exact_solution(t).as_variable(U)`` to compare it with a model
+        of ``U``. The data is unchanged; see
+        :class:`~qewton.algorithms.building_blocks.array_operations.AsVariable`.
+
+        Args:
+            variable (Variable): The Variable of the features, of the same
+                size as the current ones.
+        """
+        from qewton.algorithms.building_blocks.array_operations import AsVariable
+
+        as_variable_node = AsVariable(variable)
+        return as_variable_node(self)
+
     def track_gradient(self):
         """Track enabling gradient computation with respect to this value."""
         from qewton.algorithms.building_blocks.derivatives import GradientTracking
