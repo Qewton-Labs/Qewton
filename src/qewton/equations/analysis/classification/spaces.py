@@ -22,7 +22,10 @@ from enum import Enum
 from qewton.config.variables import Variable
 from qewton.equations.analysis.classification.facts import Fact
 from qewton.equations.analysis.classification.rows import Region, Row
-from qewton.equations.expr.nodes import Apply, Expr, FunctionSymbol
+from qewton.equations.expr.ops import OPS, OpSpec
+from qewton.equations.expr.apply import Apply
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.geometry.coordinates import coordinate_factors
 
 
@@ -51,7 +54,7 @@ _HIGHEST_ORDER = {
     FunctionSpace.H2: 2,
 }
 
-_BY_OPERATOR = {"div": FunctionSpace.H_DIV, "curl": FunctionSpace.H_CURL}
+_BY_OPERATOR = {OPS.div: FunctionSpace.H_DIV, OPS.curl: FunctionSpace.H_CURL}
 
 
 def highest_order(space: FunctionSpace) -> int:
@@ -59,14 +62,14 @@ def highest_order(space: FunctionSpace) -> int:
     return _HIGHEST_ORDER[space]
 
 
-def _operators(expr: Expr, symbol: FunctionSymbol, time: Variable | None) -> set[str]:
+def _operators(expr: Expr, symbol: FunctionSymbol, time: Variable | None) -> set[OpSpec]:
     """The spatial derivative operators applied directly to `symbol` in `expr`."""
     found: set[str] = set()
     for child in expr.children():
         if isinstance(expr, Apply) and expr.op.takes_axes and child == symbol:
-            axes = coordinate_factors(expr.args[expr.op.arity])  # type: ignore
+            axes = coordinate_factors(expr.axes)  # type: ignore
             if any(axis != time for axis in axes):
-                found.add(expr.op.name)
+                found.add(expr.op)
         found |= _operators(child, symbol, time)
     return found
 
@@ -85,11 +88,11 @@ def _needed(
         return FunctionSpace.L2
     if order >= 2:
         return FunctionSpace.H2
-    names = set()
+    operators: set[OpSpec] = set()
     for side in row.constraint.sides:
-        names |= _operators(side, symbol, time)
-    if len(names) == 1:
-        return _BY_OPERATOR.get(names.pop(), FunctionSpace.H1)
+        operators |= _operators(side, symbol, time)
+    if len(operators) == 1:
+        return _BY_OPERATOR.get(operators.pop(), FunctionSpace.H1)
     return FunctionSpace.H1
 
 

@@ -49,7 +49,7 @@ from qewton.equations.analysis.structure.structure import (
 )
 from qewton.equations.analysis.suggestions.base import Suggestion, suggest
 from qewton.equations.analysis.training import TrainingMode, build_training_modes
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.expr.ops import Linearity
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem

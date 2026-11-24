@@ -39,7 +39,7 @@ from qewton.equations.analysis.classification.facts import Fact, by_constraint
 from qewton.equations.analysis.classification.rows import Row
 from qewton.equations.analysis.classification.spaces import FunctionSpace, function_spaces
 from qewton.equations.analysis.structure.coupling import CouplingGraph
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.model.problem import Problem
 
 

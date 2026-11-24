@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from qewton.config.variables import Variable
 from qewton.equations.analysis.prepare.infer import infer_shapes
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.geometry.coordinates import coordinate_factors
 from qewton.equations.geometry.sets import (
     Boundary,

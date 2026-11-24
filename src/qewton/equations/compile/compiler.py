@@ -24,7 +24,7 @@ from qewton.equations.compile.boundary import BoundaryContext, Condition, bounda
 from qewton.equations.compile.by_parts import Cutter, Pieces
 from qewton.equations.compile.forms import FormTerm, Measure, Residual, WeakProblem
 from qewton.equations.compile.pairing import pair
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.expr.ops import Shape
 from qewton.equations.geometry.coordinates import coordinate_factors
 from qewton.equations.geometry.sets import (

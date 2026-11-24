@@ -45,11 +45,12 @@ qewton/equations/
     │   ├── coordinates.py       # check_coordinate: a coordinate is a config Variable with an integer dim
     │   └── sets.py              # SetNode hierarchy (built_from), Partition, and every query about sets: is_subset, factors, boundary_of, sliced_axes, depends_on, ...
     ├── expr/
-    │   ├── __init__.py          # registers the eager shape and axis checks with the nodes
-    │   ├── nodes.py             # Expr, FunctionSymbol, Coord, Const, Normal, Apply, Restrict, Integral, Shift; walk, symbols_in, contains
-    │   ├── ops.py               # OpSpec and the operator registry (grad, div, dt, ...)
-    │   ├── shapes.py            # shape_of, eager shape check
-    │   ├── axes.py              # free_axes, eager axis check
+    │   ├── base.py              # Expr: structure, shape, free_axes, linearity and shape-inference hooks, each defined per node class
+    │   ├── leaves.py            # FunctionSymbol, Coord, Const, Normal, as_expr
+    │   ├── wrappers.py          # Restrict, Integral, Shift, Index
+    │   ├── apply.py             # Apply: an operator from the registry applied to its arguments
+    │   ├── ops.py               # OpSpec and the operator registry (grad, div, dt, ...); ShapeError, AxisError
+    │   ├── traversal.py         # walk, transform, symbols_in, contains
     │   └── api.py               # user-facing helpers: grad, div, curl, lap, d, dt, dot, inner, sin, cos, exp (Eq goes in constraints.py)
     ├── model/
     │   ├── constraints.py       # Relation, Constraint (sides, nodes, symbols, sets), PendingConstraint, Eq/Le/Ge/Complementary
@@ -305,7 +306,7 @@ class Problem:
 
 `Periodic` is a declaration like `Partition`: it says two sets are the same place, shifted. The condition on the functions is still a constraint with a `shift`. The validate pass (M2) checks that the offsets agree.
 
-**Axis analysis** (`expr/axes.py`, set queries in `geometry/sets.py`). `free_axes(expr)` is the set of coordinates an expression varies with: the declared inputs of its functions, the coordinate of a `Coord`, minus the sliced coordinates of a `Restrict` and the coordinates of an `Integral`'s set. Checked eagerly: a derivative or `Shift` along a coordinate the operand does not depend on is an `AxisError` (the derivative would be zero). Checked when a `Problem` is built: both sides of a constraint use only the coordinates of the set it holds on (a slice fixes its coordinate), and a global constraint uses none. The declared time is the exception: a constraint without time that uses time-dependent functions is accepted, because normalisation lifts it to all times. `Problem.coordinates()` lists every coordinate the problem uses.
+**Axis analysis** (`Expr.free_axes`, set queries in `geometry/sets.py`). `expr.free_axes` is the set of coordinates an expression varies with: the declared inputs of its functions, the coordinate of a `Coord`, minus the sliced coordinates of a `Restrict` and the coordinates of an `Integral`'s set. Checked eagerly: a derivative or `Shift` along a coordinate the operand does not depend on is an `AxisError` (the derivative would be zero). Checked when a `Problem` is built: both sides of a constraint use only the coordinates of the set it holds on (a slice fixes its coordinate), and a global constraint uses none. The declared time is the exception: a constraint without time that uses time-dependent functions is accepted, because normalisation lifts it to all times. `Problem.coordinates()` lists every coordinate the problem uses.
 
 Still waiting for later passes: a delay has history on an interval; a constraint's offset agrees with its `Periodic` declaration.
 
@@ -366,7 +367,7 @@ class AnalysisContext:
 
 ### 6.0 axis pre-pass
 
-Not a separate pass. It was meant to find the functions that depend on time, so that time lifting could run before inference. `free_axes` (`expr/axes.py`) already answers that for every expression, with no inference, so time lifting uses it directly. Whether a function has a time *derivative* (evolution versus a time-parametrised stationary problem) is a question for structure and classification (M3, M4), which compute derivative orders anyway.
+Not a separate pass. It was meant to find the functions that depend on time, so that time lifting could run before inference. `Expr.free_axes` already answers that for every expression, with no inference, so time lifting uses it directly. Whether a function has a time *derivative* (evolution versus a time-parametrised stationary problem) is a question for structure and classification (M3, M4), which compute derivative orders anyway.
 
 ### 6.1 validate
 
@@ -380,7 +381,7 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 - Bring every constraint into the form `lhs − rhs REL 0` (`analysis/prepare/normalization.py`, done), keeping the original for display in `Normalized.origin`. A right side that is already zero stays, and a complementarity is not rewritten.
 - **Time lifting** (`analysis/prepare/normalization.py`, done). A constraint whose sides vary in time (`free_axes` contains t) but which holds on a set without time is rewritten to hold on S × I, and a global one to hold on I. Initial conditions are left alone, since `Restrict` to a slice already removed t. The interval is the one `Domain` on the time coordinate found in the problem; if there is none, or several, nothing is lifted and a warning says why. Each lift is an info diagnostic, and `Normalized.origin` keeps the original constraints for display. The `partitions` are not lifted: a lifted part `Gamma_D x I` is covered by its declaration of `Gamma_D`.
 - **Batch lifting.** Constraints that involve a batched symbol get its parameter axis (× P).
-- Choose canonical forms (done): expand `lap(u, axes)` into `div(grad(u, axes), axes)`, so that −div(ν∇u) and −νΔu are analysed consistently. The rewrite uses the new generic `transform(expr, rewrite)` in `expr/nodes.py`, which rebuilds a tree bottom-up and reuses unchanged nodes.
+- Choose canonical forms (done): expand `lap(u, axes)` into `div(grad(u, axes), axes)`, so that −div(ν∇u) and −νΔu are analysed consistently. The rewrite uses the new generic `transform(expr, rewrite)` in `expr/traversal.py`, which rebuilds a tree bottom-up and reuses unchanged nodes.
 
 ### 6.3 infer: signatures and shapes
 
@@ -390,14 +391,14 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 - **Lower bound check.** If a derivative along axis a is applied directly to s (or to `Restrict(s, …)`), then a must be among s's declared inputs, or the problem is an error. Nested cases such as grad(u·v) give no requirement.
 - **Data values.** A supplied value must agree with the declared inputs. A constant (`inputs=None`) cannot get a spatial array, and a numeric value with spatial inputs needs a geometry through `Task.values`. This is checked when the Task is built.
 - **Conflicts and unused inputs.** A declared output shape must agree with the inferred one. Declared inputs that no constraint needs are a warning.
-- **Shapes.** `shape_of` computes them bottom-up with `OpSpec.shape_rule` (M2, `expr/shapes.py`). `infer_shapes(problem)` (`infer.py`) fills in symbols declared with `dim=None`: known shapes flow backwards through invertible operators (neg, d, lap, grad, div, and add, sub, mul, inner when the other operand is known), scalar-only operators force scalar arguments, and a scalar constant never decides a shape. When nothing more follows, the first undetermined symbol in order of appearance defaults to scalar and is reported in `Inference.defaulted` (a warning), then propagation continues. A final pass re-checks every constraint, so conflicts raise `ShapeError`. `dot` is not inverted, because it is ambiguous.
+- **Shapes.** `expr.shape` computes them bottom-up with `OpSpec.shape_rule` (M2, `Expr._shape` per node class; None while a symbol's shape is undeclared). `infer_shapes(problem)` (`infer.py`) fills in symbols declared with `dim=None`: known shapes flow backwards through invertible operators (neg, d, lap, grad, div, and add, sub, mul, inner when the other operand is known), scalar-only operators force scalar arguments, and a scalar constant never decides a shape. When nothing more follows, the first undetermined symbol in order of appearance defaults to scalar and is reported in `Inference.defaulted` (a warning), then propagation continues. A final pass re-checks every constraint, so conflicts raise `ShapeError`. `dot` is not inverted, because it is ambiguous.
 - The declared inputs and the inferred shapes are printed first in the report, the way a type checker shows types.
 
 ### 6.4 structure
 
 As built so far (`analysis/structure/structure.py`): `derivative_orders(expr)`, `constraint_orders(constraint)` and `unknown_orders(task)`, one dict `{coordinate: order}` per unknown and constraint. Orders add along the path to the function, each factor of a product axis counts, and a shift adds nothing.
 
-Also built: `decoupled_axes(task)`, which reports declared unknown input axes with no unknown derivative or nonlocal integral/shift coupling. These are candidate pointwise directions. `linearity(expr, unknowns)` (`none`/`linear`/`affine`/`nonlinear`, from `OpSpec.linearity`) and `split(task)`, which returns an operator part and a source part per constraint of the normalized problem. Terms are signed and tagged. A constraint is `linear` when no operator term is nonlinear (a linear operator plus a source). `batch_placement(task)` reports each varying function in the operator/source parts and whether it is affine there: the parameter must occur linearly and not be differentiated along one of its declared input axes. Thus `div(nu * grad(u, x), x)` is affine in spatially constant `nu`, but not in `nu(x)`. Varying sets affect geometry and do not appear in this expression-level report.
+Also built: `decoupled_axes(task)`, which reports declared unknown input axes with no unknown derivative or nonlocal integral/shift coupling. These are candidate pointwise directions. `expr.linearity(unknowns)` (`none`/`linear`/`affine`/`nonlinear`, from `OpSpec.linearity`) and `split(task)`, which returns an operator part and a source part per constraint of the normalized problem. Terms are signed and tagged. A constraint is `linear` when no operator term is nonlinear (a linear operator plus a source). `batch_placement(task)` reports each varying function in the operator/source parts and whether it is affine there: the parameter must occur linearly and not be differentiated along one of its declared input axes. Thus `div(nu * grad(u, x), x)` is affine in spatially constant `nu`, but not in `nu(x)`. Varying sets affect geometry and do not appear in this expression-level report.
 
 - **Inherited batch axes.** `inherited_batch_axes(task)` propagates a varying function or set axis across constraints sharing unknowns. Set dependencies include products, boundaries, and sibling parts of a partition; sets used by restrictions and integrals are considered too. `Signature.inherited_batch` displays the result separately from a symbol's own varying axis.
 

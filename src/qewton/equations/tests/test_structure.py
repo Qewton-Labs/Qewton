@@ -15,7 +15,6 @@ from qewton.equations.analysis.context import batch_placement, decoupled_axes, s
 from qewton.equations.analysis.structure.structure import (
     constraint_orders,
     derivative_orders,
-    linearity,
     unknown_orders,
 )
 from qewton.equations.fixtures import delay, heat, poisson
@@ -117,20 +116,20 @@ f = FunctionSymbol(Variable("f", dim=1), x)
     ],
 )
 def test_linearity_in_the_unknown(expr, expected):
-    assert linearity(expr, U) == expected
+    assert expr.linearity(U) == expected
 
 
 def test_a_function_that_is_not_unknown_counts_as_data():
-    assert linearity(u * f, U) == "linear"
-    assert linearity(u * f, frozenset({u, f})) == "nonlinear"
+    assert (u * f).linearity(U) == "linear"
+    assert (u * f).linearity(frozenset({u, f})) == "nonlinear"
 
 
 def test_a_shift_keeps_the_dependence_and_an_unknown_offset_breaks_it():
-    assert linearity(shift(u, t, -1), U) == "linear"
+    assert shift(u, t, -1).linearity(U) == "linear"
     tau = FunctionSymbol(Variable("tau", dim=1), None)
     g = FunctionSymbol(Variable("g", dim=1), t)
-    assert linearity(shift(g, t, tau), U) == "none"
-    assert linearity(shift(g, t, tau), frozenset({tau})) == "nonlinear"
+    assert shift(g, t, tau).linearity(U) == "none"
+    assert shift(g, t, tau).linearity(frozenset({tau})) == "nonlinear"
 
 
 def poisson_task():

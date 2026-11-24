@@ -19,7 +19,7 @@ from enum import Enum
 from qewton.config.variables import Variable
 from qewton.equations.diagnostics import Diagnostic, warning
 from qewton.equations.analysis.structure.structure import BatchPlacement
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.geometry.sets import SetNode
 from qewton.equations.model.task import Task
 

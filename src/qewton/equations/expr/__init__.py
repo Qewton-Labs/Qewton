@@ -1,12 +1,15 @@
 """Expressions: functions, coordinates, constants and operators.
 
-`nodes.py` has the expression tree, `ops.py` the operator registry and `api.py` the
-helpers that build expressions, such as `grad(u, x)`.
+- `base.py`: `Expr`, the base class. Each node class defines its own structure,
+  shape, coordinates and linearity there; nothing is registered elsewhere.
+- `leaves.py`: functions, coordinates, constants, normals.
+- `wrappers.py`: restriction, integral, shift and component of an expression.
+- `apply.py`: an operator applied to its arguments; `ops.py` is the operator
+  registry with each operator's shape rule, order and linearity.
+- `traversal.py`: walking and rebuilding trees.
+- `api.py`: helpers that build expressions, such as `grad(u, x)`.
 
-Building an operator node checks it at once: its shape (`shapes.py`) and the
-coordinates it depends on (`axes.py`). Both checks are written against the node
-classes, so `nodes.py` cannot import them; this package registers them instead.
-Any import from the package runs this file first, so the checks are always on.
+Building an operator node checks its shape and coordinates at once.
 """
 
 from qewton.equations.expr.api import (
@@ -27,33 +30,20 @@ from qewton.equations.expr.api import (
     sin,
     trace,
 )
-from qewton.equations.expr.axes import AxisError, check_axes, free_axes
-from qewton.equations.expr.nodes import (
-    Apply,
-    Const,
-    Coord,
-    Expr,
-    FunctionSymbol,
-    Index,
-    Integral,
-    Normal,
-    Restrict,
-    Shift,
-    as_expr,
-    transform,
-    walk,
-)
+from qewton.equations.expr.apply import Apply
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import Const, Coord, FunctionSymbol, Normal, as_expr
 from qewton.equations.expr.ops import (
     OPS,
+    OperatorRegistry,
+    AxisError,
     Linearity,
     OpLinearity,
     OpSpec,
     ShapeError,
-    register,
 )
-from qewton.equations.expr.shapes import check_shape
-
-Expr.checks.extend((check_shape, check_axes))
+from qewton.equations.expr.traversal import transform, walk
+from qewton.equations.expr.wrappers import Index, Integral, Restrict, Shift
 
 __all__ = [
     # nodes
@@ -72,14 +62,12 @@ __all__ = [
     "walk",
     # operators
     "OPS",
+    "OperatorRegistry",
     "Linearity",
     "OpLinearity",
     "OpSpec",
     "ShapeError",
-    "register",
-    # axes
     "AxisError",
-    "free_axes",
     # building expressions
     "cos",
     "curl",

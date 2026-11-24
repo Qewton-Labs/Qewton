@@ -16,10 +16,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.axes import free_axes
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.diagnostics import Diagnostic, warning
-from qewton.equations.expr.shapes import UnknownShapeError, shape_of
-from qewton.equations.expr.nodes import Expr, FunctionSymbol
 from qewton.equations.geometry.sets import SetNode, depends_on, with_factors
 from qewton.equations.model.observation import Observed
 
@@ -138,13 +137,6 @@ def _check_key(problem: Problem, key: object, what: str) -> None:
         )
 
 
-def _declared_shape(symbol: FunctionSymbol) -> tuple[int, ...] | None:
-    try:
-        return shape_of(symbol)
-    except UnknownShapeError:
-        return None
-
-
 def _check_value(
     problem: Problem,
     symbol: FunctionSymbol,
@@ -169,7 +161,7 @@ def _check_value(
 
 def _check_expression(symbol: FunctionSymbol, value: Expr) -> None:
     """An expression carries no shape here: it only has to stay within the inputs."""
-    extra = free_axes(value) - free_axes(symbol)
+    extra = value.free_axes - symbol.free_axes
     if extra:
         axes = ", ".join(sorted(str(a.name) for a in extra))
         raise TaskError(
@@ -186,8 +178,8 @@ def _check_array(
     varying: bool,
 ) -> None:
     name = symbol.variable.name
-    inputs = free_axes(symbol)
-    expected = _declared_shape(symbol)
+    inputs = symbol.free_axes
+    expected = symbol.shape
     # Drop the batch axis of a varying function: what is left is one instance.
     got = array.shape[1:] if varying else array.shape
 
@@ -337,7 +329,7 @@ def _check_observed(problem: Problem, roles: dict, observed) -> dict:
                 f"`observed` needs Observed values, got {type(data).__name__}."
             )
         if data.on is not None:
-            outside = {a.whole for a in data.on.axes} - free_axes(symbol)
+            outside = {a.whole for a in data.on.axes} - symbol.free_axes
             if outside:
                 names = ", ".join(sorted(str(a.name) for a in outside))
                 raise TaskError(

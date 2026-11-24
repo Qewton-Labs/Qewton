@@ -5,34 +5,24 @@ order of the function along each coordinate, e.g. {x: 2, t: 1} for the heat equa
 Block 2: the operator/source split and linearity. Each constraint is cut into signed
 terms at its top-level sums. A term that contains an unknown belongs to the operator
 part, the others to the source part. Every term is labelled by how it depends on the
-unknowns. Batch placement and decoupled coordinate axes are included here; the scalar
-coupling graph is in `structure/coupling.py`.
+unknowns (`Expr.linearity`). Batch placement and decoupled coordinate axes are
+included here; the scalar coupling graph is in `structure/coupling.py`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from functools import singledispatch
 from typing import Literal
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.axes import free_axes
-from qewton.equations.expr.nodes import (
-    Apply,
-    Const,
-    Expr,
-    FunctionSymbol,
-    Index,
-    Integral,
-    Restrict,
-    Shift,
-    contains,
-    symbols_in,
-    walk,
-)
+from qewton.equations.expr.apply import Apply
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import Const, FunctionSymbol
+from qewton.equations.expr.traversal import contains, symbols_in, walk
+from qewton.equations.expr.wrappers import Integral, Shift
 from qewton.equations.geometry.coordinates import coordinate_factors
-from qewton.equations.expr.ops import Linearity
+from qewton.equations.expr.ops import OPS, Linearity
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
 from qewton.equations.model.task import Task
@@ -62,7 +52,7 @@ def _collect(expr: Expr, above: Orders, found: dict[FunctionSymbol, Orders]) -> 
     inner = above
     if isinstance(expr, Apply) and expr.op.takes_axes:
         inner = dict(above)
-        for axis in coordinate_factors(expr.args[expr.op.arity]):  # type: ignore
+        for axis in coordinate_factors(expr.axes):  # type: ignore
             inner[axis] = inner.get(axis, 0) + expr.op.order
     for child in expr.children():
         _collect(child, inner, found)
@@ -128,7 +118,7 @@ def _differentiated_axes(
         if isinstance(node, Apply)
         and node.op.takes_axes
         and contains(node.args[0], unknowns)  # type: ignore
-        for axis in coordinate_factors(node.args[node.op.arity])  # type: ignore
+        for axis in coordinate_factors(node.axes)  # type: ignore
     }
 
 
@@ -138,49 +128,10 @@ def _nonlocal_axes(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> set[Varia
         if isinstance(node, Integral):
             symbols = {s for s in symbols_in(node.expr) if s in unknowns}
             for symbol in symbols:
-                coupled.update(axis.whole for axis in free_axes(symbol) & node.over.axes)
+                coupled.update(axis.whole for axis in symbol.free_axes & node.over.axes)
         elif isinstance(node, Shift) and contains(node.expr, unknowns):
             coupled.add(node.axis.whole)
     return coupled
-
-
-@singledispatch
-def linearity(_expr: Expr, _unknowns: frozenset[FunctionSymbol]) -> Linearity:
-    """How `expr` depends on the unknowns.
-
-    This follows `OpSpec.linearity`: a multilinear operator stays linear when only one
-    argument contains unknowns, and is nonlinear when both do. Restrictions, integrals
-    and shifts of an expression keep its dependence, but a shift offset that contains
-    an unknown makes the term nonlinear.
-    """
-    return Linearity.NONE
-
-
-@linearity.register
-def _(expr: FunctionSymbol, unknowns: frozenset[FunctionSymbol]) -> Linearity:
-    return Linearity.LINEAR if expr in unknowns else Linearity.NONE
-
-
-@linearity.register(Restrict)
-@linearity.register(Integral)
-@linearity.register(Index)
-def _(
-    expr: Restrict | Integral | Index, unknowns: frozenset[FunctionSymbol]
-) -> Linearity:
-    return linearity(expr.expr, unknowns)
-
-
-@linearity.register
-def _(expr: Shift, unknowns: frozenset[FunctionSymbol]) -> Linearity:
-    if linearity(expr.offset, unknowns) is not Linearity.NONE:
-        return Linearity.NONLINEAR
-    return linearity(expr.expr, unknowns)
-
-
-@linearity.register
-def _(expr: Apply, unknowns: frozenset[FunctionSymbol]) -> Linearity:
-    parts = [linearity(arg, unknowns) for arg in expr.children()]
-    return expr.op.linearity.of_result(parts)
 
 
 @dataclass(frozen=True)
@@ -220,11 +171,11 @@ def signed_terms(
     expr: Expr | Variable, sign: int = 1
 ) -> Iterator[tuple[Expr | Variable, int]]:
     """Cut `expr` at its top-level sums, keeping track of the sign."""
-    if isinstance(expr, Apply) and expr.op.name == "neg":
+    if isinstance(expr, Apply) and expr.op is OPS.neg:
         yield from signed_terms(expr.args[0], -sign)
-    elif isinstance(expr, Apply) and expr.op.name in ("add", "sub"):
+    elif isinstance(expr, Apply) and expr.op in (OPS.add, OPS.sub):
         yield from signed_terms(expr.args[0], sign)
-        second = sign if expr.op.name == "add" else -sign
+        second = sign if expr.op is OPS.add else -sign
         yield from signed_terms(expr.args[1], second)
     else:
         yield expr, sign
@@ -243,7 +194,7 @@ def split_constraint(
     for expr, sign in pieces:
         if isinstance(expr, Const) and expr.value == 0:
             continue
-        term = Term(expr, sign, linearity(expr, unknowns))  # type: ignore
+        term = Term(expr, sign, expr.linearity(unknowns))  # type: ignore
         (operator if contains(expr, unknowns) else source).append(term)  # type: ignore
     return Split(tuple(operator), tuple(source))
 
@@ -267,7 +218,7 @@ def _differentiates(expr: Expr, symbol: FunctionSymbol) -> bool:
         if not isinstance(node, Apply) or not node.op.takes_axes:
             continue
         argument = node.args[0]
-        axes = node.args[node.op.arity]
+        axes = node.axes
         if contains(argument, (symbol,)) and symbol_axes.intersection(  # type: ignore
             coordinate_factors(axes)  # type: ignore
         ):
@@ -277,9 +228,8 @@ def _differentiates(expr: Expr, symbol: FunctionSymbol) -> bool:
 
 def _affine_in(expr: Expr, symbol: FunctionSymbol) -> bool:
     """Whether `expr` separates as the varying symbol times a term independent of it."""
-    return linearity(
-        expr, frozenset({symbol})
-    ) is not Linearity.NONLINEAR and not _differentiates(expr, symbol)
+    nonlinear = expr.linearity(frozenset({symbol})) is Linearity.NONLINEAR
+    return not nonlinear and not _differentiates(expr, symbol)
 
 
 def build_batch_placement(

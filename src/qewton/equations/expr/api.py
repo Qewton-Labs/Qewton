@@ -9,41 +9,44 @@ from __future__ import annotations
 
 from qewton.config.variables import Variable
 from qewton.equations.geometry.sets import Interface, SetNode
-from qewton.equations.expr.nodes import Apply, Expr, Integral, Restrict, Shift, as_expr
-from qewton.equations.expr.ops import OPS
+from qewton.equations.expr.apply import Apply
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import as_expr
+from qewton.equations.expr.wrappers import Integral, Restrict, Shift
+from qewton.equations.expr.ops import OPS, OpSpec
 
 
-def _call(name: str, *args: object) -> Expr:
-    return Apply(OPS[name], tuple(as_expr(arg) for arg in args))
+def _call(op: OpSpec, *args: object) -> Expr:
+    return Apply(op, tuple(as_expr(arg) for arg in args))
 
 
-def _call_on_axes(name: str, value: object, axes: Variable) -> Expr:
-    return Apply(OPS[name], (as_expr(value), axes))
+def _call_on_axes(op: OpSpec, value: object, axes: Variable) -> Expr:
+    return Apply(op, (as_expr(value), axes))
 
 
 def sin(value: object) -> Expr:
-    return _call("sin", value)
+    return _call(OPS.sin, value)
 
 
 def cos(value: object) -> Expr:
-    return _call("cos", value)
+    return _call(OPS.cos, value)
 
 
 def exp(value: object) -> Expr:
-    return _call("exp", value)
+    return _call(OPS.exp, value)
 
 
 def dot(first: object, second: object) -> Expr:
-    return _call("dot", first, second)
+    return _call(OPS.dot, first, second)
 
 
 def inner(first: object, second: object) -> Expr:
-    return _call("inner", first, second)
+    return _call(OPS.inner, first, second)
 
 
 def d(value: object, axis: Variable) -> Expr:
     """The partial derivative along one coordinate, e.g. d(u, t)."""
-    return _call_on_axes("d", value, axis)
+    return _call_on_axes(OPS.d, value, axis)
 
 
 def dt(value: object, time: Variable) -> Expr:
@@ -52,19 +55,19 @@ def dt(value: object, time: Variable) -> Expr:
 
 
 def grad(value: object, axes: Variable) -> Expr:
-    return _call_on_axes("grad", value, axes)
+    return _call_on_axes(OPS.grad, value, axes)
 
 
 def div(value: object, axes: Variable) -> Expr:
-    return _call_on_axes("div", value, axes)
+    return _call_on_axes(OPS.div, value, axes)
 
 
 def curl(value: object, axes: Variable) -> Expr:
-    return _call_on_axes("curl", value, axes)
+    return _call_on_axes(OPS.curl, value, axes)
 
 
 def lap(value: object, axes: Variable) -> Expr:
-    return _call_on_axes("lap", value, axes)
+    return _call_on_axes(OPS.lap, value, axes)
 
 
 def integral(value: object, over: SetNode) -> Expr:

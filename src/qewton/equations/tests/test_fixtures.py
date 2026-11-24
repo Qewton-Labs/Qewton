@@ -32,7 +32,8 @@ def test_neumann_poisson_has_a_global_constraint():
 
 
 def test_delay_has_a_shift_and_a_history():
-    from qewton.equations.expr.nodes import Shift, walk
+    from qewton.equations.expr.traversal import walk
+    from qewton.equations.expr.wrappers import Shift
     from qewton.equations.fixtures import delay
 
     p = delay()

@@ -3,14 +3,9 @@ import pytest
 from qewton.config.variables import Variable
 from qewton.equations.model.constraints import Eq
 from qewton.equations.expr import api
-from qewton.equations.expr.nodes import (
-    FunctionSymbol,
-    Normal,
-    Restrict,
-    contains,
-    symbols_in,
-    walk,
-)
+from qewton.equations.expr.leaves import FunctionSymbol, Normal
+from qewton.equations.expr.traversal import contains, symbols_in, walk
+from qewton.equations.expr.wrappers import Restrict
 from qewton.equations.geometry.sets import (
     Boundary,
     Domain,

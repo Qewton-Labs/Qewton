@@ -20,9 +20,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from qewton.equations.expr.axes import free_axes
+from qewton.equations.expr.apply import Apply
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import Const
+from qewton.equations.expr.traversal import transform
 from qewton.equations.diagnostics import Diagnostic, info, warning
-from qewton.equations.expr.nodes import Apply, Const, Expr, transform
 from qewton.equations.expr.ops import OPS
 from qewton.equations.geometry.sets import (
     Domain,
@@ -63,7 +65,7 @@ def _needs_lift(constraint: Constraint, time) -> bool:
     if constraint.on is not None:
         # A slice fixes the time, so the constraint already holds at one time only.
         held_on = set_free_axes(constraint.on) | sliced_axes(constraint.on)
-    used = free_axes(constraint.lhs) | free_axes(constraint.rhs)
+    used = constraint.lhs.free_axes | constraint.rhs.free_axes
     return time in used and time not in held_on
 
 
@@ -115,9 +117,9 @@ def _lift(problem: Problem) -> Normalized:
 
 
 def _expand_lap(expr: Expr) -> Expr:
-    if isinstance(expr, Apply) and expr.op.name == "lap":
+    if isinstance(expr, Apply) and expr.op is OPS.lap:
         argument, axes = expr.args
-        return Apply(OPS["div"], (Apply(OPS["grad"], (argument, axes)), axes))
+        return Apply(OPS.div, (Apply(OPS.grad, (argument, axes)), axes))
     return expr
 
 
@@ -130,7 +132,7 @@ def _residual(constraint: Constraint) -> Constraint:
         return constraint
     return replace(
         constraint,
-        lhs=Apply(OPS["sub"], (constraint.lhs, constraint.rhs)),
+        lhs=Apply(OPS.sub, (constraint.lhs, constraint.rhs)),
         rhs=Const(0),
     )
 

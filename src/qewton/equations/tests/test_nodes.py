@@ -1,7 +1,8 @@
 import pytest
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.nodes import Const, Coord, FunctionSymbol, Normal, Restrict
+from qewton.equations.expr.leaves import Const, Coord, FunctionSymbol, Normal
+from qewton.equations.expr.wrappers import Restrict
 from qewton.equations.geometry.sets import Boundary, Domain, Part, Product, Slice
 
 x = Variable("x", dim=2)

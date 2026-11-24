@@ -22,7 +22,6 @@ from qewton.equations.analysis.structure.structure import (
     Term,
     constraint_orders,
     derivative_orders,
-    linearity,
     unknown_orders,
 )
 
@@ -39,6 +38,5 @@ __all__ = [
     "Term",
     "constraint_orders",
     "derivative_orders",
-    "linearity",
     "unknown_orders",
 ]

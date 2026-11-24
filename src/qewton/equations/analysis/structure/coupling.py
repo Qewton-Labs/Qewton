@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from math import prod
 
 from qewton.equations.analysis.prepare.infer import constraint_shape
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
 

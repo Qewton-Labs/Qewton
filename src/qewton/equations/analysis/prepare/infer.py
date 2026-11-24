@@ -12,28 +12,21 @@ fill it in, in this order:
    steps 1 and 2 continue, which usually resolves the rest.
 
 Finally every constraint is checked with the inferred shapes, so a conflict raises
-a ShapeError.
+a ShapeError. What a node says about shapes is defined on the node classes
+(`Expr.shape_with`, `require_shape`, `require_operand_shapes`); this module only
+drives the propagation.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import singledispatch
 
-from qewton.equations.expr.shapes import index_shape, shape_of
-from qewton.equations.model.constraints import Constraint
-from qewton.equations.expr.nodes import (
-    Apply,
-    Const,
-    Expr,
-    FunctionSymbol,
-    Index,
-    Integral,
-    Restrict,
-    Shift,
-)
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import Const, FunctionSymbol
 from qewton.equations.expr.ops import Shape, ShapeError
+from qewton.equations.expr.wrappers import Index
+from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
 
 Env = dict[FunctionSymbol, Shape]
@@ -52,22 +45,24 @@ class Inference:
 
 
 def infer_shapes(problem: Problem) -> Inference:
-    env: Env = {}
+    solver = _Solver({})
     defaulted: list[FunctionSymbol] = []
     while True:
-        _propagate(problem, env)
+        _propagate(problem, solver)
         pending = [
-            s for s in _symbols_in_order(problem) if s.shape is None and s not in env
+            s
+            for s in _symbols_in_order(problem)
+            if s.shape is None and s not in solver.env
         ]
         if not pending:
             break
         _reject_indexed(problem, pending[0])
-        env[pending[0]] = ()
+        solver.env[pending[0]] = ()
         defaulted.append(pending[0])
     for constraint in problem.constraints:
-        _check(constraint, env)
+        _check(constraint, solver.env)
     shapes = {
-        symbol: symbol.shape if symbol.shape is not None else env[symbol]
+        symbol: symbol.shape if symbol.shape is not None else solver.env[symbol]
         for symbol in _symbols_in_order(problem)
     }
     return Inference(shapes, tuple(defaulted))
@@ -84,20 +79,12 @@ def _reject_indexed(problem: Problem, symbol: FunctionSymbol) -> None:
                 )
 
 
-def shape_with(expr: Expr, shapes: Mapping[FunctionSymbol, Shape]) -> Shape:
-    """The shape of `expr` when the output shape of every function is given."""
-    shape = _partial(expr, dict(shapes))
-    if shape is None:
-        raise ShapeError(f"The shape of {expr} is not determined by the given shapes.")
-    return shape
-
-
 def constraint_shape(
     constraint: Constraint, shapes: Mapping[FunctionSymbol, Shape]
 ) -> Shape:
-    """The shape of both sides of `constraint`; a scalar constant side fits any shape."""
-    left = shape_with(constraint.lhs, shapes)
-    right = shape_with(constraint.rhs, shapes)
+    """The shape of both sides of `constraint`, when the shape of every function is
+    given; a scalar constant side fits any shape."""
+    left, right = (_determined(side, shapes) for side in constraint.sides)
     if left == right:
         return left
     if left == () and isinstance(constraint.lhs, Const):
@@ -107,163 +94,68 @@ def constraint_shape(
     raise ShapeError(f"Cannot determine scalar equation components for {constraint}.")
 
 
+def _determined(expr: Expr, shapes: Mapping[FunctionSymbol, Shape]) -> Shape:
+    shape = expr.shape_with(shapes)
+    if shape is None:
+        raise ShapeError(f"The shape of {expr} is not determined by the given shapes.")
+    return shape
+
+
 def _symbols_in_order(problem: Problem) -> list[FunctionSymbol]:
     found = (s for constraint in problem.constraints for s in constraint.symbols())
     return list(dict.fromkeys(found))
 
 
-def _propagate(problem: Problem, env: Env) -> None:
-    """Apply steps 1 and 2 until the environment stops growing."""
+def _propagate(problem: Problem, solver: _Solver) -> None:
+    """Apply steps 1 and 2 until no more shapes follow."""
     while True:
-        known = len(env)
+        known = len(solver.env)
         for constraint in problem.constraints:
-            _constrain(constraint.lhs, constraint.rhs, env)
+            _constrain(constraint.lhs, constraint.rhs, solver)
             for node in constraint.nodes():
-                _demand(node, env)
-        if len(env) == known:
+                node.require_operand_shapes(solver)
+        if len(solver.env) == known:
             return
 
 
-def _constrain(lhs: Expr, rhs: Expr, env: Env) -> None:
+def _constrain(lhs: Expr, rhs: Expr, solver: _Solver) -> None:
     """Equal sides have equal shapes, except that a scalar constant fits any shape."""
-    left, right = _partial(lhs, env), _partial(rhs, env)
+    left, right = solver.known(lhs), solver.known(rhs)
     if left is None and right is not None and not _scalar_const(rhs, right):
-        _back(lhs, right, env)
+        lhs.require_shape(right, solver)
     elif right is None and left is not None and not _scalar_const(lhs, left):
-        _back(rhs, left, env)
+        rhs.require_shape(left, solver)
 
 
-def _scalar_const(expr: Expr, shape: Shape) -> bool:
+def _scalar_const(expr: Expr, shape: Shape | None) -> bool:
     return isinstance(expr, Const) and shape == ()
-
-
-@singledispatch
-def _demand(_node: Expr, _env: Env) -> None:
-    """Shapes that a node needs whatever its result is."""
-
-
-@_demand.register
-def _(node: Apply, env: Env) -> None:
-    if node.op.scalar_args:
-        for arg in node.args[: node.op.arity]:
-            _back(arg, (), env)
-
-
-@_demand.register
-def _(node: Shift, env: Env) -> None:
-    _back(node.offset, _offset_shape(node), env)
-
-
-def _offset_shape(shift: Shift) -> Shape:
-    if isinstance(shift.axis.dim, tuple):
-        return shift.axis.dim
-    return () if shift.axis.dim == 1 or not shift.axis.dim else (shift.axis.dim,)
-
-
-@singledispatch
-def _partial(expr: Expr, _env: Env) -> Shape | None:
-    """The shape of `expr` from declared and inferred shapes, or None if unknown."""
-    return shape_of(expr)
-
-
-@_partial.register
-def _(expr: FunctionSymbol, env: Env) -> Shape | None:
-    return expr.shape if expr.shape is not None else env.get(expr)
-
-
-@_partial.register(Restrict)
-@_partial.register(Integral)
-def _(expr: Restrict | Integral, env: Env) -> Shape | None:
-    return _partial(expr.expr, env)
-
-
-@_partial.register
-def _(expr: Index, env: Env) -> Shape | None:
-    operand = _partial(expr.expr, env)
-    if operand is None:
-        return None
-    return index_shape(expr, operand)
-
-
-@_partial.register
-def _(expr: Shift, env: Env) -> Shape | None:
-    offset = _partial(expr.offset, env)
-    expected = _offset_shape(expr)
-    if offset is not None and offset != expected:
-        raise ShapeError(f"In {expr}: the offset needs shape {expected}, got {offset}.")
-    return _partial(expr.expr, env)
-
-
-@_partial.register
-def _(expr: Apply, env: Env) -> Shape | None:
-    shapes = tuple(_partial(arg, env) for arg in expr.args[: expr.op.arity])
-    if any(shape is None for shape in shapes):
-        return None
-    axes = expr.args[expr.op.arity] if expr.op.takes_axes else None
-    try:
-        return expr.op.shape_rule(shapes, axes)  # type: ignore
-    except ShapeError as error:
-        raise ShapeError(f"In {expr}: {error}") from error
-
-
-def _assign(symbol: FunctionSymbol, shape: Shape, env: Env) -> None:
-    if symbol.shape is not None:
-        return
-    if env.setdefault(symbol, shape) != shape:
-        raise ShapeError(
-            f"{symbol.name!r} is used with shapes {env[symbol]} and {shape}."
-        )
-
-
-@singledispatch
-def _back(_expr: Expr, _target: Shape, _env: Env) -> None:
-    """Record what `expr` having shape `target` says about the symbols inside it."""
-
-
-@_back.register
-def _(expr: FunctionSymbol, target: Shape, env: Env) -> None:
-    _assign(expr, target, env)
-
-
-@_back.register(Restrict)
-@_back.register(Integral)
-@_back.register(Shift)
-def _(expr: Restrict | Integral | Shift, target: Shape, env: Env) -> None:
-    _back(expr.expr, target, env)
-
-
-@_back.register
-def _(expr: Apply, target: Shape, env: Env) -> None:
-    rule = expr.op.back_rule
-    if rule is None:
-        return
-    args = expr.args[: expr.op.arity]
-    axes = expr.args[expr.op.arity] if expr.op.takes_axes else None
-    try:
-        rule(args, axes, target, _Solver(env))  # type: ignore
-    except ShapeError as error:
-        raise ShapeError(f"In {expr}: {error}") from error
 
 
 @dataclass(frozen=True)
 class _Solver:
-    """The view of shape inference that operator back rules get."""
+    """The shapes inferred so far, and what the nodes may ask of them."""
 
     env: Env
 
     def known(self, expr: Expr) -> Shape | None:
-        return _partial(expr, self.env)
+        return expr.shape_with(self.env)
 
     def back(self, expr: Expr, target: Shape) -> None:
-        _back(expr, target, self.env)
+        expr.require_shape(target, self)
+
+    def record(self, symbol: FunctionSymbol, shape: Shape) -> None:
+        if self.env.setdefault(symbol, shape) != shape:
+            raise ShapeError(
+                f"{symbol.name!r} is used with shapes {self.env[symbol]} and {shape}."
+            )
 
 
 def _check(constraint: Constraint, env: Env) -> None:
-    left, right = _partial(constraint.lhs, env), _partial(constraint.rhs, env)
+    left, right = (side.shape_with(env) for side in constraint.sides)
     if (
         left == right
-        or _scalar_const(constraint.lhs, left)  # type: ignore
-        or _scalar_const(constraint.rhs, right)  # type: ignore
+        or _scalar_const(constraint.lhs, left)
+        or _scalar_const(constraint.rhs, right)
     ):
         return
     raise ShapeError(f"In {constraint}: the sides have shapes {left} and {right}.")

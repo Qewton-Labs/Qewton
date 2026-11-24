@@ -20,16 +20,11 @@ from dataclasses import dataclass, field
 from qewton.config.variables import Variable
 from qewton.equations.analysis.structure.structure import derivative_orders, signed_terms
 from qewton.equations.expr.api import div, dot, grad, inner
-from qewton.equations.expr.nodes import (
-    Apply,
-    Coord,
-    Expr,
-    FunctionSymbol,
-    contains,
-    walk,
-)
-from qewton.equations.expr.ops import ShapeError, Shape
-from qewton.equations.analysis.prepare.infer import shape_with
+from qewton.equations.expr.apply import Apply
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import Coord, FunctionSymbol
+from qewton.equations.expr.traversal import contains, walk
+from qewton.equations.expr.ops import OPS, OpSpec, Shape, ShapeError
 
 
 @dataclass(frozen=True)
@@ -46,9 +41,9 @@ class Rule:
     applies: Callable[[Shape], bool] = lambda _shape: True
 
 
-RULES: dict[str, Rule] = {
-    "div": Rule(moved=grad, flux=dot),
-    "grad": Rule(
+RULES: dict[OpSpec, Rule] = {
+    OPS.div: Rule(moved=grad, flux=dot),
+    OPS.grad: Rule(
         moved=div,
         flux=lambda operand, normal: operand * normal,
         applies=lambda shape: shape == (),
@@ -86,7 +81,7 @@ def _constant(expr: Expr) -> bool:
 
 def _moved(rule: Rule, test: Expr, axes: Variable) -> Expr:
     """The test factor after the operator moved onto it; a constant factor stays out."""
-    if isinstance(test, Apply) and test.op.name == "mul":
+    if isinstance(test, Apply) and test.op is OPS.mul:
         factor, base = test.args
         if _constant(factor):  # type: ignore
             return factor * rule.moved(base, axes)  # type: ignore
@@ -137,14 +132,14 @@ class Cutter:
 
     def _shape(self, expr: Expr) -> Shape | None:
         try:
-            return shape_with(expr, self.shapes)
+            return expr.shape_with(self.shapes)
         except ShapeError:
             return None
 
     def _by_parts(self, term: Expr, test: Expr, sign: int, out: Pieces) -> bool:
-        if not isinstance(term, Apply) or term.op.name not in RULES:
+        if not isinstance(term, Apply) or term.op not in RULES:
             return False
-        rule = RULES[term.op.name]
+        rule = RULES[term.op]
         operand, axes = term.args[0], term.args[1]
         shape = self._shape(operand)  # type: ignore
         if shape is None or not rule.applies(shape):
@@ -155,7 +150,7 @@ class Cutter:
 
     def _scaled(self, term: Expr, test: Expr, sign: int, out: Pieces) -> bool:
         """Move a scalar factor without unknowns from `term = c * B` onto the test."""
-        if not isinstance(term, Apply) or term.op.name != "mul":
+        if not isinstance(term, Apply) or term.op is not OPS.mul:
             return False
         unknowns = frozenset(self.allowed)
         first, second = term.args

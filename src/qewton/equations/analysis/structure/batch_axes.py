@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.geometry.sets import SetNode, depends_on
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem

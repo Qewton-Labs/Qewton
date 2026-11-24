@@ -13,16 +13,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
 
-from qewton.equations.expr.nodes import (
-    Const,
-    Expr,
-    FunctionSymbol,
-    as_expr,
-    symbols_in,
-    walk,
-)
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import Const, FunctionSymbol, as_expr
+from qewton.equations.expr.traversal import symbols_in, walk
 from qewton.equations.expr.ops import ShapeError
-from qewton.equations.expr.shapes import check_shape
 from qewton.equations.geometry.sets import SetNode
 from qewton.equations.printable import Printable
 
@@ -82,7 +76,7 @@ class Constraint(Printable):
 
 def _check_sides(lhs: Expr, rhs: Expr) -> None:
     """Both sides must have one shape; a scalar constant may stand for any shape."""
-    left, right = check_shape(lhs), check_shape(rhs)
+    left, right = lhs.shape, rhs.shape
     if left is None or right is None or left == right:
         return
     if (isinstance(rhs, Const) and right == ()) or (

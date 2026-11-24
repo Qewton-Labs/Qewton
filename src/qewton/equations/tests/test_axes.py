@@ -16,7 +16,6 @@ from qewton.equations import (
     Variable,
     dot,
     dt,
-    free_axes,
     grad,
     integral,
     lap,
@@ -59,33 +58,33 @@ class TestCoordinateFactors:
 
 class TestFreeAxes:
     def test_functions_follow_their_declared_inputs(self):
-        assert free_axes(u) == {x, t}
-        assert free_axes(f) == frozenset()
+        assert u.free_axes == {x, t}
+        assert f.free_axes == frozenset()
 
     def test_derivatives_and_arithmetic_keep_the_axes(self):
-        assert free_axes(dt(u, t) - lap(u, x) + f) == {x, t}
+        assert (dt(u, t) - lap(u, x) + f).free_axes == {x, t}
 
     def test_coordinates_depend_on_themselves(self):
-        assert free_axes(u * Coord_(t)) == {x, t}
-        assert free_axes(Coord_(x)) == {x}
+        assert (u * Coord_(t)).free_axes == {x, t}
+        assert Coord_(x).free_axes == {x}
 
     def test_restricting_to_a_time_slice_removes_time(self):
         initial = Product((Omega, Slice(t, 0.0)))
-        assert free_axes(Restrict(u, initial)) == {x}
+        assert Restrict(u, initial).free_axes == {x}
 
     def test_restricting_to_a_boundary_keeps_space(self):
-        assert free_axes(Restrict(u, dO)) == {x, t}
+        assert Restrict(u, dO).free_axes == {x, t}
 
     def test_integrals_remove_the_axes_of_the_set(self):
-        assert free_axes(integral(u, Omega)) == {t}
-        assert free_axes(mean(u, Omega)) == {t}
-        assert free_axes(integral(u, Product((Omega, Interval)))) == frozenset()
+        assert integral(u, Omega).free_axes == {t}
+        assert mean(u, Omega).free_axes == {t}
+        assert integral(u, Product((Omega, Interval))).free_axes == frozenset()
 
     def test_normal_lives_on_the_boundary_coordinates(self):
-        assert free_axes(Normal(dO)) == {x}
+        assert Normal(dO).free_axes == {x}
 
     def test_shift_keeps_the_axes(self):
-        assert free_axes(shift(u, t, -1)) == {x, t}
+        assert shift(u, t, -1).free_axes == {x, t}
 
 
 def Coord_(var):

@@ -14,7 +14,7 @@ from __future__ import annotations
 from enum import Enum
 
 from qewton.equations.analysis.prepare.signatures import Signatures
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.geometry.sets import is_subset
 from qewton.equations.model.task import Task
 

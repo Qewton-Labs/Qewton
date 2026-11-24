@@ -13,7 +13,7 @@ from qewton.equations import (
     Variable,
     sin,
 )
-from qewton.equations.expr.nodes import Coord
+from qewton.equations.expr.leaves import Coord
 from qewton.equations.fixtures import heat, poisson, transmission
 
 

@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.axes import AxisError, free_axes
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
+from qewton.equations.expr.ops import AxisError
 from qewton.equations.geometry.coordinates import check_coordinate
 from qewton.equations.geometry.sets import (
     Interface,
@@ -122,7 +122,7 @@ def _check_axes(constraint: Constraint, time: Variable | None) -> None:
     allowed = frozenset() if on is None else set_free_axes(on)
     if time is not None:
         allowed |= {time.whole}
-    used = free_axes(constraint.lhs) | free_axes(constraint.rhs)
+    used = constraint.lhs.free_axes | constraint.rhs.free_axes
     extra = used - allowed
     if extra:
         names = "{" + ", ".join(sorted(str(axis.name) for axis in extra)) + "}"

@@ -10,7 +10,7 @@ from qewton.equations.model.constraints import (
     PendingConstraint,
     Relation,
 )
-from qewton.equations.expr.nodes import Const, FunctionSymbol
+from qewton.equations.expr.leaves import Const, FunctionSymbol
 from qewton.equations.geometry.sets import Boundary, Domain, Part
 
 x = Variable("x", dim=2)

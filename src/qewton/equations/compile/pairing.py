@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence
 
 from qewton.config.variables import Variable
 from qewton.equations.analysis.classification.rows import Row
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.geometry.sets import Part, base_domain, spatial_domain
 
 

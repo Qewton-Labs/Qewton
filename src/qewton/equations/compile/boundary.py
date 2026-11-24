@@ -21,7 +21,8 @@ from qewton.equations.analysis.structure.structure import split_constraint
 from qewton.equations.compile.by_parts import BoundaryPiece
 from qewton.equations.compile.forms import FormTerm, Measure
 from qewton.equations.expr.api import inner
-from qewton.equations.expr.nodes import FunctionSymbol, Normal, Restrict
+from qewton.equations.expr.leaves import FunctionSymbol, Normal
+from qewton.equations.expr.wrappers import Restrict
 from qewton.equations.geometry.sets import Boundary, SetNode
 
 

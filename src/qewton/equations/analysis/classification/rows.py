@@ -10,7 +10,9 @@ from math import prod
 from qewton.config.variables import Variable
 from qewton.equations.analysis.prepare.infer import constraint_shape
 from qewton.equations.analysis.structure.structure import Orders, constraint_orders
-from qewton.equations.expr.nodes import Expr, FunctionSymbol, Restrict
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import FunctionSymbol
+from qewton.equations.expr.wrappers import Restrict
 from qewton.equations.geometry.sets import (
     Interface,
     SetNode,

@@ -2,7 +2,8 @@
 
 from .model.constraints import Complementary, Eq
 from .expr.api import div, dot, dt, grad, jump, lap, mean, shift, trace
-from .expr.nodes import FunctionSymbol, Normal, Restrict
+from .expr.leaves import FunctionSymbol, Normal
+from .expr.wrappers import Restrict
 from .geometry.sets import (
     Boundary,
     Domain,

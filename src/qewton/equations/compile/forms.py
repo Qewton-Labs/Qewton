@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from qewton.config.variables import Variable
 from qewton.equations.diagnostics import Diagnostic
 from qewton.equations.analysis.classification.spaces import FunctionSpace
-from qewton.equations.analysis.structure.structure import linearity
-from qewton.equations.expr.nodes import Expr, FunctionSymbol
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.expr.ops import Linearity
 from qewton.equations.geometry.sets import Part, Periodic, SetNode, lies_on_boundary
 from qewton.equations.model.constraints import Constraint
@@ -91,7 +91,7 @@ class WeakProblem:
         """LINEAR if every term is linear in the unknowns, NONLINEAR if one is not."""
         unknowns = frozenset(self.unknowns)
         found = {
-            linearity(term.integrand, unknowns)
+            term.integrand.linearity(unknowns)
             for residual in self.residuals
             for term in residual.terms
         }
@@ -109,7 +109,7 @@ class WeakProblem:
 
     def _has_unknown(self, term: FormTerm) -> bool:
         unknowns = frozenset(self.unknowns)
-        return linearity(term.integrand, unknowns) is not Linearity.NONE
+        return term.integrand.linearity(unknowns) is not Linearity.NONE
 
     def __str__(self) -> str:
         lines = [f"find {', '.join(str(u.variable.name) for u in self.unknowns)}:"]

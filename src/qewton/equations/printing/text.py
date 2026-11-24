@@ -15,18 +15,11 @@ from qewton.equations.model.constraints import (
     PendingConstraint,
     Relation,
 )
-from qewton.equations.expr.nodes import (
-    Apply,
-    Const,
-    Coord,
-    Expr,
-    FunctionSymbol,
-    Index,
-    Integral,
-    Normal,
-    Restrict,
-    Shift,
-)
+from qewton.equations.expr.ops import OPS, OpSpec
+from qewton.equations.expr.apply import Apply
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import Const, Coord, FunctionSymbol, Normal
+from qewton.equations.expr.wrappers import Index, Integral, Restrict, Shift
 from qewton.equations.geometry.sets import (
     Boundary,
     Interface,
@@ -50,20 +43,20 @@ _RELATIONS = {
     Relation.GE: "≥",
     Relation.COMPLEMENTARITY: "⊥",
 }
-# Derivative operators written before their operand, as (symbol, separator).
+# Derivative operators written before their operand, as (symbol, separator). Other
+# operators without an entry here or in _OPERATORS print as `name(arguments)`.
 _DERIVATIVES = {
-    "grad": ("∇", " "),
-    "div": ("∇", "·"),
-    "curl": ("∇", "×"),
-    "lap": ("Δ", " "),
+    OPS.grad: ("∇", " "),
+    OPS.div: ("∇", "·"),
+    OPS.curl: ("∇", "×"),
+    OPS.lap: ("Δ", " "),
 }
-_FUNCTIONS = {"sin", "cos", "exp", "dot", "inner"}
 _PRECEDENCE = {
-    "add": ADD,
-    "sub": ADD,
-    "mul": MUL,
-    "pow": POW,
-    "neg": NEG,
+    OPS.add: ADD,
+    OPS.sub: ADD,
+    OPS.mul: MUL,
+    OPS.pow: POW,
+    OPS.neg: NEG,
     **dict.fromkeys(_DERIVATIVES, NEG),
 }
 _SUBSCRIPT = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
@@ -91,7 +84,7 @@ def _prec(expr: Expr) -> int:
         return NEG
     if not isinstance(expr, Apply):
         return ATOM
-    return _PRECEDENCE.get(expr.op.name, ATOM)
+    return _PRECEDENCE.get(expr.op, ATOM)
 
 
 def _operand(expr: Expr, minimum: int) -> str:
@@ -120,7 +113,7 @@ def _negation(args: tuple) -> str:
 
 
 def _is_reciprocal(expr: Expr) -> bool:
-    return isinstance(expr, Apply) and expr.op.name == "pow" and expr.args[1] == Const(-1)
+    return isinstance(expr, Apply) and expr.op is OPS.pow and expr.args[1] == Const(-1)
 
 
 def _product(args: tuple) -> str:
@@ -144,28 +137,28 @@ def _partial(args: tuple) -> str:
 
 
 _OPERATORS = {
-    "add": _sum,
-    "sub": _difference,
-    "neg": _negation,
-    "mul": _product,
-    "pow": _power,
-    "d": _partial,
+    OPS.add: _sum,
+    OPS.sub: _difference,
+    OPS.neg: _negation,
+    OPS.mul: _product,
+    OPS.pow: _power,
+    OPS.d: _partial,
 }
 
 
-def _derivative(name: str, args: tuple) -> str:
-    symbol, separator = _DERIVATIVES[name]
+def _derivative(op: OpSpec, args: tuple) -> str:
+    symbol, separator = _DERIVATIVES[op]
     operand, axes = args
     return f"{symbol}_{axes.name}{separator}{_operand(operand, ATOM)}"
 
 
 def _apply(expr: Apply) -> str:
-    name, args = expr.op.name, expr.args
-    if name in _OPERATORS:
-        return _OPERATORS[name](args)
-    if name in _DERIVATIVES:
-        return _derivative(name, args)
-    return f"{name}({', '.join(_expr(arg) for arg in args)})"
+    op, args = expr.op, expr.args
+    if op in _OPERATORS:
+        return _OPERATORS[op](args)
+    if op in _DERIVATIVES:
+        return _derivative(op, args)
+    return f"{op.name}({', '.join(_expr(arg) for arg in args)})"
 
 
 def _leaf(expr: Expr | Variable) -> str:

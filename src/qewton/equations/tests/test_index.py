@@ -13,11 +13,8 @@ from qewton.equations import (
     transform,
     walk,
 )
-from qewton.equations.expr.axes import free_axes
-from qewton.equations.expr.shapes import UnknownShapeError, shape_of
 from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.analysis.context import signatures
-from qewton.equations.analysis.structure.structure import linearity
 from qewton.equations.expr.ops import ShapeError
 from qewton.equations.printing.text import pretty
 
@@ -62,14 +59,14 @@ class TestBuilding:
 
 class TestShape:
     def test_vector_component_is_a_scalar(self):
-        assert shape_of(v[0]) == ()
+        assert v[0].shape == ()
 
     def test_matrix_row_and_entry(self):
-        assert shape_of(K[0]) == (3,)
-        assert shape_of(K[0, 2]) == ()
+        assert K[0].shape == (3,)
+        assert K[0, 2].shape == ()
 
     def test_component_of_gradient(self):
-        assert shape_of(grad(u, x)[1]) == ()
+        assert (grad(u, x)[1]).shape == ()
 
     def test_scalar_has_no_components(self):
         with pytest.raises(ShapeError, match="scalar"):
@@ -82,17 +79,16 @@ class TestShape:
             K[0, 3]
 
     def test_component_sits_in_scalar_operators(self):
-        assert shape_of(div(v, x) + v[0]) == ()
+        assert (div(v, x) + v[0]).shape == ()
 
     def test_undeclared_shape_is_not_checked_yet(self):
         assert free[5] == Index(free, 5)
-        with pytest.raises(UnknownShapeError):
-            shape_of(free[5])
+        assert free[5].shape is None
 
 
 class TestAxes:
     def test_axes_of_the_operand(self):
-        assert free_axes(v[0]) == frozenset({x})
+        assert v[0].free_axes == frozenset({x})
 
 
 class TestPrinting:
@@ -140,6 +136,6 @@ class TestAnalyses:
         assert set(signatures(problem.task()).table) == {v, f}
 
     def test_linearity_passes_through(self):
-        assert linearity(v[0], frozenset({v})) == "linear"
-        assert linearity(v[0] * v[1], frozenset({v})) == "nonlinear"
-        assert linearity(v[0], frozenset()) == "none"
+        assert v[0].linearity(frozenset({v})) == "linear"
+        assert (v[0] * v[1]).linearity(frozenset({v})) == "nonlinear"
+        assert v[0].linearity(frozenset()) == "none"

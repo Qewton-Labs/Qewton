@@ -29,7 +29,7 @@ from qewton.equations.analysis.structure.structure import (
     derivative_orders,
     split_constraint,
 )
-from qewton.equations.expr.nodes import FunctionSymbol
+from qewton.equations.expr.leaves import FunctionSymbol
 from qewton.equations.geometry.sets import (
     Boundary,
     Interface,

@@ -1,3 +1,4 @@
+from qewton.equations.expr.ops import OPS
 from qewton.equations import (
     Boundary,
     Complementary,
@@ -172,7 +173,7 @@ class TestCanonicalForms:
     def test_vector_laplacian_keeps_its_shape(self):
         v = FunctionSymbol(Variable("v", dim=2), x)
         problem = Problem((Eq(lap(v, x), 0).on(Omega),))
-        assert normalize(problem).problem.constraints[0].lhs.op.name == "div"
+        assert normalize(problem).problem.constraints[0].lhs.op is OPS.div
 
     def test_both_sides_become_one_residual(self):
         p = FunctionSymbol(Variable("p", dim=1), x)
@@ -180,7 +181,7 @@ class TestCanonicalForms:
         result = normalize(Problem((Eq(-lap(p, x), f).on(Omega),)))
         constraint = result.problem.constraints[0]
         assert constraint.rhs == Const(0)
-        assert constraint.lhs.op.name == "sub"
+        assert constraint.lhs.op is OPS.sub
         assert result.origin[0].rhs == f
 
     def test_a_zero_right_side_is_kept(self):

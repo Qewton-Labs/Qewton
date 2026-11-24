@@ -5,12 +5,17 @@ derivative axes after them, how the result shape follows from the argument shape
 its derivative order and its linearity. It can also say how a known result shape
 determines the shapes of the arguments (`back_rule`), which shape inference uses.
 Nodes refer to these specs; nothing here depends on the nodes.
+
+`OPS` holds every operator: by name (`OPS["grad"]`, e.g. to load saved expressions),
+and, for the built-in ones, as attributes (`OPS.grad`), which is how code refers to
+them; see `OperatorRegistry`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from collections.abc import Iterator, Mapping
 from typing import Any, Callable, Protocol
 
 from qewton.config.variables import Variable
@@ -20,6 +25,10 @@ Shape = tuple[int, ...]
 
 class ShapeError(ValueError):
     """Raised when the arguments of an operator have incompatible shapes."""
+
+
+class AxisError(ValueError):
+    """Raised when an expression or constraint uses coordinates inconsistently."""
 
 
 class Linearity(str, Enum):
@@ -84,13 +93,17 @@ class OpLinearity(str, Enum):
 
 
 class Solver(Protocol):
-    """What a back rule may ask of shape inference."""
+    """What back rules and the nodes' `require_shape` may ask of shape inference."""
 
     def known(self, expr: Any) -> Shape | None:
         """The shape of `expr` if it is already determined, else None."""
 
     def back(self, expr: Any, target: Shape) -> None:
         """Record that `expr` has shape `target`."""
+
+    def record(self, symbol: Any, shape: Shape) -> None:
+        """Record that the function `symbol`, whose shape is not declared, has
+        `shape`; raises ShapeError if it already has another one."""
 
 
 # (arguments, axes, result shape, solver) -> records the shapes the arguments need
@@ -102,7 +115,6 @@ class OpSpec:
     """The semantics of one operator.
 
     Attributes:
-        name: The registry key, e.g. "grad".
         arity: The number of expression arguments.
         shape_rule: Maps the argument shapes and the derivative axes (or None) to
             the result shape. Raises ShapeError on incompatible shapes.
@@ -112,9 +124,10 @@ class OpSpec:
         scalar_args: Whether every expression argument must be a scalar.
         back_rule: Infers argument shapes from a known result shape, or None if the
             result says nothing about the arguments.
+        name: The registry key, e.g. "grad". An operator defined as an attribute of
+            `OperatorRegistry` takes the attribute's name, so it is not given.
     """
 
-    name: str
     arity: int
     shape_rule: Callable[[tuple[Shape, ...], Variable | None], Shape]
     takes_axes: bool = False
@@ -122,16 +135,13 @@ class OpSpec:
     linearity: OpLinearity = OpLinearity.LINEAR
     scalar_args: bool = False
     back_rule: BackRule | None = None
+    name: str = ""
 
-
-OPS: dict[str, OpSpec] = {}
-
-
-def register(spec: OpSpec) -> OpSpec:
-    if spec.name in OPS:
-        raise ValueError(f"Operator {spec.name!r} is already registered.")
-    OPS[spec.name] = spec
-    return spec
+    def __set_name__(self, owner: type, name: str) -> None:
+        """Take the name of the class attribute this operator is defined as."""
+        if self.name and self.name != name:
+            raise ValueError(f"The operator {self.name!r} is defined as {name!r}.")
+        object.__setattr__(self, "name", name)
 
 
 ###
@@ -158,10 +168,10 @@ def _scalar_only(shapes: tuple[Shape, ...], _axes: Variable | None) -> Shape:
     return ()
 
 
-def scalar_op(name: str, arity: int) -> OpSpec:
+def scalar_op(arity: int, name: str = "") -> OpSpec:
     """A nonlinear operator whose arguments and result are all scalars."""
     return OpSpec(
-        name, arity, _scalar_only, linearity=OpLinearity.NONLINEAR, scalar_args=True
+        arity, _scalar_only, linearity=OpLinearity.NONLINEAR, scalar_args=True, name=name
     )
 
 
@@ -275,22 +285,62 @@ def _back_inner(args: tuple[Any, ...], _axes, _target: Shape, solver: Solver) ->
             solver.back(arg, shape)
 
 
-register(OpSpec("add", 2, _elementwise, back_rule=_back_sum))
-register(OpSpec("sub", 2, _elementwise, back_rule=_back_sum))
-register(OpSpec("neg", 1, _same_shape, back_rule=_back_same))
-register(
-    OpSpec("mul", 2, _mul, linearity=OpLinearity.MULTILINEAR, back_rule=_back_product)
-)
-register(OpSpec("dot", 2, _contract, linearity=OpLinearity.MULTILINEAR))
-register(
-    OpSpec("inner", 2, _inner, linearity=OpLinearity.MULTILINEAR, back_rule=_back_inner)
-)
-register(scalar_op("pow", 2))
-register(scalar_op("exp", 1))
-register(scalar_op("sin", 1))
-register(scalar_op("cos", 1))
-register(OpSpec("d", 1, _partial, takes_axes=True, order=1, back_rule=_back_same))
-register(OpSpec("grad", 1, _grad, takes_axes=True, order=1, back_rule=_back_grad))
-register(OpSpec("div", 1, _div, takes_axes=True, order=1, back_rule=_back_div))
-register(OpSpec("curl", 1, _curl, takes_axes=True, order=1))
-register(OpSpec("lap", 1, _same_shape, takes_axes=True, order=2, back_rule=_back_same))
+class OperatorRegistry(Mapping[str, OpSpec]):
+    """Every operator by name. The built-in ones are also attributes: `OPS.grad`.
+
+    Code refers to an operator by its attribute (`expr.op is OPS.lap`), never by its
+    name, so pylint and editors flag a misspelled one. A built-in operator is one more
+    attribute below, and its name is the attribute's name. An operator defined
+    elsewhere is registered once:
+
+        TANH = OPS.register(scalar_op(1, name="tanh"))
+
+    after which it is also `OPS["tanh"]` and `OPS.tanh`.
+    """
+
+    add = OpSpec(2, _elementwise, back_rule=_back_sum)
+    sub = OpSpec(2, _elementwise, back_rule=_back_sum)
+    neg = OpSpec(1, _same_shape, back_rule=_back_same)
+    mul = OpSpec(2, _mul, linearity=OpLinearity.MULTILINEAR, back_rule=_back_product)
+    dot = OpSpec(2, _contract, linearity=OpLinearity.MULTILINEAR)
+    inner = OpSpec(2, _inner, linearity=OpLinearity.MULTILINEAR, back_rule=_back_inner)
+    pow = scalar_op(2)
+    exp = scalar_op(1)
+    sin = scalar_op(1)
+    cos = scalar_op(1)
+    d = OpSpec(1, _partial, takes_axes=True, order=1, back_rule=_back_same)
+    grad = OpSpec(1, _grad, takes_axes=True, order=1, back_rule=_back_grad)
+    div = OpSpec(1, _div, takes_axes=True, order=1, back_rule=_back_div)
+    curl = OpSpec(1, _curl, takes_axes=True, order=1)
+    lap = OpSpec(1, _same_shape, takes_axes=True, order=2, back_rule=_back_same)
+
+    def __init__(self) -> None:
+        self._specs: dict[str, OpSpec] = {
+            spec.name: spec
+            for spec in vars(type(self)).values()
+            if isinstance(spec, OpSpec)
+        }
+
+    def register(self, spec: OpSpec) -> OpSpec:
+        """Add an operator defined outside this class, and return it."""
+        if not spec.name:
+            raise ValueError("An operator needs a name, e.g. OpSpec(..., name='tanh').")
+        if spec.name in self._specs:
+            raise ValueError(f"Operator {spec.name!r} is already registered.")
+        if hasattr(self, spec.name):
+            raise ValueError(f"{spec.name!r} cannot name an operator: OPS uses it.")
+        self._specs[spec.name] = spec
+        setattr(self, spec.name, spec)
+        return spec
+
+    def __getitem__(self, name: str) -> OpSpec:
+        return self._specs[name]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._specs)
+
+    def __len__(self) -> int:
+        return len(self._specs)
+
+
+OPS = OperatorRegistry()

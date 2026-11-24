@@ -18,7 +18,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from qewton.equations.expr.axes import free_axes
+from qewton.equations.expr.apply import Apply
+from qewton.equations.expr.base import Expr
+from qewton.equations.expr.leaves import Const
+from qewton.equations.expr.wrappers import Restrict, Shift
 from qewton.equations.diagnostics import (
     Diagnostic,
     by_severity,
@@ -26,8 +29,7 @@ from qewton.equations.diagnostics import (
     warning,
 )
 from qewton.equations.analysis.prepare.infer import infer_shapes
-from qewton.equations.expr.nodes import Apply, Const, Expr, Restrict, Shift
-from qewton.equations.expr.ops import ShapeError
+from qewton.equations.expr.ops import OPS, ShapeError
 from qewton.equations.geometry.sets import (
     Interface,
     Product,
@@ -141,7 +143,7 @@ def _time_declared(problem: Problem) -> Found:
         return
     reported: set[str] = set()
     for constraint, node in _nodes(problem):
-        if not (isinstance(node, Apply) and node.op.name == "d"):
+        if not (isinstance(node, Apply) and node.op is OPS.d):
             continue
         axis = node.args[-1]
         if (
@@ -225,7 +227,7 @@ def _restrictions(problem: Problem) -> Found:
         if not isinstance(node, Restrict):
             continue
         target = node.on
-        missing = target.axes - free_axes(node.expr)
+        missing = target.axes - node.expr.free_axes
         if missing:
             names = ", ".join(sorted(str(axis.name) for axis in missing))
             yield warning(
