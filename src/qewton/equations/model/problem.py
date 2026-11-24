@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from qewton.config.variables import Variable
 from qewton.equations.expr.axes import AxisError, free_axes
 from qewton.equations.expr.nodes import FunctionSymbol
-from qewton.equations.geometry.coordinates import check_coordinate, root_of
+from qewton.equations.geometry.coordinates import check_coordinate
 from qewton.equations.geometry.sets import (
     Interface,
     Partition,
@@ -107,7 +107,7 @@ class Problem(Printable):
             for node in constraint.nodes():
                 found.update(node.coordinates())
         if self.time is not None:
-            found.add(root_of(self.time))
+            found.add(self.time.whole)
         return frozenset(found)
 
 
@@ -121,7 +121,7 @@ def _check_axes(constraint: Constraint, time: Variable | None) -> None:
     on = constraint.on
     allowed = frozenset() if on is None else set_free_axes(on)
     if time is not None:
-        allowed |= {root_of(time)}
+        allowed |= {time.whole}
     used = free_axes(constraint.lhs) | free_axes(constraint.rhs)
     extra = used - allowed
     if extra:

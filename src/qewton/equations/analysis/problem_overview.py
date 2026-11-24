@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from qewton.config.variables import Variable
 from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.expr.nodes import FunctionSymbol
-from qewton.equations.geometry.coordinates import coordinate_factors, root_of
+from qewton.equations.geometry.coordinates import coordinate_factors
 from qewton.equations.geometry.sets import (
     Boundary,
     Domain,
@@ -91,7 +91,7 @@ def _describe_set(node: SetNode) -> str:
 def overview(problem: Problem) -> Overview:
     """Collect the coordinates, sets and functions of a problem."""
     inference = infer_shapes(problem)
-    time = None if problem.time is None else root_of(problem.time)
+    time = None if problem.time is None else problem.time.whole
     space = tuple(
         sorted((a for a in problem.coordinates() if a != time), key=lambda a: str(a.name))
     )

@@ -24,7 +24,6 @@ from qewton.equations.expr.axes import free_axes
 from qewton.equations.diagnostics import Diagnostic, info, warning
 from qewton.equations.expr.nodes import Apply, Const, Expr, transform
 from qewton.equations.expr.ops import OPS
-from qewton.equations.geometry.coordinates import root_of
 from qewton.equations.geometry.sets import (
     Domain,
     Product,
@@ -50,7 +49,7 @@ def _time_domains(problem: Problem) -> list[Domain]:
     """The domains that live on the time coordinate alone, such as the interval I."""
     if problem.time is None:
         return []
-    time = root_of(problem.time)
+    time = problem.time.whole
     found = (
         node
         for node in with_factors(problem.sets())
@@ -77,7 +76,7 @@ def _lift(problem: Problem) -> Normalized:
     if problem.time is None:
         return Normalized(problem, problem.constraints, ())
 
-    time = root_of(problem.time)
+    time = problem.time.whole
     todo = [c for c in problem.constraints if _needs_lift(c, time)]
     if not todo:
         return Normalized(problem, problem.constraints, ())

@@ -37,7 +37,8 @@ class Variable(Serializable):
                     self.children = []
                 else:
                     self.children = [
-                        Variable(f"{name}_{i+1}", dim=1, parent=self) for i in range(dim)
+                        Variable(Variable._component_name(name, i), dim=1, parent=self)
+                        for i in range(dim)
                     ]
                 self.dim = dim
             if isinstance(dim, tuple):
@@ -81,6 +82,44 @@ class Variable(Serializable):
     @classmethod
     def empty(cls):
         return cls()
+
+    @staticmethod
+    def _component_name(name: str | None, index: int) -> str:
+        """The name of the own component `index` (from 0) of a variable `name`:
+        x_1, x_2, ... The constructor names components this way, and
+        `is_composite` recognizes them by it."""
+        return f"{name}_{index + 1}"
+
+    @property
+    def is_composite(self) -> bool:
+        """Whether this variable is composed of other variables, as x * t is.
+
+        A variable with an integer dim above 1 gets its own components as
+        children (x_1, x_2 for x); those do not make it composite. `parent`
+        cannot tell the two apart: a variable's first product also becomes its
+        parent.
+        """
+        if self.is_leaf:
+            return False
+        own = [Variable._component_name(self.name, i) for i in range(len(self.children))]
+        return [child.name for child in self.children] != own
+
+    @property
+    def quantities(self) -> tuple[Variable, ...]:
+        """The distinct variables this one is composed of, in order and flattened:
+        (x, t) for x * t, and (x,) for x itself."""
+        if not self.is_composite:
+            return (self,)
+        return tuple(q for child in self.children for q in child.quantities)
+
+    @property
+    def whole(self) -> Variable:
+        """The variable this one is a component of, x for x[0], or else itself."""
+        parent = self.parent
+        if parent is not None and not parent.is_composite:
+            if any(child is self for child in parent.children):
+                return parent
+        return self
 
     @property
     def is_leaf(self):

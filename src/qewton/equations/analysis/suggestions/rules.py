@@ -21,7 +21,6 @@ from qewton.equations.analysis.classification.facts import Fact
 from qewton.equations.analysis.structure.batching import BatchMode
 from qewton.equations.analysis.suggestions.base import Category, Rule, Suggestion
 from qewton.equations.analysis.training import TrainingMode
-from qewton.equations.geometry.coordinates import root_of
 from qewton.equations.model.constraints import Relation
 
 if TYPE_CHECKING:
@@ -118,7 +117,7 @@ class StationarySolves(Rule):
 
     def check(self, ctx: AnalysisContext) -> Iterator[Suggestion]:
         time = ctx.problem.time
-        if time is not None and root_of(time) in ctx.decoupled_axes:
+        if time is not None and time.whole in ctx.decoupled_axes:
             yield self.suggestion(f"no derivative or shift along {time.name}")
 
 

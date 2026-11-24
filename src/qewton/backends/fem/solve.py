@@ -55,6 +55,12 @@ class SolveBackend(Backend[TensorType]):
     factorizations, Krylov/Newton solver objects) lives in opaque handles
     created by `create_linear_solver` / `create_nonlinear_solver`, so it can
     be reused across repeated solves (e.g. time stepping or parameter sweeps).
+
+    For a linear handle, `solve(handle, reassemble_operator=False)` keeps the
+    assembled operator and its factorization (or preconditioner) and only
+    reassembles the right-hand side. That is valid whenever nothing in the
+    bilinear form changed since the last solve, e.g. when only the source,
+    boundary values or the previous time step changed.
     """
 
     # region One-shot API
@@ -123,10 +129,21 @@ class SolveBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def solve(handle: Any) -> SolveResult:
-        """Runs the solver of a handle. Forms are re-assembled, so changed
-        coefficients (e.g. the previous time step) are taken into account."""
-        pass
+    def solve(handle: Any, reassemble_operator: bool = True) -> SolveResult:
+        """Runs the solver of a handle.
+
+        The right-hand side (or residual) is always reassembled, so changed
+        coefficients are taken into account.
+
+        Args:
+            handle: A handle from `create_linear_solver` or
+                `create_nonlinear_solver`.
+            reassemble_operator: For a linear handle, whether to reassemble the
+                bilinear form. False reuses the operator and its factorization
+                from the previous solve; the first solve always assembles it.
+                Ignored for nonlinear handles, whose Jacobian changes with the
+                iterate.
+        """
 
     # endregion
 

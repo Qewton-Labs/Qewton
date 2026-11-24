@@ -28,7 +28,6 @@ from qewton.equations.diagnostics import (
 from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.expr.nodes import Apply, Const, Expr, Restrict, Shift
 from qewton.equations.expr.ops import ShapeError
-from qewton.equations.geometry.coordinates import root_of
 from qewton.equations.geometry.sets import (
     Interface,
     Product,
@@ -100,14 +99,14 @@ def _interfaces(problem: Problem) -> Found:
 
 def _periodic(problem: Problem) -> Found:
     for declaration in problem.periodic:
-        axis = root_of(declaration.axis)
+        axis = declaration.axis.whole
         sides = {declaration.first, declaration.second}
         shifts = [
             node
             for constraint, node in _nodes(problem)
             if constraint.on in sides
             and isinstance(node, Shift)
-            and root_of(node.axis) == axis
+            and node.axis.whole == axis
         ]
         if not shifts:
             yield warning(
@@ -162,11 +161,11 @@ def _time_declared(problem: Problem) -> Found:
 def _delays(problem: Problem) -> Found:
     if problem.time is None:
         return
-    time = root_of(problem.time)
+    time = problem.time.whole
     shifts = [
         (constraint, node)
         for constraint, node in _nodes(problem)
-        if isinstance(node, Shift) and root_of(node.axis) == time
+        if isinstance(node, Shift) and node.axis.whole == time
     ]
     for constraint, shift in shifts:
         if _is_advance(shift):
@@ -207,9 +206,7 @@ def _slices(problem: Problem) -> Found:
         if constraint.on is None:
             continue
         coordinates = {
-            root_of(axis)
-            for symbol in constraint.symbols()
-            for axis in symbol.coordinates()
+            axis.whole for symbol in constraint.symbols() for axis in symbol.coordinates()
         }
         if not coordinates:
             continue

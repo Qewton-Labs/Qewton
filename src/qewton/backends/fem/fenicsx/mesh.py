@@ -139,7 +139,8 @@ class FenicsXMeshBackend(MeshBackend):
     @staticmethod
     def get_subdomain(mesh: Any, marker_fn: Any, marker: int, dim: int) -> Any:
         cell_indices = marker_fn.find(marker)
-        fx_mesh.create_submesh(mesh, dim, cell_indices)
+        submesh, entity_map, _, _ = fx_mesh.create_submesh(mesh, dim, cell_indices)
+        return submesh, entity_map
 
     # endregion
 

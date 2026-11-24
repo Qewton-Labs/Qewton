@@ -1,6 +1,9 @@
-"""Coordinates are given by qewton.Variables with a positive
-integer dimension. This file just contains helper functions for
-working with them."""
+"""Coordinates are config `Variable`s with a positive integer dim.
+
+What a variable is made of comes from `Variable` itself: `x[0].whole` is x, and
+`(x * t).quantities` is (x, t). This module adds what the equations require of a
+coordinate, and `coordinate_factors`, which stands each component for its coordinate.
+"""
 
 from __future__ import annotations
 
@@ -35,33 +38,9 @@ def check_coordinate_product(var: object) -> Variable:
     return var
 
 
-def _is_atomic(var: Variable) -> bool:
-    """A single coordinate: no children, or only its own components x_1, x_2, ...
-
-    A product such as x * t has whole variables as children instead. The `parent`
-    attribute cannot tell the two apart, since a variable's parent is overwritten
-    by every product it is multiplied into.
-    """
-    if isinstance(var.dim, tuple) or var.dim is None:
-        return False
-    names = [child.name for child in var.children]
-    return not names or names == [f"{var.name}_{i + 1}" for i in range(var.dim)]
-
-
-def root_of(var: Variable) -> Variable:
-    """The coordinate a component belongs to: x for x_1, and `var` itself otherwise."""
-    parent = var.parent
-    if parent is not None and _is_atomic(parent):
-        if any(child is var for child in parent.children):
-            return parent
-    return var
-
-
 def coordinate_factors(var: Variable) -> tuple[Variable, ...]:
     """The coordinates a product is made of: (x, t) for x * t, and (x,) for x.
 
     A component such as x_1 stands for its coordinate x.
     """
-    if _is_atomic(var):
-        return (root_of(var),)
-    return tuple(factor for child in var.children for factor in coordinate_factors(child))
+    return tuple(quantity.whole for quantity in var.quantities)

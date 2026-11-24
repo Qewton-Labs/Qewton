@@ -49,6 +49,21 @@ class FormBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
+    def sin(a: Any) -> Any:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def cos(a: Any) -> Any:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def exp(a: Any) -> Any:
+        pass
+
+    @staticmethod
+    @abstractmethod
     def dot(a: Any, b: Any) -> Any:
         pass
 
@@ -91,8 +106,8 @@ class FormBackend(Backend[TensorType]):
 
     @staticmethod
     @abstractmethod
-    def derivative(u: Any) -> Any:
-        pass
+    def derivative(u: Any, direction: int) -> Any:
+        """The partial derivative of `u` along the spatial coordinate `direction`."""
 
     @staticmethod
     @abstractmethod

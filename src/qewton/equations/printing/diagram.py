@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from qewton.equations.analysis.context import AnalysisContext
 from qewton.equations.analysis.prepare.signatures import evaluation_sets
 from qewton.equations.geometry.sets import Domain, SetNode, Slice
-from qewton.equations.geometry.coordinates import coordinate_factors, root_of
+from qewton.equations.geometry.coordinates import coordinate_factors
 from qewton.equations.model.task import Role, Task
 
 COLUMNS = ("equations", "unknowns", "data", "sets", "coordinates")
@@ -62,9 +62,9 @@ def _data_nodes(task: Task, constraint, roles: dict[Node, str]) -> list[Node]:
 def _set_coordinates(domain: SetNode) -> list[str]:
     """The coordinates a set lives in, in the order of its factors."""
     if isinstance(domain, Slice):
-        found = [root_of(domain.axis).name]
+        found = [domain.axis.whole.name]
     elif isinstance(domain, Domain):
-        found = [root_of(axis).name for axis in coordinate_factors(domain.ambient)]
+        found = [axis.whole.name for axis in coordinate_factors(domain.ambient)]
     else:
         found = [name for part in domain.built_from() for name in _set_coordinates(part)]
     return list(dict.fromkeys(str(f) for f in found))

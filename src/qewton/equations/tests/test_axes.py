@@ -30,7 +30,7 @@ from qewton.equations.fixtures import (
     periodic_poisson,
     poisson,
 )
-from qewton.equations.geometry.coordinates import coordinate_factors, root_of
+from qewton.equations.geometry.coordinates import coordinate_factors
 
 x = Variable("x", dim=2)
 t = Variable("t", dim=1)
@@ -54,7 +54,7 @@ class TestCoordinateFactors:
 
     def test_a_component_stands_for_its_coordinate(self):
         assert coordinate_factors(x.children[0]) == (x,)
-        assert root_of(x.children[1]) == x
+        assert x.children[1].whole == x
 
 
 class TestFreeAxes:

@@ -12,7 +12,6 @@ from qewton.equations.geometry.coordinates import (
     check_coordinate,
     check_coordinate_product,
     coordinate_factors,
-    root_of,
 )
 from qewton.equations.geometry.sets import SetNode, has_normal
 from qewton.equations.printable import Printable
@@ -190,7 +189,7 @@ class Coord(Expr):
             )
 
     def coordinates(self) -> tuple[Variable, ...]:
-        return (root_of(self.variable),)
+        return (self.variable.whole,)
 
 
 @dataclass(frozen=True)
@@ -306,7 +305,7 @@ class Shift(Expr):
             check(self)
 
     def coordinates(self) -> tuple[Variable, ...]:
-        return (root_of(self.axis),)
+        return (self.axis.whole,)
 
     def children(self) -> tuple[Expr, ...]:
         return (self.expr, self.offset)

@@ -32,7 +32,7 @@ from qewton.equations.expr.nodes import (
     Restrict,
     Shift,
 )
-from qewton.equations.geometry.coordinates import coordinate_factors, root_of
+from qewton.equations.geometry.coordinates import coordinate_factors
 from qewton.equations.geometry.sets import set_free_axes, sliced_axes
 
 Axes = frozenset[Variable]
@@ -60,7 +60,7 @@ def _(expr: FunctionSymbol) -> Axes:
 
 @free_axes.register
 def _(expr: Coord) -> Axes:
-    return frozenset({root_of(expr.variable)})
+    return frozenset({expr.variable.whole})
 
 
 @free_axes.register
@@ -91,7 +91,7 @@ def _(expr: Index) -> Axes:
 @free_axes.register
 def _(expr: Shift) -> Axes:
     operand = free_axes(expr.expr)
-    axis = root_of(expr.axis)
+    axis = expr.axis.whole
     if axis not in operand:
         raise AxisError(
             f"Cannot shift along {axis.name!r}: {expr.expr} depends on "

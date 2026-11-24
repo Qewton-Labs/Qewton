@@ -51,6 +51,18 @@ class FenicsXFormBackend(FormBackend):
         return ufl.sqrt(a)
 
     @staticmethod
+    def sin(a: Any) -> Any:
+        return ufl.sin(a)
+
+    @staticmethod
+    def cos(a: Any) -> Any:
+        return ufl.cos(a)
+
+    @staticmethod
+    def exp(a: Any) -> Any:
+        return ufl.exp(a)
+
+    @staticmethod
     def dot(a: Any, b: Any) -> Any:
         return ufl.dot(a, b)
 
@@ -109,7 +121,7 @@ class FenicsXFormBackend(FormBackend):
     @staticmethod
     def derivative(u: Any, direction: int = 0) -> Any:
         """The partial derivative of u w.r.t. the spatial coordinate `direction`."""
-        return ufl.derivative(u, ufl.SpatialCoordinate(u.ufl_domain())[direction])
+        return u.dx(direction)
 
     @staticmethod
     def time_derivative(u: Any, order: int) -> Any:

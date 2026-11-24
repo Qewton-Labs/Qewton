@@ -20,7 +20,6 @@ from qewton.equations.expr.axes import free_axes
 from qewton.equations.diagnostics import Diagnostic, warning
 from qewton.equations.expr.shapes import UnknownShapeError, shape_of
 from qewton.equations.expr.nodes import Expr, FunctionSymbol
-from qewton.equations.geometry.coordinates import root_of
 from qewton.equations.geometry.sets import SetNode, depends_on, with_factors
 from qewton.equations.model.observation import Observed
 
@@ -215,9 +214,9 @@ def _check_array(
 
 def _meshed_inputs(problem: Problem, inputs) -> set[Variable]:
     """The inputs an array has to be sampled over. Time is not meshed."""
-    needed = {root_of(axis) for axis in inputs}
+    needed = {axis.whole for axis in inputs}
     if problem.time is not None:
-        needed.discard(root_of(problem.time))
+        needed.discard(problem.time.whole)
     return needed
 
 
@@ -307,7 +306,7 @@ def build_task(
     )
     # A value given for a set is its mesh: it covers the set's coordinates.
     meshes = frozenset(
-        root_of(axis) for key in values if isinstance(key, SetNode) for axis in key.axes
+        axis.whole for key in values if isinstance(key, SetNode) for axis in key.axes
     )
     for key, value in values.items():
         if isinstance(key, FunctionSymbol):
@@ -338,7 +337,7 @@ def _check_observed(problem: Problem, roles: dict, observed) -> dict:
                 f"`observed` needs Observed values, got {type(data).__name__}."
             )
         if data.on is not None:
-            outside = {root_of(a) for a in data.on.axes} - free_axes(symbol)
+            outside = {a.whole for a in data.on.axes} - free_axes(symbol)
             if outside:
                 names = ", ".join(sorted(str(a.name) for a in outside))
                 raise TaskError(

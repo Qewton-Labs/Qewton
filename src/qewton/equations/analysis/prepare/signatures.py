@@ -30,7 +30,7 @@ from qewton.equations.expr.nodes import (
     Integral,
     Restrict,
 )
-from qewton.equations.geometry.coordinates import coordinate_factors, root_of
+from qewton.equations.geometry.coordinates import coordinate_factors
 from qewton.equations.geometry.sets import Product, SetNode, is_subset
 from qewton.equations.model.problem import Problem
 from qewton.equations.model.task import Role, Task
@@ -175,7 +175,7 @@ def build_signatures(
             inherited.get(symbol, ()),
         )
         if symbol in evaluated:
-            unused = [a for a in axes if root_of(a) not in seen_with[symbol]]
+            unused = [a for a in axes if a.whole not in seen_with[symbol]]
             if unused:
                 names = ", ".join(str(a.name) for a in unused)
                 found.append(

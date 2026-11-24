@@ -71,7 +71,18 @@ class MeshBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def get_subdomain(mesh: Any, marker_fn: Any, marker: int, dim: int) -> Any:
-        pass
+        """The submesh of the entities of dimension `dim` tagged with `marker`.
+
+        Args:
+            mesh: The parent mesh.
+            marker_fn: The mesh tags to select from.
+            marker: The tag of the entities to keep.
+            dim: The dimension of the tagged entities.
+
+        Returns:
+            tuple[Any, Any]: The submesh and the map from its entities to those of
+                `mesh`, which forms coupling both meshes need.
+        """
 
     # endregion
 

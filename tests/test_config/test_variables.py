@@ -257,3 +257,31 @@ class TestCompose:
 
 #     with pytest.raises(ValueError, match="dimensions have to agree"):
 #         Variable.check(v1, Variable("x", 5), "x", "x")
+
+
+class TestStructure:
+    """is_composite, quantities and whole: what a variable is made of."""
+
+    def test_own_components_do_not_make_a_variable_composite(self):
+        x = Variable("x", dim=2)
+        assert [c.name for c in x.children] == ["x_1", "x_2"]
+        assert not x.is_composite
+        assert not Variable("t", dim=1).is_composite
+
+    def test_a_product_is_composite_and_lists_its_quantities_in_order(self):
+        x, t, s = Variable("x", dim=2), Variable("t", dim=1), Variable("s", dim=1)
+        assert (x * t).is_composite
+        assert (x * t).quantities == (x, t)
+        assert (x * (t * s)).quantities == (x, t, s)
+        assert x.quantities == (x,)
+
+    def test_a_component_belongs_to_its_variable(self):
+        x = Variable("x", dim=2)
+        assert x[0].whole is x and x[1].whole is x
+        assert x.whole is x
+
+    def test_the_first_product_is_a_parent_but_not_a_whole(self):
+        a, b = Variable("a", dim=1), Variable("b", dim=1)
+        ab = a * b
+        assert a.parent is ab
+        assert a.whole is a

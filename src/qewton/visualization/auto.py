@@ -145,8 +145,7 @@ def auto_plot(
     color = getattr(plot, "color", None)
     if scale is not None and (color is None or color.scale is not scale):
         raise ValueError(
-            f"scale= is not used, since the chosen {type(plot).__name__} has "
-            "no color."
+            f"scale= is not used, since the chosen {type(plot).__name__} has " "no color."
         )
     return plot
 
@@ -179,7 +178,7 @@ def _vector_dim(data_config: DataConfiguration, plot_type, kwargs) -> int | None
     variable = feature_axes.variables if feature_axes is not None else None
     if variable is None or variable.dim not in (2, 3) or variable.name is None:
         return None
-    return variable.dim if _is_auto_expanded(variable) else None
+    return None if variable.is_composite else variable.dim
 
 
 def _check_controls_used(controls, plot: Plot) -> None:
@@ -253,34 +252,12 @@ def _require_named_variable(
     return variable
 
 
-def _is_auto_expanded(variable: Variable) -> bool:
-    """True for a leaf or a Variable's own multi-component expansion (e.g.
-    dim=3 -> children named x_1/x_2/x_3), False for distinct variables
-    composed together (e.g. TEMPERATURE * PRESSURE)."""
-    if variable.is_leaf:
-        return True
-    return all(
-        child.name == f"{variable.name}_{i + 1}" for i, child in enumerate(variable.children)
-    )
-
-
-def _distinct_quantities(variable: Variable) -> list[Variable]:
-    """Split `variable` into its distinct quantities, keeping each
-    auto-expanded multi-component quantity intact."""
-    if _is_auto_expanded(variable):
-        return [variable]
-    quantities = []
-    for child in variable.children:
-        quantities.extend(_distinct_quantities(child))
-    return quantities
-
-
 def _auto_quantity(
     data_config: DataConfiguration, variable: Variable
 ) -> "Variable | SelectorSpec":
     """The single quantity to plot, or a SelectorSpec over several distinct
     quantities if they all share one dim (so one Plot role fits each)."""
-    quantities = _distinct_quantities(variable)
+    quantities = list(variable.quantities)
     if len(quantities) == 1:
         return quantities[0]
     dims = {q.dim for q in quantities}
@@ -387,7 +364,9 @@ def _auto_geometry_plot(
     # GeometryAxes besides the drawn one are already stepped through by a control.
     all_geometry_axes = [a for a in data_config.axes if isinstance(a, GeometryAxes)]
     kwargs = _with_extra_controls(
-        kwargs, _other_axes(data_config, *all_geometry_axes, feature_axes), default_control
+        kwargs,
+        _other_axes(data_config, *all_geometry_axes, feature_axes),
+        default_control,
     )
 
     # The plotted quantity is this geometry's own coordinate Variable (e.g.
@@ -457,8 +436,12 @@ def _auto_geometry_plot(
         if coord_dim == 2:
             if quantity.dim == 1:
                 return HeatmapPlot(
-                    data, data_config, x=leaves[0], y=leaves[1],
-                    color=ColorSpec(quantity, scale=scale), **kwargs
+                    data,
+                    data_config,
+                    x=leaves[0],
+                    y=leaves[1],
+                    color=ColorSpec(quantity, scale=scale),
+                    **kwargs,
                 )
             if quantity.dim == 2:
                 return QuiverPlot(
@@ -536,7 +519,7 @@ def _auto_flat_plot(data, data_config: DataConfiguration, **kwargs) -> Plot:
     more."""
     feature_axes = data_config.feature_axes
     variable = _require_named_variable(data_config, feature_axes)
-    quantities = _distinct_quantities(variable)
+    quantities = list(variable.quantities)
     other_axes = _other_axes(data_config, feature_axes)
     all_scalar = all(q.dim == 1 for q in quantities)
     default_control, kwargs = _split_controls_default(kwargs)

@@ -31,7 +31,7 @@ from qewton.equations.expr.nodes import (
     symbols_in,
     walk,
 )
-from qewton.equations.geometry.coordinates import coordinate_factors, root_of
+from qewton.equations.geometry.coordinates import coordinate_factors
 from qewton.equations.expr.ops import Linearity
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
@@ -105,7 +105,7 @@ def build_decoupled_axes(
     if not unknowns:
         return ()
     axes = {
-        root_of(axis)
+        axis.whole
         for symbol in unknowns
         if symbol.inputs is not None
         for axis in coordinate_factors(symbol.inputs)
@@ -123,7 +123,7 @@ def _differentiated_axes(
     expr: Expr, unknowns: frozenset[FunctionSymbol]
 ) -> set[Variable]:
     return {
-        root_of(axis)
+        axis.whole
         for node in walk(expr)
         if isinstance(node, Apply)
         and node.op.takes_axes
@@ -138,11 +138,9 @@ def _nonlocal_axes(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> set[Varia
         if isinstance(node, Integral):
             symbols = {s for s in symbols_in(node.expr) if s in unknowns}
             for symbol in symbols:
-                coupled.update(
-                    root_of(axis) for axis in free_axes(symbol) & node.over.axes
-                )
+                coupled.update(axis.whole for axis in free_axes(symbol) & node.over.axes)
         elif isinstance(node, Shift) and contains(node.expr, unknowns):
-            coupled.add(root_of(node.axis))
+            coupled.add(node.axis.whole)
     return coupled
 
 
