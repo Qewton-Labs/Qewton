@@ -1,4 +1,10 @@
 from __future__ import annotations
+
+from copy import deepcopy
+
+from typing import Any
+
+import math
 from types import EllipsisType
 
 from qewton.config.variables import Variable
@@ -6,97 +12,116 @@ from qewton.config.errors import DataConfigMismatchError
 from qewton.config.saving.saving import Serializable
 
 
-def _match_remainder(inner_type, start_part, end_part, ellipsis_type):
-    """Matches the remaining middle dimensions between two shapes containing ellipsis.
+def _contradiction(first: AxesDim, second: AxesDim) -> str:
+    """The message for two dims of different sizes that should be one."""
 
-    This method handles the complex case where one shape has an ellipsis at the start
-    (representing flexible dimensions at the beginning) and another has an ellipsis at
-    the end (representing flexible dimensions at the end). It attempts to unify the
-    dimensions by working backwards from the end, trying to find compatible mappings. The
-    algorithm starts from the last dimension before the ellipsis in `start_part` and the
-    second-to-last dimension in `end_part` (skipping the ellipsis), and works backwards.
-    When a match is found, it checks if all preceding dimensions can also be unified. If
-    successful, it creates a unified mapping; otherwise, it treats dimensions as separate.
+    def described(dim: AxesDim) -> str:
+        sources = [f"from {dim.origin}"] if dim.origin is not None else []
+        sources += [f"HyperParameter {p.name!r}" for p in dim.representative._parameters]
+        return f"{dim.size} ({', '.join(sources)})" if sources else str(dim.size)
 
-    Args:
-        inner_type: The type of `AxesDim` to use for unification (e.g., `AxesDim`).
-        start_part (list): A list of `AxesDim` objects, where the first element is
-            an `EllipsisDim`. Represents the dimensions of a shape with an ellipsis
-            at the beginning.
-        end_part (list): A list of `AxesDim` objects, where the last element is an
-            `EllipsisDim`. Represents the dimensions of a shape with an ellipsis
-            at the end.
-        ellipsis_type: The class type for ellipsis dimensions (e.g., `EllipsisDim`).
-
-    Returns:
-        tuple[dict, dict]: A tuple of two dictionaries:
-            - First dict: Mapping from dimensions in start_part to their unified
-                            counterparts
-            - Second dict: Mapping from dimensions in end_part to their unified
-                            counterparts
-
-    The returned mappings ensure that both shapes can be transformed to compatible forms
-    while preserving the semantic meaning of the ellipsis dimensions. This method is
-    used internally by `_match_middle_shape` to handle ellipsis unification.
-    """
-    matching_middle_start = {}
-    matching_middle_end = {}
-    start_idx = len(start_part) - 1
-    end_idx = len(end_part) - 2  # skip ellipsis
-    added_end_shape = False
-
-    matching_middle_end[end_part[-1]] = []
-    while start_idx > 0 and end_idx >= 0:
-        current = start_part[start_idx]
-        try:
-            inner_type.unify_with(current, end_part[end_idx])  # check if they match
-            # If we have a match, they could be the same axis:
-            # check if all neighbors to the left also match
-            # If yes we can just add everything together
-            offset = end_idx + 1 - start_idx
-            if offset >= 0:
-                try:
-                    insert_dims = [
-                        inner_type.unify_with(start_part[i], end_part[offset - 1 + i])
-                        for i in range(1, start_idx + 1)
-                    ]
-                    matching_middle_end[end_part[-1]].reverse()
-                    matching_middle_start[start_part[0]] = end_part[:offset]
-                    matching_middle_end = matching_middle_end | {
-                        k: k for k in end_part[:offset]
-                    }
-                    for i in range(1, start_idx + 1):
-                        matching_middle_start[start_part[i]] = insert_dims[i - 1][0]
-                        matching_middle_end[end_part[offset + i - 1]] = insert_dims[
-                            i - 1
-                        ][1]
-                    start_idx = 0
-                    added_end_shape = True
-                    break
-                except DataConfigMismatchError:
-                    pass
-        except DataConfigMismatchError:
-            pass
-
-        matching_middle_start[current] = current
-        matching_middle_end[end_part[-1]].append(current)
-        start_idx -= 1
-
-    if not added_end_shape:
-        new_ellipsis = ellipsis_type()
-        matching_middle_end[end_part[-1]].append(new_ellipsis)
-        matching_middle_end[end_part[-1]].reverse()
-        matching_middle_end = matching_middle_end | {k: k for k in end_part[:-1]}
-        matching_middle_start[start_part[0]] = end_part[:-1] + [new_ellipsis]
-
-    return matching_middle_start, matching_middle_end
+    return f"Sizes {described(first)} and {described(second)} do not match."
 
 
 class Axes(Serializable):
     """
     Represents a collection of axes (dimensions) for data, including their
     sizes and types.
+
+    An `Axes` of this base class is an axes of unknown kind; merging it with
+    a `BatchAxes`, `GeometryAxes` or `FeatureAxes` gives that kind. Merging
+    (:meth:`merge`) makes two axes one, as for dims (see
+    :class:`AxesDim`).
+
+    Attributes:
+        merged_into (Axes | None): The axes this one was merged into; None
+            for a representative.
     """
+
+    merged_into: Axes | None = None
+    #: Whether this stands for a sequence of axes (an ellipsis).
+    is_ellipsis = False
+
+    @property
+    def representative(self) -> Axes:
+        """The axes that stands for this one and all merged into it."""
+        if self.merged_into is None:
+            return self
+        representative = self.merged_into.representative
+        self.merged_into = representative
+        return representative
+
+    def merge(self, other: Axes) -> Axes:
+        """Make this axes and `other` one.
+
+        The more specific of the two stays: a known kind, then a Variable or
+        a geometry. Its dims are merged with the other's.
+
+        Args:
+            other: The axes to merge with.
+
+        Returns:
+            Axes: The representative of both.
+
+        Raises:
+            DataConfigMismatchError: If the kinds, contents or dims of the
+                axes contradict.
+        """
+        from qewton.config.sequences import merge_sequences
+
+        first, second = self.representative, other.representative
+        if first is second:
+            return first
+        if not first._kind_compatible(second) or not first._content_compatible(second):
+            raise DataConfigMismatchError(f"{first} and {second} can not be one axes.")
+        keep, gone = (first, second) if first._outranks(second) else (second, first)
+        keep._take_content(gone)
+        gone.merged_into = keep
+        merge_sequences(keep._shape, gone._shape)
+        return keep
+
+    def compatible(self, other: Axes) -> bool:
+        """Whether this axes and `other` could be merged."""
+        from qewton.config.sequences import sequences_compatible
+
+        first, second = self.representative, other.representative
+        return (
+            first._kind_compatible(second)
+            and first._content_compatible(second)
+            and sequences_compatible(first._shape, second._shape)
+        )
+
+    def _kind_compatible(self, other: Axes) -> bool:
+        return type(self) is Axes or type(other) is Axes or type(self) is type(other)
+
+    def _content_compatible(self, other: Axes) -> bool:
+        """Whether the contents (e.g. Variables) of both axes agree; axes of
+        different kinds (one of them unknown) have nothing to compare."""
+        return type(self) is not type(other) or self._contents_agree(other)
+
+    def _contents_agree(self, other: Axes) -> bool:
+        """Whether the contents of this axes and `other`, of the same kind,
+        agree."""
+        return True
+
+    def _outranks(self, other: Axes) -> bool:
+        """Whether this axes stays when merged with `other`."""
+        if type(other) is Axes and type(self) is not Axes:
+            return True
+        return type(self) is type(other) and self._specificity() > other._specificity()
+
+    def _specificity(self) -> int:
+        """How much this axes knows beyond its kind, e.g. a Variable."""
+        return 0
+
+    def _take_content(self, other: Axes) -> None:
+        """Take over what `other` knows beyond this axes, before `other` is
+        merged into this one."""
+
+    def with_dims(self, dims) -> Axes:
+        """New axes of the same kind with `dims`, e.g. after an operation
+        removed or changed one of them."""
+        return type(self)(*dims)
 
     def __init__(self, *shape: int | AxesDim | None | EllipsisType):
         new_shape = []
@@ -125,30 +150,6 @@ class Axes(Serializable):
             bool: True if the shape has no dimensions, False otherwise.
         """
         return len(self._shape) == 0
-
-    def remove_dim(self, dim):
-        """
-        Removes a specific dimension from the axes.
-
-        Args:
-            dim (AxesDim): The dimension to remove.
-        """
-        self._shape = tuple(d for d in self._shape if d != dim)
-
-    def get_dim_idx(self, dim):
-        """
-        Returns the index of a specific dimension in the axes.
-
-        Args:
-            dim (AxesDim): The dimension to find.
-
-        Returns:
-            int: The index of the dimension, or None if not found.
-        """
-        try:
-            return self._shape.index(dim)
-        except ValueError:
-            return None
 
     def add_dim(self, new_dim, index):
         """Adds a new dimension to the axes at a specific index.
@@ -181,29 +182,6 @@ class Axes(Serializable):
                 return False
         return True
 
-    def unify_with(self: Axes, other: Axes) -> tuple[dict, dict]:
-        """
-        Unifies these axes with another `Axes` object, finding a common compatible shape.
-
-        Args:
-            other (Axes): The other `Axes` object to unify with.
-
-        Returns:
-            tuple[dict, dict]: A tuple of two dictionaries. The first maps dimensions
-                from `self` to the unified dimensions, and the second maps dimensions
-                from `other`.
-
-        Raises:
-            DataConfigMismatchError: If the axes are of different types or cannot be
-                unified.
-        """
-        if not self.__class__ == other.__class__:
-            raise DataConfigMismatchError(
-                f"Cannot unify axes of different types: {self.__class__} \
-                    and {other.__class__}."
-            )
-        return self.unify_shapes(self.shape, other.shape)
-
     def __str__(self) -> str:
         """
         Returns a string representation of the Axes object.
@@ -213,191 +191,6 @@ class Axes(Serializable):
                 the shape.
         """
         return f"{self.__class__.__name__}([{', '.join(str(s) for s in self.shape)}])"
-
-    @classmethod
-    def unify_shapes(
-        cls,
-        shape1: tuple[AxesDim, ...],
-        shape2: tuple[AxesDim, ...],
-    ) -> tuple[dict, dict]:
-        """
-        Unifies two shapes, `shape1` and `shape2`, to find a common compatible
-        representation.
-
-        This method attempts to match dimensions from both the start and the end
-        of the shapes. It specifically handles `EllipsisDim` to allow for
-        flexible matching of intermediate dimensions.
-
-        Args:
-            shape1 (tuple[AxesDim, ...]): The first shape to unify.
-            shape2 (tuple[AxesDim, ...]): The second shape to unify.
-
-        Returns:
-            tuple[dict, dict]: A tuple of two dictionaries. The first maps dimensions
-                from `shape1` to their unified counterparts, and the second maps
-                dimensions from `shape2`.
-
-        Raises:
-            DataConfigMismatchError: If the shapes are not compatible and cannot
-            be unified.
-
-        The unification process involves:
-        1. Matching dimensions from the end of both shapes.
-        2. Matching dimensions from the start of both shapes.
-        3. Handling any remaining middle parts, especially if they contain `EllipsisDim`.
-        """
-        # First we check if they match from the end
-        matching_end_1, matching_end_2 = cls._match_shapes(
-            reversed(shape1), reversed(shape2)
-        )
-        if len(matching_end_1) == len(shape1) and len(matching_end_2) == len(shape2):
-            #  fully matched
-            return matching_end_1, matching_end_2
-        matching_start_1, matching_start_2 = cls._match_shapes(shape1, shape2)
-        # Lastly we check the remaining middle part for compatibility (it has
-        # to contain an ellipsis in at least one of the shapes to be compatible)
-        remaining_middle1 = shape1[
-            len(matching_start_1) : len(shape1) - len(matching_end_1)
-        ]
-        remaining_middle2 = shape2[
-            len(matching_start_2) : len(shape2) - len(matching_end_2)
-        ]
-        if not any(isinstance(dim, EllipsisDim) for dim in remaining_middle1) and not any(
-            isinstance(dim, EllipsisDim) for dim in remaining_middle2
-        ):
-            raise DataConfigMismatchError(
-                f"Shapes {shape1} and {shape2} do not match and can not be unified."
-            )
-        matching_middle_1, matching_middle_2 = cls._match_middle_shape(
-            remaining_middle1, remaining_middle2
-        )
-        # return tuple(matching_start + matching_middle + matching_end)
-        return (
-            matching_start_1 | matching_middle_1 | matching_end_1,
-            matching_start_2 | matching_middle_2 | matching_end_2,
-        )
-
-    @classmethod
-    def _match_shapes(cls, shape1, shape2) -> tuple[dict, dict]:
-        """
-        Matches dimensions between two shapes from their respective starting points.
-
-        This helper method iterates through the dimensions of `shape1` and `shape2`
-        (or their reversed versions) and attempts to unify corresponding `AxesDim`
-        objects.
-
-        Args:
-            shape1 (Iterable[AxesDim]): The first sequence of dimensions.
-            shape2 (Iterable[AxesDim]): The second sequence of dimensions.
-
-        Returns:
-            tuple[dict, dict]: Dictionaries mapping original dimensions to their
-                unified forms.
-        """
-        matching_dims_1 = {}
-        matching_dims_2 = {}
-        for s1, s2 in zip(shape1, shape2):
-            try:
-                if isinstance(s1, EllipsisDim) or isinstance(s2, EllipsisDim):
-                    # We can not unify ellipsis directly, since they may need to
-                    # consume other axis as well.
-                    break
-                unified_dim = AxesDim.unify_with(s1, s2)
-                matching_dims_1[s1], matching_dims_2[s2] = unified_dim
-            except DataConfigMismatchError as e:
-                raise DataConfigMismatchError(
-                    f"Shapes {shape1} and {shape2} do not match and can not be unified.\
-                        Mismatch at dimensions {s1} and {s2}."
-                ) from e
-        return matching_dims_1, matching_dims_2
-
-    @classmethod
-    def _match_middle_shape(
-        cls, remaining_middle1, remaining_middle2
-    ) -> tuple[dict, dict]:
-        """
-        Matches the middle parts of two shapes, specifically handling `EllipsisDim`.
-
-        This method is called after matching the start and end parts of shapes.
-
-        Args:
-            remaining_middle1 (tuple[AxesDim, ...]): The middle part of the first shape.
-            remaining_middle2 (tuple[AxesDim, ...]): The middle part of the second shape.
-
-        Returns:
-            tuple[dict, dict]: Dictionaries mapping original middle dimensions to their
-                unified forms.
-        """
-        # If one shape only is an ellipsis we are done:
-        if len(remaining_middle1) == 1 and isinstance(remaining_middle1[0], EllipsisDim):
-            return {remaining_middle1[0]: remaining_middle2}, {
-                k: k for k in remaining_middle2
-            }
-        if len(remaining_middle2) == 1 and isinstance(remaining_middle2[0], EllipsisDim):
-            return {k: k for k in remaining_middle1}, {
-                remaining_middle2[0]: remaining_middle1
-            }
-
-        # Determine which side has ellipsis at start vs end
-        if isinstance(remaining_middle1[0], EllipsisDim):
-            middle1, middle2 = _match_remainder(
-                AxesDim, list(remaining_middle1), list(remaining_middle2), EllipsisDim
-            )
-        else:
-            middle2, middle1 = _match_remainder(
-                AxesDim, list(remaining_middle2), list(remaining_middle1), EllipsisDim
-            )
-
-        return middle1, middle2
-
-    def update_axes(
-        self, new_axes_dict: dict[AxesDim, AxesDim | tuple[AxesDim, ...]]
-    ) -> bool:
-        """
-        Updates the dimensions of these axes based on a provided dictionary of new
-        dimensions.
-        This method allows for dynamic modification of the axes, including replacing
-        ellipsis dimensions with concrete sequences of dimensions.
-
-        Args:
-            new_axes_dict (dict[AxesDim, AxesDim | tuple[AxesDim, ...]]): A dictionary
-                mapping existing `AxesDim` objects to their new forms.
-
-        Returns:
-            bool: True if any axes were changed, False otherwise.
-        """
-        changed_axes = False
-        new_shape = []
-        for dim in self.shape:
-            if dim not in new_axes_dict:
-                new_shape.append(dim)
-                continue
-            new_dim = new_axes_dict[dim]
-            if isinstance(dim, EllipsisDim):
-                if isinstance(new_dim, EllipsisDim):
-                    new_shape.append(dim)
-                elif isinstance(new_dim, tuple | list):
-                    # Here the ellipsis is replaced by a concrete new axis dim.
-                    new_shape.extend(list(new_dim))
-                    changed_axes = True
-                    if len(new_dim) == 1:
-                        changed_axes = not isinstance(new_dim[0], EllipsisDim)
-                elif isinstance(new_dim, AxesDim):
-                    # new_dim is not ellipsis but previously we where -> just save
-                    new_shape.append(new_dim)
-            elif isinstance(dim, AxesDim) and isinstance(new_dim, AxesDim):
-                # Here we have to just update the inner axis dimensions, which
-                # depends on the specific implementation of the axis dimension
-                did_update_dim = dim.update_dim(new_dim)
-                new_shape.append(dim)  # updated in place
-                changed_axes = changed_axes or did_update_dim
-            else:
-                raise RuntimeError(
-                    f"Got {new_dim} as an input, but expected AxesDim or EllipsisDim."
-                )
-        self._shape = tuple(new_shape)
-        return changed_axes
-
 
 class BatchAxes(Axes):
     """
@@ -467,36 +260,83 @@ class GeometryAxes(Axes):
     def variables(self):
         return self.geometry.variable
 
-    def unify_with(self: GeometryAxes, other: Axes) -> tuple[dict, dict]:
-        """
-        Unifies these `GeometryAxes` with another `Axes` object.
+    def _is_placeholder(self) -> bool:
+        """Whether the geometry only stands in for a shape (it has no
+        Variable)."""
+        variable = self._geometry.variable
+        return variable is None or variable.is_empty
 
-        It specifically checks for `GeometryAxes` type and delegates the unification
-        to the underlying `Geometry` objects.
+    def _specificity(self) -> int:
+        return 0 if self._is_placeholder() else 1
+
+    def _contents_agree(self, other: GeometryAxes) -> bool:
+        mine, theirs = self._geometry, other._geometry
+        return (
+            mine is theirs
+            or self._is_placeholder()
+            or other._is_placeholder()
+            or mine.is_discretization_of(theirs)
+            or theirs.is_discretization_of(mine)
+            or mine == theirs
+        )
+
+    def with_dims(self, dims) -> GeometryAxes:
+        return GeometryAxes(shape=tuple(dims))
+
+    def _take_content(self, other: Axes) -> None:
+        if not isinstance(other, GeometryAxes) or other._is_placeholder():
+            return
+        if self._is_placeholder() or other._geometry.is_discretization_of(self._geometry):
+            self._geometry = other._geometry
+
+    def split(self, variables: list[Variable]) -> list[GeometryAxes]:
+        """Split the axes of a product geometry into axes of its factors.
+
+        Every factor whose variable is in `variables` gets axes of its own;
+        each run of adjacent other factors stays together as their product.
+        The tensor axes keep their order (the first factor varies slowest),
+        so data described by these axes is reshaped, not reordered.
 
         Args:
-            other (Axes): The other `Axes` object to unify with.
+            variables: Variables of factors of the geometry.
 
         Returns:
-            tuple[dict, dict]: Dictionaries mapping original dimensions to unified
-                dimensions.
+            list of GeometryAxes: In the order of the factors; together they
+                have as many elements as these axes.
 
         Raises:
-            DataConfigMismatchError: If the other object is not `GeometryAxes` or
-                unification fails.
+            ValueError: If the geometry is no product, a variable is no
+                factor of it, or the factors do not span these axes.
         """
-        if not isinstance(other, GeometryAxes):
-            raise DataConfigMismatchError(
-                f"Cannot unify axes of different types: {self.__class__} \
-                    and {other.__class__}."
+        factors = self.geometry.factors
+        if factors is None:
+            raise ValueError(f"{self.geometry} is not a product of geometries.")
+        names = [f.variable for f in factors]
+        unknown = [v for v in variables if v not in names]
+        if unknown:
+            raise ValueError(
+                f"{', '.join(map(str, unknown))} is no factor of {self.geometry}; "
+                f"its factors are {', '.join(map(str, names))}."
             )
-        unified_geometry = self._geometry.unify_with(other.geometry)
-        new_axes = GeometryAxes(unified_geometry)
-        self_dict, other_dict = {}, {}
-        for self_key, other_key, new_a in zip(self.shape, other.shape, new_axes.shape):
-            self_dict[self_key] = new_a
-            other_dict[other_key] = new_a
-        return self_dict, other_dict
+        runs: list[list] = []
+        for factor in factors:
+            alone = factor.variable in variables
+            if alone or not runs or runs[-1][0].variable in variables:
+                runs.append([factor])
+            else:
+                runs[-1].append(factor)
+        split = [
+            GeometryAxes(run[0] if len(run) == 1 else self.geometry.subproduct(run))
+            for run in runs
+        ]
+        size = math.prod(d.size for a in split for d in a.shape)
+        own = math.prod(d.size for d in self.shape)
+        if size != own:
+            raise ValueError(
+                f"The factors of {self.geometry.variable} have {size} points in "
+                f"all, its axes {own}."
+            )
+        return split
 
 
 class FeatureAxes(Axes):
@@ -531,6 +371,26 @@ class FeatureAxes(Axes):
             return self._variable
         return Variable()
 
+    def _specificity(self) -> int:
+        return 0 if self._variable is None else 1
+
+    def _contents_agree(self, other: FeatureAxes) -> bool:
+        """The variables agree where they have the same components in the
+        same order, e.g. ``x`` and its unnamed components ``(x_1, x_2)``."""
+        mine, theirs = self._variable, other._variable
+        if mine is None or theirs is None or mine is theirs:
+            return True
+        return [(leaf.name, leaf.dim) for leaf in mine.leaves] == [
+            (leaf.name, leaf.dim) for leaf in theirs.leaves
+        ]
+
+    def with_dims(self, dims) -> FeatureAxes:
+        return FeatureAxes(shape=tuple(dims))
+
+    def _take_content(self, other: Axes) -> None:
+        if isinstance(other, FeatureAxes) and self._variable is None:
+            self._variable = other._variable
+
     def get_variable_slice(self, variable):
         """
         Retrieves a slice corresponding to a specific variable from the encapsulated
@@ -544,46 +404,28 @@ class FeatureAxes(Axes):
         """
         return self.variables.get_slice(variable)
 
-    def unify_with(self: FeatureAxes, other: Axes) -> tuple[dict, dict]:
-        """
-        Unifies these `FeatureAxes` with another `Axes` object.
-
-        It specifically checks for `FeatureAxes` type and ensures compatibility
-        of underlying `Variable` objects if they exist.
-
-        Args:
-            other (Axes): The other `Axes` object to unify with.
-
-        Returns:
-            tuple[dict, dict]: Dictionaries mapping original dimensions to unified
-                dimensions.
-
-        Raises:
-            DataConfigMismatchError: If the other object is not `FeatureAxes` or
-                variables do not match.
-        """
-        if not isinstance(other, FeatureAxes):
-            raise DataConfigMismatchError(
-                f"Cannot unify axes of different types: {self.__class__} \
-                    and {other.__class__}."
-            )
-        unified_shapes = self.unify_shapes(self.shape, other.shape)
-        if self._variable is not None:
-            self._variable = other.variables
-        elif other._variable is not None:
-            other._variable = self.variables
-        else:
-            if self.variables != other.variables:
-                raise DataConfigMismatchError(
-                    "Variables do not match, when matching" + f"{self} and {other}."
-                )
-        return unified_shapes
-
-
 class EllipsisAxes(Axes):
     """
     Represents an ellipsis in axes, indicating a flexible number of dimensions.
+
+    An ellipsis stands for a sequence of axes, possibly empty, until it is
+    bound to one (see :mod:`qewton.config.sequences`).
+
+    Attributes:
+        bound_to (tuple[Axes, ...] | None): The sequence this ellipsis stands
+            for; None while unknown.
+        waiting (tuple): Equations of sequences to merge again once this
+            ellipsis is bound.
     """
+
+    is_ellipsis = True
+    bound_to: tuple | None = None
+    waiting: tuple = ()
+    #: Operation dims over a sequence holding this ellipsis.
+    _dependents: tuple = ()
+
+    def compatible(self, other: Axes) -> bool:
+        return True
 
     def __init__(self):
         super().__init__(EllipsisDim())
@@ -596,7 +438,35 @@ class AxesDim(Serializable):
     """
     Represents a single dimension within a set of axes, with an optional size and
     broadcastability.
+
+    A dim of unknown size is an unknown of matching. Merging two dims
+    (:meth:`merge`) makes them one: the one merged away refers to the other,
+    its `representative`, which stands for both from then on.
+
+    A dim may be bound to a HyperParameter, `AxesDim(node.in_neurons)`: its
+    size is the current value of the HyperParameter, also after it changed
+    (e.g. a batch size), for every dim merged with it. An open one (state
+    INFERRED, value None) is inferred once the dim's size is known; every
+    copy of the dim (one per place of its node) refers to the same
+    HyperParameter.
+
+    Attributes:
+        merged_into (AxesDim | None): The dim this one was merged into; None
+            for a representative.
+        origin (Any): What brought in the size, e.g. the port of a graph
+            whose configuration declared it; used in error messages.
     """
+
+    merged_into: AxesDim | None = None
+    origin: Any = None
+    #: Whether this stands for a sequence of dims (an ellipsis).
+    is_ellipsis = False
+    #: Operation dims with this dim as an operand.
+    _dependents: tuple = ()
+    #: Operation dims merged into this one while both sizes were unknown.
+    _equal_operations: tuple = ()
+    #: HyperParameters bound to this dim and to the dims merged into it.
+    _parameters: tuple = ()
 
     def __new__(cls, size=None, broadcastable=True) -> AxesDim:
         """
@@ -613,10 +483,28 @@ class AxesDim(Serializable):
             return EllipsisDim(broadcastable)
         return super().__new__(cls)
 
-    def __init__(self, size: int | None = None, broadcastable=True):
-        self._size = size
+    def __init__(self, size: int | Any | None = None, broadcastable=True):
+        """
+        Args:
+            size: The size: a number, a HyperParameter the dim is bound to,
+                or None if unknown.
+            broadcastable: Whether this dimension can be broadcast.
+        """
+        if size is None or isinstance(size, int):
+            self._size = size
+        else:
+            self._size = None
+            self._parameters = (size,)
         self.broadcastable = broadcastable
-        # self.graph = None
+
+    def __deepcopy__(self, memo) -> AxesDim:
+        """A copy for another place; it is bound to the same
+        HyperParameters."""
+        copied = object.__new__(type(self))
+        memo[id(self)] = copied
+        for key, value in self.__dict__.items():
+            setattr(copied, key, value if key == "_parameters" else deepcopy(value, memo))
+        return copied
 
     def update_size(self, new_size):
         """
@@ -635,64 +523,113 @@ class AxesDim(Serializable):
         Returns:
             int | None: The size of the dimension, or None if it is not set.
         """
-        return self._size
+        representative = self.representative
+        if representative is not self:
+            return representative.size
+        # A bound HyperParameter gives the current size, e.g. after a batch
+        # size was changed; the size kept from matching is the fallback.
+        size = self._parameter_size()
+        return size if size is not None else self._size
+
+    def _parameter_size(self) -> int | None:
+        """The value of the first HyperParameter bound to this dim that has
+        one."""
+        return next((p.value for p in self._parameters if p.value is not None), None)
+
+    @property
+    def representative(self) -> AxesDim:
+        """The dim that stands for this one and all merged into it."""
+        if self.merged_into is None:
+            return self
+        representative = self.merged_into.representative
+        self.merged_into = representative
+        return representative
+
+    def merge(self, other: AxesDim) -> AxesDim:
+        """Make this dim and `other` one.
+
+        The more informative of the two stays (an operation dim, then a dim
+        of known size); the other is merged into it. An operation dim solves
+        for an unknown operand once its size is known.
+
+        Args:
+            other: The dim to merge with.
+
+        Returns:
+            AxesDim: The representative of both.
+
+        Raises:
+            DataConfigMismatchError: If both sizes are known and differ.
+        """
+        first, second = self.representative, other.representative
+        if first is second:
+            return first
+        keep, gone = (first, second) if first._outranks(second) else (second, first)
+        if gone._feeds(keep):
+            keep, gone = gone, keep
+        sizes = (first.size, second.size)
+        if None not in sizes and sizes[0] != sizes[1]:
+            raise DataConfigMismatchError(_contradiction(first, second))
+        gone.merged_into = keep
+        if keep.origin is None:
+            keep.origin = gone.origin
+        keep._dependents = keep._dependents + gone._dependents
+        keep._equal_operations = keep._equal_operations + gone._equal_operations
+        keep._parameters = keep._parameters + gone._parameters
+        gone._dependents, gone._equal_operations, gone._parameters = (), (), ()
+        if isinstance(gone, OperationDim):
+            keep._equal_operations = keep._equal_operations + (gone,)
+        size = sizes[0] if sizes[0] is not None else sizes[1]
+        if size is not None:
+            keep._settle(size)
+        return keep
+
+    def compatible(self, other: AxesDim) -> bool:
+        """Whether this dim and `other` could be merged."""
+        mine, theirs = self.size, other.size
+        return mine is None or theirs is None or mine == theirs
+
+    #: Operation dims stay when merged with plain ones, as they carry
+    #: relations.
+    _rank = 0
+
+    def _outranks(self, other: AxesDim) -> bool:
+        """Whether this dim stays when merged with `other`: the higher rank,
+        then the known size."""
+        return (self._rank, self.size is not None) > (other._rank, other.size is not None)
+
+    def _feeds(self, operation: AxesDim) -> bool:
+        """Whether `operation` is computed from this dim, directly or through
+        other operations; such an operation can not stand for this dim."""
+        stack, seen = [self], set()
+        while stack:
+            for dependent in stack.pop()._dependents:
+                dependent = dependent.representative
+                if dependent is operation:
+                    return True
+                if id(dependent) not in seen:
+                    seen.add(id(dependent))
+                    stack.append(dependent)
+        return False
+
+    def _settle(self, size: int) -> None:
+        """Take on `size` and tell everything that depends on it."""
+        if self._size is None:
+            self._size = size
+        self._infer_parameters(size)
+        for operation in self._equal_operations:
+            operation._settle(size)
+        for dependent in self._dependents:
+            dependent.operand_changed()
+
+    def _infer_parameters(self, size: int) -> None:
+        """Tell the HyperParameters bound to this dim its size (see
+        `HyperParameter.infer`)."""
+        for parameter in self._parameters:
+            parameter.infer(size)
 
     def __str__(self) -> str:
         return str(self.size)
-
-    def unify_with(self: AxesDim, other: AxesDim):
-        """
-        Unifies this `AxesDim` with another `AxesDim`.
-
-        It determines a common size, considering broadcastability.
-
-        Args:
-            other (AxesDim): The other dimension to unify with.
-
-        Returns:
-            tuple[AxesDim, AxesDim]: A tuple where both elements are the unified
-                `AxesDim`.
-        """
-        if self == other:
-            return (self, other)
-        broadcastable = self.broadcastable and other.broadcastable
-        out_size = self.unify_integer_dims(
-            self.size, other.size, broadcast_singleton=broadcastable
-        )
-        out_dim = AxesDim(size=out_size, broadcastable=broadcastable)
-        return (out_dim, out_dim)
-
-    @classmethod
-    def unify_integer_dims(
-        cls, dim1: int | None, dim2: int | None, broadcast_singleton=False
-    ):
-        """
-        Unifies two integer dimensions, potentially allowing singleton broadcasting.
-
-        Args:
-            dim1 (int | None): The first dimension size.
-            dim2 (int | None): The second dimension size.
-            broadcast_singleton (bool, optional): If True, a dimension of size 1 can be
-                broadcast to match another dimension's size. Defaults to False.
-
-        Returns:
-            int | None: The unified dimension size, or None if one of the inputs was None.
-
-        Raises:
-            DataConfigMismatchError: If the dimensions cannot be unified.
-        """
-        if dim1 == dim2:
-            return dim1
-        if dim1 is None:
-            return dim2
-        if dim2 is None:
-            return dim1
-        if broadcast_singleton:
-            if dim1 == 1:
-                return dim2
-            if dim2 == 1:
-                return dim1
-        raise DataConfigMismatchError(f"Cannot unify dimensions {dim1} and {dim2}.")
 
     def __add__(self, other: AxesDim | int) -> AxesDim:
         """
@@ -766,24 +703,6 @@ class AxesDim(Serializable):
             other = AxesDim(size=other)
         return DivideDim(other, self)
 
-    def update_dim(self, new_dim: AxesDim) -> bool:
-        """
-        Updates the properties (size and broadcastability) of this dimension with those
-        of `new_dim`.
-
-        Args:
-            new_dim (AxesDim): The dimension whose properties will be copied.
-
-        Returns:
-            bool: True if the dimension's properties were changed, False otherwise.
-        """
-        if self.size == new_dim.size and self.broadcastable == new_dim.broadcastable:
-            return False
-        self._size = new_dim.size
-        self.broadcastable = new_dim.broadcastable
-        return True
-
-
 class OperationDim(AxesDim):
     """
     Represents a dimension that is derived from an operation on other dimensions.
@@ -793,11 +712,71 @@ class OperationDim(AxesDim):
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls)
 
+    #: The size this dim must have, known from a merge before its operands.
+    _target: int | None = None
+
     def __init__(self, dim_1: AxesDim, dim_2: AxesDim):
         self.dim_1 = dim_1
         self.dim_2 = dim_2
         broadcastable = dim_1.broadcastable and dim_2.broadcastable
-        super().__init__(self.size, broadcastable)
+        super().__init__(None, broadcastable)
+        for operand in self.operands:
+            operand._dependents = operand._dependents + (self,)
+
+    @property
+    def operands(self) -> tuple[AxesDim, ...]:
+        return (self.dim_1, self.dim_2)
+
+    @property
+    def size(self):
+        representative = self.representative
+        if representative is not self:
+            return representative.size
+        computed = self._compute()
+        if computed is not None:
+            return computed
+        return self._target if self._target is not None else self._parameter_size()
+
+    def _compute(self) -> int | None:
+        """The size computed from the operands; None while one is unknown."""
+        raise NotImplementedError
+
+    _rank = 1
+
+    def _settle(self, size: int) -> None:
+        computed = self._compute()
+        if computed is not None and computed != size:
+            raise DataConfigMismatchError(
+                f"{self} is {computed}, but {size} (from {self.origin}) is required."
+            )
+        self._target = size
+        self._infer_parameters(size)
+        self.solve(size)
+        for operation in self._equal_operations:
+            operation._settle(size)
+        for dependent in self._dependents:
+            dependent.operand_changed()
+
+    def solve(self, size: int) -> None:
+        """Determine an unknown operand such that this dim is `size`, where
+        the answer is unique; does nothing otherwise."""
+
+    def operand_changed(self) -> None:
+        """Re-check this dim after the size of an operand became known."""
+        representative = self.representative
+        if representative is not self:
+            computed = self._compute()
+            if computed is not None and representative.size != computed:
+                representative.merge(AxesDim(computed))
+            return
+        if self._target is not None:
+            self._settle(self._target)
+        elif self._compute() is not None:
+            self._infer_parameters(self._compute())
+            for operation in self._equal_operations:
+                operation._settle(self._compute())
+            for dependent in self._dependents:
+                dependent.operand_changed()
 
     def update_size(self, new_size):
         raise RuntimeError("Can not update operation dims in place.")
@@ -809,44 +788,17 @@ class AddedDim(OperationDim):
     This is for automatic referencing, to build symbolic relations.
     """
 
-    @property
-    def size(self):
-        """
-        Calculates and returns the size of this dimension, which is the sum of its
-        constituent dimensions' sizes.
-        """
-        size = (
-            self.dim_1.size + self.dim_2.size
-            if self.dim_1.size is not None and self.dim_2.size is not None
-            else None
-        )
-        return size
+    def _compute(self) -> int | None:
+        """The sum of the operands."""
+        first, second = self.dim_1.size, self.dim_2.size
+        return first + second if first is not None and second is not None else None
 
-    def update_dim(self, new_dim: AxesDim) -> bool:
-        if new_dim.size is None:
-            return False
-        if self.size == new_dim.size and self.broadcastable == new_dim.broadcastable:
-            return False
-        # Else check how to update:
-        if self.dim_1.size is None and self.dim_2.size is None:
-            return False  # we can not update from this side
-        if self.dim_1.size is None:
-            self.dim_1.update_dim(
-                AxesDim(
-                    new_dim.size - self.dim_2.size,  # type: ignore
-                    broadcastable=self.broadcastable,
-                )
-            )
-        else:
-            self.dim_2.update_dim(
-                AxesDim(
-                    new_dim.size - self.dim_1.size,  # type: ignore
-                    broadcastable=self.broadcastable,
-                )
-            )
-        self.broadcastable = new_dim.broadcastable
-        return True
-
+    def solve(self, size: int) -> None:
+        first, second = self.dim_1.size, self.dim_2.size
+        if first is not None and second is None:
+            self.dim_2.merge(AxesDim(size - first))
+        elif second is not None and first is None:
+            self.dim_1.merge(AxesDim(size - second))
 
 class SubDim(OperationDim):
     """
@@ -854,157 +806,204 @@ class SubDim(OperationDim):
     This is for automatic referencing, to build symbolic relations.
     """
 
-    @property
-    def size(self):
-        """
-        Calculates and returns the size of this dimension, which is the sum of its
-        constituent dimensions' sizes.
-        """
-        size = (
-            self.dim_1.size - self.dim_2.size
-            if self.dim_1.size is not None and self.dim_2.size is not None
-            else None
-        )
-        return size
+    def _compute(self) -> int | None:
+        """The difference of the operands."""
+        first, second = self.dim_1.size, self.dim_2.size
+        return first - second if first is not None and second is not None else None
 
-    def update_dim(self, new_dim: AxesDim) -> bool:
-        if new_dim.size is None:
-            return False
-        if self.size == new_dim.size and self.broadcastable == new_dim.broadcastable:
-            return False
-        # Else check how to update:
-        if self.dim_1.size is None and self.dim_2.size is None:
-            return False  # we can not update from this side
-        if self.dim_1.size is None:
-            self.dim_1.update_dim(
-                AxesDim(
-                    new_dim.size + self.dim_2.size,  # type: ignore
-                    broadcastable=self.broadcastable,
-                )
-            )
-        else:
-            self.dim_2.update_dim(
-                AxesDim(
-                    self.dim_1.size - new_dim.size,  # type: ignore
-                    broadcastable=self.broadcastable,
-                )
-            )
-        self.broadcastable = new_dim.broadcastable
-        return True
-
+    def solve(self, size: int) -> None:
+        first, second = self.dim_1.size, self.dim_2.size
+        if first is not None and second is None:
+            self.dim_2.merge(AxesDim(first - size))
+        elif second is not None and first is None:
+            self.dim_1.merge(AxesDim(size + second))
 
 class ProductDim(OperationDim):
     """
     Represents a dimension whose size is the product of two other dimensions.
     """
 
-    @property
-    def size(self):
-        """
-        Calculates and returns the size of this dimension, which is the product of
-        its constituent dimensions' sizes.
-        """
-        size = (
-            self.dim_1.size * self.dim_2.size
-            if self.dim_1.size is not None and self.dim_2.size is not None
-            else None
-        )
-        return size
+    def _compute(self) -> int | None:
+        """The product of the operands."""
+        first, second = self.dim_1.size, self.dim_2.size
+        return first * second if first is not None and second is not None else None
 
-    def update_dim(self, new_dim: AxesDim) -> bool:
-        if new_dim.size is None:
-            return False
-        if self.size == new_dim.size and self.broadcastable == new_dim.broadcastable:
-            return False
-        # Else check how to update:
-        if self.dim_1.size is None and self.dim_2.size is None:
-            return False  # we can not update from this side
-        if self.dim_1.size is None:
-            self.dim_1.update_dim(
-                AxesDim(
-                    new_dim.size // self.dim_2.size,  # type: ignore
-                    broadcastable=self.broadcastable,
-                )
-            )
-        else:
-            self.dim_2.update_dim(
-                AxesDim(
-                    new_dim.size // self.dim_1.size,  # type: ignore
-                    broadcastable=self.broadcastable,
-                )
-            )
-        self.broadcastable = new_dim.broadcastable
-        return True
-
+    def solve(self, size: int) -> None:
+        first, second = self.dim_1.size, self.dim_2.size
+        known, unknown = (first, self.dim_2) if second is None else (second, self.dim_1)
+        if known is None or unknown.size is not None or known == 0:
+            return
+        if size % known != 0:
+            raise DataConfigMismatchError(f"{size} is no multiple of {known} ({self}).")
+        unknown.merge(AxesDim(size // known))
 
 class DivideDim(OperationDim):
     """
     Represents a dimension whose size is the division of two other dimensions.
     """
 
-    @property
-    def size(self):
-        """
-        Calculates and returns the size of this dimension, which is the product of
-        its constituent dimensions' sizes.
-        """
-        size = (
-            self.dim_1.size / self.dim_2.size
-            if self.dim_1.size is not None and self.dim_2.size is not None
-            else None
-        )
-        return int(size) if size is not None else None
-
-    def update_dim(self, new_dim: AxesDim) -> bool:
-        if new_dim.size is None:
-            return False
-        if self.size == new_dim.size and self.broadcastable == new_dim.broadcastable:
-            return False
-        # Else check how to update:
-        if self.dim_1.size is None and self.dim_2.size is None:
-            return False  # we can not update from this side
-        if self.dim_1.size is None:
-            self.dim_1.update_dim(
-                AxesDim(
-                    new_dim.size * self.dim_2.size,  # type: ignore
-                    broadcastable=self.broadcastable,
-                )
-            )
-        else:
-            self.dim_2.update_dim(
-                AxesDim(
-                    self.dim_1.size // new_dim.size,  # type: ignore
-                    broadcastable=self.broadcastable,
-                )
-            )
-        self.broadcastable = new_dim.broadcastable
-        return True
-
+    def _compute(self) -> int | None:
+        """The first operand divided by the second, rounded down."""
+        first, second = self.dim_1.size, self.dim_2.size
+        return first // second if first is not None and second is not None else None
 
 class MinimumDim(OperationDim):
     """
     Represents a dimension whose size is the minimum of two other dimensions.
     """
 
+    def _compute(self) -> int | None:
+        """The smaller of the operands."""
+        first, second = self.dim_1.size, self.dim_2.size
+        return min(first, second) if first is not None and second is not None else None
+
+class SequenceProductDim(OperationDim):
+    """
+    A dimension whose size is the product of the sizes of a sequence of
+    axes and dims, e.g. the dims merged by flattening. The sequence may hold
+    an ellipsis; the size is known once the ellipsis is bound and every size
+    in it is known.
+    """
+
+    def __init__(self, items: tuple):
+        self.items = tuple(items)
+        AxesDim.__init__(self, None)
+        self._register()
+
     @property
-    def size(self):
-        """
-        Calculates and returns the size of this dimension, which is the minimum of
-        its constituent dimensions' sizes.
-        """
-        size = (
-            min(self.dim_1.size, self.dim_2.size)
-            if self.dim_1.size is not None and self.dim_2.size is not None
-            else None
-        )
-        return size
+    def operands(self) -> tuple:
+        return self.items
+
+    def _dims(self) -> list[AxesDim] | None:
+        """The dims of the sequence; None while an ellipsis is unbound."""
+        from qewton.config.sequences import expand
+
+        dims = []
+        for item in expand(self.items):
+            if item.is_ellipsis:
+                return None
+            if isinstance(item, Axes):
+                dims.extend(expand(item.shape))
+            else:
+                dims.append(item)
+        return None if any(d.is_ellipsis for d in dims) else dims
+
+    def _register(self) -> None:
+        """Be told when a dim of the sequence or an ellipsis in it changes."""
+        from qewton.config.sequences import expand
+
+        watched = [item for item in expand(self.items) if item.is_ellipsis or not isinstance(item, Axes)]
+        dims = self._dims()
+        if dims is not None:
+            watched += dims
+        for item in watched:
+            if self not in item._dependents:
+                item._dependents = item._dependents + (self,)
+
+    def _compute(self) -> int | None:
+        dims = self._dims()
+        if dims is None or any(d.size is None for d in dims):
+            return None
+        return math.prod(d.size for d in dims)
+
+    def solve(self, size: int) -> None:
+        dims = self._dims()
+        if dims is None:
+            return
+        unknown = [d for d in dims if d.size is None]
+        if len(unknown) != 1:
+            return
+        known = math.prod(d.size for d in dims if d.size is not None)
+        if known == 0 or size % known != 0:
+            raise DataConfigMismatchError(f"{size} is no multiple of {known} ({self}).")
+        unknown[0].merge(AxesDim(size // known))
+
+    def operand_changed(self) -> None:
+        self._register()
+        super().operand_changed()
+
+    def __str__(self) -> str:
+        return f"prod({', '.join(str(i) for i in self.items)})"
+
+
+class BroadcastDim(OperationDim):
+    """
+    A dimension that two dims of different inputs broadcast to: the other
+    one where one is 1, else both, which then must agree.
+    """
+
+    def _compute(self) -> int | None:
+        sizes = (self.dim_1.size, self.dim_2.size)
+        beyond_one = {size for size in sizes if size not in (None, 1)}
+        if len(beyond_one) > 1:
+            raise DataConfigMismatchError(f"Sizes {sizes[0]} and {sizes[1]} do not broadcast.")
+        if beyond_one:
+            return beyond_one.pop()
+        return 1 if sizes == (1, 1) else None
+
+
+class WindowDim(OperationDim):
+    """
+    The size of a dimension after a sliding window (a convolution or a
+    pooling) with `kernel`, `stride`, `padding` and `dilation`, rounded down.
+    The kernel size may be a dim itself (e.g. of a weight). Solved backwards
+    only with stride 1, where the input size is unique.
+    """
+
+    def __init__(
+        self,
+        dim: AxesDim,
+        kernel: int | AxesDim,
+        stride: int = 1,
+        padding: int = 0,
+        dilation: int = 1,
+    ):
+        self.dim = dim
+        self.kernel = kernel if isinstance(kernel, AxesDim) else AxesDim(kernel)
+        self.stride, self.padding, self.dilation = stride, padding, dilation
+        AxesDim.__init__(self, None)
+        for operand in self.operands:
+            operand._dependents = operand._dependents + (self,)
+
+    @property
+    def operands(self) -> tuple[AxesDim, ...]:
+        return (self.dim, self.kernel)
+
+    def _reach(self) -> int | None:
+        kernel = self.kernel.size
+        return None if kernel is None else self.dilation * (kernel - 1) + 1 - 2 * self.padding
+
+    def _compute(self) -> int | None:
+        size, reach = self.dim.size, self._reach()
+        return None if size is None or reach is None else (size - reach) // self.stride + 1
+
+    def solve(self, size: int) -> None:
+        reach = self._reach()
+        if self.stride == 1 and self.dim.size is None and reach is not None:
+            self.dim.merge(AxesDim(size - 1 + reach))
 
 
 class EllipsisDim(AxesDim):
     """
     A special `AxesDim` representing an ellipsis (`...`), indicating a flexible
     number of dimensions.
+
+    An ellipsis stands for a sequence of dims, possibly empty, until it is
+    bound to one (see :mod:`qewton.config.sequences`).
+
+    Attributes:
+        bound_to (tuple[AxesDim, ...] | None): The sequence this ellipsis
+            stands for; None while unknown.
+        waiting (tuple): Equations of sequences to merge again once this
+            ellipsis is bound.
     """
+
+    is_ellipsis = True
+    bound_to: tuple | None = None
+    waiting: tuple = ()
+
+    def compatible(self, other: AxesDim) -> bool:
+        return True
 
     def __init__(self, broadcastable=True):
         super().__init__(size=None, broadcastable=broadcastable)

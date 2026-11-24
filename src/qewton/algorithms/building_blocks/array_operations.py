@@ -1,4 +1,3 @@
-from copy import deepcopy
 from types import EllipsisType
 from typing import Annotated, Any
 
@@ -6,6 +5,7 @@ from qewton.backends import DEFAULT_DL_BACKEND, TensorType
 from qewton.backends.base import DeepLearningBackend
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
+from qewton.config.errors import StructureUnknown
 from qewton.config.variables import Variable
 from qewton.graphs.nodes import NO_DEFAULT, Port, InputPort, OutputPort, Node
 
@@ -70,22 +70,16 @@ class Slice(Node[TensorType]):
             return self.backend.math.slice(inp, self.slice_config)
         return inp[self.slice_config]
 
-    def update_data_configs(
-        self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
-    ):
-        updated_ports = super().update_data_configs(
-            updated_port, config_dict, dynamic_configs
-        )
-        if isinstance(self.slice_obj, Variable) and isinstance(updated_port, InputPort):
-            try:
-                self.slice_config = dynamic_configs[updated_port].get_variable_slice(
-                    self.slice_obj
-                )
-                # TODO: Build new output config
-            except AssertionError:
-                # Could raise an assertion error if config is not concrete enough yet
-                pass
-        return updated_ports
+    def relate(self, inp: DataConfiguration) -> DataConfiguration | None:
+        """Slicing a Variable keeps every axis but the features, which become
+        the Variable; other slices leave the output open."""
+        if not isinstance(self.slice_obj, Variable):
+            return None
+        inp.resolve()
+        if not inp.axes or not isinstance(inp.axes[-1], FeatureAxes):
+            raise StructureUnknown(f"The features of {inp} are not known yet.")
+        self.slice_config = inp.get_variable_slice(self.slice_obj)
+        return DataConfiguration(*inp.axes[:-1], FeatureAxes(variable=self.slice_obj))
 
     @classmethod
     def _string_to_slice(cls, slice_str: str):
@@ -138,15 +132,22 @@ class SplitVariables(Node[TensorType]):
         )
         self.backend: type[DeepLearningBackend[TensorType]] = backend
         self.split_into = split_into
-        self.split_dim = None
         self.split_sections = [var.dim for var in split_into]
-        # A real FeatureAxes here, not a DataConfiguration.empty() placeholder
-        # later overridden only in dynamic_configs: callers that inspect a
-        # port's *static* config before anything is connected (e.g.
-        # PINNPipeline's gradient-tracking pass) need `variables` to already
-        # be correct - only the other axes (batch shape etc.), unknown until
-        # the input actually connects, stay a wildcard here.
+        # The pieces keep every axis of the input but the features, which are
+        # the last axes. The outputs carry their Variables already in their
+        # static configurations, as PINNPipeline reads them before connecting.
         ellipsis_axes = EllipsisAxes()
+        self._input_ports = [
+            InputPort(
+                DataConfiguration(
+                    ellipsis_axes,
+                    FeatureAxes(shape=(AxesDim(sum(self.split_sections)),)),
+                    dtype=backend.default_dtype,
+                ),
+                node=self,
+                name="inp",
+            )
+        ]
         self._output_ports = [
             OutputPort(
                 DataConfiguration(
@@ -159,35 +160,7 @@ class SplitVariables(Node[TensorType]):
         ]
 
     def forward(self, inp: Annotated[TensorType, DataConfiguration.empty()]):
-        return self.backend.math.split(
-            inp, self.split_sections, axis=self.split_dim  # type: ignore
-        )
-
-    def update_data_configs(
-        self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
-    ):
-        updated_ports = super().update_data_configs(
-            updated_port, config_dict, dynamic_configs
-        )
-        if isinstance(updated_port, InputPort):
-            in_config = dynamic_configs[updated_port]
-            self.split_dim = in_config.feature_idx
-            copy_memo = {}
-            for out_port, var in zip(self.output_ports, self.split_into):
-                out_config = deepcopy(in_config, copy_memo)
-                # since we iterate multiple times over the same config, we need
-                # to avoid reuse of the previous deepcopy
-                copy_memo.pop(id(in_config), None)
-                out_config.replace_feature_axes(FeatureAxes(variable=var))
-                dynamic_configs[out_port] = out_config
-
-        return updated_ports
-
-    def get_output_port(self, name: str | Variable):
-        # TODO Merge into general node?
-        if isinstance(name, Variable):
-            name = name.name
-        return super().get_output_port(name)
+        return self.backend.math.split(inp, self.split_sections, axis=-1)
 
 
 class ConcatVariables(Node[TensorType]):
@@ -289,6 +262,9 @@ class ConcatNode(Node[TensorType]):
 # endregion
 # region: Reshaping
 
+    def relate(self, *inputs: DataConfiguration) -> DataConfiguration:
+        return inputs[0].concat(list(inputs[1:]), self.concat_dim)
+
 
 class Narrow(Node[TensorType]):
     """Narrow node that returns a narrowed view of the input tensor along a specified dimension.
@@ -308,6 +284,11 @@ class Narrow(Node[TensorType]):
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         o = self.backend.math.narrow(x, self.dim, self.start, self.l)  # type: ignore
         return o
+
+    def relate(self, x: DataConfiguration) -> DataConfiguration | None:
+        if self.dim is NO_DEFAULT or self.l is NO_DEFAULT:
+            return None
+        return x.set_size(self.dim, self.l)
 
 
 class Squeeze(Node[TensorType]):
@@ -330,24 +311,8 @@ class Squeeze(Node[TensorType]):
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         return self.backend.math.squeeze(inp, self.dim)
 
-    def update_data_configs(
-        self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
-    ):
-        updated_ports = super().update_data_configs(
-            updated_port, config_dict, dynamic_configs
-        )
-        if isinstance(updated_port, InputPort):
-            axes, index_dim = dynamic_configs[updated_port].get_axes_and_dim(self.dim)
-            if axes is not None and index_dim is not None:
-                new_output_config = deepcopy(dynamic_configs[updated_port])
-                new_output_config.remove_dim(axes, index_dim)
-                old_output_config = dynamic_configs[self.output_ports[0]]
-                unify_config = old_output_config.unify_with(new_output_config)[0]
-                output_changed = old_output_config.update_config(unify_config)
-                if output_changed:
-                    updated_ports.add(self.output_ports[0])
-        return updated_ports
-
+    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+        return inp.squeeze(self.dim)
 
 class Unsqueeze(Node[TensorType]):
     """Unsqueeze node that adds a new dimension of size 1 at the specified position.
@@ -369,29 +334,8 @@ class Unsqueeze(Node[TensorType]):
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         return self.backend.math.unsqueeze(inp, self.dim)
 
-    def update_data_configs(
-        self, updated_port, config_dict, dynamic_configs: dict[Port, DataConfiguration]
-    ):
-        updated_ports = super().update_data_configs(
-            updated_port, config_dict, dynamic_configs
-        )
-        if isinstance(updated_port, InputPort):
-            axes, index_dim = dynamic_configs[updated_port].get_axes_and_dim(self.dim)
-            if axes is not None and index_dim is not None:
-                # Build new config and add a dimension
-                new_output_config = deepcopy(dynamic_configs[updated_port])
-                new_axes, new_dim = new_output_config.get_axes_and_dim(self.dim)
-                dim_idx = new_axes.get_dim_idx(new_dim)  # type: ignore
-                new_axes.add_dim(AxesDim(1), dim_idx + 1)  # type: ignore
-                # Check if the old config is the same anyway
-                old_output_config = dynamic_configs[self.output_ports[0]]
-                unify_config = old_output_config.unify_with(new_output_config)[0]
-                output_changed = old_output_config.update_config(unify_config)
-                # If something changed we have to pass this through the graph
-                if output_changed:
-                    updated_ports.add(self.output_ports[0])
-        return updated_ports
-
+    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+        return inp.unsqueeze(self.dim)
 
 class Reshape(Node[TensorType]):
     """Reshape node that changes the shape of the input tensor to a specified new shape.
@@ -412,6 +356,9 @@ class Reshape(Node[TensorType]):
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         return self.backend.math.reshape(inp, self.new_shape)
+
+    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+        return inp.reshape(tuple(self.new_shape))
 
 
 class ReshapeAtDim(Node[TensorType]):
@@ -440,6 +387,9 @@ class ReshapeAtDim(Node[TensorType]):
         new_shape = inp.shape[: self.dim] + self.new_shape + inp.shape[self.dim + 1 :]
         return self.backend.math.reshape(inp, new_shape)
 
+    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+        return inp.unflatten(self.dim, tuple(self.new_shape))
+
 
 class Flatten(Node[TensorType]):
     """Flatten node that flattens the input tensor between specified dimensions.
@@ -461,7 +411,12 @@ class Flatten(Node[TensorType]):
     def forward(
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
-        return self.backend.math.flatten(inp, self.start_dim, self.end_dim)
+        return self.backend.math.flatten(
+            inp, start_dim=self.start_dim, end_dim=self.end_dim
+        )
+
+    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+        return inp.flatten(self.start_dim, self.end_dim)
 
 
 class Unflatten(Node[TensorType]):
@@ -495,6 +450,11 @@ class Unflatten(Node[TensorType]):
             size = self.sizes
         return self.backend.math.unflatten(inp, self.axis, size)  # type: ignore
 
+    def relate(self, inp: DataConfiguration, size: DataConfiguration) -> DataConfiguration | None:
+        if self.sizes is None:
+            return None
+        return inp.unflatten(self.axis, tuple(self.sizes))
+
 
 class Repeat(Node[TensorType]):
 
@@ -514,6 +474,61 @@ class Repeat(Node[TensorType]):
         self, inp: Annotated[TensorType, DataConfiguration.empty()]
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         return self.backend.math.repeat(inp, self.repeats, self.dim)
+
+
+class UnflattenLike(Node[TensorType]):
+    """Unflattens an axis of a tensor into a part of the shape of another one.
+
+    The axis `axis` of the input is split into the shape
+    `like.shape[start_dim:end_dim]`. This is the inverse of
+    `Flatten(start_dim, end_dim)` when the shape to restore is only known at
+    runtime, taken from the tensor that was flattened.
+
+    Args:
+        start_dim (int): Index of the first axis of `like` whose shape is restored.
+        end_dim (int | None, optional): Index after the last axis of `like`
+            whose shape is restored; None for all up to the end. Defaults to None.
+        axis (int, optional): The axis of the input that is split. Defaults
+            to -1, the last one.
+        name (str | None, optional): Name of the node. Defaults to "UnflattenLikeNode".
+        backend (type[DeepLearningBackend[TensorType]], optional): The backend used for
+            the computations. Defaults to DEFAULT_DL_BACKEND.
+    """
+
+    def __init__(
+        self,
+        start_dim: int,
+        end_dim: int | None = None,
+        axis: int = -1,
+        name: str | None = None,
+        backend: type[DeepLearningBackend[TensorType]] = DEFAULT_DL_BACKEND,
+    ) -> None:
+        self.start_dim = start_dim
+        self.end_dim = end_dim
+        self.axis = axis
+        super().__init__(
+            name if name is not None else "UnflattenLikeNode", backend=backend
+        )
+        self.backend: type[DeepLearningBackend[TensorType]] = backend
+
+    def forward(
+        self,
+        inp: Annotated[TensorType, DataConfiguration.empty()],
+        like: Annotated[TensorType, DataConfiguration.empty()],
+    ) -> Annotated[TensorType, DataConfiguration.empty()]:
+        """Splits the axis `axis` of `inp` into a part of the shape of `like`.
+
+        Args:
+            inp (TensorType): Tensor whose axis is split, e.g. the flattened
+                spatial axes. Its size must be the product of the restored shape.
+            like (TensorType): Tensor that provides the shape to restore.
+
+        Returns:
+            TensorType: `inp` with the axis replaced by
+                `like.shape[start_dim:end_dim]`.
+        """
+        shape = tuple(like.shape[self.start_dim : self.end_dim])
+        return self.backend.math.unflatten(inp, self.axis, shape)
 
 
 # endregion

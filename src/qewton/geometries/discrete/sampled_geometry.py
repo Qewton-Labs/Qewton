@@ -1,9 +1,11 @@
 """Geometry holding the points a sampler currently provides."""
 
+import numpy as np
+
 from qewton.geometries.discrete.mesh import Mesh
 
 from qewton.backends import TensorType
-from qewton.geometries.base import DiscreteGeometry, Geometry
+from qewton.geometries.base import DiscreteGeometry, Geometry, Structure
 
 
 class SampledGeometry(DiscreteGeometry[TensorType]):
@@ -82,8 +84,29 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         self._is_numpy = False
 
     @property
+    def structure(self) -> Structure:
+        return Structure.POINTS if self.mesh is None else Structure.MESH
+
+    @property
+    def topological_dim(self) -> int:
+        mesh = self.mesh
+        return 0 if mesh is None else mesh.cells.shape[1] - 1
+
+    @property
+    def cells(self) -> np.ndarray | None:
+        mesh = self.mesh
+        return None if mesh is None else np.asarray(self.backend.to_numpy(mesh.cells))
+
+    @property
     def factors(self) -> list | None:
         return self._current_factors
+
+    def subproduct(self, factors: list) -> DiscreteGeometry:
+        """See :meth:`~qewton.geometries.base.DiscreteGeometry.subproduct`;
+        the product of the current product mesh's factors."""
+        if self._current_product is None:
+            return super().subproduct(factors)
+        return self._current_product.subproduct(factors)
 
     def to_numpy(self) -> None:
         """Convert the current points and cells to numpy arrays in place."""

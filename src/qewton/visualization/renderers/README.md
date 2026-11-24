@@ -1,83 +1,125 @@
 # Renderers
 
-Backends that turn a `Figure` and the evaluated results of its plots into
-a concrete figure. Plots and `Figure` stay backend-neutral; everything in
-a backend's vocabulary (subplot grid, theme styling, animation frames,
-baked controls, export) lives here. Plotly is the only backend and the
-default (`DEFAULT_RENDERER = PlotlyRenderer()`). For the overall picture
-see [../README.md](../README.md).
+A renderer draws one `Figure` in one plotting framework and one theme.
+Plots and figures stay framework-neutral; everything in a framework's
+vocabulary (its figure, styling, embedded controls, export) lives here.
+See the [visualization README](../README.md).
 
-## Public API
+## Available renderers (`__init__.py`)
 
-- **`Renderer`** (`base.py`): abstract backend interface.
-  - `setup(figure)` builds an empty, themed backend figure sized to the
-    figure's cell grid.
-  - `reconcile_y_axis_titles(...)` applies Figure-level y-axis titles
-    after all plots are drawn.
-  - `animate(figure, backend_figure, spec)` adds one frame per
-    `TimeSpec` value (called by `Figure.draw()`).
-  - `apply_slider(...)` / `apply_selector(...)` bake a `SliderSpec` /
-    `SelectorSpec` into a static figure (called by `Figure.show()` and
-    `Figure.save_html()` only).
-  - `show`, `save_html`, `save_gif`, `save_image` display or export.
-- **`Artist`** (`base.py`): draws one plot (in one facet cell) into a
-  backend figure.
-  - `Artist.create(backend_figure, plot, row, col)` evaluates the plot,
-    adds its traces and returns the artist.
-  - `artist.update(backend_figure, plot, row, col)` re-evaluates the plot
-    in its current control state and refreshes the same traces in place.
-- **`PlotlyRenderer`** (`plotly/__init__.py`): the Plotly implementation.
-  It also exposes every Plotly artist as a class attribute, so a plot's
-  `create_artist(backend_figure, renderer, row, col)` calls e.g.
-  `renderer.HeatmapArtist.create(...)` without importing artist modules.
+`RENDERER_DICT` holds the renderers whose packages are installed, in
+order of priority: `"plotly"` (`PlotlyRenderer`, if Plotly is installed),
+then `"matplotlib"` (`MatplotlibRenderer`, always: Matplotlib is a core
+dependency). `DEFAULT_RENDERER`, the renderer of a figure created without
+one, is the first of them. A new renderer is one more guarded import and
+entry; renderers are passed to a `Figure` as instances.
 
-## Plotly artists
+## Interface (`base.py`)
 
-| Module | Artists | Plots |
-|---|---|---|
-| `grid.py` | `ImageArtist`, `HeatmapArtist`, `ParametricHeatmapArtist`, `SurfaceArtist`, `ParametricSurfaceArtist` | `ImagePlot`, `HeatmapPlot`, `TableHeatMap`, `SurfacePlot`, `EmbeddedGridPlot` |
-| `mesh.py` | `SurfaceMeshArtist`, `FilledMeshArtist`, `CurveFieldArtist` | `MeshFieldPlot` (3D / 2D / curve), `MeshSurfacePlot` |
-| `vector.py` | `ArrowField2DArtist`, `ArrowField3DArtist` | `QuiverPlot`, `MeshVectorPlot` |
-| `points.py` | `PointCloud2DArtist`, `PointCloud3DArtist` | `PointCloudPlot` |
-| `tabular.py` | `ScatterArtist`, `BarArtist` | `ScatterPlot`, `TableScatter`, `BarPlot` |
-| `table.py` | `ParallelCoordinatesArtist` | `ParallelCoordinatesPlot` |
-| `graph.py` | `NodeLinkArtist` | `GraphPlot` |
-| `curve.py`, `geometry.py` | `LineArtist`, `PathArtist`, `GeometryArtist`, `GeometryArtist2D` | `LinePlot`, `PathPlot`, `GeometryPlot` |
+- **`Renderer(theme)`**: bound to one figure by `setup(figure)`, which
+  builds the framework's figure with the cell grid. The figure calls
+  `draw(key, result, cell, visible)` per drawn copy (creating or updating
+  the artist of `key`), `hide(key)`, `draw_axes(cell)`,
+  `draw_colorbar(scale, title, ticks, cell, slot, visible)` (the cell it
+  stands beside and its place there) and `draw_legend(entries, cell)`
+  (`{label: keys}`). To embed a control it takes a
+  `snapshot(keys, cells, scales)` per state and passes them to `animate`,
+  `apply_slider` or `apply_selector`; the class attributes `embeddable`
+  (kinds of control) and `max_embedded` (per output, None for no limit)
+  declare what it embeds. Last, `draw_layout()` sizes the framework's
+  figure and places everything in it. Outputs: `show` (inline in a
+  notebook at the figure's size, `notebook_html`), `save_html`,
+  `save_image`, `save_gif`.
+- **`Artist`**: draws one Result into one cell: `create(backend_figure,
+  result, cell, theme)`, `update(...)` in place, `set_visible(...)`. An
+  artist sees Results, cells and the theme, never plots. `Renderer.artists`
+  maps (Result class, number of positions) to the artist class; a Result
+  without one raises a ValueError naming the renderer.
+- **`text.py`**: texts of the core (plain parts and `$...$` math) as
+  parts or as plain text, for every renderer.
+- **`space.py`**: the room beside the plot areas, for every renderer:
+  tick labels and titles of the axes, cell titles, colorbars by cell and
+  slot, legends, estimated from the number of characters and the font
+  sizes.
 
-`common.py` holds the `PlotlyArtist` base class and shared helpers
-(colorbar placement, shared `Scale` ranges, value binning, tensor
-conversion). `card_geometry.py` is pure geometry for the beveled node
-cards of `NodeLinkArtist`.
+## Plotly (`plotly/`)
 
-## How the pieces relate
+| Module | Holds |
+|---|---|
+| `__init__.py` | `PlotlyRenderer`: cell grid, axes, colorbars (`colorbar(scale)`), legends, snapshots, outputs |
+| `layout.py` | the figure size and the places of cells, titles, colorbars, legends and embedded controls in paper coordinates |
+| `embedding.py` | embedded states as the trace and axis properties that differ between them |
+| `primitives.py` | the artists of the primitive Results |
+| `graph.py`, `card_geometry.py` | `NodeLinkArtist` for computation graphs and the geometry of its cards |
+| `traces.py` | value bins, segment and triangle coordinates |
+| `text.py` | texts with math as Plotly displays them |
+| `camera.py` | the script moving the cameras of linked 3D cells together |
 
-1. `Figure.draw()` calls `renderer.setup(figure)` and then, per plot and
-   facet cell, `plot.create_artist(...)` on the first draw or
-   `artist.update(...)` on later draws.
-2. After all plots, `reconcile_y_axis_titles()` runs, and with a
-   `TimeSpec`, `animate()`.
-3. `Figure.show()` / `save_html()` additionally call `apply_selector()`
-   per `SelectorSpec` and `apply_slider()` for a single `SliderSpec`.
-   `DashApplication` does not; its callbacks call `Figure.draw()` again,
-   which runs `update()` with the new control states.
-
-Every `PlotlyArtist` lists the traces it owns in `trace_indices`.
-`animate()`, `apply_slider()` and `apply_selector()` set the control to
-each state, replay `update()`, and capture exactly those traces (plus the
-titles and types of their 2D axes) as frames, slider steps or dropdown
-buttons. An artist that owns several traces must therefore list all of
-them in `trace_indices` and keep their number fixed across updates.
-
-## Usage
-
-Renderers are used through `Figure`; they are rarely called directly.
+`PlotlyRenderer(theme=DEFAULT_THEME, mathjax=True)`: with MathJax, every
+text naming a Variable is written as one math text, and `show()` in a
+notebook displays HTML that loads plotly.js and MathJax from a CDN;
+`mathjax=False` writes Plotly's own markup and needs no CDN. Axis titles
+of 3D scenes are markup in either case. The figure is sized in pixels
+without margins; embedded sliders stand below the cells, dropdowns right
+of them. Embedded controls become frames (time), slider steps and
+dropdown buttons that set only what differs between states; animations
+start with their play button and switch frames without transitions.
+Cells sharing position axes zoom together; linked 3D cells move their
+cameras together in HTML outputs and Dash.
 
 ```python
 from qewton.visualization import Figure
-from qewton.visualization.renderers.plotly import PlotlyRenderer
+from qewton.visualization.renderers import PlotlyRenderer
 
-fig = Figure(plot, renderer=PlotlyRenderer())
-backend_figure = fig.draw()  # a plotly.graph_objects.Figure
+backend_figure = Figure(plot, renderer=PlotlyRenderer(mathjax=False)).draw()
+```
+
+## Matplotlib (`matplotlib/`)
+
+| Module | Holds |
+|---|---|
+| `__init__.py` | `MatplotlibRenderer`: cell grid, axes, colorbars, snapshots and frames, outputs |
+| `primitives.py` | the artists of the primitive Results; `axes_of(backend_figure, cell)` and `colorbar_axes(backend_figure, cell=None)` |
+| `style.py` | the theme as rcParams (fonts, sizes in points at `PIXELS_PER_INCH`, colors), colormaps and norms |
+| `text.py` | texts with math as mathtext displays them, and plain characters `cmr10` lacks as math |
+
+`MatplotlibRenderer(theme=DEFAULT_THEME, usetex=False, dpi=100)` draws a
+`matplotlib.figure.Figure` without pyplot; `draw()` returns it for further
+editing. Texts are mathtext in Computer Modern (text in the theme's serif
+fonts, falling back to `cmr10`); math mathtext cannot parse is written as
+plain text, with a warning; `usetex=True` renders all text with LaTeX and
+needs `latex`.
+
+| Result | 2D | 3D |
+|---|---|---|
+| `HeatmapResult` | `pcolormesh` | – |
+| `SurfaceResult` | `tripcolor` (Gouraud) or one fill, `triplot` edges | `Poly3DCollection`, shaded if uniform |
+| `LineResult` | `LineCollection` | `Line3DCollection` |
+| `MarkerResult` | `scatter` | `scatter` |
+| `BarResult` | `bar` | – |
+| `ImageResult` | `pcolormesh` of RGB(A) cells | – |
+| `ArrowResult` | `quiver` | `quiver` |
+
+The figure is sized from the plot sizes and the room estimated beside
+them; constrained layout places everything when rendering, so a plot area
+may miss its size by a few pixels. A colorbar is an Axes inside its cell's,
+right of the plot area and as tall.
+
+Not drawn: `ParallelCoordinatesResult` and `GraphLayoutResult`. 2D cells
+sharing position axes share their Matplotlib axes; 3D cells are not linked. One TimeAxis or SliderAxis per
+output is embedded as frames: `show()` and `save_html()` give
+Matplotlib's JavaScript player, `save_gif()` a GIF with the frame weights
+as durations; the figure title names the state of a frame. Images: PNG,
+SVG and PDF without external tools. `show()` displays HTML in a notebook
+and opens a window of Matplotlib's backend elsewhere.
+
+```python
+from qewton.visualization import Figure, WidgetApplication
+from qewton.visualization.renderers import MatplotlibRenderer
+
+figure = Figure(plot, renderer=MatplotlibRenderer())
+figure.save_svg("figure.svg")
+WidgetApplication.create(figure)  # in a notebook: a widget per control
 ```
 
 See [DECISIONS.md](DECISIONS.md) for design decisions.

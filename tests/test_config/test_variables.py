@@ -15,6 +15,42 @@ class TestLeafNames:
         assert pos.leaf_names == {"pos_1", "pos_2", "pos_3"}
 
 
+class TestQuantities:
+    def test_a_leaf_is_one_quantity(self):
+        u = Variable("u", 1)
+        assert u.quantities == [u]
+
+    def test_a_variable_with_its_own_components_is_one_quantity(self):
+        v = Variable("v", 3)
+        assert v.quantities == [v]
+
+    def test_a_composed_variable_bundles_its_quantities(self):
+        u, v, p = Variable("u", 1), Variable("v", 2), Variable("p", 1)
+        assert (u * v * p).quantities == [u, v, p]
+
+
+class TestQuantity:
+    def test_a_component_belongs_to_its_quantity(self):
+        x = Variable("x", 3)
+        assert x.leaves[2].quantity is x
+
+    def test_a_quantity_in_a_composition_stays_itself(self):
+        t, x = Variable("t", 1), Variable("x", 2)
+        t * x
+        assert t.quantity is t
+        assert x.leaves[0].quantity is x
+
+
+class TestGetSlice:
+    def test_a_vector_is_found_in_a_product_of_several_variables(self):
+        u, p, v, r = Variable("u", 1), Variable("p", 1), Variable("v", 2), Variable("r", 2)
+        assert (u * p * v * r).get_slice(v) == slice(2, 4)
+
+    def test_a_leaf_is_found_at_any_depth(self):
+        u, p, v = Variable("u", 1), Variable("p", 1), Variable("v", 2)
+        assert (u * p * v).get_slice(v[1]) == slice(3, 4)
+
+
 class TestPrune:
     def test_returns_the_same_object_when_nothing_is_dropped(self):
         """The whole point: a variable nothing needs to cut stays whole -

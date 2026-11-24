@@ -1,20 +1,18 @@
 """DeepONet with fully connected branch and trunk networks."""
 
-import math
-
-from qewton.algorithms.dl_models.deeponet.base import DeepONet
+from qewton.algorithms.dl_models.deeponet.base import DeepONet, feature_axes
 from qewton.algorithms.dl_models.deeponet.merge_nodes import DefaultMerger
 from qewton.algorithms.dl_models.fcn import FCN
-from qewton.algorithms.building_blocks.array_operations import Unsqueeze, Flatten
+from qewton.algorithms.building_blocks.array_operations import Flatten
 from qewton.algorithms.building_blocks.activation_functions import ReLU
 from qewton.backends import DEFAULT_DL_BACKEND, ComputingBackend, TensorType
-from qewton.graphs.nodes import Node
+from qewton.graphs.nodes import Node, NodeState
 from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.graphs.graphs import Graph
 from qewton.config.variables import Variable
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.config.data_configurations import DataConfiguration
-from qewton.config.axes import FeatureAxes, EllipsisAxes, BatchAxes
+from qewton.config.axes import AxesDim, EllipsisAxes, BatchAxes
 from qewton.config.dtypes import Number
 
 
@@ -37,9 +35,10 @@ class FCNDeepONet(DeepONet[TensorType]):
     Args:
         trunk_input: The input dimension of the trunk network, or the input
             variable.
-        branch_input: The input dimension of the (flattened) branch network
-            input, or the input variable. Updated to the flattened size when
-            the branch input configuration becomes known.
+        branch_input: The number of features of the branch input at each of
+            its points, or the input variable. The branch network takes a
+            branch sample flattened; its input size (`branch_size`) is
+            inferred from the connected data.
         output: The output dimension of the DeepONet, or the output variable.
         trunk_hidden_neurons: The number of neurons in each hidden layer of the
             trunk network.
@@ -76,8 +75,10 @@ class FCNDeepONet(DeepONet[TensorType]):
         output_strategy (str): The merge strategy.
         trunk_input (int or Variable or HyperParameter): The input dimension
             or variable of the trunk.
-        branch_input (int or Variable or HyperParameter): The input dimension
-            or variable of the branch.
+        branch_input (int or Variable or HyperParameter): The number of
+            features or the variable of the branch input.
+        branch_size (HyperParameter): The input size of the branch network,
+            inferred from the connected data.
         intermediate_neurons (HyperParameter): Architecture hyperparameter
             shared by trunk and branch.
         activations (HyperParameter): Architecture hyperparameter shared by
@@ -110,17 +111,24 @@ class FCNDeepONet(DeepONet[TensorType]):
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
         **kwargs,
     ):
-        self.inner_ellipsis_axes = EllipsisAxes()
+        # The points of a branch sample (e.g. sensors) and of a trunk sample
+        # (where the output is evaluated) are independent; the output has
+        # the points of the trunk.
+        self.branch_points = EllipsisAxes()
+        self.trunk_points = EllipsisAxes()
         self.batch_axes = BatchAxes(None)
 
         self.output_variable = output if isinstance(output, Variable) else None
-        self.output_dim = output if isinstance(output, int) else output.dim
+        self.output_dim = HyperParameter.from_value(
+            output if isinstance(output, int) else output.dim, "Output dim"
+        )
         self.output_strategy: DefaultMerger.MERGE_TYPES = output_strategy
         self.intermediate_neurons = HyperParameter.from_value(
             intermediate_neurons, "Intermediate neurons"
         )
         self.trunk_input = trunk_input
         self.branch_input = branch_input
+        self.branch_size = HyperParameter.inferred("Branch input size")
         self.trunk_hidden_neurons = HyperParameter.from_value(
             trunk_hidden_neurons, "Trunk hidden neurons"
         )
@@ -143,6 +151,7 @@ class FCNDeepONet(DeepONet[TensorType]):
             merge_node=merge_node,
             name=name,
             backend=backend,
+            state=NodeState.UNINITIALIZED,
             **kwargs,
         )
         self.branch_port = self.input_ports[0]
@@ -168,9 +177,8 @@ class FCNDeepONet(DeepONet[TensorType]):
             backend=backend,
         )
         branch_flatting = Flatten(start_dim=1, backend=backend)
-        branch_unsqueeze = Unsqueeze(dim=1, backend=backend)
         branch_fcn = FCN(
-            in_neurons=self.branch_input,
+            in_neurons=self.branch_size,
             hidden_neurons=self.branch_hidden_neurons,
             out_neurons=merge_node.branch_out,
             n_hidden_layers=self.branch_n_hidden_layers,
@@ -179,42 +187,22 @@ class FCNDeepONet(DeepONet[TensorType]):
         )
         branch_graph = Graph()
         branch_graph.connect(branch_flatting, branch_fcn)
-        branch_graph.connect(branch_fcn, branch_unsqueeze)
         branch_net = GraphNode(
             graph=branch_graph,
             input_ports=branch_flatting.input_ports,
-            output_ports=branch_unsqueeze.output_ports,
+            output_ports=branch_fcn.output_ports,
             name="BranchNet",
             backend=backend,
         )
 
         return merge_node, branch_net, trunk_net
 
-    def update_data_configs(self, updated_port, config_dict, dynamic_configs):
-        """Propagate data configurations and adapt the branch input size.
+    def relate(self, branch: DataConfiguration, trunk: DataConfiguration) -> None:
+        """The branch network takes a branch sample flattened: all its dims
+        but the batch dim have `branch_size` values together."""
+        branch.flatten(1).dim(-1).merge(AxesDim(self.branch_size))
 
-        If the branch input port is updated and its non-batch shape is fully
-        known, `branch_input` is set to the product of that shape.
-
-        Args:
-            updated_port (Port): The port whose configuration changed.
-            config_dict (dict): Passed on to the parent implementation.
-            dynamic_configs (dict): The current dynamic data configuration per
-                port.
-
-        Returns:
-            list: The ports returned by the parent implementation.
-        """
-        ports = super().update_data_configs(updated_port, config_dict, dynamic_configs)
-        if updated_port == self._input_ports[0]:
-            branch_config_shape = dynamic_configs[updated_port].shape[1:]
-            if len(branch_config_shape) > 0 and all(
-                isinstance(dim, int) for dim in branch_config_shape
-            ):
-                self.branch_input = math.prod(branch_config_shape)
-        return ports
-
-    def setup(self) -> None:
+    def build(self) -> None:
         """Rebuild branch, trunk and merge node for the current
         hyperparameter values and connect them."""
         self.merge_node, self.branch_net, self.trunk_net = self._build_network(
@@ -234,19 +222,13 @@ class FCNDeepONet(DeepONet[TensorType]):
         """Build the expected branch input data configuration.
 
         Returns:
-            DataConfiguration: A batch axis, arbitrary inner axes and the
-                branch feature axis.
+            DataConfiguration: A batch axis, the points of a branch sample
+                and the branch feature axis.
         """
-        if isinstance(self.branch_input, int):
-            f_axis = FeatureAxes(shape=(self.branch_input,))
-        elif isinstance(self.branch_input, Variable):
-            f_axis = FeatureAxes(self.branch_input)
-        else:
-            f_axis = FeatureAxes(shape=(self.branch_input.value,))
         return DataConfiguration(
             self.batch_axes,
-            self.inner_ellipsis_axes,
-            f_axis,
+            self.branch_points,
+            feature_axes(self.branch_input),
             dtype=self.backend.default_dtype,
         )
 
@@ -254,19 +236,13 @@ class FCNDeepONet(DeepONet[TensorType]):
         """Build the expected trunk input data configuration.
 
         Returns:
-            DataConfiguration: A batch axis, arbitrary inner axes and the trunk
-                feature axis.
+            DataConfiguration: A batch axis, the points of a trunk sample and
+                the trunk feature axis.
         """
-        if isinstance(self.trunk_input, int):
-            f_axis = FeatureAxes(shape=(self.trunk_input,))
-        elif isinstance(self.trunk_input, Variable):
-            f_axis = FeatureAxes(self.trunk_input)
-        else:
-            f_axis = FeatureAxes(shape=(self.trunk_input.value,))
         return DataConfiguration(
             self.batch_axes,
-            self.inner_ellipsis_axes,
-            f_axis,
+            self.trunk_points,
+            feature_axes(self.trunk_input),
             dtype=self.backend.default_dtype,
         )
 
@@ -274,17 +250,13 @@ class FCNDeepONet(DeepONet[TensorType]):
         """Build the output data configuration.
 
         Returns:
-            DataConfiguration: A batch axis, the inner axes of the inputs and
-                the output feature axis.
+            DataConfiguration: A batch axis, the points of the trunk sample
+                and the output feature axis.
         """
-        if self.output_variable is not None:
-            f_axis = FeatureAxes(self.output_variable)
-        else:
-            f_axis = FeatureAxes(shape=(self.output_dim,))
         return DataConfiguration(
             self.batch_axes,
-            self.inner_ellipsis_axes,
-            f_axis,
+            self.trunk_points,
+            feature_axes(self.output_variable or self.output_dim),
             dtype=self.backend.default_dtype,
         )
 
@@ -302,7 +274,4 @@ class FCNDeepONet(DeepONet[TensorType]):
         Returns:
             TensorType: The output, see :meth:`output_data_config`.
         """
-        self.input_ports[0].set_value(branch_input)
-        self.input_ports[1].set_value(trunk_input)
-        self.run()
-        return self.output_ports[0].value  # type: ignore
+        return super().forward(branch_input, trunk_input)

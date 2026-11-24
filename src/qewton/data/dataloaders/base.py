@@ -11,7 +11,6 @@ import numpy as np
 
 from qewton.graphs.nodes import NodeState
 from qewton.backends import Backend, DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
-from qewton.config.variables import Variable
 from qewton.config.devices import Device, cpu
 
 from qewton.optim.base import EvaluationPhase
@@ -32,9 +31,9 @@ if TYPE_CHECKING:
     # which imports GraphBasedTrainer, and qewton.visualization.plots.graph
     # itself imports DataNode from this module, so a module-level import
     # here would be circular.
+    from qewton.visualization.axes import ControlAxis
     from qewton.visualization.layout import Layout
-    from qewton.visualization.plots.base import Plot
-    from qewton.visualization.plots.spec import ControlSpec
+    from qewton.visualization.plots.data import DataPlot
 
 
 class DataNode(Node[TensorType]):
@@ -121,33 +120,36 @@ class DataNode(Node[TensorType]):
     def visualize(
         self,
         mode: EvaluationPhase = EvaluationPhase.VALIDATION,
-        plot_type: "type[Plot] | None" = None,
-        controls: "ControlSpec | type | dict | None" = None,
+        plot_type: "type[DataPlot] | None" = None,
+        controls: "list[ControlAxis]" = (),
+        default_control: "type[ControlAxis] | None" = None,
         **plot_kwargs,
     ) -> "Layout":
-        """Runs this node on its own - a DataNode is always a graph source,
-        so it needs no Graph - and builds a Layout showing every output
-        port.
+        """Run this node on its own (a DataNode is always a graph source,
+        so it needs no Graph) and build a layout showing every output port.
 
         Args:
-            mode: The EvaluationPhase this node is run in - determines
-                which of its splits supplies the batch. Defaults to
-                EvaluationPhase.VALIDATION.
-            plot_type: Passed through to auto_plot() for every port - an
-                explicit Plot type if auto-selection doesn't apply, or None
-                (default) to auto-select.
-            controls: A ControlSpec class, instance, or `{axis: class-or-
-                instance}` dict, used to resolve a control for any axis
-                left over after each port's own role - None (default)
-                behaves as SliderSpec.
-            **plot_kwargs: Passed through to auto_plot() for every port.
+            mode: The EvaluationPhase this node is run in; it determines
+                which split supplies the batch.
+            plot_type: Passed to
+                :func:`~qewton.visualization.auto.auto_plot` for every port.
+            controls: Control axes for chosen dimensions, passed to
+                auto_plot for every port that has them.
+            default_control: Control axis class for every other dimension
+                not drawn; None for auto_plot's default. Every control is
+                shared by all ports whose data has its axes or Variable (see
+                :class:`~qewton.visualization.auto.AutoPlots`).
+            **plot_kwargs: Passed to auto_plot for every port.
 
         Returns:
-            Layout: `Overlay(*plots)` if every port's plot is curve-like
-                (see auto_plot.is_curve_like()), `Row(*plots)` otherwise.
+            Layout: The plots arranged by
+                :func:`~qewton.visualization.layout.auto_layout`.
+
+        Raises:
+            ValueError: If this node provides no data in `mode`.
         """
-        from qewton.visualization.auto import auto_plot, is_curve_like
-        from qewton.visualization.layout import Overlay, Row
+        from qewton.visualization.auto import AutoPlots
+        from qewton.visualization.layout import auto_layout
 
         if not self.provides_data_in_phase(mode):
             raise ValueError(
@@ -156,20 +158,18 @@ class DataNode(Node[TensorType]):
             )
 
         self.set_mode(mode)
-        self.run()
+        values = self()
+        if len(self.output_ports) == 1:
+            values = (values,)
 
-        controls_kwarg = {} if controls is None else {"controls": controls}
-        plots = [
-            auto_plot(
-                self.backend.to_numpy(port.value),
-                port.data_configuration,
-                plot_type,
-                **controls_kwarg,
-                **plot_kwargs,
+        if default_control is not None:
+            plot_kwargs["default_control"] = default_control
+        plots = AutoPlots(controls)
+        for port, value in zip(self.output_ports, values):
+            plots.add(
+                self.backend.to_numpy(value), port.data_configuration, plot_type, **plot_kwargs
             )
-            for port in self.output_ports
-        ]
-        return Overlay(*plots) if all(is_curve_like(p) for p in plots) else Row(*plots)
+        return auto_layout(plots.plots)
 
 
 class DataLoader(DataNode[TensorType]):
@@ -227,7 +227,9 @@ class DataLoader(DataNode[TensorType]):
         if self.data_set.data_set_loaded:
             self._setup_iteration()
 
-        super().__init__(batch_size=batch_size, name=name, backend=backend)
+        super().__init__(
+            batch_size=batch_size, name=name, state=NodeState.UNINITIALIZED, backend=backend
+        )
 
         if self.test_data_set is not None:
             assert (
@@ -237,9 +239,11 @@ class DataLoader(DataNode[TensorType]):
                 c.variable_name for c in self.data_set.data_configs
             ], "test_data_set must provide the same variables as data_set."
 
-        # Build output ports based on dataset configurations
+        # Build output ports based on dataset configurations. All outputs
+        # share one batch axes, bound to the batch size.
         self._output_ports = []
         copy_memo = {}
+        self.batch_axes = BatchAxes(AxesDim(self._batch_size))
         for config in self.data_set.data_configs:
             axes = deepcopy(list(config.axes), memo=copy_memo)
             assert isinstance(axes[0], BatchAxes), "In DataSets, \
@@ -249,7 +253,7 @@ class DataLoader(DataNode[TensorType]):
             assert (
                 axes[0].shape[0].size >= self.batch_size
             ), "Batch can not be larger than dataset size."
-            axes[0] = BatchAxes(AxesDim(self.batch_size))
+            axes[0] = self.batch_axes
             new_config = DataConfiguration(
                 *axes, dtype=backend.default_dtype if backend else Any
             )
@@ -328,7 +332,7 @@ class DataLoader(DataNode[TensorType]):
             self._batch_progress = 0  # reset batch
         self.mode = new_mode
 
-    def setup(self) -> None:
+    def build(self) -> None:
         if not self.data_set.data_set_loaded:
             self.data_set.setup()
             self._setup_iteration()
@@ -364,15 +368,6 @@ class DataLoader(DataNode[TensorType]):
 
     def cache(self, n_batches=-1):
         return
-
-    def get_output_port(self, name: str | Variable):
-        if isinstance(name, str):
-            return super().get_output_port(name)
-        if isinstance(name, Variable):
-            for port in self.output_ports:
-                if port.name == name.name:
-                    return port
-        raise ValueError(f"No output port with name {name} found in node {self.name}.")
 
     def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
         if phase == EvaluationPhase.TRAIN:

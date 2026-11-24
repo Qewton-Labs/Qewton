@@ -147,6 +147,10 @@ class ProductSampler(PointSampler[TensorType]):
         """
         points_a, normals_a = self.sampler_a.sample_points()
         points_b, normals_b = self.sampler_b.sample_points()
+        # The output's axes are those of the factors, so their geometries
+        # hold the current points too, e.g. for plotting.
+        self.sampler_a.sampled_geometry.set_current_discretization(points_a, None)
+        self.sampler_b.sampled_geometry.set_current_discretization(points_b, None)
         return self._combine(points_a, normals_a, points_b, normals_b)
 
     def _combine(self, points_a, normals_a, points_b, normals_b):

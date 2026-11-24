@@ -61,3 +61,29 @@ def test_graph_backward_building():
     assert data_loader_1 in nodes_to_run
     assert data_loader_2 in nodes_to_run
     assert len(nodes_to_run) == 2
+
+
+def _batch_norms(node) -> list:
+    found = []
+    for inner in node.inner_graph.nodes:
+        if type(inner).__name__ == "FunctionalBatchNorm":
+            found.append(inner)
+        elif hasattr(inner, "inner_graph"):
+            found += _batch_norms(inner)
+    return found
+
+
+def test_a_graphnode_called_on_its_own_runs_in_its_mode():
+    import torch
+
+    from qewton.algorithms.dl_models.convolutions.cnn import UNet
+    from qewton.optim.base import EvaluationPhase
+
+    model = UNet(in_channels=1, channels=(2, 4), out_channels=1, conv_kernel_size=(3, 3))
+    model.setup()
+    batch_norms = _batch_norms(model)
+    model(torch.rand(1, 1, 8, 8))
+    assert batch_norms and not any(bn.training for bn in batch_norms)
+    model.set_mode(EvaluationPhase.TRAIN)
+    model(torch.rand(1, 1, 8, 8))
+    assert all(bn.training for bn in batch_norms)

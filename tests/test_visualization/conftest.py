@@ -9,6 +9,7 @@ test files.
 
 from typing import Annotated
 
+import matplotlib
 import numpy as np
 import pytest
 
@@ -25,6 +26,9 @@ from qewton.geometries.discrete.mesh_geometry import MeshGeometry
 from qewton.graphs.graphs import Graph
 from qewton.graphs.nodes import Node
 
+
+# Headless: a renderer's show() opens no window.
+matplotlib.use("Agg")
 
 @pytest.fixture
 def small_mesh_geometry():

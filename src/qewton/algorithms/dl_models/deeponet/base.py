@@ -1,4 +1,7 @@
 from qewton.backends import DEFAULT_DL_BACKEND, ComputingBackend, TensorType
+from qewton.config.axes import AxesDim, FeatureAxes
+from qewton.config.variables import Variable
+from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.graphs.graphs import Graph
 from qewton.graphs.nodes import Node
 from qewton.graphs.control_nodes.graph_node import GraphNode
@@ -55,7 +58,10 @@ class DeepONet(GraphNode[TensorType]):
             backend=backend,
             **kwargs,
         )
-        self.setup()
+        # Only the inner graph: a subclass that starts unbuilt is built by
+        # its own setup, once what it infers from its inputs is known.
+        if not self.open_hyperparameters:
+            self._graph.setup(plan=False)
 
     def _check_nodes(self, branch_net, trunk_net, merge_node, backend):
         assert (
@@ -77,11 +83,23 @@ class DeepONet(GraphNode[TensorType]):
             len(trunk_net.output_ports) == 1
         ), "Trunk network must have exactly one output port."
 
-    def setup(self) -> None:
-        self._graph.setup()
-        self.branch_net.setup()
-        self.trunk_net.setup()
-        self.merge_node.setup()
+    def upgrade(self, version: int) -> None:
+        """See :meth:`~qewton.graphs.control_nodes.graph_node.GraphNode.upgrade`.
+
+        Args:
+            version: The format version of the file.
+
+        Raises:
+            ValueError: For a file of version 1, whose DeepONets merge branch
+                and trunk differently.
+        """
+        if version < 2:
+            raise ValueError(
+                f"{type(self).__name__} saved in file format version {version} can not "
+                "be loaded: DeepONets now merge branch and trunk differently. Build "
+                "the model again and train it."
+            )
+        super().upgrade(version)
 
     @property
     def hyperparameters(self) -> list:
@@ -90,3 +108,11 @@ class DeepONet(GraphNode[TensorType]):
             + self.trunk_net.hyperparameters
             + self.merge_node.hyperparameters
         )
+
+
+def feature_axes(size: int | Variable | HyperParameter) -> FeatureAxes:
+    """The feature axes of an input or output of a DeepONet: of the Variable,
+    or of the size, bound to it if it is a HyperParameter."""
+    if isinstance(size, Variable):
+        return FeatureAxes(size)
+    return FeatureAxes(shape=(AxesDim(HyperParameter.from_value(size, "Feature size")),))

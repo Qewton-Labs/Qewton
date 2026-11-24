@@ -6,6 +6,9 @@ import pytest
 from qewton.config.variables import Variable
 from qewton.geometries.continuous.domains_1d.interval import Interval
 from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
+from qewton.geometries.base import Structure
+from qewton.geometries.discrete.grid_geometry import GridGeometry
+from qewton.geometries.discrete.point_cloud import PointCloud
 from qewton.geometries.discrete.product_mesh_geometry import (
     ProductDiscreteGeometry,
     ProductMeshGeometry,
@@ -162,3 +165,46 @@ class TestProductDiscreteGeometry:
         times, space = self._factors()
         with pytest.raises(ValueError):
             ProductDiscreteGeometry([times, space], variable=X * M)
+
+
+class TestProductStructure:
+    """The connectivity of a product follows from its factors."""
+
+    @staticmethod
+    def _line(variable, n):
+        return GridGeometry(variable, np.linspace(0.0, 1.0, n).reshape(-1, 1))
+
+    def test_a_product_of_grids_is_a_grid(self):
+        product = ProductDiscreteGeometry([self._line(T, 3), self._line(M, 4)])
+        assert product.structure is Structure.GRID
+        assert product.topological_dim == 2
+        assert [len(c) for c in product.axis_coordinates()] == [3, 4]
+
+    def test_axis_components_follow_the_variable(self):
+        product = ProductDiscreteGeometry(
+            [self._line(T, 3), self._line(M, 4)], variable=M * T
+        )
+        assert product.axis_components == (1, 0)
+
+    def test_a_product_of_point_sets_is_a_point_set(self):
+        points = PointCloud(K, np.zeros((5, 1)))
+        product = ProductDiscreteGeometry([points, PointCloud(M, np.ones((2, 1)))])
+        assert product.structure is Structure.POINTS
+        assert product.cells is None
+
+    def test_a_line_through_each_point_is_a_mesh_of_segments(self):
+        points = PointCloud(K, np.zeros((5, 1)))
+        product = ProductDiscreteGeometry([self._line(T, 3), points])
+        assert product.structure is Structure.MESH
+        assert product.topological_dim == 1
+        assert product.cells.shape == (2 * 5, 2)
+
+    def test_a_grid_times_a_mesh_is_a_mesh_of_its_volume(self):
+        square = _square().create_mesh(0.5)
+        product = ProductDiscreteGeometry([self._line(T, 3), square])
+        assert product.structure is Structure.MESH
+        assert product.topological_dim == 3
+        vertices = np.asarray(product.discretization_points).reshape(-1, 3)
+        edges = vertices[product.cells[:, 1:]] - vertices[product.cells[:, :1]]
+        volume = np.abs(np.linalg.det(edges)).sum() / math.factorial(3)
+        assert volume == pytest.approx(1.0)

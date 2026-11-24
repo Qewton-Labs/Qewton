@@ -46,7 +46,7 @@ class AdaptiveActivation(GraphNode[TensorType]):
             output_ports=[out_port],
             backend=backend,
         )
-        self._graph.setup()
+        self._graph.setup(plan=False)
         self.set_state(NodeState.UNINITIALIZED)
 
     def _build_graph(self, backend: type[DeepLearningBackend[TensorType]]):
@@ -65,18 +65,14 @@ class AdaptiveActivation(GraphNode[TensorType]):
             a_fn(x_mul)
         return graph, multiply.input_ports[0], a_fn.output_ports[0]
 
-    def setup(self):
-        if self.state == NodeState.UNINITIALIZED:
-            graph, in_port, out_port = self._build_graph(self.backend)  # type: ignore
-            self.setup_graph(graph, input_ports=[in_port], output_ports=[out_port])
-            self.set_state(NodeState.INITIALIZED)
+    def build(self):
+        graph, in_port, out_port = self._build_graph(self.backend)  # type: ignore
+        self.setup_graph(graph, input_ports=[in_port], output_ports=[out_port])
 
     def forward(
         self, x: Number[TensorType, DataConfiguration(ellipsis_axes)]
     ) -> Number[TensorType, DataConfiguration(ellipsis_axes)]:
-        self.input_ports[0].set_value(x)
-        self.run()
-        return self.output_ports[0].value  # type: ignore
+        return super().forward(x)
 
 
 class ReLU(Node[TensorType]):
@@ -160,6 +156,40 @@ class Sigmoid(Node[TensorType]):
                 same shape and dtype as input.
         """
         return self.backend.nn.sigmoid(x)
+
+
+class GELU(Node[TensorType]):
+    """Gaussian Error Linear Unit (GELU) activation function.
+
+    Applies the GELU activation function element-wise to the input tensor.
+    Weights input values according to the cumulative distribution function
+    of a standard Gaussian distribution, providing a smooth nonlinear output.
+
+    Attributes:
+        ellipsis_axes (EllipsisAxes): Configuration for tensor axes handling.
+
+    Examples:
+        >>> gelu = GELU(backend)
+        >>> x = backend.library.array([[-2, 0], [2, 4]])
+        >>> output = gelu.forward(x)
+        >>> # output: approximately [[-0.05, 0], [1.95, 4.0]]
+    """
+
+    ellipsis_axes = EllipsisAxes()
+
+    def forward(
+        self,
+        x: Number[TensorType, DataConfiguration(ellipsis_axes)],
+    ) -> Number[TensorType, DataConfiguration(ellipsis_axes)]:
+        """Forward pass of GELU activation.
+
+        Args:
+            x: Input tensor of any shape.
+
+        Returns:
+            TensorType: Output tensor with the same shape and dtype as the input.
+        """
+        return self.backend.nn.gelu(x)
 
 
 class SoftPlus(Node[TensorType]):

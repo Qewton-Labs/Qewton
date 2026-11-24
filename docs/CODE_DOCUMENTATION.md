@@ -1,7 +1,8 @@
 # Code Documentation Guidelines
 
 Documentation conventions for the Qewton backend (`src/qewton`): how
-docstrings, comments, and per-package docs are written. All
+docstrings, comments, and per-package docs are written. Design rules for
+the code itself are in [CODE_DESIGN.md](CODE_DESIGN.md). All
 documentation it covers — docstrings, comments, `README.md`,
 `DECISIONS.md` — is written in English.
 
@@ -55,8 +56,19 @@ Each package directory (has `__init__.py`) worth documenting gets:
   then carries no module docstring of its own. Explains how the
   package's pieces relate.
 - **`DECISIONS.md`** — design rationale, rejected alternatives. Linked from the bottom of `README.md`.
+- **`REQUIREMENTS.md`** (optional, for packages with an architecture of
+  their own) — Part 1: scenarios (`S1`, ...) and general requirements
+  (`G1`, ...), independent of the solution. Part 2: the architecture, one
+  section per component with its requirements (IDs prefixed per
+  component, e.g. `P1`), the general requirements they follow from, and
+  their status.
 
-Skip both where there's nothing to capture.
+Skip each where there's nothing to capture. Where a `REQUIREMENTS.md`
+exists, `README.md` and `DECISIONS.md` follow its components in the same
+order: the README explains how to use them, without requirements;
+`DECISIONS.md` groups decisions under the component they concern, each
+heading naming the requirement IDs it serves. Subpackage docs stay short
+and add only what is specific to the subpackage.
 
 ## Scope
 
@@ -66,34 +78,28 @@ standard in its own dedicated pass.
 ## Example
 
 ```python
-class Renderer:
-    """Backend that turns a Plot into a concrete figure.
+class VectorScale(Scale):
+    """Maps vectors to arrows: trained on the vector magnitudes, it scales
+    the longest vector to `length`.
 
     Args:
-        figure (Figure): The figure this renderer builds and keeps in
-            sync.
+        length: Length of the longest arrow in data units; None for the
+            typical point spacing of the drawn positions.
+        normalize: Draw every arrow with the same length.
 
     Attributes:
-        name (str): Identifier of the backend (e.g. ``"plotly"``).
-
-    Notes:
-        Subclasses must implement :meth:`setup`; others may be left as
-        no-ops.
+        length (float or None): Length of the longest arrow.
+        normalize (bool): Whether every arrow has the same length.
     """
 
-    @property
-    def name(self):
-        return self._name
-
-    @staticmethod
-    def setup(figure: "Figure") -> "BackendFigure":
-        """Build a new, empty backend figure for `figure`.
+    def arrows(self, vectors: np.ndarray, spacing: float) -> np.ndarray:
+        """The arrows of `vectors`, in data units.
 
         Args:
-            figure: The figure to build the backend figure for.
+            vectors: Shape ``(n, dim)``.
+            spacing: Typical point spacing of the drawn positions.
 
         Returns:
-            BackendFigure: An empty figure sized to `figure`'s facet grid.
+            numpy.ndarray: Shape ``(n, dim)``.
         """
-        raise NotImplementedError
 ```

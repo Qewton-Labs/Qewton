@@ -9,10 +9,14 @@ class HyperParameterState(Enum):
         The Hyperparameter does not change and is ignored while tuning.
     OPTIMIZE
         The Hyperparameter is changed in the tuning process.
+    INFERRED
+        The Hyperparameter is open until matching the configurations of a
+        graph infers it from the connected data; ignored while tuning.
     """
 
     FIXED = 1
     OPTIMIZE = 2
+    INFERRED = 3
 
 
 class HyperParameterScale(Enum):

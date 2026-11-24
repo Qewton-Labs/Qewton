@@ -1,13 +1,17 @@
-from .base import DataPlot, CoordTransform, IdentityCoord
-from .grid import (
-    ImagePlot,
-    SurfacePlot,
-    HeatmapPlot,
-    StructuredGridPlot,
-    EmbeddedGridPlot,
-    QuiverPlot,
+from .bar import BarPlot
+from .base import (
+    Binding,
+    DataPlot,
+    controlled_axes,
+    drawable_geometry,
+    grid_values,
+    n_components,
+    split_products,
+    visible_cells,
 )
-from .mesh import MeshPlot, MeshFieldPlot, MeshSurfacePlot, MeshVectorPlot
-from .points import PointCloudPlot
-from .curve import LinePlot, PathPlot
-from .samples import ScatterPlot, BarPlot
+from .heatmap import HeatmapPlot
+from .image import ImagePlot
+from .line import LinePlot
+from .scatter import ScatterPlot
+from .surface import SurfacePlot
+from .vector import VectorPlot

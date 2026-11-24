@@ -2,6 +2,7 @@ import pytest
 
 from qewton.graphs.graphs import Graph
 from qewton.visualization.plots.graph.layout import GraphLayout
+from qewton.visualization.plots.result import NodeCategory
 
 
 def _box_overlaps(a, b) -> bool:
@@ -73,6 +74,21 @@ class TestGraphLayoutCompute:
         result = GraphLayout.compute(simple_graph, depth=0)
         assert any(edge.label for edge in result.edges)
 
+    def test_edges_inside_a_composite_carry_the_configuration_of_its_place(self):
+        from qewton.algorithms import FCN
+        from qewton.config.variables import Variable
+        from qewton.data.dataloaders.sampler.grid_sampler import GridSampler
+        from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
+
+        X, U = Variable("x", 2), Variable("u", 1)
+        model = FCN(in_neurons=X, hidden_neurons=4, out_neurons=U, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(GridSampler(Rectangle(X, [0.0, 0.0], 1.0, 1.0), 5), model)
+        graph.setup()
+        result = GraphLayout.compute(graph, depth=1)
+        assert len(result.edges) > 2
+        assert all("GeometryAxes([5])" in edge.label for edge in result.edges)
+
     def test_ports_are_flat_across_leaf_and_cluster_boundary_alike(self, simple_graph):
         collapsed = GraphLayout.compute(simple_graph, depth=0)
         expanded = GraphLayout.compute(simple_graph, depth=1)
@@ -84,19 +100,17 @@ class TestGraphLayoutCompute:
 
 
 class TestNodeCategory:
-    def test_generic_leaf_nodes_get_the_default_category(self, simple_graph):
+    def test_nodes_without_a_category_of_their_own_are_models(self, simple_graph):
         result = GraphLayout.compute(simple_graph, depth=0)
         source = next(n for n in result.nodes if n.label == "Source")
-        assert source.category == "default"
+        assert source.category is NodeCategory.MODEL
 
-    def test_graphnode_composites_get_the_graphnode_category(self, simple_graph):
+    def test_graphnode_composites_are_models(self, simple_graph):
         result = GraphLayout.compute(simple_graph, depth=0)
         fcn = next(n for n in result.nodes if n.label == "fcn")
-        assert fcn.category == "graphnode"
+        assert fcn.category is NodeCategory.MODEL
 
     def test_nested_graphnode_leaves_are_still_categorized_correctly(self, simple_graph):
-        """FunctionalLinear (inside an expanded Linear, inside FCN) must be
-        recognized via isinstance(GraphNode), not by name matching."""
         result = GraphLayout.compute(simple_graph, depth=2)
         functional_linear = next(n for n in result.nodes if n.label == "functional_linear")
-        assert functional_linear.category == "graphnode"
+        assert functional_linear.category is NodeCategory.MODEL

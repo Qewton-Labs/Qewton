@@ -4,6 +4,7 @@ from .dl_models.convolutions.encoding import ConvolutionalEncoder
 from .dl_models.harmonic_fcn import HarmonicEmbedding, HarmonicFCN
 
 from .dl_models.pca_net import PCANet
+from .dl_models.fno import FNO
 
 from .dl_models.deeponet.base import DeepONet
 from .dl_models.deeponet.merge_nodes import DefaultMerger

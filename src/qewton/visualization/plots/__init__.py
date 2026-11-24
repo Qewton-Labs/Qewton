@@ -1,24 +1,16 @@
-from .base import Plot
-from .spec import (
-    ControlSpec,
-    FixedSpec,
-    FacetSpec,
-    SliderSpec,
-    TimeSpec,
-    ColorSpec,
-    Scale,
-)
+from .base import Plot, PointEncoding
 from .result import (
-    GridResult,
-    ParametricGridResult,
-    PointCloudResult,
-    MeshResult,
-    VectorResult,
-    CurveResult,
-    PathResult,
-    ScatterResult,
-    Column,
-    TableResult,
+    Result,
+    HeatmapResult,
+    ImageResult,
+    SurfaceResult,
+    LineResult,
+    MarkerResult,
+    BarResult,
+    ArrowResult,
+    ParallelCoordinatesResult,
+    ParallelDimension,
+    NodeCategory,
     PortLayout,
     NodeLayout,
     ClusterBox,
@@ -26,25 +18,17 @@ from .result import (
     GraphLayoutResult,
 )
 from .data import (
+    Binding,
     DataPlot,
-    CoordTransform,
-    IdentityCoord,
-    ImagePlot,
-    SurfacePlot,
-    HeatmapPlot,
-    StructuredGridPlot,
-    EmbeddedGridPlot,
-    QuiverPlot,
-    MeshPlot,
-    MeshFieldPlot,
-    MeshSurfacePlot,
-    MeshVectorPlot,
-    PointCloudPlot,
-    LinePlot,
-    PathPlot,
-    ScatterPlot,
     BarPlot,
+    HeatmapPlot,
+    ImagePlot,
+    LinePlot,
+    ScatterPlot,
+    SurfacePlot,
+    VectorPlot,
+    drawable_geometry,
 )
-from .table import TablePlot, ParallelCoordinatesPlot, TableScatter
+from .table import TablePlot, ParallelCoordinatesPlot, TableHeatMap, TableScatter
 from .geometry import GeometryPlot
 from .graph import GraphPlot

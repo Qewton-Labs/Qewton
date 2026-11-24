@@ -1,275 +1,167 @@
-import sys
+"""Scales, axes, titles, colors and figure rules of drawn plots, beyond the
+test matrix."""
 
 import numpy as np
 import pytest
 
-from qewton.config.axes import BatchAxes, FeatureAxes
+from qewton.config.axes import BatchAxes, FeatureAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.visualization.figure import Figure
-from qewton.visualization.plots.data.curve import LinePlot
-from qewton.visualization.plots.data.samples import ScatterPlot
-from qewton.visualization.layout import Row
-from qewton.visualization.plots.spec import FacetSpec, SliderSpec, TimeSpec
+from qewton.geometries.discrete.grid_geometry import GridGeometry
+from qewton.visualization import (
+    ColorScale,
+    Figure,
+    FixedAxis,
+    HeatmapPlot,
+    LinePlot,
+    Overlay,
+    PositionAxis,
+    Row,
+    Scale,
+    ScatterPlot,
+    Selector,
+    SliderAxis,
+    TimeAxis,
+)
+
+from qewton.visualization.renderers import PlotlyRenderer
+
+from recording_renderer import RecordingRenderer
+
+X, T = Variable("x", 2), Variable("t", 1)
+U, P = Variable("u", 1), Variable("p", 1)
 
 
-def _scatter_with_facet(n_facets, n_samples):
-    X, Y = Variable("x", 1), Variable("y", 1)
-    facet_axis = BatchAxes(n_facets)
-    sample_axis = BatchAxes(n_samples)
-    data = np.random.randn(n_facets, n_samples, 2)
-    config = DataConfiguration(facet_axis, sample_axis, FeatureAxes(X * Y))
-    facet = FacetSpec(facet_axis, orientation="col")
-    plot = ScatterPlot(data, config, x=X, y=Y, controls=[facet])
-    return plot, facet
+def _grid_data(offset=0.0, steps=3):
+    batch = BatchAxes(steps)
+    config = DataConfiguration(
+        batch, GeometryAxes(GridGeometry.build_unit_grid(X, 4)), FeatureAxes(U * P)
+    )
+    data = np.random.default_rng(0).random(config.shape) + offset
+    return data, config, batch
 
 
-class TestFacets:
-    def test_column_facet_produces_one_trace_per_value_and_the_right_grid_shape(self):
-        plot, facet = _scatter_with_facet(3, 5)
-        fig = Figure(plot)
-        backend_figure = fig.draw()
-        assert fig.grid_shape() == (1, 3)
-        assert len(backend_figure.data) == 3
-
-    def test_redraw_does_not_duplicate_traces(self):
-        plot, facet = _scatter_with_facet(2, 5)
-        fig = Figure(plot)
-        backend_figure = fig.draw()
-        fig.draw()
-        assert len(backend_figure.data) == 2
-
-    def test_facet_state_is_restored_after_drawing(self):
-        plot, facet = _scatter_with_facet(3, 5)
-        original = facet.state
-        Figure(plot).draw()
-        assert facet.state == original
-
-    def test_unlabeled_facet_produces_no_subplot_titles(self):
-        plot, facet = _scatter_with_facet(3, 5)
-        backend_figure = Figure(plot).draw()
-        assert backend_figure.layout.annotations == ()
-
-    def test_labeled_facet_produces_matching_subplot_titles(self):
-        plot, facet = _scatter_with_facet(3, 5)
-        facet.labels = ["A", "B", "C"]
-        backend_figure = Figure(plot).draw()
-        assert [a.text for a in backend_figure.layout.annotations] == ["A", "B", "C"]
-
-    def test_facet_labels_must_match_the_number_of_values(self):
-        X, Y = Variable("x", 1), Variable("y", 1)
-        facet_axis = BatchAxes(3)
-        sample_axis = BatchAxes(5)
-        data = np.random.randn(3, 5, 2)
-        config = DataConfiguration(facet_axis, sample_axis, FeatureAxes(X * Y))
-        facet = FacetSpec(facet_axis, orientation="col", labels=["only one"])
-        with pytest.raises(AssertionError, match="labels"):
-            ScatterPlot(data, config, x=X, y=Y, controls=[facet])
+def _curve_data():
+    runs = BatchAxes(2)
+    config = DataConfiguration(
+        runs, GeometryAxes(GridGeometry.build_unit_grid(T, 5)), FeatureAxes(U * P)
+    )
+    data = np.random.default_rng(1).random(config.shape) + 0.5
+    return data, config, runs
 
 
-class _TimeSpecFixture:
-    @staticmethod
-    def animated_line_plot(n_steps=4, n_samples=10, duration=300):
-        Y = Variable("y", 1)
-        step_axis = BatchAxes(n_steps)
-        sample_axis = BatchAxes(n_samples)
-        t = np.linspace(0, 6, n_samples)
-        data = np.stack(
-            [np.sin(t - step / n_steps) for step in range(n_steps)]
-        )[..., None]
-        config = DataConfiguration(step_axis, sample_axis, FeatureAxes(Y))
-        spec = TimeSpec(step_axis, duration=duration)
-        plot = LinePlot(data, config, x=sample_axis, y=Y, controls=[spec])
-        return plot, spec, data
-
-
-class TestTimeSpecAnimation:
-    def test_produces_one_frame_per_state(self):
-        plot, spec, data = _TimeSpecFixture.animated_line_plot(n_steps=5)
-        backend_figure = Figure(plot).draw()
-        assert len(backend_figure.frames) == 5
-        assert [f.name for f in backend_figure.frames] == ["0", "1", "2", "3", "4"]
-
-    def test_live_trace_shows_the_initial_state_after_animating(self):
-        plot, spec, data = _TimeSpecFixture.animated_line_plot(n_steps=4)
-        backend_figure = Figure(plot).draw()
-        assert np.allclose(backend_figure.data[0].y, data[0, :, 0])
-
-    def test_a_later_frame_matches_that_states_data(self):
-        plot, spec, data = _TimeSpecFixture.animated_line_plot(n_steps=4)
-        backend_figure = Figure(plot).draw()
-        frame_2 = backend_figure.frames[2]
-        assert np.allclose(np.array(frame_2.data[0]["y"]), data[2, :, 0])
-
-    def test_play_pause_and_slider_controls_are_present(self):
-        plot, spec, data = _TimeSpecFixture.animated_line_plot()
-        backend_figure = Figure(plot).draw()
-        assert len(backend_figure.layout.updatemenus) == 1
-        assert len(backend_figure.layout.sliders) == 1
-
-    def test_redraw_does_not_duplicate_traces_or_frames(self):
-        plot, spec, data = _TimeSpecFixture.animated_line_plot()
-        fig = Figure(plot)
-        backend_figure = fig.draw()
-        fig.draw()
-        assert len(backend_figure.data) == 1
-        assert len(backend_figure.frames) == 4
-
-    def test_a_figure_without_timespec_is_unaffected(self):
-        Y = Variable("y", 1)
-        sample_axis = BatchAxes(10)
-        data = np.random.rand(10, 1)
-        config = DataConfiguration(sample_axis, FeatureAxes(Y))
-        plot = LinePlot(data, config, x=sample_axis, y=Y)
-        backend_figure = Figure(plot).draw()
-        assert backend_figure.frames == ()
-
-    def test_timespec_combined_with_facetspec_on_the_same_plot_is_rejected(self):
-        """update() has no notion of "which facet cell" outside
-        Figure._draw_plot()'s own per-cell state loop - animating would
-        silently reuse whatever facet state was left over after the normal
-        draw pass for every cell, so this is an explicit, loud rejection
-        instead."""
-        X, Y = Variable("x", 1), Variable("y", 1)
-        facet_axis = BatchAxes(2)
-        step_axis = BatchAxes(3)
-        sample_axis = BatchAxes(5)
-        data = np.zeros((2, 3, 5, 1))
-        config = DataConfiguration(facet_axis, step_axis, sample_axis, FeatureAxes(Y))
-        plot = LinePlot(
-            data, config, x=sample_axis, y=Y,
-            controls=[TimeSpec(step_axis), FacetSpec(facet_axis)],
+class TestScales:
+    def test_a_log_color_scale_hovers_the_values_themselves(self):
+        config = DataConfiguration(
+            GeometryAxes(GridGeometry.build_unit_grid(X, 4)), FeatureAxes(U)
         )
-        with pytest.raises(NotImplementedError):
-            Figure(plot).draw()
+        data = np.geomspace(1e-3, 1e3, 16).reshape(config.shape)
+        plot = HeatmapPlot(data, config, position=X, color=U, color_scale=ColorScale(log=True))
+        (heatmap, _) = Figure(plot, renderer=PlotlyRenderer()).draw().data
+        assert np.asarray(heatmap.customdata).min() == pytest.approx(1e-3)
+        assert "customdata" in heatmap.hovertemplate
 
+class TestTitles:
+    def test_axis_titles_come_from_the_bound_components(self):
+        data, config, batch = _grid_data()
+        cell = Figure(
+            HeatmapPlot(data, config, position=X, color=U, controls=[SliderAxis(batch)])
+        ).cells[0]
+        assert (cell.axis_title("x"), cell.axis_title("y")) == ("$x_1$", "$x_2$")
 
-class TestSaveGif:
-    def test_raises_a_clear_error_with_no_frames(self, tmp_path):
-        Y = Variable("y", 1)
-        sample_axis = BatchAxes(5)
-        data = np.random.rand(5, 1)
-        config = DataConfiguration(sample_axis, FeatureAxes(Y))
-        plot = LinePlot(data, config, x=sample_axis, y=Y)
-        with pytest.raises(ValueError, match="no animation frames"):
-            Figure(plot).save_gif(str(tmp_path / "out.gif"))
+    def test_different_variables_on_one_axis_give_no_title_but_legend_entries(self):
+        data, config, runs = _curve_data()
+        plot = LinePlot(data, config, x=T, y=(U, P), controls=[SliderAxis(runs)])
+        cell = Figure(plot).cells[0]
+        assert cell.axis_title("x") == "$t$"
+        assert cell.axis_title("y") is None
+        assert [r.label for r in plot.evaluate()] == ["$u$", "$p$"]
 
-    def test_raises_a_clear_error_when_kaleido_is_missing(self, tmp_path, monkeypatch):
-        plot, spec, data = _TimeSpecFixture.animated_line_plot()
-        monkeypatch.setitem(sys.modules, "kaleido", None)
-        with pytest.raises(ImportError, match="kaleido"):
-            Figure(plot).save_gif(str(tmp_path / "out.gif"))
-
-
-class TestSaveHtml:
-    def test_embeds_mathjax_so_variable_titles_render_as_math(self, tmp_path):
-        """Plotly stopped auto-loading MathJax in plotly.js v2 - without
-        include_mathjax, a $x$-wrapped axis title (PlotSpec.math_name)
-        would show as literal dollar-sign text in the exported HTML."""
-        X, Y = Variable("x", 1), Variable("y", 1)
-        sample_axis = BatchAxes(10)
-        data = np.random.randn(10, 2)
-        config = DataConfiguration(sample_axis, FeatureAxes(X * Y))
-        path = tmp_path / "out.html"
-        Figure(ScatterPlot(data, config, x=X, y=Y)).save_html(str(path))
-        html = path.read_text()
-        assert "mathjax" in html.lower()
-
-
-class TestSaveImage:
-    def _scatter_plot(self):
-        X, Y = Variable("x", 1), Variable("y", 1)
-        sample_axis = BatchAxes(10)
-        data = np.random.randn(10, 2)
-        config = DataConfiguration(sample_axis, FeatureAxes(X * Y))
-        return ScatterPlot(data, config, x=X, y=Y)
-
-    def test_save_png_writes_a_nonempty_file(self, tmp_path):
-        path = tmp_path / "out.png"
-        Figure(self._scatter_plot()).save_png(str(path))
-        assert path.stat().st_size > 0
-
-    def test_save_svg_writes_a_nonempty_file(self, tmp_path):
-        path = tmp_path / "out.svg"
-        Figure(self._scatter_plot()).save_svg(str(path))
-        assert path.stat().st_size > 0
-
-    def test_save_png_raises_a_clear_error_when_kaleido_is_missing(self, tmp_path, monkeypatch):
-        monkeypatch.setitem(sys.modules, "kaleido", None)
-        with pytest.raises(ImportError, match="kaleido"):
-            Figure(self._scatter_plot()).save_png(str(tmp_path / "out.png"))
-
-
-def _slider_line_plot(n_steps=4, n_samples=10, controls=None):
-    Y = Variable("y", 1)
-    step_axis = BatchAxes(n_steps)
-    sample_axis = BatchAxes(n_samples)
-    data = np.stack([np.full(n_samples, float(step)) for step in range(n_steps)])[..., None]
-    config = DataConfiguration(step_axis, sample_axis, FeatureAxes(Y))
-    spec = SliderSpec(step_axis)
-    plot = LinePlot(data, config, x=sample_axis, y=Y, controls=[spec, *(controls or [])])
-    return plot, spec, step_axis
-
-
-class TestStaticSlider:
-    """show()/save_html() bake a single SliderSpec into a Plotly slider,
-    the same way a SelectorSpec becomes a dropdown."""
-
-    @staticmethod
-    def _static(fig):
-        fig.draw()
-        fig._apply_selectors()
-        fig._apply_sliders()
-        return fig.backend_figure
-
-    def test_one_step_per_state_with_that_states_data(self):
-        plot, spec, _ = _slider_line_plot(n_steps=4)
-        backend_figure = self._static(Figure(plot))
-        assert len(backend_figure.layout.sliders) == 1
-        steps = backend_figure.layout.sliders[0].steps
-        assert [step.label for step in steps] == ["0", "1", "2", "3"]
-        for state, step in enumerate(steps):
-            assert np.allclose(step.args[0]["y"][0], state)
-
-    def test_live_traces_and_state_stay_at_the_initial_state(self):
-        plot, spec, _ = _slider_line_plot(n_steps=4)
-        spec.state = 2
-        backend_figure = self._static(Figure(plot))
-        assert spec.state == 2
-        assert np.allclose(backend_figure.data[0].y, 2)
-        assert backend_figure.layout.sliders[0].active == 2
-
-    def test_a_shared_slider_steps_every_plot_using_it(self):
-        plot_a, spec, _ = _slider_line_plot()
-        # same SliderSpec instance, like visualize()'s reference/prediction panels
-        plot_b = LinePlot(
-            plot_a.data, plot_a.data_config,
-            x=plot_a.data_config.axes[1], y=plot_a.y.variable_or_axes, controls=[spec],
+    def test_titles_follow_a_selector(self):
+        data, config, batch = _grid_data()
+        selector = Selector([U, P])
+        plot = HeatmapPlot(
+            data, config, position=X, color=selector, controls=[SliderAxis(batch)]
         )
-        backend_figure = self._static(Figure(Row(plot_a, plot_b)))
-        assert len(backend_figure.layout.sliders) == 1
-        assert list(backend_figure.layout.sliders[0].steps[0].args[2]) == [0, 1]
+        figure = Figure(plot, renderer=RecordingRenderer())
+        backend = figure.draw()
+        assert backend["colorbars"][id(plot.color_scale)][0] == "$u$"
+        selector.state = 1
+        figure.redraw()
+        assert backend["colorbars"][id(plot.color_scale)][0] == "$p$"
 
-    def test_two_sliders_warn_and_keep_the_initial_state(self):
-        plot_a, _, _ = _slider_line_plot()
-        plot_b, _, _ = _slider_line_plot()
-        with pytest.warns(UserWarning, match="2 SliderSpecs"):
-            backend_figure = self._static(Figure(Row(plot_a, plot_b)))
-        assert len(backend_figure.layout.sliders) == 0
+    def test_a_fixed_axis_is_named_in_the_cell_title(self):
+        data, config, batch = _grid_data()
+        plot = HeatmapPlot(
+            data,
+            config,
+            position=X,
+            color=U,
+            controls=[FixedAxis(batch, init_state=2)],
+            title="field",
+        )
+        assert Figure(plot).cells[0].title == "field, batch = 2"
 
-    def test_coexists_with_a_timespec_slider(self):
-        plot, spec, _ = _slider_line_plot()
-        animated, _, _ = _TimeSpecFixture.animated_line_plot()
-        backend_figure = self._static(Figure(Row(plot, animated)))
-        assert len(backend_figure.layout.sliders) == 2
-        assert len(backend_figure.frames) == 4
 
-    def test_dash_path_gets_no_static_slider(self):
-        plot, _, _ = _slider_line_plot()
-        assert len(Figure(plot).draw().layout.sliders) == 0
+class TestColors:
+    def test_plots_and_copies_get_distinct_categorical_colors(self):
+        data, config, runs = _curve_data()
+        first = LinePlot(data, config, x=T, y=(U, P), controls=[SliderAxis(runs)])
+        second = LinePlot(data, config, x=T, y=U, controls=[SliderAxis(runs)])
+        Figure(Overlay(first, second))
+        colors = [r.color_index for plot in (first, second) for r in plot.evaluate()]
+        assert len(set(colors)) == 3
 
-    def test_save_html_contains_the_slider(self, tmp_path):
-        plot, _, _ = _slider_line_plot()
-        path = tmp_path / "slider.html"
-        Figure(plot).save_html(path)
-        assert '"sliders"' in path.read_text()
+
+class TestOverlays:
+    def test_plots_of_an_overlay_share_its_axes(self):
+        data, config, batch = _grid_data()
+        heatmap = HeatmapPlot(
+            data, config, position=X, color=U, controls=[SliderAxis(batch)]
+        )
+        points = ScatterPlot(data, config, position=X, controls=[SliderAxis(batch)])
+        figure = Figure(Overlay(heatmap, points), renderer=RecordingRenderer())
+        backend = figure.draw()
+        assert len(figure.cells) == 1
+        assert {a.cell.row for a in backend["artists"]} == {1}
+        assert figure.cells[0].scaled_channels == ("x", "y")
+
+    def test_plots_of_two_and_three_dimensions_cannot_share_an_overlay(self):
+        data, config, batch = _grid_data()
+        flat = ScatterPlot(data, config, position=X, controls=[SliderAxis(batch)])
+        lifted = ScatterPlot(data, config, x=U, y=P, z=U, controls=[SliderAxis(batch)])
+        with pytest.raises(ValueError, match="one dimension"):
+            Overlay(flat, lifted)
+
+
+class TestFigureRules:
+    def test_a_figure_takes_one_time_axis(self):
+        (d1, c1, b1), (d2, c2, b2) = _grid_data(), _grid_data()
+        plots = [
+            HeatmapPlot(d, c, position=X, color=U, controls=[TimeAxis(b)])
+            for d, c, b in ((d1, c1, b1), (d2, c2, b2))
+        ]
+        with pytest.raises(ValueError, match="one TimeAxis"):
+            Figure(Row(*plots))
+
+    def test_a_dimension_neither_drawn_nor_controlled_is_named(self):
+        data, config, batch = _grid_data()
+        with pytest.raises(ValueError, match="neither drawn nor reduced"):
+            HeatmapPlot(data, config, position=X, color=U)
+
+    def test_a_shared_control_must_fit_every_plot(self):
+        (d1, c1, b1), (d2, c2, b2) = _grid_data(steps=3), _grid_data(steps=4)
+        slider = SliderAxis(b1)
+        HeatmapPlot(d1, c1, position=X, color=U, controls=[slider])
+        with pytest.raises(ValueError):
+            HeatmapPlot(d2, c2, position=X, color=U, controls=[slider])
+
+
+def test_data_of_another_backend_is_drawn():
+    torch = pytest.importorskip("torch")
+    data, config, batch = _grid_data()
+    plot = HeatmapPlot(
+        torch.tensor(data), config, position=X, color=U, controls=[SliderAxis(batch)]
+    )
+    # build_unit_grid varies y along the first grid axis: values[iy, ix].
+    np.testing.assert_allclose(plot.evaluate()[0].values, data[0, :, :, 0], rtol=1e-6)
