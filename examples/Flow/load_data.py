@@ -1,6 +1,7 @@
 import torch
 
 from qewton.config import Variable
+from qewton.constraints import MSEConstraint
 from qewton.data import DataLoader, GridDataSet
 from qewton.optim import DiscreteHyperparameter
 
@@ -9,6 +10,9 @@ temperature_var = Variable("temperature", 1)
 velocity_var = Variable("velocity", 3)
 pressure_var = Variable("pressure", 1)
 x_var = Variable("x", 3)
+
+temperature_constraint = MSEConstraint(name="Temperature MSE")
+velocity_constraint = MSEConstraint(name="Velocity MSE", weight=1/3) # higher dimension than temperature
 
 
 # Maximum allowed absolute values for each variable
