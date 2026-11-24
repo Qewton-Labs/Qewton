@@ -27,8 +27,18 @@ class FunctionSpaceBackend(Backend[TensorType]):
     def create_function(function_space: Any) -> Any:
         pass
 
+    @staticmethod
+    @abstractmethod
+    def create_constant(value: Any, mesh: Any) -> Any:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def set_constant_value(constant: Any, value: Any) -> None:
+        pass
+
     # endregion
-    # region Function manipulation
+    # region Function manipulation/evaluation
 
     @staticmethod
     @abstractmethod
@@ -43,6 +53,11 @@ class FunctionSpaceBackend(Backend[TensorType]):
     @staticmethod
     @abstractmethod
     def get_function_dofs(function: Any) -> Any:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def get_function_on_mesh_vertices(function: Any, mesh: Any) -> Any:
         pass
 
     # endregion
