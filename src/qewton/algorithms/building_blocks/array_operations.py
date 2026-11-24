@@ -3,7 +3,7 @@ from typing import Annotated, Any
 
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType
 from qewton.backends.base import DeepLearningBackend
-from qewton.config.data_configurations import DataConfiguration
+from qewton.config.data_configurations import DataConfiguration, DynamicDataConfiguration
 from qewton.config.axes import EllipsisAxes, FeatureAxes, AxesDim
 from qewton.config.errors import StructureUnknown
 from qewton.config.variables import Variable
@@ -70,12 +70,11 @@ class Slice(Node[TensorType]):
             return self.backend.math.slice(inp, self.slice_config)
         return inp[self.slice_config]
 
-    def relate(self, inp: DataConfiguration) -> DataConfiguration | None:
+    def relate(self, inp: DynamicDataConfiguration) -> DataConfiguration | None:
         """Slicing a Variable keeps every axis but the features, which become
         the Variable; other slices leave the output open."""
         if not isinstance(self.slice_obj, Variable):
             return None
-        inp.resolve()
         if not inp.axes or not isinstance(inp.axes[-1], FeatureAxes):
             raise StructureUnknown(f"The features of {inp} are not known yet.")
         self.slice_config = inp.get_variable_slice(self.slice_obj)
@@ -262,7 +261,7 @@ class ConcatNode(Node[TensorType]):
 # endregion
 # region: Reshaping
 
-    def relate(self, *inputs: DataConfiguration) -> DataConfiguration:
+    def relate(self, *inputs: DynamicDataConfiguration) -> DataConfiguration:
         return inputs[0].concat(list(inputs[1:]), self.concat_dim)
 
 
@@ -285,7 +284,7 @@ class Narrow(Node[TensorType]):
         o = self.backend.math.narrow(x, self.dim, self.start, self.l)  # type: ignore
         return o
 
-    def relate(self, x: DataConfiguration) -> DataConfiguration | None:
+    def relate(self, x: DynamicDataConfiguration) -> DataConfiguration | None:
         if self.dim is NO_DEFAULT or self.l is NO_DEFAULT:
             return None
         return x.set_size(self.dim, self.l)
@@ -311,7 +310,7 @@ class Squeeze(Node[TensorType]):
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         return self.backend.math.squeeze(inp, self.dim)
 
-    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+    def relate(self, inp: DynamicDataConfiguration) -> DataConfiguration:
         return inp.squeeze(self.dim)
 
 class Unsqueeze(Node[TensorType]):
@@ -334,7 +333,7 @@ class Unsqueeze(Node[TensorType]):
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         return self.backend.math.unsqueeze(inp, self.dim)
 
-    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+    def relate(self, inp: DynamicDataConfiguration) -> DataConfiguration:
         return inp.unsqueeze(self.dim)
 
 class Reshape(Node[TensorType]):
@@ -357,7 +356,7 @@ class Reshape(Node[TensorType]):
     ) -> Annotated[TensorType, DataConfiguration.empty()]:
         return self.backend.math.reshape(inp, self.new_shape)
 
-    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+    def relate(self, inp: DynamicDataConfiguration) -> DataConfiguration:
         return inp.reshape(tuple(self.new_shape))
 
 
@@ -387,7 +386,7 @@ class ReshapeAtDim(Node[TensorType]):
         new_shape = inp.shape[: self.dim] + self.new_shape + inp.shape[self.dim + 1 :]
         return self.backend.math.reshape(inp, new_shape)
 
-    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+    def relate(self, inp: DynamicDataConfiguration) -> DataConfiguration:
         return inp.unflatten(self.dim, tuple(self.new_shape))
 
 
@@ -415,7 +414,7 @@ class Flatten(Node[TensorType]):
             inp, start_dim=self.start_dim, end_dim=self.end_dim
         )
 
-    def relate(self, inp: DataConfiguration) -> DataConfiguration:
+    def relate(self, inp: DynamicDataConfiguration) -> DataConfiguration:
         return inp.flatten(self.start_dim, self.end_dim)
 
 
@@ -450,7 +449,9 @@ class Unflatten(Node[TensorType]):
             size = self.sizes
         return self.backend.math.unflatten(inp, self.axis, size)  # type: ignore
 
-    def relate(self, inp: DataConfiguration, size: DataConfiguration) -> DataConfiguration | None:
+    def relate(
+        self, inp: DynamicDataConfiguration, size: DynamicDataConfiguration
+    ) -> DataConfiguration | None:
         if self.sizes is None:
             return None
         return inp.unflatten(self.axis, tuple(self.sizes))

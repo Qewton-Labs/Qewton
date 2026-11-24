@@ -3,7 +3,7 @@ from typing import Annotated
 from qewton.backends import DEFAULT_DL_BACKEND, TensorType, DeepLearningBackend
 from qewton.backends.base import Backend
 from qewton.graphs.nodes import Node, NodeState
-from qewton.config.data_configurations import DataConfiguration as DC
+from qewton.config.data_configurations import DataConfiguration as DC, DynamicDataConfiguration
 from qewton.config.errors import StructureUnknown
 from qewton.config.axes import (
     EllipsisAxes,
@@ -30,7 +30,7 @@ class BroadcastingNode(Node[TensorType]):
     Subclasses declare each port with an ellipsis of its own; an input may
     also be a Python scalar, which the backends convert themselves."""
 
-    def relate(self, x: DC, y: DC) -> DC:
+    def relate(self, x: DynamicDataConfiguration, y: DynamicDataConfiguration) -> DC:
         return x.broadcast(y)
 
 
@@ -452,7 +452,7 @@ class Dot(Node[TensorType]):
     ) -> Annotated[TensorType, DC(EllipsisAxes(), FeatureAxes(shape=(1,)))]:
         return self.backend.math.inner(x, y)
 
-    def relate(self, x: DC, y: DC) -> DC:
+    def relate(self, x: DynamicDataConfiguration, y: DynamicDataConfiguration) -> DC:
         return x.drop(-1).broadcast(y.drop(-1)).unsqueeze(-1)
 
 
@@ -510,7 +510,7 @@ class Inner(Node[TensorType]):
     ) -> Annotated[TensorType, DC(EllipsisAxes())]:
         return self.backend.math.sum(x * y, axis=-1, keepdims=self.keepdims)
 
-    def relate(self, x: DC, y: DC) -> DC:
+    def relate(self, x: DynamicDataConfiguration, y: DynamicDataConfiguration) -> DC:
         joint = x.drop(-1).broadcast(y.drop(-1))
         return joint.unsqueeze(-1) if self.keepdims else joint
 
@@ -535,13 +535,13 @@ class ReductionNode(Node[TensorType]):
         self.keepdims = keepdims
         super().__init__(name=name, backend=backend)
 
-    def relate(self, x: DC) -> DC:
+    def relate(self, x: DynamicDataConfiguration) -> DC:
         """Without keepdims the reduced dims are dropped, with keepdims they
         have size 1; without an axis every dim is reduced."""
         if self.axis is None:
             if not self.keepdims:
                 return DC(dtype=x.dtype, element_dtype=x.element_dtype)
-            if ... in x.resolve().shape:
+            if ... in x.shape:
                 raise StructureUnknown(f"The dims of {x} are not known yet.")
             axes = tuple(range(len(x.shape)))
         else:
@@ -606,7 +606,7 @@ class Transpose(Node[TensorType]):
         self.perm = perm if perm is not None else [1, 0]
         super().__init__(name=None, backend=backend)
 
-    def relate(self, x: DC) -> DC:
+    def relate(self, x: DynamicDataConfiguration) -> DC:
         return x.permute(self.perm)
 
     def forward(

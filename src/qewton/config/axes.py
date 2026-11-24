@@ -1,26 +1,13 @@
 from __future__ import annotations
 
-from copy import deepcopy
-
-from typing import Any
-
+import copy
 import math
 from types import EllipsisType
+from typing import Any
 
 from qewton.config.variables import Variable
 from qewton.config.errors import DataConfigMismatchError
 from qewton.config.saving.saving import Serializable
-
-
-def _contradiction(first: AxesDim, second: AxesDim) -> str:
-    """The message for two dims of different sizes that should be one."""
-
-    def described(dim: AxesDim) -> str:
-        sources = [f"from {dim.origin}"] if dim.origin is not None else []
-        sources += [f"HyperParameter {p.name!r}" for p in dim.representative._parameters]
-        return f"{dim.size} ({', '.join(sources)})" if sources else str(dim.size)
-
-    return f"Sizes {described(first)} and {described(second)} do not match."
 
 
 class Axes(Serializable):
@@ -28,95 +15,83 @@ class Axes(Serializable):
     Represents a collection of axes (dimensions) for data, including their
     sizes and types.
 
-    An `Axes` of this base class is an axes of unknown kind; merging it with
-    a `BatchAxes`, `GeometryAxes` or `FeatureAxes` gives that kind. Merging
-    (:meth:`merge`) makes two axes one, as for dims (see
-    :class:`AxesDim`).
-
-    Attributes:
-        merged_into (Axes | None): The axes this one was merged into; None
-            for a representative.
+    An `Axes` of this base class is an axes of unknown kind; matching it
+    with a `BatchAxes`, `GeometryAxes` or `FeatureAxes` gives that kind. An
+    axes is a declaration: matching (see
+    :class:`~qewton.config.matching.Matching`) never changes it.
     """
 
-    merged_into: Axes | None = None
     #: Whether this stands for a sequence of axes (an ellipsis).
     is_ellipsis = False
+    #: Whether the kind of this axes (batch, geometry, features) is known.
+    kind_known = False
+    #: HyperParameters bound to this object; axes have none of their own.
+    parameters: tuple = ()
 
     @property
-    def representative(self) -> Axes:
-        """The axes that stands for this one and all merged into it."""
-        if self.merged_into is None:
-            return self
-        representative = self.merged_into.representative
-        self.merged_into = representative
-        return representative
-
-    def merge(self, other: Axes) -> Axes:
-        """Make this axes and `other` one.
-
-        The more specific of the two stays: a known kind, then a Variable or
-        a geometry. Its dims are merged with the other's.
-
-        Args:
-            other: The axes to merge with.
-
-        Returns:
-            Axes: The representative of both.
-
-        Raises:
-            DataConfigMismatchError: If the kinds, contents or dims of the
-                axes contradict.
-        """
-        from qewton.config.sequences import merge_sequences
-
-        first, second = self.representative, other.representative
-        if first is second:
-            return first
-        if not first._kind_compatible(second) or not first._content_compatible(second):
-            raise DataConfigMismatchError(f"{first} and {second} can not be one axes.")
-        keep, gone = (first, second) if first._outranks(second) else (second, first)
-        keep._take_content(gone)
-        gone.merged_into = keep
-        merge_sequences(keep._shape, gone._shape)
-        return keep
-
-    def compatible(self, other: Axes) -> bool:
-        """Whether this axes and `other` could be merged."""
-        from qewton.config.sequences import sequences_compatible
-
-        first, second = self.representative, other.representative
-        return (
-            first._kind_compatible(second)
-            and first._content_compatible(second)
-            and sequences_compatible(first._shape, second._shape)
+    def is_open(self) -> bool:
+        """Whether this axes can become more concrete at a place of a graph
+        (see :class:`~qewton.config.matching.Matching`): its kind, its
+        content (e.g. a Variable) or one of its dims is not known yet."""
+        return not self.kind_known or self._content_open() or any(
+            dim.is_open for dim in self._shape
         )
 
-    def _kind_compatible(self, other: Axes) -> bool:
-        return type(self) is Axes or type(other) is Axes or type(self) is type(other)
+    def _content_open(self) -> bool:
+        """Whether the content of this axes beyond its kind can become more
+        concrete."""
+        return False
 
-    def _content_compatible(self, other: Axes) -> bool:
-        """Whether the contents (e.g. Variables) of both axes agree; axes of
-        different kinds (one of them unknown) have nothing to compare."""
-        return type(self) is not type(other) or self._contents_agree(other)
+    @property
+    def parts(self) -> tuple:
+        """The dims of this axes."""
+        return self._shape
 
-    def _contents_agree(self, other: Axes) -> bool:
-        """Whether the contents of this axes and `other`, of the same kind,
-        agree."""
+    def with_parts(self, parts: tuple) -> Axes:
+        """A new axes like this one with the dims `parts`, e.g. the
+        stand-in of this axes at a place."""
+        new = copy.copy(self)
+        new._shape = tuple(parts)
+        return new
+
+    def depends_on(self, sizes) -> tuple:
+        """The items whose sizes this object is computed from; none for an
+        axes."""
+        return ()
+
+    def size_in(self, sizes) -> None:
+        """An axes has no size of its own; its dims have."""
+        return None
+
+    @staticmethod
+    def new_unknown() -> Axes:
+        """A new axes of unknown kind with one unknown dim."""
+        return Axes(AxesDim())
+
+    def kind_compatible(self, other: Axes) -> bool:
+        """Whether this axes and `other` can be of one kind."""
+        return not self.kind_known or not other.kind_known or type(self) is type(other)
+
+    def contents_agree(self, other: Axes) -> bool:
+        """Whether the contents (e.g. Variables) of this axes and `other`
+        agree; axes of different kinds (one of them unknown) have nothing to
+        compare."""
+        return type(self) is not type(other) or self._same_kind_contents_agree(other)
+
+    def _same_kind_contents_agree(self, other: Axes) -> bool:
         return True
 
-    def _outranks(self, other: Axes) -> bool:
-        """Whether this axes stays when merged with `other`."""
-        if type(other) is Axes and type(self) is not Axes:
+    def more_concrete_than(self, other: Axes) -> bool:
+        """Whether this axes says more than `other`: a known kind, then a
+        Variable or a geometry."""
+        if self.kind_known and not other.kind_known:
             return True
-        return type(self) is type(other) and self._specificity() > other._specificity()
+        return type(self) is type(other) and self._content_rank(other) > 0
 
-    def _specificity(self) -> int:
-        """How much this axes knows beyond its kind, e.g. a Variable."""
+    def _content_rank(self, other: Axes) -> int:
+        """Positive if this axes knows more beyond its kind than `other` of
+        the same kind, negative if less."""
         return 0
-
-    def _take_content(self, other: Axes) -> None:
-        """Take over what `other` knows beyond this axes, before `other` is
-        merged into this one."""
 
     def with_dims(self, dims) -> Axes:
         """New axes of the same kind with `dims`, e.g. after an operation
@@ -200,6 +175,8 @@ class BatchAxes(Axes):
     batch size.
     """
 
+    kind_known = True
+
 
 class GeometryAxes(Axes):
     """
@@ -208,6 +185,8 @@ class GeometryAxes(Axes):
     It encapsulates a `Geometry` object to manage the underlying geometric shape,
     which can also be used for plotting etc.
     """
+
+    kind_known = True
 
     def __init__(
         self,
@@ -266,10 +245,25 @@ class GeometryAxes(Axes):
         variable = self._geometry.variable
         return variable is None or variable.is_empty
 
-    def _specificity(self) -> int:
-        return 0 if self._is_placeholder() else 1
+    def _content_open(self) -> bool:
+        """A placeholder can get a geometry, a continuous geometry a
+        discretization."""
+        return self._is_placeholder() or not self._geometry.is_discrete
 
-    def _contents_agree(self, other: GeometryAxes) -> bool:
+    def _content_rank(self, other: GeometryAxes) -> int:
+        """A geometry knows more than a placeholder, a discretization more
+        than the geometry it discretizes."""
+        if self._is_placeholder() != other._is_placeholder():
+            return 1 if other._is_placeholder() else -1
+        if self._is_placeholder() or self._geometry is other._geometry:
+            return 0
+        if self._geometry.is_discretization_of(other._geometry):
+            return 1
+        if other._geometry.is_discretization_of(self._geometry):
+            return -1
+        return 0
+
+    def _same_kind_contents_agree(self, other: GeometryAxes) -> bool:
         mine, theirs = self._geometry, other._geometry
         return (
             mine is theirs
@@ -282,12 +276,6 @@ class GeometryAxes(Axes):
 
     def with_dims(self, dims) -> GeometryAxes:
         return GeometryAxes(shape=tuple(dims))
-
-    def _take_content(self, other: Axes) -> None:
-        if not isinstance(other, GeometryAxes) or other._is_placeholder():
-            return
-        if self._is_placeholder() or other._geometry.is_discretization_of(self._geometry):
-            self._geometry = other._geometry
 
     def split(self, variables: list[Variable]) -> list[GeometryAxes]:
         """Split the axes of a product geometry into axes of its factors.
@@ -345,6 +333,8 @@ class FeatureAxes(Axes):
     that defines the features.
     """
 
+    kind_known = True
+
     def __init__(
         self,
         variable: Variable | None = None,
@@ -371,10 +361,15 @@ class FeatureAxes(Axes):
             return self._variable
         return Variable()
 
-    def _specificity(self) -> int:
-        return 0 if self._variable is None else 1
+    def _content_open(self) -> bool:
+        """Features without a Variable can get one."""
+        return self._variable is None
 
-    def _contents_agree(self, other: FeatureAxes) -> bool:
+    def _content_rank(self, other: FeatureAxes) -> int:
+        """A Variable knows more than none."""
+        return (self._variable is not None) - (other._variable is not None)
+
+    def _same_kind_contents_agree(self, other: FeatureAxes) -> bool:
         """The variables agree where they have the same components in the
         same order, e.g. ``x`` and its unnamed components ``(x_1, x_2)``."""
         mine, theirs = self._variable, other._variable
@@ -386,10 +381,6 @@ class FeatureAxes(Axes):
 
     def with_dims(self, dims) -> FeatureAxes:
         return FeatureAxes(shape=tuple(dims))
-
-    def _take_content(self, other: Axes) -> None:
-        if isinstance(other, FeatureAxes) and self._variable is None:
-            self._variable = other._variable
 
     def get_variable_slice(self, variable):
         """
@@ -408,23 +399,14 @@ class EllipsisAxes(Axes):
     """
     Represents an ellipsis in axes, indicating a flexible number of dimensions.
 
-    An ellipsis stands for a sequence of axes, possibly empty, until it is
-    bound to one (see :mod:`qewton.config.sequences`).
-
-    Attributes:
-        bound_to (tuple[Axes, ...] | None): The sequence this ellipsis stands
-            for; None while unknown.
-        waiting (tuple): Equations of sequences to merge again once this
-            ellipsis is bound.
+    An ellipsis stands for a sequence of axes, possibly empty; matching binds
+    it to one at every place (see :class:`~qewton.config.matching.Matching`).
     """
 
     is_ellipsis = True
-    bound_to: tuple | None = None
-    waiting: tuple = ()
-    #: Operation dims over a sequence holding this ellipsis.
-    _dependents: tuple = ()
 
-    def compatible(self, other: Axes) -> bool:
+    @property
+    def is_open(self) -> bool:
         return True
 
     def __init__(self):
@@ -439,34 +421,26 @@ class AxesDim(Serializable):
     Represents a single dimension within a set of axes, with an optional size and
     broadcastability.
 
-    A dim of unknown size is an unknown of matching. Merging two dims
-    (:meth:`merge`) makes them one: the one merged away refers to the other,
-    its `representative`, which stands for both from then on.
+    A dim is a declaration: matching (see
+    :class:`~qewton.config.matching.Matching`) never changes it. A dim of
+    unknown size is *open*: at every place of a graph it stands for its own
+    unknown.
 
     A dim may be bound to a HyperParameter, `AxesDim(node.in_neurons)`: its
     size is the current value of the HyperParameter, also after it changed
-    (e.g. a batch size), for every dim merged with it. An open one (state
-    INFERRED, value None) is inferred once the dim's size is known; every
-    copy of the dim (one per place of its node) refers to the same
-    HyperParameter.
+    (e.g. a batch size). It is the same at every place; an open
+    HyperParameter (state INFERRED, value None) is inferred by matching.
 
     Attributes:
-        merged_into (AxesDim | None): The dim this one was merged into; None
-            for a representative.
-        origin (Any): What brought in the size, e.g. the port of a graph
-            whose configuration declared it; used in error messages.
+        parameters (tuple[HyperParameter, ...]): The HyperParameters this
+            dim is bound to.
     """
 
-    merged_into: AxesDim | None = None
-    origin: Any = None
     #: Whether this stands for a sequence of dims (an ellipsis).
     is_ellipsis = False
-    #: Operation dims with this dim as an operand.
-    _dependents: tuple = ()
-    #: Operation dims merged into this one while both sizes were unknown.
-    _equal_operations: tuple = ()
-    #: HyperParameters bound to this dim and to the dims merged into it.
-    _parameters: tuple = ()
+    #: Whether the size is computed from other dims (an operation dim).
+    is_relation = False
+    parameters: tuple = ()
 
     def __new__(cls, size=None, broadcastable=True) -> AxesDim:
         """
@@ -494,17 +468,8 @@ class AxesDim(Serializable):
             self._size = size
         else:
             self._size = None
-            self._parameters = (size,)
+            self.parameters = (size,)
         self.broadcastable = broadcastable
-
-    def __deepcopy__(self, memo) -> AxesDim:
-        """A copy for another place; it is bound to the same
-        HyperParameters."""
-        copied = object.__new__(type(self))
-        memo[id(self)] = copied
-        for key, value in self.__dict__.items():
-            setattr(copied, key, value if key == "_parameters" else deepcopy(value, memo))
-        return copied
 
     def update_size(self, new_size):
         """
@@ -517,116 +482,47 @@ class AxesDim(Serializable):
 
     @property
     def size(self):
-        """
-        Returns the size of the dimension.
-
-        Returns:
-            int | None: The size of the dimension, or None if it is not set.
-        """
-        representative = self.representative
-        if representative is not self:
-            return representative.size
-        # A bound HyperParameter gives the current size, e.g. after a batch
-        # size was changed; the size kept from matching is the fallback.
-        size = self._parameter_size()
+        """The declared size: the value of a bound HyperParameter, else the
+        given number; None if unknown."""
+        size = next((p.value for p in self.parameters if p.value is not None), None)
         return size if size is not None else self._size
 
-    def _parameter_size(self) -> int | None:
-        """The value of the first HyperParameter bound to this dim that has
-        one."""
-        return next((p.value for p in self._parameters if p.value is not None), None)
+    @property
+    def is_open(self) -> bool:
+        """Whether this dim can have another size at every place: it has no
+        size and is bound to no HyperParameter."""
+        return self._size is None and not self.parameters
 
     @property
-    def representative(self) -> AxesDim:
-        """The dim that stands for this one and all merged into it."""
-        if self.merged_into is None:
-            return self
-        representative = self.merged_into.representative
-        self.merged_into = representative
-        return representative
+    def parts(self) -> tuple:
+        """The dims this one is computed from; none for a plain dim."""
+        return ()
 
-    def merge(self, other: AxesDim) -> AxesDim:
-        """Make this dim and `other` one.
+    def with_parts(self, parts: tuple) -> AxesDim:
+        """A new dim like this one computed from `parts`, e.g. the stand-in
+        of this dim at a place."""
+        return AxesDim(None, self.broadcastable)
 
-        The more informative of the two stays (an operation dim, then a dim
-        of known size); the other is merged into it. An operation dim solves
-        for an unknown operand once its size is known.
+    def size_in(self, sizes) -> int | None:
+        """The size of this dim where the sizes of other dims are given by
+        `sizes` (:class:`DeclaredSizes` or a matching): the declared one."""
+        return self.size
 
-        Args:
-            other: The dim to merge with.
+    @staticmethod
+    def new_unknown() -> AxesDim:
+        """A new dim of unknown size."""
+        return AxesDim()
 
-        Returns:
-            AxesDim: The representative of both.
+    def depends_on(self, sizes) -> tuple:
+        """The items whose sizes this dim is computed from, as expanded by
+        `sizes`; none for a plain dim."""
+        return ()
 
-        Raises:
-            DataConfigMismatchError: If both sizes are known and differ.
-        """
-        first, second = self.representative, other.representative
-        if first is second:
-            return first
-        keep, gone = (first, second) if first._outranks(second) else (second, first)
-        if gone._feeds(keep):
-            keep, gone = gone, keep
-        sizes = (first.size, second.size)
-        if None not in sizes and sizes[0] != sizes[1]:
-            raise DataConfigMismatchError(_contradiction(first, second))
-        gone.merged_into = keep
-        if keep.origin is None:
-            keep.origin = gone.origin
-        keep._dependents = keep._dependents + gone._dependents
-        keep._equal_operations = keep._equal_operations + gone._equal_operations
-        keep._parameters = keep._parameters + gone._parameters
-        gone._dependents, gone._equal_operations, gone._parameters = (), (), ()
-        if isinstance(gone, OperationDim):
-            keep._equal_operations = keep._equal_operations + (gone,)
-        size = sizes[0] if sizes[0] is not None else sizes[1]
-        if size is not None:
-            keep._settle(size)
-        return keep
-
-    def compatible(self, other: AxesDim) -> bool:
-        """Whether this dim and `other` could be merged."""
-        mine, theirs = self.size, other.size
-        return mine is None or theirs is None or mine == theirs
-
-    #: Operation dims stay when merged with plain ones, as they carry
-    #: relations.
-    _rank = 0
-
-    def _outranks(self, other: AxesDim) -> bool:
-        """Whether this dim stays when merged with `other`: the higher rank,
-        then the known size."""
-        return (self._rank, self.size is not None) > (other._rank, other.size is not None)
-
-    def _feeds(self, operation: AxesDim) -> bool:
-        """Whether `operation` is computed from this dim, directly or through
-        other operations; such an operation can not stand for this dim."""
-        stack, seen = [self], set()
-        while stack:
-            for dependent in stack.pop()._dependents:
-                dependent = dependent.representative
-                if dependent is operation:
-                    return True
-                if id(dependent) not in seen:
-                    seen.add(id(dependent))
-                    stack.append(dependent)
-        return False
-
-    def _settle(self, size: int) -> None:
-        """Take on `size` and tell everything that depends on it."""
-        if self._size is None:
-            self._size = size
-        self._infer_parameters(size)
-        for operation in self._equal_operations:
-            operation._settle(size)
-        for dependent in self._dependents:
-            dependent.operand_changed()
-
-    def _infer_parameters(self, size: int) -> None:
-        """Tell the HyperParameters bound to this dim its size (see
-        `HyperParameter.infer`)."""
-        for parameter in self._parameters:
-            parameter.infer(size)
+    def solve(self, size: int, sizes) -> list[tuple[AxesDim, int]]:
+        """The sizes of unknown dims this one is computed from such that it
+        is `size`, where the answer is unique: (dim, size) pairs, possibly
+        none."""
+        return []
 
     def __str__(self) -> str:
         return str(self.size)
@@ -703,159 +599,146 @@ class AxesDim(Serializable):
             other = AxesDim(size=other)
         return DivideDim(other, self)
 
+class DeclaredSizes:
+    """Sizes and sequences as declared: what operation dims are computed
+    from outside of a matching. A
+    :class:`~qewton.config.matching.Matching` answers the same questions
+    with what it found."""
+
+    @staticmethod
+    def size(dim: AxesDim) -> int | None:
+        """The declared size of `dim`."""
+        return dim.size
+
+    @staticmethod
+    def expand(items) -> list:
+        """`items` as declared."""
+        return list(items)
+
+
 class OperationDim(AxesDim):
     """
-    Represents a dimension that is derived from an operation on other dimensions.
-    This is for automatic referencing, to build symbolic relations.
+    A dimension whose size is computed from other dimensions (its operands),
+    e.g. a sum. It is a relation: :meth:`compute` and :meth:`solve` evaluate
+    it with given sizes, as declared or as known to a matching.
     """
+
+    is_relation = True
 
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls)
-
-    #: The size this dim must have, known from a merge before its operands.
-    _target: int | None = None
 
     def __init__(self, dim_1: AxesDim, dim_2: AxesDim):
         self.dim_1 = dim_1
         self.dim_2 = dim_2
         broadcastable = dim_1.broadcastable and dim_2.broadcastable
         super().__init__(None, broadcastable)
-        for operand in self.operands:
-            operand._dependents = operand._dependents + (self,)
 
     @property
     def operands(self) -> tuple[AxesDim, ...]:
         return (self.dim_1, self.dim_2)
 
     @property
-    def size(self):
-        representative = self.representative
-        if representative is not self:
-            return representative.size
-        computed = self._compute()
-        if computed is not None:
-            return computed
-        return self._target if self._target is not None else self._parameter_size()
+    def parts(self) -> tuple:
+        return self.operands
 
-    def _compute(self) -> int | None:
-        """The size computed from the operands; None while one is unknown."""
+    def with_parts(self, parts: tuple) -> OperationDim:
+        new = copy.copy(self)
+        new.dim_1, new.dim_2 = parts
+        return new
+
+    @property
+    def is_open(self) -> bool:
+        return any(part.is_open for part in self.parts)
+
+    @property
+    def size(self):
+        """The size computed from the declared sizes of the operands."""
+        return self.compute(DeclaredSizes)
+
+    def size_in(self, sizes) -> int | None:
+        return self.compute(sizes)
+
+    def depends_on(self, sizes) -> tuple:
+        return self.operands
+
+    def compute(self, sizes) -> int | None:
+        """The size from the sizes of the operands given by `sizes` (an
+        object with `size(dim)` and `expand(items)`: :class:`DeclaredSizes`
+        or a matching); None while one is unknown."""
+        known = (sizes.size(self.dim_1), sizes.size(self.dim_2))
+        return None if None in known else self._combine(*known)
+
+    def _combine(self, first: int, second: int) -> int:
         raise NotImplementedError
 
-    _rank = 1
-
-    def _settle(self, size: int) -> None:
-        computed = self._compute()
-        if computed is not None and computed != size:
-            raise DataConfigMismatchError(
-                f"{self} is {computed}, but {size} (from {self.origin}) is required."
-            )
-        self._target = size
-        self._infer_parameters(size)
-        self.solve(size)
-        for operation in self._equal_operations:
-            operation._settle(size)
-        for dependent in self._dependents:
-            dependent.operand_changed()
-
-    def solve(self, size: int) -> None:
-        """Determine an unknown operand such that this dim is `size`, where
-        the answer is unique; does nothing otherwise."""
-
-    def operand_changed(self) -> None:
-        """Re-check this dim after the size of an operand became known."""
-        representative = self.representative
-        if representative is not self:
-            computed = self._compute()
-            if computed is not None and representative.size != computed:
-                representative.merge(AxesDim(computed))
-            return
-        if self._target is not None:
-            self._settle(self._target)
-        elif self._compute() is not None:
-            self._infer_parameters(self._compute())
-            for operation in self._equal_operations:
-                operation._settle(self._compute())
-            for dependent in self._dependents:
-                dependent.operand_changed()
-
-    def update_size(self, new_size):
-        raise RuntimeError("Can not update operation dims in place.")
+    def __str__(self) -> str:
+        size = self.size
+        return str(size) if size is not None else f"{type(self).__name__}"
 
 
 class AddedDim(OperationDim):
-    """
-    Represents a dimension whose size is the sum of two other dimensions.
-    This is for automatic referencing, to build symbolic relations.
-    """
+    """A dimension whose size is the sum of two other dimensions."""
 
-    def _compute(self) -> int | None:
-        """The sum of the operands."""
-        first, second = self.dim_1.size, self.dim_2.size
-        return first + second if first is not None and second is not None else None
+    def _combine(self, first: int, second: int) -> int:
+        return first + second
 
-    def solve(self, size: int) -> None:
-        first, second = self.dim_1.size, self.dim_2.size
+    def solve(self, size: int, sizes) -> list[tuple[AxesDim, int]]:
+        first, second = sizes.size(self.dim_1), sizes.size(self.dim_2)
         if first is not None and second is None:
-            self.dim_2.merge(AxesDim(size - first))
-        elif second is not None and first is None:
-            self.dim_1.merge(AxesDim(size - second))
+            return [(self.dim_2, size - first)]
+        if second is not None and first is None:
+            return [(self.dim_1, size - second)]
+        return []
+
 
 class SubDim(OperationDim):
-    """
-    Represents a dimension whose size is the difference of two other dimensions.
-    This is for automatic referencing, to build symbolic relations.
-    """
+    """A dimension whose size is the difference of two other dimensions."""
 
-    def _compute(self) -> int | None:
-        """The difference of the operands."""
-        first, second = self.dim_1.size, self.dim_2.size
-        return first - second if first is not None and second is not None else None
+    def _combine(self, first: int, second: int) -> int:
+        return first - second
 
-    def solve(self, size: int) -> None:
-        first, second = self.dim_1.size, self.dim_2.size
+    def solve(self, size: int, sizes) -> list[tuple[AxesDim, int]]:
+        first, second = sizes.size(self.dim_1), sizes.size(self.dim_2)
         if first is not None and second is None:
-            self.dim_2.merge(AxesDim(first - size))
-        elif second is not None and first is None:
-            self.dim_1.merge(AxesDim(size + second))
+            return [(self.dim_2, first - size)]
+        if second is not None and first is None:
+            return [(self.dim_1, size + second)]
+        return []
+
 
 class ProductDim(OperationDim):
-    """
-    Represents a dimension whose size is the product of two other dimensions.
-    """
+    """A dimension whose size is the product of two other dimensions."""
 
-    def _compute(self) -> int | None:
-        """The product of the operands."""
-        first, second = self.dim_1.size, self.dim_2.size
-        return first * second if first is not None and second is not None else None
+    def _combine(self, first: int, second: int) -> int:
+        return first * second
 
-    def solve(self, size: int) -> None:
-        first, second = self.dim_1.size, self.dim_2.size
-        known, unknown = (first, self.dim_2) if second is None else (second, self.dim_1)
-        if known is None or unknown.size is not None or known == 0:
-            return
-        if size % known != 0:
-            raise DataConfigMismatchError(f"{size} is no multiple of {known} ({self}).")
-        unknown.merge(AxesDim(size // known))
+    def solve(self, size: int, sizes) -> list[tuple[AxesDim, int]]:
+        first, second = sizes.size(self.dim_1), sizes.size(self.dim_2)
+        if (first is None) == (second is None):
+            return []
+        known_size, unknown = (first, self.dim_2) if second is None else (second, self.dim_1)
+        if known_size == 0:
+            return []
+        if size % known_size != 0:
+            raise DataConfigMismatchError(f"{size} is no multiple of {known_size} ({self}).")
+        return [(unknown, size // known_size)]
+
 
 class DivideDim(OperationDim):
-    """
-    Represents a dimension whose size is the division of two other dimensions.
-    """
+    """A dimension whose size is the first of two dimensions divided by the
+    second, rounded down."""
 
-    def _compute(self) -> int | None:
-        """The first operand divided by the second, rounded down."""
-        first, second = self.dim_1.size, self.dim_2.size
-        return first // second if first is not None and second is not None else None
+    def _combine(self, first: int, second: int) -> int:
+        return first // second
+
 
 class MinimumDim(OperationDim):
-    """
-    Represents a dimension whose size is the minimum of two other dimensions.
-    """
+    """A dimension whose size is the minimum of two other dimensions."""
 
-    def _compute(self) -> int | None:
-        """The smaller of the operands."""
-        first, second = self.dim_1.size, self.dim_2.size
-        return min(first, second) if first is not None and second is not None else None
+    def _combine(self, first: int, second: int) -> int:
+        return min(first, second)
+
 
 class SequenceProductDim(OperationDim):
     """
@@ -868,59 +751,54 @@ class SequenceProductDim(OperationDim):
     def __init__(self, items: tuple):
         self.items = tuple(items)
         AxesDim.__init__(self, None)
-        self._register()
 
     @property
     def operands(self) -> tuple:
         return self.items
 
-    def _dims(self) -> list[AxesDim] | None:
-        """The dims of the sequence; None while an ellipsis is unbound."""
-        from qewton.config.sequences import expand
+    def with_parts(self, parts: tuple) -> SequenceProductDim:
+        new = copy.copy(self)
+        new.items = tuple(parts)
+        return new
 
+    def depends_on(self, sizes) -> tuple:
+        """The ellipses and dims of the sequence: its size changes when an
+        ellipsis is bound or a size becomes known."""
+        items = sizes.expand(self.items)
+        watched = [item for item in items if item.is_ellipsis or not isinstance(item, Axes)]
+        return tuple(watched + (self.dims(sizes) or []))
+
+    def dims(self, sizes) -> list[AxesDim] | None:
+        """The dims of the sequence as expanded by `sizes`; None while an
+        ellipsis in it is unbound."""
         dims = []
-        for item in expand(self.items):
+        for item in sizes.expand(self.items):
             if item.is_ellipsis:
                 return None
             if isinstance(item, Axes):
-                dims.extend(expand(item.shape))
+                dims.extend(sizes.expand(item.shape))
             else:
                 dims.append(item)
         return None if any(d.is_ellipsis for d in dims) else dims
 
-    def _register(self) -> None:
-        """Be told when a dim of the sequence or an ellipsis in it changes."""
-        from qewton.config.sequences import expand
-
-        watched = [item for item in expand(self.items) if item.is_ellipsis or not isinstance(item, Axes)]
-        dims = self._dims()
-        if dims is not None:
-            watched += dims
-        for item in watched:
-            if self not in item._dependents:
-                item._dependents = item._dependents + (self,)
-
-    def _compute(self) -> int | None:
-        dims = self._dims()
-        if dims is None or any(d.size is None for d in dims):
-            return None
-        return math.prod(d.size for d in dims)
-
-    def solve(self, size: int) -> None:
-        dims = self._dims()
+    def compute(self, sizes) -> int | None:
+        dims = self.dims(sizes)
         if dims is None:
-            return
-        unknown = [d for d in dims if d.size is None]
-        if len(unknown) != 1:
-            return
-        known = math.prod(d.size for d in dims if d.size is not None)
-        if known == 0 or size % known != 0:
-            raise DataConfigMismatchError(f"{size} is no multiple of {known} ({self}).")
-        unknown[0].merge(AxesDim(size // known))
+            return None
+        sizes = [sizes.size(d) for d in dims]
+        return None if None in sizes else math.prod(sizes)
 
-    def operand_changed(self) -> None:
-        self._register()
-        super().operand_changed()
+    def solve(self, size: int, sizes) -> list[tuple[AxesDim, int]]:
+        dims = self.dims(sizes)
+        if dims is None:
+            return []
+        unknown = [d for d in dims if sizes.size(d) is None]
+        if len(unknown) != 1:
+            return []
+        known_size = math.prod(sizes.size(d) for d in dims if sizes.size(d) is not None)
+        if known_size == 0 or size % known_size != 0:
+            raise DataConfigMismatchError(f"{size} is no multiple of {known_size} ({self}).")
+        return [(unknown[0], size // known_size)]
 
     def __str__(self) -> str:
         return f"prod({', '.join(str(i) for i in self.items)})"
@@ -932,8 +810,8 @@ class BroadcastDim(OperationDim):
     one where one is 1, else both, which then must agree.
     """
 
-    def _compute(self) -> int | None:
-        sizes = (self.dim_1.size, self.dim_2.size)
+    def compute(self, sizes) -> int | None:
+        sizes = (sizes.size(self.dim_1), sizes.size(self.dim_2))
         beyond_one = {size for size in sizes if size not in (None, 1)}
         if len(beyond_one) > 1:
             raise DataConfigMismatchError(f"Sizes {sizes[0]} and {sizes[1]} do not broadcast.")
@@ -962,25 +840,29 @@ class WindowDim(OperationDim):
         self.kernel = kernel if isinstance(kernel, AxesDim) else AxesDim(kernel)
         self.stride, self.padding, self.dilation = stride, padding, dilation
         AxesDim.__init__(self, None)
-        for operand in self.operands:
-            operand._dependents = operand._dependents + (self,)
 
     @property
     def operands(self) -> tuple[AxesDim, ...]:
         return (self.dim, self.kernel)
 
-    def _reach(self) -> int | None:
-        kernel = self.kernel.size
+    def with_parts(self, parts: tuple) -> WindowDim:
+        new = copy.copy(self)
+        new.dim, new.kernel = parts
+        return new
+
+    def _reach(self, sizes) -> int | None:
+        kernel = sizes.size(self.kernel)
         return None if kernel is None else self.dilation * (kernel - 1) + 1 - 2 * self.padding
 
-    def _compute(self) -> int | None:
-        size, reach = self.dim.size, self._reach()
+    def compute(self, sizes) -> int | None:
+        size, reach = sizes.size(self.dim), self._reach(sizes)
         return None if size is None or reach is None else (size - reach) // self.stride + 1
 
-    def solve(self, size: int) -> None:
-        reach = self._reach()
-        if self.stride == 1 and self.dim.size is None and reach is not None:
-            self.dim.merge(AxesDim(size - 1 + reach))
+    def solve(self, size: int, sizes) -> list[tuple[AxesDim, int]]:
+        reach = self._reach(sizes)
+        if self.stride == 1 and sizes.size(self.dim) is None and reach is not None:
+            return [(self.dim, size - 1 + reach)]
+        return []
 
 
 class EllipsisDim(AxesDim):
@@ -988,22 +870,18 @@ class EllipsisDim(AxesDim):
     A special `AxesDim` representing an ellipsis (`...`), indicating a flexible
     number of dimensions.
 
-    An ellipsis stands for a sequence of dims, possibly empty, until it is
-    bound to one (see :mod:`qewton.config.sequences`).
-
-    Attributes:
-        bound_to (tuple[AxesDim, ...] | None): The sequence this ellipsis
-            stands for; None while unknown.
-        waiting (tuple): Equations of sequences to merge again once this
-            ellipsis is bound.
+    An ellipsis stands for a sequence of dims, possibly empty; matching binds
+    it to one at every place (see :class:`~qewton.config.matching.Matching`).
     """
 
     is_ellipsis = True
-    bound_to: tuple | None = None
-    waiting: tuple = ()
 
-    def compatible(self, other: AxesDim) -> bool:
+    @property
+    def is_open(self) -> bool:
         return True
+
+    def with_parts(self, parts: tuple) -> EllipsisDim:
+        return EllipsisDim(self.broadcastable)
 
     def __init__(self, broadcastable=True):
         super().__init__(size=None, broadcastable=broadcastable)

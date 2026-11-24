@@ -309,6 +309,10 @@ class Geometry(Serializable, Generic[TensorType]):
         dis_geo.discretization_of = self
         return dis_geo
 
+    #: Whether this geometry consists of given points (and cells), so that
+    #: nothing discretizes it further.
+    is_discrete = False
+
     def is_discretization_of(
         self, other_geometry: Geometry  # pylint: disable=unused-argument
     ) -> bool:
@@ -568,6 +572,8 @@ class DiscreteGeometry(Geometry[TensorType]):
         overrides `structure`, `topological_dim` and `cells`, and
         :meth:`axis_coordinates` for :attr:`Structure.GRID`.
     """
+
+    is_discrete = True
 
     def __init__(
         self,

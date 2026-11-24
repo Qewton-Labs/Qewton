@@ -9,8 +9,8 @@ heading names the requirements it serves.
 
 A node can take part in several graphs and at several places of one graph,
 with different connections and sizes. The graph therefore keeps the
-matched configuration and the value of every port per place; ports and
-nodes hold neither. A node occurs twice in one graph through `node.copy()`,
+value of every port per place and a `Matching` (see `config`) with the
+configuration of every port per place; ports and nodes hold neither. A node occurs twice in one graph through `node.copy()`,
 which shares its weights.
 
 ### Removing matches again from the declarations (SU1)
@@ -67,10 +67,9 @@ own.
 
 ## Visualization
 
-### Reference data in `Graph.visualize` is matched by Variable identity
-Plain reference data must be built from the exact same `Variable` instance
-as the visualized port; a reference port only needs a structurally equal
-Variable. Matching by name would silently accept unrelated quantities. The
+### Reference data in `Graph.visualize` is matched by Variable
+Reference data must be described by a Variable equal to the one of the
+visualized port (name, dim and children, see `config/DECISIONS.md`). The
 model is evaluated at the reference's own points, so no interpolation is
 needed for the comparison.
 

@@ -14,7 +14,7 @@ and setup are in [graphs/REQUIREMENTS.md](../graphs/REQUIREMENTS.md).
 | S1 | A model is connected to data whose sizes it does not know beforehand, e.g. the input size of an FCN or the branch size of a DeepONet. |
 | S2 | Plot a port with reference data: prediction, reference and error share one control per batch axis. |
 | S3 | Plot in mesh mode: samplers provide another number of points than during training. |
-| S4 | Tuning: hyperparameters become concrete late; `setup()` rebuilds the node, possibly with other port configurations. |
+| S4 | Tuning: hyperparameters become concrete late; a tuner copies the trainer per trial and sets them on the copy; `setup()` rebuilds the node, possibly with other port configurations. |
 | S5 | Data pipelines: data loader → processing (normalization, PCA) → model, with different batch sizes for training, validation and test. |
 | S6 | External developers write new nodes. |
 
@@ -28,33 +28,37 @@ and setup are in [graphs/REQUIREMENTS.md](../graphs/REQUIREMENTS.md).
 | G4 | The result of matching does not depend on the order of `connect` calls. | all |
 | G5 | The rules a node author must know are few and local to the node. | S6 |
 | G6 | A contradiction is an error at connecting that names where the conflicting values come from. | all |
+| G7 | Declarations never change: what matching finds is kept apart, so a node, graph or trainer is copied with a plain `deepcopy`. | S4, S6 |
 
 # Part 2: Architecture
 
 A `DataConfiguration` is a sequence of axes (`BatchAxes`, `GeometryAxes`,
 `FeatureAxes`, `EllipsisAxes`), each a sequence of dims (`AxesDim`), plus a
 `dtype` and an `element_dtype`. Nodes declare configurations with unknowns
-in the annotations of `forward`; a graph instantiates them per place and
-merges them along its edges. A dim may be computed from others
-(`OperationDim`) or bound to a HyperParameter.
+in the annotations of `forward`. A `Matching`, one per graph, instantiates
+them per place as `DynamicDataConfiguration`s and merges them along the
+edges; it keeps all it finds in its own tables. A dim may be computed from
+others (`OperationDim`) or bound to a HyperParameter.
 
 Status: done, partial (with the gap named), open.
 
-## Merging (`axes.py`, `sequences.py`, `data_configurations/`)
+## Merging (`matching.py`, `axes.py`, `data_configurations/`)
 
 | ID | Requirement | From | Status |
 |---|---|---|---|
 | M1 | Merging makes corresponding axes and dims one object; a size known at one place holds at every place merged with it, also inside GraphNodes. Same axes = semantically the same axis; same dim = same size only. | G1 | done |
 | M2 | A node passes axes through by using one object in several of its annotations; objects shared within a declaration stay shared in every instance of it. | G1, G5 | done |
 | M3 | An ellipsis binds to a sequence of axes or dims, possibly empty; a shared ellipsis stands for the same sequence. An ambiguous alignment waits until more is known. | G4 | done |
-| M4 | Merging never changes Geometries, Variables or the static configurations of ports. | G1 | done |
+| M4 | Matching never changes a declared object (configurations of ports, axes, dims, Geometries, Variables); its state belongs to one `Matching`. | G1, G7 | done |
 | M5 | A contradiction names both origins of the conflicting values. | G6 | done |
+| M6 | An object that can not become more concrete is used as it is at every place and read as that object; only what can (unknown dims, ellipses, axes of unknown kind, features without a Variable, a placeholder or continuous geometry) gets a stand-in per place. | G1, G7 | done |
+| M7 | Variables are compared by value: name, dim and children. | G7 | done |
 
 ## Relations of nodes (`Node.relate`, shape operations, `OperationDim`)
 
 | ID | Requirement | From | Status |
 |---|---|---|---|
-| N1 | A node declares the relations between its ports only in its annotations and, if it changes dims by their index, in a pure function `relate` built from the shape operations of `DataConfiguration`. | G3, G5 | done |
+| N1 | A node declares the relations between its ports only in its annotations and, if it changes dims by their index, in a pure function `relate` built from the shape operations of the `DynamicDataConfiguration`s it gets. | G3, G5 | done |
 | N2 | Sizes may depend arithmetically on others (sum, product, window, broadcasting); they are resolved in every direction where unique. | G1 | partial: a dim solved backwards from a size bound to a HyperParameter keeps the number it was solved to |
 | N3 | Broadcasting (size 1 against N) makes dims compatible without merging them; element-wise nodes with several inputs relate them by broadcasting. | G1 | done |
 
@@ -66,6 +70,7 @@ Status: done, partial (with the gap named), open.
 | H2 | An input size left open (None) is inferred from the connected data, the same at all places of the node; places that disagree are an error at connecting. | S1, G6 | done |
 | H3 | A tuner changing a HyperParameter changes every dim bound to it. | S4 | done |
 | H4 | Sizes that depend on the place (batch, number of points) never flow into the state of a node. | S1, S5 | done |
+| H5 | A copy of a model (e.g. per tuning trial) is matched and built with the values of its own HyperParameters. | S4, G7 | done |
 
 ## Sizes of data sources (`DataLoader`, `PointSampler`)
 

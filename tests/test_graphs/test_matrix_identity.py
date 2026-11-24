@@ -3,7 +3,9 @@
 Every model kind of `model_kinds` is fed by a sampler. Each link names two
 ports whose batch axes must be the same object after setting up the graph
 (config M1, M2): the sampler output and the model input, the model input and its
-output, and the model input and the first port inside the model. Links
+output, and the model input and the first port inside the model. The axes
+the sampler declares are read as they are: the model input reads the very
+object. Links
 that do not hold yet are listed in GAPS with their reason. Broadcasting
 (config N3) is checked in `tests/test_config/test_matrix_relate.py`.
 """
@@ -40,6 +42,10 @@ def _sampler_output(graph, model):
 
 
 LINKS = {
+    "declared_to_input": lambda graph, model: (
+        _sampler_output(graph, model).node.points_axes,
+        _batch_axes(graph, model.input_ports[0]),
+    ),
     "sampler_to_input": lambda graph, model: (
         _batch_axes(graph, _sampler_output(graph, model)),
         _batch_axes(graph, model.input_ports[0]),

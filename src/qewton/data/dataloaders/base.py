@@ -2,7 +2,6 @@
 Base classes for data loading and node-based data sampling in the graph.
 """
 
-from copy import deepcopy
 from typing import Any
 from abc import abstractmethod
 import math
@@ -242,10 +241,9 @@ class DataLoader(DataNode[TensorType]):
         # Build output ports based on dataset configurations. All outputs
         # share one batch axes, bound to the batch size.
         self._output_ports = []
-        copy_memo = {}
         self.batch_axes = BatchAxes(AxesDim(self._batch_size))
         for config in self.data_set.data_configs:
-            axes = deepcopy(list(config.axes), memo=copy_memo)
+            axes = list(config.axes)
             assert isinstance(axes[0], BatchAxes), "In DataSets, \
                 the first axes should be the batch axes."
             assert len(axes[0].shape) == 1, "Multi-dimensional \

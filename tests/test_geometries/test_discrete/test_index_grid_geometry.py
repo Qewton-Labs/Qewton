@@ -114,3 +114,11 @@ class TestBoundingBoxAndVolume:
         geo = IndexGridGeometry(Variable("g", 2), (3, 4))
         geo.volume()
         assert geo.is_materialized is False
+
+
+class TestFactors:
+    def test_an_index_grid_is_the_product_of_one_grid_per_axis(self):
+        """A rectilinear grid answers its factors, so controls can slice it
+        (e.g. the batch slider of a data loader on a grid)."""
+        grid = IndexGridGeometry(Variable("x", 2), (3, 4))
+        assert [tuple(factor.shape) for factor in grid.factors] == [(3,), (4,)]
