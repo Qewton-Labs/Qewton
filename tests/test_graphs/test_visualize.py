@@ -124,7 +124,7 @@ class TestVisualize:
         self, connected_graph
     ):
         graph, sampler, model = connected_graph
-        with pytest.raises(ValueError, match="same Variable instance"):
+        with pytest.raises(ValueError, match="same Variable"):
             graph.visualize(model.output_ports[0], reference=sampler.output_ports[0])
 
     def test_sampled_geometry_is_plain_numpy_after_visualize(self, connected_graph):
@@ -215,12 +215,27 @@ class TestVisualizeWithReference:
         ref_config = DataConfiguration(
             GeometryAxes(ref_geometry), FeatureAxes(other_variable)
         )
-        with pytest.raises(ValueError, match="same Variable instance"):
+        with pytest.raises(ValueError, match="same Variable"):
             graph.visualize(
                 model.output_ports[0],
                 reference=np.zeros((1, 1)),
                 reference_config=ref_config,
             )
+
+    def test_a_reference_built_from_an_equal_variable_fits(self, connected_graph):
+        """Variables are values: data described by a new Variable equal to
+        the model's own (e.g. after a copy) is a valid reference."""
+        graph, sampler, model = connected_graph
+        U = model.output_ports[0].get_data_configuration(graph).feature_axes.variables
+        points = np.array([[0.2, 0.2]], dtype=np.float32)
+        ref_geometry = PointCloud(Variable("x", 2), points)
+        ref_config = DataConfiguration(
+            GeometryAxes(ref_geometry), FeatureAxes(Variable(U.name, U.dim))
+        )
+        layout = graph.visualize(
+            model.output_ports[0], reference=np.zeros((1, 1)), reference_config=ref_config
+        )
+        assert len(layout.plots) == 3
 
     def test_missing_geometry_axes_on_reference_raises(self, connected_graph):
         graph, sampler, model = connected_graph
@@ -306,7 +321,7 @@ class TestVisualizeWithConfigOverrides:
 
         # Without the override, model's real output Variable (U) doesn't
         # match ref's V.
-        with pytest.raises(ValueError, match="same Variable instance"):
+        with pytest.raises(ValueError, match="same Variable"):
             graph.visualize(
                 model.output_ports[0],
                 reference=np.zeros((1, 1)),

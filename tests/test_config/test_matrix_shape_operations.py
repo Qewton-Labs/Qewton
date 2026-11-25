@@ -7,6 +7,7 @@ new unknowns, the result is merged with a known configuration, and the
 shape of the input is checked; what the result learns, the shared objects
 of the input know. `None` is a size that stays unknown, `...` structure
 that stays unknown. Axes that an operation keeps stay the same objects.
+The inputs are places of one matching, which shape operations work in.
 """
 
 from typing import Callable
@@ -15,6 +16,14 @@ import pytest
 from declared_nodes import B, F, G, dc, unknown
 
 from qewton.config.axes import AxesDim, FeatureAxes, GeometryAxes
+from qewton.config.matching import Matching
+
+
+def _placed(*configs):
+    """`configs` as places of one matching."""
+    matching = Matching()
+    placed = [matching.place(i, {"x": config})["x"] for i, config in enumerate(configs)]
+    return placed if len(placed) > 1 else placed[0]
 
 #: name -> (input, operation, expected shape of the result)
 FORWARD: dict[str, tuple[Callable, Callable, tuple]] = {
@@ -28,8 +37,16 @@ FORWARD: dict[str, tuple[Callable, Callable, tuple]] = {
     "flatten": (lambda: dc(B(4), G(5), F(3)), lambda x: x.flatten(1), (4, 15)),
     "unflatten": (lambda: dc(B(4), F(15)), lambda x: x.unflatten(1, (5, -1)), (4, 5, 3)),
     "reshape": (lambda: dc(B(4), G(5), F(3)), lambda x: x.reshape((4, -1)), (4, 15)),
-    "concat": (lambda: dc(B(4), F(3)), lambda x: x.concat([dc(B(4), F(2))], -1), (4, 5)),
-    "broadcast": (lambda: dc(B(4), F(3)), lambda x: x.broadcast(dc(B(1), F(3))), (4, 3)),
+    "concat": (
+        lambda: dc(B(4), F(3)),
+        lambda x: x.concat([x.matching.place(1, {"y": dc(B(4), F(2))})["y"]], -1),
+        (4, 5),
+    ),
+    "broadcast": (
+        lambda: dc(B(4), F(3)),
+        lambda x: x.broadcast(x.matching.place(1, {"y": dc(B(1), F(3))})["y"]),
+        (4, 3),
+    ),
     "window": (lambda: dc(B(4), F(3), G(8)), lambda x: x.window(-1, 2, stride=2), (4, 3, 4)),
 }
 
@@ -51,28 +68,28 @@ BACKWARD: dict[str, tuple[Callable, Callable, tuple]] = {
 @pytest.mark.parametrize("name", FORWARD)
 def test_forward(name):
     build, operation, expected = FORWARD[name]
-    result = operation(build())
+    result = operation(_placed(build()))
     assert result.resolve().shape == expected
 
 
 @pytest.mark.parametrize("name", BACKWARD)
 def test_backward(name):
     operation, known, expected = BACKWARD[name]
-    x = unknown()
+    x = _placed(unknown())
     result = operation(x)
     result.merge(known())
     assert x.resolve().shape == expected
 
 
 def test_kept_axes_stay_the_same_objects():
-    x = dc(B(4), G(5), F(3))
+    x = _placed(dc(B(4), G(5), F(3)))
     batch, features = x.axes[0], x.axes[2]
     result = x.drop(1).resolve()
     assert result.axes[0] is batch and result.axes[1] is features
 
 
 def test_broadcasting_keeps_the_axes_of_the_larger_input():
-    x, y = dc(B(4), F(3)), dc(B(1), F(3))
+    x, y = _placed(dc(B(4), F(3)), dc(B(1), F(3)))
     result = x.broadcast(y).resolve()
     assert result.axes[0] is x.axes[0] and result.axes[0] is not y.axes[0]
 
@@ -81,20 +98,20 @@ def test_broadcasting_keeps_the_dims_of_one_axes_together():
     def grid():
         return GeometryAxes(shape=(AxesDim(None), AxesDim(None)))
 
-    result = dc(B(4), grid()).broadcast(dc(B(4), grid())).resolve()
+    x, y = _placed(dc(B(4), grid()), dc(B(4), grid()))
+    result = x.broadcast(y).resolve()
     assert len(result.axes) == 2 and isinstance(result.axes[1], GeometryAxes)
 
 
 def test_broadcasting_keeps_an_axes_that_spans_dims_of_several_axes():
     # [B, 1, F(5)] against [B, F(4, 5)]: the feature axes of the second holds
     # both dims, which come from two axes of the first.
-    x = dc(B(6), G(1), F(5))
-    y = dc(B(6), FeatureAxes(shape=(AxesDim(4), AxesDim(5))))
+    x, y = _placed(dc(B(6), G(1), F(5)), dc(B(6), FeatureAxes(shape=(AxesDim(4), AxesDim(5)))))
     result = x.broadcast(y).resolve()
     assert result.shape == (6, 4, 5) and result.axes[1] is y.axes[1]
 
 
 def test_concat_solves_a_missing_part():
-    x, y = dc(B(4), F(3)), dc(B(None), F(None))
+    x, y = _placed(dc(B(4), F(3)), dc(B(None), F(None)))
     x.concat([y], -1).merge(dc(B(4), F(5)))
     assert y.resolve().shape == (4, 2)

@@ -1,5 +1,6 @@
 from qewton.constraints.base import Constraint, ConstraintObjective
-from qewton.config.data_configurations import DataConfiguration
+from qewton.config.data_configurations import DataConfiguration, DynamicDataConfiguration
+from qewton.config.errors import StructureUnknown
 from qewton.constraints.weight_functions import ConstraintWeightFunction
 from qewton.optim.parameters.categorical_hyperparameter import (
     HyperParameter,
@@ -29,7 +30,10 @@ class MetricConstraint(Constraint):
     to make it scale invariant.
 
     Args:
-        input_config (DataConfiguration, optional): The expected data shape.
+        input_config (DataConfiguration, optional): The expected data of the
+            first input (the prediction). Defaults to DataConfiguration.empty().
+        target_config (DataConfiguration, optional): The expected data of the
+            second input (the target), which may also be a Python number.
             Defaults to DataConfiguration.empty().
         name (str, optional): A name of the constraint.
             Defaults to "MetricConstraint".
@@ -42,6 +46,7 @@ class MetricConstraint(Constraint):
     def __init__(
         self,
         input_config: DataConfiguration = DataConfiguration.empty(),
+        target_config: DataConfiguration = DataConfiguration.empty(),
         name="MetricConstraint",
         relative: bool | BooleanHyperparameter = False,
         evaluated_in_mode: EvaluationPhase = EvaluationPhase.ALWAYS,
@@ -62,13 +67,26 @@ class MetricConstraint(Constraint):
         self.epsilon = epsilon  # for computation of the relative loss.
 
         if len(self._input_ports) == 0:
-            self._build_input_ports(input_config)
+            self._build_input_ports(input_config, target_config)
 
-    def _build_input_ports(self, input_config: DataConfiguration):
+    def _build_input_ports(
+        self, input_config: DataConfiguration, target_config: DataConfiguration
+    ):
         if not hasattr(self, "_input_ports"):
             self.input_1 = InputPort(input_config, self, name="input1")
-            self.input_2 = InputPort(input_config, self, name="input2")
+            self.input_2 = InputPort(target_config, self, name="input2")
             self._input_ports = [self.input_1, self.input_2]
+
+    def relate(
+        self, prediction: DynamicDataConfiguration, target: DynamicDataConfiguration
+    ) -> None:
+        """A target with dims has the configuration of the prediction: the
+        same dims and Variables. A target without dims, e.g. the ``0.0`` in
+        ``constraint(residual, 0.0)``, is compared with every value."""
+        if any(axes.is_ellipsis for axes in target.axes):
+            raise StructureUnknown(f"The target {target} is not known yet.")
+        if target.axes:
+            prediction.merge(target)
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
@@ -135,7 +153,10 @@ class MSEConstraint(MetricConstraint, GraphNode):
         else:
             new_graph.connect(self.sum_node, self.mean_node)
 
-        self._build_input_ports(self.subtract_node.input_ports[0].data_configuration)
+        self._build_input_ports(
+            self.subtract_node.input_ports[0].data_configuration,
+            self.subtract_node.input_ports[1].data_configuration,
+        )
 
         in_ports = {
             self.input_1: [self.subtract_node.input_ports[0]],

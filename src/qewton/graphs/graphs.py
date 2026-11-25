@@ -10,7 +10,8 @@ import inspect
 import numpy as np
 
 from qewton.config.axes import BatchAxes, FeatureAxes
-from qewton.config.data_configurations import DataConfiguration, refining
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.matching import Matching
 from qewton.config.devices import Device
 from qewton.config.errors import DataConfigMismatchError, StructureUnknown
 from qewton.config.variables import Variable
@@ -88,17 +89,17 @@ class Graph(Serializable):
         self.edges_from_outside: list[Edge] = []
         self.edges_to_outside: list[Edge] = []
 
-        # Per place of a node, (path of GraphNodes, node): the configurations
-        # of its ports. The places whose `relate` waits for more structure.
-        # Per place of a port, (path, port): its value in the last run. The
-        # evaluation steps in order; None until planned.
-        self._configs: dict[tuple, dict[Port, DataConfiguration]] = {}
+        # The matching of the configurations, with one place per node at a path
+        # of GraphNodes, (path, node). The places whose `relate` waits for more
+        # structure. Per place of a port, (path, port): its value in the last
+        # run. The evaluation steps in order; None until planned.
+        self._matching = Matching()
         self._waiting: list[tuple] = []
         self._values: dict[tuple, Any] = {}
         self._steps: list | None = None
 
     #: Rebuilt from the structure when needed, never saved.
-    _TRANSIENT = ("_configs", "_waiting", "_values", "_steps")
+    _TRANSIENT = ("_matching", "_waiting", "_values", "_steps")
 
     def _collect_serializable_attributes(self) -> tuple[list, list]:
         keys = [k for k in self.__dict__ if k not in self._TRANSIENT]
@@ -106,7 +107,7 @@ class Graph(Serializable):
 
     def load(self, serializer, data_config: dict) -> None:
         super().load(serializer, data_config)
-        self._configs, self._waiting, self._values, self._steps = {}, [], {}, None
+        self._matching, self._waiting, self._values, self._steps = Matching(), [], {}, None
 
     def _invalidate(self) -> None:
         self._steps = None
@@ -133,7 +134,7 @@ class Graph(Serializable):
         """The path leading to `node`: `within`, or the only one there is."""
         if within is not None:
             return tuple(within)
-        if node in self.nodes or ((), node) in self._configs:
+        if node in self.nodes or self._matching.has_place(((), node)):
             return ()
         paths = self._paths_to(node)
         if len(paths) == 1:
@@ -188,9 +189,9 @@ class Graph(Serializable):
             if "several places" in str(error):
                 raise
             return None
-        if (path, port.node) not in self._configs:
+        if not self._matching.has_place((path, port.node)):
             self._ensure_plan()
-            if (path, port.node) not in self._configs:
+            if not self._matching.has_place((path, port.node)):
                 return None
         return self._config(path, port).resolve()
 
@@ -221,18 +222,15 @@ class Graph(Serializable):
     # region: Matching
 
     def _instantiate(self, path: tuple, node: Node, inside: bool = True) -> None:
-        """Give `node` its configurations at `path`: a copy of its declared
-        ones, matched inside a built GraphNode with its inner graph, related
-        by its `relate`. With `inside` False, only the copy (a node outside of this
-        graph that an edge leads to)."""
+        """Give `node` its configurations at `path`: its declared ones as a
+        place of the matching, matched inside a built GraphNode with its
+        inner graph, related by its `relate`. With `inside` False, only the
+        place (a node outside of this graph that an edge leads to)."""
         from qewton.graphs.control_nodes.graph_node import GraphNode
 
-        if (path, node) in self._configs:
+        if self._matching.has_place((path, node)):
             return
-        configs = node.copy_data_configs()
-        for port, config in configs.items():
-            config.mark_origin(port)
-        self._configs[(path, node)] = configs
+        self._place(path, node, node.input_ports + node.output_ports)
         if not inside:
             return
         # The inner graph of an unbuilt GraphNode is not valid yet; until its
@@ -251,13 +249,21 @@ class Graph(Serializable):
         node = port.node
         if path and node is path[-1]:
             return self._config(path[:-1], port)
-        if (path, node) not in self._configs:
+        if not self._matching.has_place((path, node)):
             self._instantiate(path, node, inside=False)
-        configs = self._configs[(path, node)]
-        if port not in configs:
-            configs[port] = node.copy_data_config_of_port(port, {})
-            configs[port].mark_origin(port)
-        return configs[port]
+        return self._place(path, node, [port])[port]
+
+    def _place(self, path: tuple, node: Node, ports: list[Port]) -> dict:
+        """The configurations of `node` at `path`, with `ports` instantiated
+        from their declarations; the dtype of each is resolved by the node's
+        backend (:meth:`Node.get_dtype`)."""
+        key = (path, node)
+        known = self._matching.configs(key) if self._matching.has_place(key) else {}
+        new = [port for port in ports if port not in known]
+        configs = self._matching.place(key, {p: p.data_configuration for p in new})
+        for port in new:
+            configs[port].set_dtype(node.get_dtype(port.data_configuration.dtype, node.backend))
+        return configs
 
     def _merge_edge(self, path: tuple, edge: Edge) -> None:
         """Merge the configurations of both ends of `edge` at `path`."""
@@ -272,14 +278,16 @@ class Graph(Serializable):
     def _relate(self, path: tuple, node: Node, refine: bool) -> bool:
         """Merge the outputs of `node` at `path` with what its `relate`
         returns; False if it waits for more structure."""
-        configs = self._configs[(path, node)]
+        configs = self._matching.configs((path, node))
+        self._matching.refining = refine
         try:
-            with refining(refine):
-                related = node.relate(*(configs[port] for port in node.input_ports))
+            related = node.relate(*(configs[port].resolve() for port in node.input_ports))
         except StructureUnknown:
             if (path, node) not in self._waiting:
                 self._waiting.append((path, node))
             return False
+        finally:
+            self._matching.refining = True
         if (path, node) in self._waiting:
             self._waiting.remove((path, node))
         if related is None:
@@ -306,7 +314,7 @@ class Graph(Serializable):
     def _merge_defaults(self) -> None:
         """Merge every unconnected input that has a default with the
         configuration of the default."""
-        for (path, node), configs in list(self._configs.items()):
+        for (path, node), configs in list(self._matching.places().items()):
             structure = self._structure(path)
             if node not in structure.nodes:
                 continue
@@ -322,7 +330,7 @@ class Graph(Serializable):
         """Match all configurations from the declarations. With `refine`,
         as at the end of a setup, also defaults of unconnected inputs, and
         `relate`s still waiting refine their unknown inputs."""
-        self._configs, self._waiting = {}, []
+        self._matching, self._waiting = Matching(), []
         for node in self.nodes:
             self._instantiate((), node)
         for edge in self.all_edges():
@@ -1377,7 +1385,7 @@ class Graph(Serializable):
             raise ValueError(
                 f"reference_config has one GeometryAxes per factor {names}, but "
                 f"they do not make up {domain}: {e} Build each factor from the "
-                "same Variable instance as the sampler's domain."
+                "same Variable as the sampler's domain."
             ) from e
 
     @staticmethod
@@ -1491,7 +1499,7 @@ class Graph(Serializable):
                     pred_config.feature_axes.variables if pred_config.feature_axes else None
                 )
                 self._check_reference_variable(
-                    port, own_variable, ref_variable, by_identity=False
+                    port, own_variable, ref_variable
                 )
 
                 run_ports = (port, ref_port, mask) if mask is not None else (port, ref_port)
@@ -1651,27 +1659,14 @@ class Graph(Serializable):
         return narrowed_data, DataConfiguration(*new_axes, dtype=config.dtype)
 
     @staticmethod
-    def _check_reference_variable(
-        port: Port, pred_variable, ref_variable, by_identity: bool = True
-    ) -> None:
-        """Checks that `reference`'s Variable matches `port`'s own.
-
-        `by_identity=True` (the default, for plain reference data) requires
-        the exact same Variable instance. `by_identity=False` (the Port-
-        reference case) falls back to structural equality
-        (Variable.__eq__: name, dim, and children)."""
-        if by_identity:
-            matches = ref_variable is pred_variable
-            reason = "the exact same Variable instance as"
-        else:
-            matches = ref_variable is not None and ref_variable == pred_variable
-            reason = "the same Variable (by name/dim/structure) as"
-        if not matches:
+    def _check_reference_variable(port: Port, pred_variable, ref_variable) -> None:
+        """Checks that `reference`'s Variable equals `port`'s own (name, dim
+        and children, see `Variable.__eq__`)."""
+        if ref_variable is None or ref_variable != pred_variable:
             raise ValueError(
-                f"reference's DataConfiguration must be built from {reason} "
-                f"{port}'s own value ({pred_variable!r}) - found "
-                f"{ref_variable!r} instead. Reuse the same Variable "
-                "instance building both configs; never match by name."
+                f"reference's DataConfiguration must describe the same Variable "
+                f"as {port}'s own value ({pred_variable!r}) - found "
+                f"{ref_variable!r} instead."
             )
 
     def collect_trainable_parameters(self):
@@ -1948,6 +1943,21 @@ class TrackingObject:
 
         unsqueeze_node = Unsqueeze(dim)
         return unsqueeze_node(self)
+
+    def as_variable(self, variable):
+        """Track declaring that the features of this value are `variable`,
+        e.g. ``exact_solution(t).as_variable(U)`` to compare it with a model
+        of ``U``. The data is unchanged; see
+        :class:`~qewton.algorithms.building_blocks.array_operations.AsVariable`.
+
+        Args:
+            variable (Variable): The Variable of the features, of the same
+                size as the current ones.
+        """
+        from qewton.algorithms.building_blocks.array_operations import AsVariable
+
+        as_variable_node = AsVariable(variable)
+        return as_variable_node(self)
 
     def track_gradient(self):
         """Track enabling gradient computation with respect to this value."""

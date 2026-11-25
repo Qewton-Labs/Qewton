@@ -36,9 +36,9 @@ Status: done, partial (with the gap named), open.
 
 | ID | Requirement | From | Status |
 |---|---|---|---|
-| PL1 | Configurations and values are kept per place; weights and other state of a node are shared by all its places. | G1 | done |
+| PL1 | Configurations and values are kept per place; what a node declares open (e.g. features without a Variable) becomes concrete per place. Weights and other state of a node are shared by all its places. | G1 | done |
 | PL2 | A GraphNode in several graphs is matched with each of them; the configurations inside it can be inspected per place. | G1, S4 | done |
-| PL3 | Matching derives no state of a node. | G1 | done |
+| PL3 | Matching derives no state of a node. | G1 | partial: `Slice.relate` keeps the slice of its place (`slice_config`) |
 
 ## GraphNodes (`control_nodes/graph_node.py`)
 

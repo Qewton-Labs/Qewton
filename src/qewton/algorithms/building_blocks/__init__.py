@@ -65,6 +65,7 @@ from .array_operations import (
     Squeeze,
     Unsqueeze,
     ConcatVariables,
+    AsVariable,
     ConcatNode,
     SetItem,
     Reshape,

@@ -19,12 +19,6 @@ grid can be sliced without being built as a product; a curvilinear grid is
 no product of point sets and has no factors. A point filter is no product
 either and stays with the grid; its factors have none.
 
-## `SampledGeometry` is shared, not copied
-`SampledGeometry.__deepcopy__` returns the object itself. Data configurations
-are deep-copied (e.g. a node's dynamic configuration from its static one),
-and every copy must keep referencing the object that the owning sampler
-updates in each forward pass.
-
 ## Mesh availability is checked via the `mesh` attribute
 Code that needs a mesh (e.g. plotting) checks `getattr(geometry, "mesh", None) is not None`
 instead of the geometry's class. A `SampledGeometry` exposes a mesh only when
