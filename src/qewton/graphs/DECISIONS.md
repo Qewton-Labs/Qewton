@@ -18,6 +18,14 @@ which shares its weights.
 Merging cannot be undone. Removing or replacing a node or an edge matches
 the graph again from the unchanged static configurations.
 
+A connection that fails does the same: a merge may have bound sizes
+before it found the contradiction, so every way of adding an edge
+restores the nodes and edges from before and matches again. Otherwise the
+failed connection would still constrain the graph without an edge, and a
+later valid connection would fail naming a node that is not connected.
+Like removing, this matches without the refinements of a setup; the next
+`setup` matches anew.
+
 ### One incoming edge per input port
 
 An input port accepts at most one edge, an output port any number. An
