@@ -4,7 +4,24 @@ from qewton.config.saving.saving import Serializable
 
 
 class Variable(Serializable):
-    """Order of children is now important."""
+    """A named quantity of the data, e.g. a coordinate or a field; ports
+    and axes refer to it by identity, not by name.
+
+    A Variable of several dims has a child per dim (`<name>_<i>`), or the
+    given children in order. Combining Variables (`x * t`) gives a composite
+    named after its parts. The placeholder for "no variable" is
+    :meth:`empty`, the only Variable without a name.
+
+    Args:
+        name: The name of the quantity; required and not empty.
+        dim: The number of dims (one child per dim), a tuple for several
+            axes, or None for a dim given by the children or open.
+        children: The parts of a composite, in order.
+        parent: The composite this Variable is a part of.
+
+    Raises:
+        ValueError: If the name is empty, or dims and children disagree.
+    """
 
     def __deepcopy__(self, memo):
         # Variables are objects with reference identity, not names (the
@@ -23,12 +40,17 @@ class Variable(Serializable):
 
     def __init__(
         self,
-        name: str | None = None,
+        name: str,
         dim: int | tuple[int, ...] | None = None,
         children: list[Variable] | None = None,
         parent: Variable | None = None,
     ):
-        self.name = name
+        if not name:
+            raise ValueError(
+                "A Variable needs a name; Variable.empty() is the placeholder "
+                "for no variable."
+            )
+        self.name: str | None = name
         self.parent = parent
 
         if children is None:
@@ -79,8 +101,15 @@ class Variable(Serializable):
                 self.children = []
 
     @classmethod
-    def empty(cls):
-        return cls()
+    def empty(cls) -> Variable:
+        """The placeholder for "no variable", e.g. of a geometry without one:
+        no name, no dims, no children (see :attr:`is_empty`)."""
+        placeholder = cls.__new__(cls)
+        placeholder.name = None
+        placeholder.parent = None
+        placeholder.dim = None
+        placeholder.children = []
+        return placeholder
 
     @property
     def is_leaf(self):
@@ -191,7 +220,7 @@ class Variable(Serializable):
         children = []
         name = "("
         if len(data) == 0:
-            return cls()
+            return cls.empty()
         for k, v in data.items():
             if isinstance(v, (int, tuple)):
                 children.append(Variable(name=k, dim=v))

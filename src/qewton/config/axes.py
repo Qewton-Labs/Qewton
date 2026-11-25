@@ -369,7 +369,7 @@ class FeatureAxes(Axes):
         """
         if self._variable is not None:
             return self._variable
-        return Variable()
+        return Variable.empty()
 
     def _specificity(self) -> int:
         return 0 if self._variable is None else 1

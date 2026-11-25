@@ -293,3 +293,29 @@ class TestCompose:
 
 #     with pytest.raises(ValueError, match="dimensions have to agree"):
 #         Variable.check(v1, Variable("x", 5), "x", "x")
+
+
+class TestName:
+    """A Variable a user creates names a quantity; only the placeholder for
+    "no variable" (`Variable.empty`) has no name."""
+
+    def test_a_variable_needs_a_name(self):
+        import pytest
+
+        with pytest.raises(TypeError):
+            Variable()  # type: ignore[call-arg]
+
+    def test_no_name_is_refused_early(self):
+        import pytest
+
+        for name in (None, ""):
+            with pytest.raises(ValueError, match="name"):
+                Variable(name, dim=1)  # type: ignore[arg-type]
+
+    def test_the_placeholder_has_no_name_and_is_empty(self):
+        placeholder = Variable.empty()
+        assert placeholder.name is None
+        assert placeholder.is_empty
+
+    def test_a_composite_is_named_after_its_parts(self):
+        assert (Variable("x", 1) * Variable("t", 1)).name == "(x, t)"

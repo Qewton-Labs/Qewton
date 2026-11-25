@@ -202,7 +202,7 @@ class ConcatVariables(Node[TensorType]):
                 )
             )
         # Fold starting from the first real variable, not an empty
-        # Variable() placeholder - composing with a genuinely empty
+        # Variable.empty() placeholder - composing with a genuinely empty
         # Variable leaves its dim as None (Variable.__init__ propagates
         # "any child's dim is None" outward), which breaks arithmetic like
         # Variable.get_slice's running_idx += child.dim on the result.

@@ -88,7 +88,7 @@ class Geometry(Serializable, Generic[TensorType]):
         shape: tuple[int | None, ...] | EllipsisType = ...,
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
-        self.variable = variable if variable is not None else Variable()
+        self.variable = variable if variable is not None else Variable.empty()
         self._dim = dim
         self.shape: tuple[int | None, ...] | EllipsisType = shape
         if variable is not None and dim is not None:
