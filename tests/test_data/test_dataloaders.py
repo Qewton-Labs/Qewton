@@ -5,7 +5,7 @@ import torch
 from qewton.config.axes import AxesDim, BatchAxes, FeatureAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
-from qewton.data.dataloaders.base import DataLoader
+from qewton.data.dataloaders.data_loader import DataLoader
 from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 from qewton.optim.base import EvaluationPhase
 from qewton.visualization.layout import Row
@@ -102,6 +102,125 @@ class TestDataLoaderTestDataSet:
                 batch_size=5,
                 test_data_set=_dataset(3, X, fill_value=9.0),
             )
+
+
+class TestDataLoaderPhaseBatchSizes:
+    """validation_batch_size and test_batch_size, falling back to the
+    training batch_size."""
+
+    @staticmethod
+    def _loader(**kwargs) -> DataLoader:
+        X = Variable("x", 3)
+        return DataLoader(
+            data_set=_dataset(20, X, fill_value=1.0),
+            batch_size=4,
+            splitting_ratio=(0.5, 0.25, 0.25),
+            shuffle_data=False,
+            **kwargs,
+        )
+
+    def test_without_own_batch_sizes_every_phase_uses_batch_size(self):
+        loader = self._loader()
+        assert loader.validation_batch_size == 4
+        assert loader.test_batch_size == 4
+        for phase in EvaluationPhase:
+            loader.set_mode(phase)
+            assert loader.current_batch_size == 4
+
+    def test_each_phase_draws_batches_of_its_own_size(self):
+        loader = self._loader(validation_batch_size=5, test_batch_size=3)
+        for phase, size in [
+            (EvaluationPhase.TRAIN, 4),
+            (EvaluationPhase.VALIDATION, 5),
+            (EvaluationPhase.TEST, 3),
+            (EvaluationPhase.ALWAYS, 4),
+        ]:
+            loader.set_mode(phase)
+            assert loader.forward().shape[0] == size
+
+    def test_only_validation_batch_size_given(self):
+        loader = self._loader(validation_batch_size=5)
+        assert loader.batch_size == 4
+        assert loader.validation_batch_size == 5
+        assert loader.test_batch_size == 4
+
+    def test_batch_axes_follow_the_phase(self):
+        loader = self._loader(validation_batch_size=5, test_batch_size=3)
+        port = loader.output_ports[0]
+        for phase, size in [
+            (EvaluationPhase.TRAIN, 4),
+            (EvaluationPhase.VALIDATION, 5),
+            (EvaluationPhase.TEST, 3),
+        ]:
+            loader.set_mode(phase)
+            assert port.data_configuration.shape[0] == size
+
+    def test_the_model_behind_follows_the_phase(self):
+        from qewton.algorithms import FCN
+        from qewton.graphs.graphs import Graph
+
+        loader = self._loader(validation_batch_size=5)
+        model = FCN(in_neurons=3, hidden_neurons=2, out_neurons=1, n_hidden_layers=1)
+        graph = Graph()
+        graph.connect(loader.output_ports[0], model)
+        graph.setup()
+        for phase, size in [(EvaluationPhase.TRAIN, 4), (EvaluationPhase.VALIDATION, 5)]:
+            graph.run(phase)
+            assert graph.value_of(model.output_ports[0]).shape[0] == size
+            assert model.output_ports[0].get_data_configuration(graph).shape[0] == size
+
+    def test_changing_batch_size_reaches_phases_without_their_own(self):
+        loader = self._loader(validation_batch_size=5)
+        loader._batch_size.set_value(2)
+        assert loader.validation_batch_size == 5
+        assert loader.test_batch_size == 2
+
+    def test_hyperparameters_hold_only_the_given_batch_sizes(self):
+        names = [hp.name for hp in self._loader().hyperparameters]
+        assert names == ["batch_size", "shuffle_data"]
+        names = [
+            hp.name
+            for hp in self._loader(validation_batch_size=5, test_batch_size=3).hyperparameters
+        ]
+        assert names == ["batch_size", "validation_batch_size", "test_batch_size", "shuffle_data"]
+
+    def test_a_validation_batch_larger_than_the_data_set_raises(self):
+        with pytest.raises(AssertionError, match="larger than dataset size"):
+            self._loader(validation_batch_size=21)
+
+    def test_test_batch_size_is_checked_against_the_test_data_set(self):
+        X = Variable("x", 3)
+        loader = DataLoader(
+            data_set=_dataset(10, X, fill_value=1.0),
+            batch_size=5,
+            test_data_set=_dataset(3, X, fill_value=9.0),
+            test_batch_size=3,
+        )
+        loader.set_mode(EvaluationPhase.TEST)
+        assert loader.forward().shape[0] == 3
+        with pytest.raises(AssertionError, match="test dataset size"):
+            DataLoader(
+                data_set=_dataset(10, X, fill_value=1.0),
+                batch_size=2,
+                test_data_set=_dataset(3, X, fill_value=9.0),
+                test_batch_size=4,
+            )
+
+
+def test_a_data_node_saves_and_loads_with_its_phase_batch_size(tmp_path):
+    """The batch size of the current phase refers back to its node; a
+    sampler (a DataLoader holds a numpy Generator and can not be saved yet)
+    shows that this round trip works."""
+    from qewton.config.saving.callables import load, save
+    from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
+    from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
+
+    sampler = RandomUniformSampler(Rectangle(Variable("x", 2), [0.0, 0.0], 1.0, 1.0), 4)
+    save(sampler, tmp_path / "sampler")
+    loaded = load(tmp_path / "sampler")
+    loaded.set_mode(EvaluationPhase.VALIDATION)
+    assert loaded._phase_batch_size.node is loaded
+    assert loaded._phase_batch_size.value == 4
 
 
 class TestDataNodeVisualize:

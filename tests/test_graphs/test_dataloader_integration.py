@@ -6,7 +6,7 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.data.datasets.array_data.base import ArrayLikeDataSet
 from qewton.algorithms.building_blocks.math import Square
-from qewton.data.dataloaders.base import DataLoader
+from qewton.data.dataloaders.data_loader import DataLoader
 from qewton.graphs.graphs import Graph
 from qewton.optim.base import EvaluationPhase
 
