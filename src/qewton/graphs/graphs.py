@@ -318,6 +318,29 @@ class Graph(Serializable):
                 if default is not None:
                     configs[port].merge(default)
 
+    @contextmanager
+    def _unchanged_on_mismatch(self):
+        """Leave the nodes, edges and configurations as they were if the
+        body raises a DataConfigMismatchError. Merging can not be undone, so
+        the configurations are matched again from the declarations."""
+        nodes = set(self.nodes)
+        incoming = {node: list(edges) for node, edges in self.incoming_edges.items()}
+        outgoing = {node: list(edges) for node, edges in self.outgoing_edges.items()}
+        from_outside = list(self.edges_from_outside)
+        to_outside = list(self.edges_to_outside)
+        skip_connections = list(self.skip_connections)
+        try:
+            yield
+        except DataConfigMismatchError:
+            self.nodes.clear()
+            self.nodes.update(nodes)
+            self.incoming_edges, self.outgoing_edges = incoming, outgoing
+            self.edges_from_outside = from_outside
+            self.edges_to_outside = to_outside
+            self.skip_connections = skip_connections
+            self._rebuild(refine=False)
+            raise
+
     def _rebuild(self, refine: bool) -> None:
         """Match all configurations from the declarations. With `refine`,
         as at the end of a setup, also defaults of unconnected inputs, and
@@ -517,7 +540,8 @@ class Graph(Serializable):
             ValueError: If the numbers of ports do not match or an input port
                 is already connected.
             DataConfigMismatchError: If the data configurations of the
-                connected ports are incompatible.
+                connected ports are incompatible. The graph is left as it
+                was: no node or edge is added.
         """
         self._check_graph_was_sorted()
         self._invalidate()
@@ -549,17 +573,18 @@ class Graph(Serializable):
         for to_port in to_ports:
             self._check_port_is_free(to_node, to_port)  # type: ignore
 
-        # Nodes must be added to the graph
-        self.add_node(from_node, check_warning=False)
-        self.add_node(to_node, check_warning=False)
+        with self._unchanged_on_mismatch():
+            # Nodes must be added to the graph
+            self.add_node(from_node, check_warning=False)
+            self.add_node(to_node, check_warning=False)
 
-        # Configurations are merged
-        for from_port, to_port in zip(from_ports, to_ports):
-            edge = Edge(from_port, to_port)
-            self._merge_edge((), edge)
-            self.incoming_edges[to_node].append(edge)
-            self.outgoing_edges[from_node].append(edge)
-        self._relate_waiting()
+            # Configurations are merged
+            for from_port, to_port in zip(from_ports, to_ports):
+                edge = Edge(from_port, to_port)
+                self._merge_edge((), edge)
+                self.incoming_edges[to_node].append(edge)
+                self.outgoing_edges[from_node].append(edge)
+            self._relate_waiting()
 
     def remove(self, obj: Node | Edge):
         """Remove a node or edge from the graph.
@@ -801,18 +826,20 @@ class Graph(Serializable):
         Raises:
             ValueError: If `to_port` is already connected.
             DataConfigMismatchError: If the data configurations of the ports
-                are incompatible. The edge is not added in this case.
+                are incompatible. The graph is left as it was: no node or
+                edge is added.
         """
         self._check_graph_was_sorted()
         to_node = to_port.node
         self._check_port_is_free(to_node, to_port)
-        self.add_node(to_node, check_warning=False)
+        with self._unchanged_on_mismatch():
+            self.add_node(to_node, check_warning=False)
 
-        edge = Edge(from_port, to_port, connects_to_outside=True)
-        self._merge_edge((), edge)
-        self.edges_from_outside.append(edge)
-        self.incoming_edges[to_node].append(edge)
-        self._relate_waiting()
+            edge = Edge(from_port, to_port, connects_to_outside=True)
+            self._merge_edge((), edge)
+            self.edges_from_outside.append(edge)
+            self.incoming_edges[to_node].append(edge)
+            self._relate_waiting()
 
     def connect_to_outside_of_graph(self, from_port: OutputPort, to_port: Port):
         """Connect an output port inside this graph to a port outside of it.
@@ -827,16 +854,18 @@ class Graph(Serializable):
 
         Raises:
             DataConfigMismatchError: If the data configurations of the ports
-                are incompatible. The edge is not added in this case.
+                are incompatible. The graph is left as it was: no node or
+                edge is added.
         """
         self._check_graph_was_sorted()
         from_node = from_port.node
-        self.add_node(from_node, check_warning=False)
-        edge = Edge(from_port, to_port, connects_to_outside=True)
-        self._merge_edge((), edge)
-        self.edges_to_outside.append(edge)
-        self.outgoing_edges[from_node].append(edge)
-        self._relate_waiting()
+        with self._unchanged_on_mismatch():
+            self.add_node(from_node, check_warning=False)
+            edge = Edge(from_port, to_port, connects_to_outside=True)
+            self._merge_edge((), edge)
+            self.edges_to_outside.append(edge)
+            self.outgoing_edges[from_node].append(edge)
+            self._relate_waiting()
 
     def add_skip_connection(self, from_port: Port, to_port: Port):
         """Add a skip connection between two ports.
@@ -848,10 +877,16 @@ class Graph(Serializable):
         Args:
             from_port: The port providing the data.
             to_port: The port receiving the data.
+
+        Raises:
+            DataConfigMismatchError: If the data configurations of the ports
+                are incompatible. The graph is left as it was: no edge is
+                added.
         """
-        edge = Edge(from_port, to_port, connects_to_outside=True)
-        self._merge_edge((), edge)
-        self.skip_connections.append(edge)
+        with self._unchanged_on_mismatch():
+            edge = Edge(from_port, to_port, connects_to_outside=True)
+            self._merge_edge((), edge)
+            self.skip_connections.append(edge)
         self._invalidate()
 
     def validate(self) -> None:
