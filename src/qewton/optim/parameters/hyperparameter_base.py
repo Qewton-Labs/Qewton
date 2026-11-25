@@ -167,6 +167,14 @@ class HyperParameter(Serializable):
             f"place needs {value}."
         )
 
+    def reopen(self) -> None:
+        """Forget a value inferred from the connected data, so that it is
+        inferred anew (:meth:`infer`); a parameter not in state INFERRED is
+        left as it is. Called when the connections it was inferred from may
+        be gone, see :meth:`~qewton.graphs.graphs.Graph.remove`."""
+        if self.state == HyperParameterState.INFERRED:
+            self.current_value = None
+
     @property
     def value(self):
         """

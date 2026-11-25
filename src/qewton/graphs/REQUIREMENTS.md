@@ -51,6 +51,6 @@ Status: done, partial (with the gap named), open.
 
 | ID | Requirement | From | Status |
 |---|---|---|---|
-| SU1 | Removing or replacing nodes and edges, a connection that fails, and inner graphs rebuilt by `build`, leave consistent configurations and a valid order. | G1 | done |
+| SU1 | Removing or replacing nodes and edges, a connection that fails, and inner graphs rebuilt by `build`, leave consistent configurations and a valid order; sizes inferred from connections that are gone are open again. | G1 | done |
 | SU2 | Node authors implement `build`; `setup` belongs to the library and builds a node only once its sizes are known. | S3 | done |
 | SU3 | The number of merges grows linearly with the length of a chain and with the depth of nesting. | G3 | done |

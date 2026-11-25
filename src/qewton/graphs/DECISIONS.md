@@ -26,6 +26,22 @@ later valid connection would fail naming a node that is not connected.
 Like removing, this matches without the refinements of a setup; the next
 `setup` matches anew.
 
+### Inferred sizes follow the connections (SU1, PL3)
+
+A size inferred from a connection is stored in its HyperParameter
+(`HyperParameter.infer`). When a part of the graph is gone (an edge or node
+removed or replaced, a connection that failed), that size may have lost
+its source; kept, it would bind the node to a connection that no longer
+exists, and the node could only be connected to that size again. Matching
+again therefore first opens the inferred HyperParameters of the nodes not
+built yet (`HyperParameter.reopen`) and infers them anew from the remaining
+connections. A built node keeps them: its weights depend on them.
+
+`setup` does not open them: nothing is gone, and a node used in several
+graphs may have its size from another graph. Removing in one graph can
+still open a size inferred in another one; that graph infers it again when
+it is matched next.
+
 ### One incoming edge per input port
 
 An input port accepts at most one edge, an output port any number. An

@@ -338,8 +338,21 @@ class Graph(Serializable):
             self.edges_from_outside = from_outside
             self.edges_to_outside = to_outside
             self.skip_connections = skip_connections
-            self._rebuild(refine=False)
+            self._rematch()
             raise
+
+    def _rematch(self) -> None:
+        """Match again after a part of the graph is gone (an edge or node
+        removed or replaced, a connection that failed). Sizes inferred from
+        the connections may have lost their source, so the inferred
+        HyperParameters of the nodes not built yet are opened and inferred
+        anew from the remaining connections; a built node keeps them, since
+        its weights depend on them."""
+        for node in self.nodes:
+            if node.state == NodeState.UNINITIALIZED:
+                for parameter in node.hyperparameters:
+                    parameter.reopen()
+        self._rebuild(refine=False)
 
     def _rebuild(self, refine: bool) -> None:
         """Match all configurations from the declarations. With `refine`,
@@ -629,7 +642,7 @@ class Graph(Serializable):
                         self.outgoing_edges[obj.from_port.node].remove(obj)
         # Merging cannot be undone, so the configurations are matched again
         # from the declarations.
-        self._rebuild(refine=False)
+        self._rematch()
         self._invalidate()
         # A graph is never sorted after a node or edge was removed, since the
         # order might have changed.
@@ -763,7 +776,7 @@ class Graph(Serializable):
         self.nodes.remove(old_node)
 
         # Match the configurations again after replacement
-        self._rebuild(refine=False)
+        self._rematch()
         self._invalidate()
 
         # Mark the graph as unsorted since the structure has changed
