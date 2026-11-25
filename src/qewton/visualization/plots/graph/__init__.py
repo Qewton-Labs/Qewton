@@ -1,7 +1,7 @@
 """Plot of computation graphs: :class:`GraphPlot`."""
 
 from qewton.visualization.plots.base import Plot
-from qewton.visualization.plots.graph.layout import GraphLayout
+from qewton.visualization.plots.graph.layout import GraphLayout, node_category
 from qewton.visualization.plots.result import GraphLayoutResult
 
 

@@ -17,7 +17,7 @@ def _contradiction(first: AxesDim, second: AxesDim) -> str:
 
     def described(dim: AxesDim) -> str:
         sources = [f"from {dim.origin}"] if dim.origin is not None else []
-        sources += [f"HyperParameter {p.name!r}" for p in dim.representative._parameters]
+        sources += [f"HyperParameter {p.name!r}" for p in dim.hyperparameters]
         return f"{dim.size} ({', '.join(sources)})" if sources else str(dim.size)
 
     return f"Sizes {described(first)} and {described(second)} do not match."
@@ -530,6 +530,17 @@ class AxesDim(Serializable):
         # size was changed; the size kept from matching is the fallback.
         size = self._parameter_size()
         return size if size is not None else self._size
+
+    @property
+    def hyperparameters(self) -> tuple:
+        """The HyperParameters this dim is bound to, together with those of
+        every dim merged with it.
+
+        Returns:
+            tuple[HyperParameter, ...]: The bound HyperParameters; empty for
+                a dim whose size is not bound to one.
+        """
+        return self.representative._parameters
 
     def _parameter_size(self) -> int | None:
         """The value of the first HyperParameter bound to this dim that has

@@ -40,7 +40,7 @@ from .plots.data import (
     VectorPlot,
 )
 from .plots.geometry import GeometryPlot
-from .plots.graph import GraphPlot
+from .plots.graph import GraphPlot, node_category
 from .plots.table import TablePlot, TableScatter, TableHeatMap, ParallelCoordinatesPlot
 from .layout import Layout, Overlay, Row, Column, auto_layout
 from .auto import AutoPlots, auto_plot

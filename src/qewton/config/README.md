@@ -60,8 +60,9 @@ They reuse the input's objects and compute sizes with operation dims
 ## HyperParameters in configurations
 
 A size that fixes how a node is built is a `HyperParameter`; the dims of
-that size are bound to it with `AxesDim(hp)` and follow its value.
-`HyperParameter.size_from(x, name)` takes a given size, or None for one
+that size are bound to it with `AxesDim(hp)` and follow its value;
+`dim.hyperparameters` names the HyperParameters a dim is bound to, also
+through merging. `HyperParameter.size_from(x, name)` takes a given size, or None for one
 that is inferred from the connected data (`HyperParameter.inferred`). An
 inferred size is the same at all places of the node; places that disagree
 raise at connecting. Arithmetic on HyperParameters (`hp * 2`) gives a

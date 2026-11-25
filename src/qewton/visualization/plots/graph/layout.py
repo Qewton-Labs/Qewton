@@ -93,9 +93,21 @@ NODE_CATEGORIES = (
 )
 
 
-def _node_category(node) -> NodeCategory:
+def node_category(node) -> NodeCategory:
+    """What a node is, for its colors, read from its class by
+    :data:`NODE_CATEGORIES`.
+
+    Args:
+        node (Node | type[Node]): A node, or a node class (e.g. to describe
+            a type before any node of it exists).
+
+    Returns:
+        NodeCategory: The category of the first matching class in
+            :data:`NODE_CATEGORIES`; :attr:`NodeCategory.MODEL` otherwise.
+    """
+    node_class = node if isinstance(node, type) else type(node)
     return next(
-        (category for cls, category in NODE_CATEGORIES if isinstance(node, cls)),
+        (category for cls, category in NODE_CATEGORIES if issubclass(node_class, cls)),
         NodeCategory.MODEL,
     )
 
@@ -319,7 +331,7 @@ def _place_level(
                 NodeLayout(
                     label=_node_label(node),
                     kind=type(node).__name__,
-                    category=_node_category(node),
+                    category=node_category(node),
                     x=x,
                     y=y,
                     width=width,
@@ -464,7 +476,7 @@ def _place_cluster(
     clusters_out.append(
         ClusterBox(
             label=f"{node.name} ({type(node).__name__}, {len(inner_graph.sorted_nodes)} nodes)",
-            category=_node_category(node),
+            category=node_category(node),
             x0=cluster_x0,
             y0=y - half_height,
             x1=cluster_x1,

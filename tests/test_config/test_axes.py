@@ -113,3 +113,25 @@ def test_ellipsis_axes():
 
 # --- Edge Cases ---
 
+
+
+class TestBoundHyperParameters:
+    """`AxesDim.hyperparameters`: the HyperParameters a size is bound to."""
+
+    def test_an_unbound_dim_has_none(self):
+        assert AxesDim(5).hyperparameters == ()
+
+    def test_a_dim_bound_to_a_hyperparameter_reports_it(self):
+        from qewton.optim.parameters.hyperparameter_base import HyperParameter
+
+        width = HyperParameter.inferred("width")
+        assert AxesDim(width).hyperparameters == (width,)
+
+    def test_merged_dims_report_the_hyperparameters_of_both(self):
+        from qewton.optim.parameters.hyperparameter_base import HyperParameter
+
+        first, second = HyperParameter.inferred("a"), HyperParameter.inferred("b")
+        dim_a, dim_b = AxesDim(first), AxesDim(second)
+        dim_a.merge(dim_b)
+        assert set(dim_a.hyperparameters) == {first, second}
+        assert set(dim_b.hyperparameters) == {first, second}

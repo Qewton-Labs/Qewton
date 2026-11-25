@@ -37,7 +37,9 @@ scale in every state).
 - **`GeometryPlot`** (`geometry/`): a geometry without data: points,
   curves, surfaces with edges, volumes by their boundary.
 - **`GraphPlot`** (`graph/`): a computation graph as a node-link diagram,
-  laid out by `GraphLayout`.
+  laid out by `GraphLayout`. A node's colors follow its `NodeCategory`,
+  which `node_category` reads from the node's class (also for a class
+  without any node, e.g. to describe a node type).
 
 ## Results (`result.py`)
 
