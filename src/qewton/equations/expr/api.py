@@ -1,7 +1,8 @@
 """User-facing helpers that build expressions, e.g. grad(u, x) or dt(u, t).
 
-Each helper is a thin wrapper around Apply, so the registry rules apply. Python
-numbers and one-dimensional coordinates are accepted as expression arguments.
+Each helper of an operator calls it from the registry, e.g. `OPS.grad(u, x)`, so the
+operator's rules apply. Python numbers and one-dimensional coordinates are accepted
+as expression arguments.
 Derivative axes are passed as they are and must be coordinates or products of them.
 """
 
@@ -9,44 +10,35 @@ from __future__ import annotations
 
 from qewton.config.variables import Variable
 from qewton.equations.geometry.sets import Interface, SetNode
-from qewton.equations.expr.apply import Apply
 from qewton.equations.expr.base import Expr
 from qewton.equations.expr.leaves import as_expr
 from qewton.equations.expr.wrappers import Integral, Restrict, Shift
-from qewton.equations.expr.ops import OPS, OpSpec
-
-
-def _call(op: OpSpec, *args: object) -> Expr:
-    return Apply(op, tuple(as_expr(arg) for arg in args))
-
-
-def _call_on_axes(op: OpSpec, value: object, axes: Variable) -> Expr:
-    return Apply(op, (as_expr(value), axes))
+from qewton.equations.expr.ops import OPS
 
 
 def sin(value: object) -> Expr:
-    return _call(OPS.sin, value)
+    return OPS.sin(value)
 
 
 def cos(value: object) -> Expr:
-    return _call(OPS.cos, value)
+    return OPS.cos(value)
 
 
 def exp(value: object) -> Expr:
-    return _call(OPS.exp, value)
+    return OPS.exp(value)
 
 
 def dot(first: object, second: object) -> Expr:
-    return _call(OPS.dot, first, second)
+    return OPS.dot(first, second)
 
 
 def inner(first: object, second: object) -> Expr:
-    return _call(OPS.inner, first, second)
+    return OPS.inner(first, second)
 
 
 def d(value: object, axis: Variable) -> Expr:
     """The partial derivative along one coordinate, e.g. d(u, t)."""
-    return _call_on_axes(OPS.d, value, axis)
+    return OPS.d(value, axis)
 
 
 def dt(value: object, time: Variable) -> Expr:
@@ -55,19 +47,19 @@ def dt(value: object, time: Variable) -> Expr:
 
 
 def grad(value: object, axes: Variable) -> Expr:
-    return _call_on_axes(OPS.grad, value, axes)
+    return OPS.grad(value, axes)
 
 
 def div(value: object, axes: Variable) -> Expr:
-    return _call_on_axes(OPS.div, value, axes)
+    return OPS.div(value, axes)
 
 
 def curl(value: object, axes: Variable) -> Expr:
-    return _call_on_axes(OPS.curl, value, axes)
+    return OPS.curl(value, axes)
 
 
 def lap(value: object, axes: Variable) -> Expr:
-    return _call_on_axes(OPS.lap, value, axes)
+    return OPS.lap(value, axes)
 
 
 def integral(value: object, over: SetNode) -> Expr:

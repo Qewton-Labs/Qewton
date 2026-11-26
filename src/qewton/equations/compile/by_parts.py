@@ -23,8 +23,7 @@ from qewton.equations.expr.api import div, dot, grad, inner
 from qewton.equations.expr.apply import Apply
 from qewton.equations.expr.base import Expr
 from qewton.equations.expr.leaves import Coord, FunctionSymbol
-from qewton.equations.expr.traversal import contains, walk
-from qewton.equations.expr.ops import OPS, OpSpec, Shape, ShapeError
+from qewton.equations.expr.ops import OPS, Operator, Shape, ShapeError
 
 
 @dataclass(frozen=True)
@@ -41,7 +40,7 @@ class Rule:
     applies: Callable[[Shape], bool] = lambda _shape: True
 
 
-RULES: dict[OpSpec, Rule] = {
+RULES: dict[Operator, Rule] = {
     OPS.div: Rule(moved=grad, flux=dot),
     OPS.grad: Rule(
         moved=div,
@@ -75,7 +74,7 @@ def _constant(expr: Expr) -> bool:
     return not any(
         isinstance(node, Coord)
         or (isinstance(node, FunctionSymbol) and node.coordinates())
-        for node in walk(expr)
+        for node in expr.walk()
     )
 
 
@@ -156,7 +155,7 @@ class Cutter:
         first, second = term.args
         for factor, rest in ((first, second), (second, first)):
             scalar = self._shape(factor) == ()  # type: ignore
-            if scalar and not contains(factor, unknowns):  # type: ignore
+            if scalar and not factor.contains(unknowns):  # type: ignore
                 self.cut(rest, factor * test, sign, out)  # type: ignore
                 return True
         return False

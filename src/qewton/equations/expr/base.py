@@ -2,7 +2,8 @@
 
 A node class says in its own methods what it is made of and what follows from that:
 
-- structure: `children`, `with_children`, `sets`, `coordinates`;
+- structure: `children`, `with_children`, `sets`, `coordinates`, from which `walk`,
+  `transform`, `symbols` and `contains` follow;
 - its output shape: `_shape(shapes)`, read through `shape` and `shape_with`;
 - the coordinates it varies with: `_free_axes()`, read through `free_axes`;
 - how it depends on given unknowns: `linearity(unknowns)`;
@@ -16,12 +17,12 @@ operator node checks its shape and axes at once (`_check`).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from functools import cached_property
 from typing import TYPE_CHECKING
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.ops import OPS, Linearity, OpLinearity, OpSpec, Shape, Solver
+from qewton.equations.expr.ops import OPS, Linearity, OpLinearity, Shape, Solver
 from qewton.equations.geometry.sets import SetNode
 from qewton.equations.printable import Printable
 
@@ -30,23 +31,6 @@ if TYPE_CHECKING:
 
 Axes = frozenset[Variable]
 SymbolShapes = Mapping["FunctionSymbol", Shape]
-
-
-def axes_text(axes: Axes) -> str:
-    """Coordinates as messages show them: {t, x}."""
-    return "{" + ", ".join(sorted(str(axis.name) for axis in axes)) + "}"
-
-
-def _build(op: OpSpec, *operands: object) -> Expr:
-    """`Apply(op, operands)`, with Python numbers turned into constants."""
-    # Apply and the leaves are subclasses of Expr, so they are imported on use.
-    # pylint: disable-next=import-outside-toplevel,cyclic-import
-    from qewton.equations.expr.apply import Apply
-
-    # pylint: disable-next=import-outside-toplevel,cyclic-import
-    from qewton.equations.expr.leaves import as_expr
-
-    return Apply(op, tuple(as_expr(operand) for operand in operands))
 
 
 class Expr(Printable):
@@ -70,6 +54,30 @@ class Expr(Printable):
     def coordinates(self) -> tuple[Variable, ...]:
         """The coordinates this node itself uses, not those of its sub-expressions."""
         return ()
+
+    def walk(self) -> Iterator[Expr]:
+        """This node and all its sub-expressions, depth first."""
+        yield self
+        for child in self.children():
+            yield from child.walk()
+
+    def transform(self, rewrite: Callable[[Expr], Expr]) -> Expr:
+        """This expression rebuilt bottom-up, with `rewrite` applied to every node
+        after its children. Unchanged nodes are reused, so an unchanged tree comes back
+        as the same object."""
+        old = self.children()
+        new = tuple(child.transform(rewrite) for child in old)
+        same = all(n is o for n, o in zip(new, old))
+        return rewrite(self if same else self.with_children(new))
+
+    def symbols(self) -> tuple[FunctionSymbol, ...]:
+        """The functions in this expression, in order of first appearance."""
+        found = (symbol for child in self.children() for symbol in child.symbols())
+        return tuple(dict.fromkeys(found))
+
+    def contains(self, symbols: Collection[FunctionSymbol]) -> bool:
+        """Whether one of `symbols` occurs in this expression."""
+        return any(symbol in symbols for symbol in self.symbols())
 
     # endregion
 
@@ -145,40 +153,45 @@ class Expr(Printable):
         _ = self.shape
         _ = self.free_axes
 
+    @staticmethod
+    def _axes_text(axes: Axes) -> str:
+        """Coordinates as messages show them: {t, x}."""
+        return "{" + ", ".join(sorted(str(axis.name) for axis in axes)) + "}"
+
     # region Building expressions
     def __add__(self, other):
-        return _build(OPS.add, self, other)
+        return OPS.add(self, other)
 
     def __radd__(self, other):
-        return _build(OPS.add, other, self)
+        return OPS.add(other, self)
 
     def __sub__(self, other):
-        return _build(OPS.sub, self, other)
+        return OPS.sub(self, other)
 
     def __rsub__(self, other):
-        return _build(OPS.sub, other, self)
+        return OPS.sub(other, self)
 
     def __mul__(self, other):
-        return _build(OPS.mul, self, other)
+        return OPS.mul(self, other)
 
     def __rmul__(self, other):
-        return _build(OPS.mul, other, self)
+        return OPS.mul(other, self)
 
     # Division is multiplication by a power of -1, so there is no separate operator.
     def __truediv__(self, other):
-        return self * _build(OPS.pow, other, -1)
+        return self * OPS.pow(other, -1)
 
     def __rtruediv__(self, other):
-        return _build(OPS.mul, other, self**-1)
+        return OPS.mul(other, self**-1)
 
     def __pow__(self, other):
-        return _build(OPS.pow, self, other)
+        return OPS.pow(self, other)
 
     def __rpow__(self, other):
-        return _build(OPS.pow, other, self)
+        return OPS.pow(other, self)
 
     def __neg__(self):
-        return _build(OPS.neg, self)
+        return OPS.neg(self)
 
     # Without this, Python would try to iterate over `u` through `__getitem__`.
     __iter__ = None

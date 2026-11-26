@@ -10,8 +10,6 @@ from qewton.equations import (
     div,
     grad,
     lap,
-    transform,
-    walk,
 )
 from qewton.equations.analysis.prepare.infer import infer_shapes
 from qewton.equations.analysis.context import signatures
@@ -40,9 +38,9 @@ class TestBuilding:
         assert node.with_children((v + v,)) == Index(v + v, 1)
 
     def test_transform_reaches_the_operand(self):
-        result = transform(v[0], lambda node: v if node == v else node)
+        result = v[0].transform(lambda node: v if node == v else node)
         assert result == v[0]
-        assert list(walk(v[0])) == [v[0], v]
+        assert list(v[0].walk()) == [v[0], v]
 
     def test_expression_is_not_iterable(self):
         with pytest.raises(TypeError):

@@ -32,12 +32,11 @@ def test_neumann_poisson_has_a_global_constraint():
 
 
 def test_delay_has_a_shift_and_a_history():
-    from qewton.equations.expr.traversal import walk
     from qewton.equations.expr.wrappers import Shift
     from qewton.equations.fixtures import delay
 
     p = delay()
-    assert any(isinstance(n, Shift) for n in walk(p.constraints[0].rhs))
+    assert any(isinstance(n, Shift) for n in p.constraints[0].rhs.walk())
     assert "u(t − 1)" in str(p)
 
 

@@ -5,9 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.base import Axes, Expr, SymbolShapes, axes_text
-from qewton.equations.expr.ops import AxisError, Linearity, OpSpec, Shape, ShapeError
-from qewton.equations.expr.ops import Solver
+from qewton.equations.expr.base import Axes, Expr, SymbolShapes
+from qewton.equations.expr.ops import (
+    AxisError,
+    Linearity,
+    Operator,
+    Shape,
+    ShapeError,
+    Solver,
+)
 from qewton.equations.geometry.coordinates import (
     check_coordinate_product,
     coordinate_factors,
@@ -20,15 +26,15 @@ class Apply(Expr):
 
     `args` are the expression arguments in order. An operator that takes derivative
     axes has one more argument at the end: a coordinate product, e.g. x or x * t.
-    What the operator does with shapes, orders and linearity is data of its `OpSpec`.
+    What it does with shapes, orders and linearity is up to its `Operator`.
     """
 
-    op: OpSpec
+    op: Operator
     args: tuple[Expr | Variable, ...]
 
     def __post_init__(self):
-        if not isinstance(self.op, OpSpec):
-            raise TypeError(f"Expected an OpSpec, got {type(self.op).__name__}.")
+        if not isinstance(self.op, Operator):
+            raise TypeError(f"Expected an Operator, got {type(self.op).__name__}.")
         arity = self.op.arity
         expected = arity + (1 if self.op.takes_axes else 0)
         if len(self.args) != expected:
@@ -70,7 +76,7 @@ class Apply(Expr):
         if any(shape is None for shape in operand_shapes):
             return None
         try:
-            return self.op.shape_rule(operand_shapes, self.axes)  # type: ignore[arg-type]
+            return self.op.result_shape(operand_shapes, self.axes)  # type: ignore
         except ShapeError as error:
             raise ShapeError(f"In {self}: {error}") from error
 
@@ -79,9 +85,10 @@ class Apply(Expr):
         if self.axes is not None:
             missing = frozenset(coordinate_factors(self.axes)) - result
             if missing:
+                along, depends = self._axes_text(missing), self._axes_text(result)
                 raise AxisError(
-                    f"Cannot differentiate along {axes_text(missing)} in {self}: the "
-                    f"operand depends on {axes_text(result)}, so the derivative is zero."
+                    f"Cannot differentiate along {along} in {self}: the operand depends "
+                    f"on {depends}, so the derivative is zero."
                 )
         return result
 
@@ -90,15 +97,10 @@ class Apply(Expr):
         return self.op.linearity.of_result(parts)
 
     def require_shape(self, target: Shape, solver: Solver) -> None:
-        rule = self.op.back_rule
-        if rule is None:
-            return
         try:
-            rule(self.operands, self.axes, target, solver)
+            self.op.infer_operands(self.operands, self.axes, target, solver)
         except ShapeError as error:
             raise ShapeError(f"In {self}: {error}") from error
 
     def require_operand_shapes(self, solver: Solver) -> None:
-        if self.op.scalar_args:
-            for arg in self.operands:
-                arg.require_shape((), solver)
+        self.op.require_operands(self.operands, solver)

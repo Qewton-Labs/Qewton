@@ -120,8 +120,8 @@ trajectory, can be handed to torch); the backend `Function`s stay inside the nod
 
 ## 5. Lowering: equations → backends
 
-One visitor `lower(expr, target)` over `Expr` maps each operator (an `OpSpec` constant
-such as `GRAD`, never its name) to a method of the target, plus `Coord`, `Normal`,
+One visitor `lower(expr, target)` over `Expr` maps each operator (an `Operator` such as
+`OPS.grad`, never its name) to a method of the target, plus `Coord`, `Normal`,
 `Restrict` and `Measure`; an operator without an entry raises an error. Two targets:
 
 - **Weak form, via `FormBackend`.** Unknown → TrialFunction (linear) or Function

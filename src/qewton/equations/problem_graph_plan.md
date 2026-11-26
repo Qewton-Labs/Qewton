@@ -24,7 +24,7 @@ Non-goals for now: writing our own assembler or mesher (weak forms go to UFL ins
 2. **A signature is not a role.** A function's inputs are always declared on the symbol, and its output shape is declared or inferred. Whether it is unknown belongs to the task. "Constant" is a function with `inputs=None`, not a role. Batch axes are added by the task (`batch_axes`), so the signature itself is geometric; reports show both.
 3. **Three layers with typed edges.** The layers are geometry (axes, sets), expressions (symbols, operators) and constraints. The edge types are: *uses*, *defined on*, *holds on*, *subset of*, *boundary of*.
 4. **Nodes are immutable; analysis results live in side tables.** Nodes are frozen dataclasses, so they are hashable and can be shared. Passes write their results into an `AnalysisContext` keyed by node. That way the same model can be analysed under different tasks without being mutated.
-5. **Operators are data.** There is one `Apply` node plus an operator registry, not one class per operator. Operator semantics (shape rule, derivative order, linearity) live in an `OpSpec`.
+5. **Operators live in a registry.** There is one `Apply` node plus an operator registry, not one node class per operator. An operator's semantics (arity, derivative order, linearity, shape rules) live in its `Operator`, one class per kind of operator (`Gradient`, `Sum`, ...); the registry `OPS` holds the instances, so code writes `OPS.grad(u, x)` and `expr.op is OPS.lap`.
 6. **Explicit over clever.** Evaluation on a lower-dimensional set is an explicit `Restrict` node (spatial trace or time slice). Normalisation rewrites notational conventions (e.g. "in Ω" for a transient problem) explicitly and reports what it changed.
 
 ---
@@ -49,8 +49,7 @@ qewton/equations/
     │   ├── leaves.py            # FunctionSymbol, Coord, Const, Normal, as_expr
     │   ├── wrappers.py          # Restrict, Integral, Shift, Index
     │   ├── apply.py             # Apply: an operator from the registry applied to its arguments
-    │   ├── ops.py               # OpSpec and the operator registry (grad, div, dt, ...); ShapeError, AxisError
-    │   ├── traversal.py         # walk, transform, symbols_in, contains
+    │   ├── ops.py               # Operator classes (Gradient, Sum, ...) and the registry OPS (grad, div, dt, ...); ShapeError, AxisError
     │   └── api.py               # user-facing helpers: grad, div, curl, lap, d, dt, dot, inner, sin, cos, exp (Eq goes in constraints.py)
     ├── model/
     │   ├── constraints.py       # Relation, Constraint (sides, nodes, symbols, sets), PendingConstraint, Eq/Le/Ge/Complementary
@@ -109,7 +108,7 @@ src/qewton/equations/notebooks/  # notebooks; import everything as `import qewto
 | `EquationNode` (common base) | Separate hierarchies `SetNode`, `Expr`, `Constraint`. Optionally a minimal `Node` base with only `children()` for traversal. | These are different kinds of object; a shared base invites mixing them. |
 | `AxisNode(variable)` | `Variable` (unchanged) | The kind (space, time, parameter) is not stored on the variable. The problem declares its time variable, and the Task creates parameter variables for batched symbols. A coordinate can be an argument of a derivative operator. |
 | (none) | `Coord(axis, component)` | The coordinate function x ↦ xᵢ, usable inside expressions, e.g. `sin(x[0])`. |
-| `OperationNode` | `Apply(op, args)` plus the `OpSpec` registry | Operators as data. |
+| `OperationNode` | `Apply(op, args)` plus the operator registry `OPS` | One node class for every operator. |
 
 `Variable` is the coordinate type. It stays the config object and is used directly, with no wrapper. The kind is not stored on it: `Problem(time=t)` declares the time variable, the Task creates parameter variables for batched symbols, and every other coordinate is spatial. One change lives outside the equations folder: `Variable.__mul__` (and `+`) return `NotImplemented` for non-`Variable` operands, so `t * u` works. Multi-component coordinates like `x` need a component: `Coord(x, 0) * u`. If `Variable` is also used for unknowns like `u`, split that use off into `FunctionSymbol`, since `dim` means input dimension for a coordinate but output size for a function.
 
@@ -196,7 +195,7 @@ class Normal(Expr):             # outward unit normal; only on a Boundary or a P
 
 @dataclass(frozen=True)
 class Apply(Expr):
-    op: "OpSpec"
+    op: "Operator"
     args: tuple[Expr | Variable, ...]   # expressions, then one coordinate product if the operator takes axes, e.g. grad(u, x)
 
 @dataclass(frozen=True)
@@ -235,17 +234,23 @@ As built (`analysis/prepare/signatures.py`) the signature is richer and `signatu
 ### 5.3 Operator registry
 
 ```python
-@dataclass(frozen=True)
-class OpSpec:
-    name: str
-    arity: int                          # number of expression arguments
-    shape_rule: Callable[[tuple[Shape, ...], Variable | None], Shape]  # argument shapes and derivative axes in, shape out; raises ShapeError
+class Operator:
+    arity: int = 1                      # number of expression arguments
     takes_axes: bool = False            # a coordinate product follows the expression arguments
     order: int = 0                      # derivative order along each leaf of the axes argument
-    linearity: Literal["linear", "multilinear", "nonlinear"] = "linear"
+    linearity: OpLinearity = OpLinearity.LINEAR
+    def result_shape(self, shapes, axes) -> Shape: ...                  # raises ShapeError
+    def infer_operands(self, operands, axes, target, solver) -> None: ...  # shape inference
+    def __call__(self, *args) -> Expr: ...                              # OPS.grad(u, x)
 
-OPS: dict[str, OpSpec] = {}
-def register(spec: OpSpec) -> OpSpec: ...
+class Gradient(Operator):               # one class per kind of operator
+    takes_axes, order = True, 1
+    def result_shape(self, shapes, axes): return shapes[0] + (axes.dim,)
+
+class OperatorRegistry(Mapping[str, Operator]):
+    grad = Gradient()                   # its name is the attribute name
+    ...
+OPS = OperatorRegistry()                # OPS.grad, OPS["grad"], OPS.register(...)
 ```
 
 The initial registry:
@@ -381,7 +386,7 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 - Bring every constraint into the form `lhs − rhs REL 0` (`analysis/prepare/normalization.py`, done), keeping the original for display in `Normalized.origin`. A right side that is already zero stays, and a complementarity is not rewritten.
 - **Time lifting** (`analysis/prepare/normalization.py`, done). A constraint whose sides vary in time (`free_axes` contains t) but which holds on a set without time is rewritten to hold on S × I, and a global one to hold on I. Initial conditions are left alone, since `Restrict` to a slice already removed t. The interval is the one `Domain` on the time coordinate found in the problem; if there is none, or several, nothing is lifted and a warning says why. Each lift is an info diagnostic, and `Normalized.origin` keeps the original constraints for display. The `partitions` are not lifted: a lifted part `Gamma_D x I` is covered by its declaration of `Gamma_D`.
 - **Batch lifting.** Constraints that involve a batched symbol get its parameter axis (× P).
-- Choose canonical forms (done): expand `lap(u, axes)` into `div(grad(u, axes), axes)`, so that −div(ν∇u) and −νΔu are analysed consistently. The rewrite uses the new generic `transform(expr, rewrite)` in `expr/traversal.py`, which rebuilds a tree bottom-up and reuses unchanged nodes.
+- Choose canonical forms (done): expand `lap(u, axes)` into `div(grad(u, axes), axes)`, so that −div(ν∇u) and −νΔu are analysed consistently. The rewrite uses the generic `expr.transform(rewrite)` of `Expr`, which rebuilds a tree bottom-up and reuses unchanged nodes.
 
 ### 6.3 infer: signatures and shapes
 
@@ -391,20 +396,20 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 - **Lower bound check.** If a derivative along axis a is applied directly to s (or to `Restrict(s, …)`), then a must be among s's declared inputs, or the problem is an error. Nested cases such as grad(u·v) give no requirement.
 - **Data values.** A supplied value must agree with the declared inputs. A constant (`inputs=None`) cannot get a spatial array, and a numeric value with spatial inputs needs a geometry through `Task.values`. This is checked when the Task is built.
 - **Conflicts and unused inputs.** A declared output shape must agree with the inferred one. Declared inputs that no constraint needs are a warning.
-- **Shapes.** `expr.shape` computes them bottom-up with `OpSpec.shape_rule` (M2, `Expr._shape` per node class; None while a symbol's shape is undeclared). `infer_shapes(problem)` (`infer.py`) fills in symbols declared with `dim=None`: known shapes flow backwards through invertible operators (neg, d, lap, grad, div, and add, sub, mul, inner when the other operand is known), scalar-only operators force scalar arguments, and a scalar constant never decides a shape. When nothing more follows, the first undetermined symbol in order of appearance defaults to scalar and is reported in `Inference.defaulted` (a warning), then propagation continues. A final pass re-checks every constraint, so conflicts raise `ShapeError`. `dot` is not inverted, because it is ambiguous.
+- **Shapes.** `expr.shape` computes them bottom-up with `Operator.result_shape` (M2, `Expr._shape` per node class; None while a symbol's shape is undeclared). `infer_shapes(problem)` (`infer.py`) fills in symbols declared with `dim=None`: known shapes flow backwards through invertible operators (neg, d, lap, grad, div, and add, sub, mul, inner when the other operand is known), scalar-only operators force scalar arguments, and a scalar constant never decides a shape. When nothing more follows, the first undetermined symbol in order of appearance defaults to scalar and is reported in `Inference.defaulted` (a warning), then propagation continues. A final pass re-checks every constraint, so conflicts raise `ShapeError`. `dot` is not inverted, because it is ambiguous.
 - The declared inputs and the inferred shapes are printed first in the report, the way a type checker shows types.
 
 ### 6.4 structure
 
 As built so far (`analysis/structure/structure.py`): `derivative_orders(expr)`, `constraint_orders(constraint)` and `unknown_orders(task)`, one dict `{coordinate: order}` per unknown and constraint. Orders add along the path to the function, each factor of a product axis counts, and a shift adds nothing.
 
-Also built: `decoupled_axes(task)`, which reports declared unknown input axes with no unknown derivative or nonlocal integral/shift coupling. These are candidate pointwise directions. `expr.linearity(unknowns)` (`none`/`linear`/`affine`/`nonlinear`, from `OpSpec.linearity`) and `split(task)`, which returns an operator part and a source part per constraint of the normalized problem. Terms are signed and tagged. A constraint is `linear` when no operator term is nonlinear (a linear operator plus a source). `batch_placement(task)` reports each varying function in the operator/source parts and whether it is affine there: the parameter must occur linearly and not be differentiated along one of its declared input axes. Thus `div(nu * grad(u, x), x)` is affine in spatially constant `nu`, but not in `nu(x)`. Varying sets affect geometry and do not appear in this expression-level report.
+Also built: `decoupled_axes(task)`, which reports declared unknown input axes with no unknown derivative or nonlocal integral/shift coupling. These are candidate pointwise directions. `expr.linearity(unknowns)` (`none`/`linear`/`affine`/`nonlinear`, from `Operator.linearity`) and `split(task)`, which returns an operator part and a source part per constraint of the normalized problem. Terms are signed and tagged. A constraint is `linear` when no operator term is nonlinear (a linear operator plus a source). `batch_placement(task)` reports each varying function in the operator/source parts and whether it is affine there: the parameter must occur linearly and not be differentiated along one of its declared input axes. Thus `div(nu * grad(u, x), x)` is affine in spatially constant `nu`, but not in `nu(x)`. Varying sets affect geometry and do not appear in this expression-level report.
 
 - **Inherited batch axes.** `inherited_batch_axes(task)` propagates a varying function or set axis across constraints sharing unknowns. Set dependencies include products, boundaries, and sibling parts of a partition; sets used by restrictions and integrals are considered too. `Signature.inherited_batch` displays the result separately from a symbol's own varying axis.
 
 - **Derivative orders.** For each (constraint, unknown) pair, the maximum order per axis, accumulated through differential operators while walking the tree.
 - **Operator/source split.** Expand top-level sums. Terms that depend on unknowns form the operator part; the rest form the source part.
-- **Linearity.** Classify each term as linear, affine or nonlinear in the unknowns, using `OpSpec.linearity`.
+- **Linearity.** Classify each term as linear, affine or nonlinear in the unknowns, using `Operator.linearity` (`expr.linearity(unknowns)`).
 - **Batch placement.** Record whether each batched symbol appears in the operator part or only in the source part, and whether it enters affinely (term = θ(μ) · term′, where term′ does not depend on μ). A symbol with no spatial axes can be pulled out of `div`, `grad` and `lap`. That rule is what makes `div(nu * grad(u, x), x)` affine, so the structure pass must state it explicitly.
 - **Coupling graph.** `analysis/structure/coupling.py` builds a bipartite graph between scalar equation components and scalar unknown components. Edges mean an unknown occurs in a constraint. Since expressions do not yet select vector components, vector equations are conservatively connected to every component of each occurring unknown. A deterministic augmenting-path maximum matching reports unmatched rows and columns; it is a structural count/coupling check, not a well-posedness proof. Matched equation/unknown pairs induce a directed dependency graph whose strongly connected components are returned in topological order. Unmatched nodes are not included in blocks. This avoids adding a graph dependency. The Stokes fixture omits boundary conditions and exists to demonstrate the velocity-pressure saddle-point block.
 - **Coupling diagram.** `coupling_diagram(task)` (data in `printing/diagram.py`) extends the graph with data functions (fixed/varying), the sets each equation is posed on and each unknown is defined on, and the coordinates the sets live in; `plot_coupling(task)` draws it in five columns (equations, unknowns, data, sets, coordinates).

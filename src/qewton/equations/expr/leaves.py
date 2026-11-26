@@ -15,49 +15,6 @@ from qewton.equations.geometry.coordinates import (
 from qewton.equations.geometry.sets import SetNode, has_normal, set_free_axes
 
 
-def _check_output(variable: Variable) -> None:
-    dim = variable.dim
-    if dim is None:
-        return
-    dims = dim if isinstance(dim, tuple) else (dim,)
-    if not all(isinstance(d, int) and d >= 1 for d in dims):
-        raise ValueError(
-            f"The output {variable.name!r} needs positive dims, got {dim!r}."
-        )
-
-
-def _check_inputs(inputs: Variable) -> None:
-    if inputs.dim == 0:
-        raise ValueError("A constant has inputs=None, not a zero-dimensional Variable.")
-    check_coordinate_product(inputs)
-
-
-def _freeze(value: object) -> float | tuple:
-    if isinstance(value, bool) or not isinstance(value, (int, float, list, tuple)):
-        raise TypeError(f"A constant must be numbers in nested lists, got {value!r}.")
-    if isinstance(value, (int, float)):
-        return value
-    if not value:
-        raise ValueError("A constant vector or matrix cannot be empty.")
-    return tuple(_freeze(item) for item in value)
-
-
-def _value_shape(value: int | float | tuple) -> tuple[int, ...]:
-    if not isinstance(value, tuple):
-        return ()
-    shapes = {_value_shape(item) for item in value}
-    if len(shapes) != 1:
-        raise ValueError(f"A constant must be rectangular, got {value!r}.")
-    return (len(value),) + shapes.pop()
-
-
-def _dim_shape(dim: int | tuple[int, ...] | None) -> Shape:
-    """The shape a dim stands for: () for 1 or None, (n,) for n, a tuple as it is."""
-    if isinstance(dim, tuple):
-        return dim
-    return () if dim in (1, None) else (dim,)
-
-
 @dataclass(frozen=True, eq=False)
 class FunctionSymbol(Expr):
     """A function such as u or f. Two symbols are different functions even if named alike.
@@ -76,14 +33,23 @@ class FunctionSymbol(Expr):
     def __post_init__(self):
         if not isinstance(self.variable, Variable):
             raise TypeError(f"Expected a Variable, got {type(self.variable).__name__}.")
-        _check_output(self.variable)
+        dim = self.variable.dim
+        dims = dim if isinstance(dim, tuple) else (dim,)
+        if dim is not None and not all(isinstance(d, int) and d >= 1 for d in dims):
+            raise ValueError(
+                f"The output {self.variable.name!r} needs positive dims, got {dim!r}."
+            )
         if self.inputs is not None:
             if not isinstance(self.inputs, Variable):
                 raise TypeError(
                     "Inputs must be a Variable such as x * t, got "
                     f"{type(self.inputs).__name__}."
                 )
-            _check_inputs(self.inputs)
+            if self.inputs.dim == 0:
+                raise ValueError(
+                    "A constant has inputs=None, not a zero-dimensional Variable."
+                )
+            check_coordinate_product(self.inputs)
 
     @property
     def name(self) -> str | None:
@@ -92,10 +58,17 @@ class FunctionSymbol(Expr):
     def coordinates(self) -> tuple[Variable, ...]:
         return coordinate_factors(self.inputs) if self.inputs is not None else ()
 
+    def symbols(self) -> tuple[FunctionSymbol, ...]:
+        return (self,)
+
     def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        if self.variable.dim is None:
+        dim = self.variable.dim
+        if dim is None:
             return shapes.get(self)
-        return _dim_shape(self.variable.dim)
+        # dim 1 is a scalar, n a vector of n components, a tuple a tensor.
+        if isinstance(dim, tuple):
+            return dim
+        return () if dim == 1 else (dim,)
 
     def _free_axes(self) -> Axes:
         return frozenset(self.coordinates())
@@ -149,11 +122,32 @@ class Const(Expr):
 
     def __post_init__(self):
         # Frozen dataclass: store the normalized value.
-        object.__setattr__(self, "value", _freeze(self.value))
-        _value_shape(self.value)  # raises for ragged nesting
+        object.__setattr__(self, "value", self._freeze(self.value))
+        self._value_shape(self.value)  # raises for ragged nesting
+
+    @staticmethod
+    def _freeze(value: object) -> float | tuple:
+        """The value as nested tuples of numbers."""
+        if isinstance(value, bool) or not isinstance(value, (int, float, list, tuple)):
+            raise TypeError(f"A constant must be numbers in nested lists, got {value!r}.")
+        if isinstance(value, (int, float)):
+            return value
+        if not value:
+            raise ValueError("A constant vector or matrix cannot be empty.")
+        return tuple(Const._freeze(item) for item in value)
+
+    @staticmethod
+    def _value_shape(value: int | float | tuple) -> Shape:
+        """The shape of a frozen value; raises for ragged nesting."""
+        if not isinstance(value, tuple):
+            return ()
+        shapes = {Const._value_shape(item) for item in value}
+        if len(shapes) != 1:
+            raise ValueError(f"A constant must be rectangular, got {value!r}.")
+        return (len(value),) + shapes.pop()
 
     def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        return _value_shape(self.value)
+        return self._value_shape(self.value)
 
 
 @dataclass(frozen=True)

@@ -19,7 +19,6 @@ from qewton.config.variables import Variable
 from qewton.equations.expr.apply import Apply
 from qewton.equations.expr.base import Expr
 from qewton.equations.expr.leaves import Const, FunctionSymbol
-from qewton.equations.expr.traversal import contains, symbols_in, walk
 from qewton.equations.expr.wrappers import Integral, Shift
 from qewton.equations.geometry.coordinates import coordinate_factors
 from qewton.equations.expr.ops import OPS, Linearity
@@ -114,22 +113,22 @@ def _differentiated_axes(
 ) -> set[Variable]:
     return {
         axis.whole
-        for node in walk(expr)
+        for node in expr.walk()
         if isinstance(node, Apply)
         and node.op.takes_axes
-        and contains(node.args[0], unknowns)  # type: ignore
+        and node.args[0].contains(unknowns)  # type: ignore
         for axis in coordinate_factors(node.axes)  # type: ignore
     }
 
 
 def _nonlocal_axes(expr: Expr, unknowns: frozenset[FunctionSymbol]) -> set[Variable]:
     coupled = set()
-    for node in walk(expr):
+    for node in expr.walk():
         if isinstance(node, Integral):
-            symbols = {s for s in symbols_in(node.expr) if s in unknowns}
+            symbols = {s for s in node.expr.symbols() if s in unknowns}
             for symbol in symbols:
                 coupled.update(axis.whole for axis in symbol.free_axes & node.over.axes)
-        elif isinstance(node, Shift) and contains(node.expr, unknowns):
+        elif isinstance(node, Shift) and node.expr.contains(unknowns):
             coupled.add(node.axis.whole)
     return coupled
 
@@ -195,7 +194,7 @@ def split_constraint(
         if isinstance(expr, Const) and expr.value == 0:
             continue
         term = Term(expr, sign, expr.linearity(unknowns))  # type: ignore
-        (operator if contains(expr, unknowns) else source).append(term)  # type: ignore
+        (operator if expr.contains(unknowns) else source).append(term)  # type: ignore
     return Split(tuple(operator), tuple(source))
 
 
@@ -214,12 +213,12 @@ def _differentiates(expr: Expr, symbol: FunctionSymbol) -> bool:
     if symbol.inputs is None:
         return False
     symbol_axes = set(coordinate_factors(symbol.inputs))
-    for node in walk(expr):
+    for node in expr.walk():
         if not isinstance(node, Apply) or not node.op.takes_axes:
             continue
         argument = node.args[0]
         axes = node.axes
-        if contains(argument, (symbol,)) and symbol_axes.intersection(  # type: ignore
+        if argument.contains((symbol,)) and symbol_axes.intersection(  # type: ignore
             coordinate_factors(axes)  # type: ignore
         ):
             return True
@@ -254,7 +253,7 @@ def build_batch_placement(
                 ("operator", constraint_split.operator),
                 ("source", constraint_split.source),
             ):
-                uses = [term.expr for term in terms if contains(term.expr, (symbol,))]
+                uses = [term.expr for term in terms if term.expr.contains((symbol,))]
                 if uses:
                     results.append(
                         BatchPlacement(

@@ -15,7 +15,6 @@ from enum import Enum
 
 from qewton.equations.expr.base import Expr
 from qewton.equations.expr.leaves import Const, FunctionSymbol, as_expr
-from qewton.equations.expr.traversal import symbols_in, walk
 from qewton.equations.expr.ops import ShapeError
 from qewton.equations.geometry.sets import SetNode
 from qewton.equations.printable import Printable
@@ -60,11 +59,11 @@ class Constraint(Printable):
     def nodes(self) -> Iterator[Expr]:
         """Every node of both sides, depth first, the left side first."""
         for side in self.sides:
-            yield from walk(side)
+            yield from side.walk()
 
     def symbols(self) -> tuple[FunctionSymbol, ...]:
         """The functions in the constraint, in order of first appearance."""
-        found = (s for side in self.sides for s in symbols_in(side))
+        found = (s for side in self.sides for s in side.symbols())
         return tuple(dict.fromkeys(found))
 
     def sets(self) -> tuple[SetNode, ...]:

@@ -22,7 +22,7 @@ from enum import Enum
 from qewton.config.variables import Variable
 from qewton.equations.analysis.classification.facts import Fact
 from qewton.equations.analysis.classification.rows import Region, Row
-from qewton.equations.expr.ops import OPS, OpSpec
+from qewton.equations.expr.ops import OPS, Operator
 from qewton.equations.expr.apply import Apply
 from qewton.equations.expr.base import Expr
 from qewton.equations.expr.leaves import FunctionSymbol
@@ -62,7 +62,9 @@ def highest_order(space: FunctionSpace) -> int:
     return _HIGHEST_ORDER[space]
 
 
-def _operators(expr: Expr, symbol: FunctionSymbol, time: Variable | None) -> set[OpSpec]:
+def _operators(
+    expr: Expr, symbol: FunctionSymbol, time: Variable | None
+) -> set[Operator]:
     """The spatial derivative operators applied directly to `symbol` in `expr`."""
     found: set[str] = set()
     for child in expr.children():
@@ -88,7 +90,7 @@ def _needed(
         return FunctionSpace.L2
     if order >= 2:
         return FunctionSpace.H2
-    operators: set[OpSpec] = set()
+    operators: set[Operator] = set()
     for side in row.constraint.sides:
         operators |= _operators(side, symbol, time)
     if len(operators) == 1:

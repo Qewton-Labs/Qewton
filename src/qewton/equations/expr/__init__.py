@@ -1,12 +1,12 @@
 """Expressions: functions, coordinates, constants and operators.
 
 - `base.py`: `Expr`, the base class. Each node class defines its own structure,
-  shape, coordinates and linearity there; nothing is registered elsewhere.
+  shape, coordinates and linearity there; walking and rebuilding trees
+  (`walk`, `transform`) are methods of it too.
 - `leaves.py`: functions, coordinates, constants, normals.
 - `wrappers.py`: restriction, integral, shift and component of an expression.
-- `apply.py`: an operator applied to its arguments; `ops.py` is the operator
-  registry with each operator's shape rule, order and linearity.
-- `traversal.py`: walking and rebuilding trees.
+- `apply.py`: an operator applied to its arguments; `ops.py` has the operators,
+  one class per kind with its shape rules, order and linearity, and their registry.
 - `api.py`: helpers that build expressions, such as `grad(u, x)`.
 
 Building an operator node checks its shape and coordinates at once.
@@ -39,10 +39,9 @@ from qewton.equations.expr.ops import (
     AxisError,
     Linearity,
     OpLinearity,
-    OpSpec,
+    Operator,
     ShapeError,
 )
-from qewton.equations.expr.traversal import transform, walk
 from qewton.equations.expr.wrappers import Index, Integral, Restrict, Shift
 
 __all__ = [
@@ -58,14 +57,12 @@ __all__ = [
     "Restrict",
     "Shift",
     "as_expr",
-    "transform",
-    "walk",
     # operators
     "OPS",
     "OperatorRegistry",
     "Linearity",
     "OpLinearity",
-    "OpSpec",
+    "Operator",
     "ShapeError",
     "AxisError",
     # building expressions

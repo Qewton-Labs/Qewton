@@ -23,7 +23,6 @@ from dataclasses import dataclass, replace
 from qewton.equations.expr.apply import Apply
 from qewton.equations.expr.base import Expr
 from qewton.equations.expr.leaves import Const
-from qewton.equations.expr.traversal import transform
 from qewton.equations.diagnostics import Diagnostic, info, warning
 from qewton.equations.expr.ops import OPS
 from qewton.equations.geometry.sets import (
@@ -140,8 +139,8 @@ def _residual(constraint: Constraint) -> Constraint:
 def _canonical(constraint: Constraint) -> Constraint:
     expanded = replace(
         constraint,
-        lhs=transform(constraint.lhs, _expand_lap),
-        rhs=transform(constraint.rhs, _expand_lap),
+        lhs=constraint.lhs.transform(_expand_lap),
+        rhs=constraint.rhs.transform(_expand_lap),
     )
     return _residual(expanded)
 

@@ -4,7 +4,6 @@ from qewton.config.variables import Variable
 from qewton.equations.model.constraints import Eq
 from qewton.equations.expr import api
 from qewton.equations.expr.leaves import FunctionSymbol, Normal
-from qewton.equations.expr.traversal import contains, symbols_in, walk
 from qewton.equations.expr.wrappers import Restrict
 from qewton.equations.geometry.sets import (
     Boundary,
@@ -96,17 +95,17 @@ class TestDerivedQueries:
 
 class TestWalk:
     def test_walk_visits_every_sub_expression(self):
-        nodes = list(walk(api.div(u, x)))
+        nodes = list(api.div(u, x).walk())
         assert nodes[0] == api.div(u, x)
         assert u in nodes
 
     def test_walk_of_a_leaf_is_the_leaf(self):
-        assert list(walk(f)) == [f]
+        assert list(f.walk()) == [f]
 
-    def test_symbols_in_keeps_repeats_and_contains_asks_for_any(self):
-        assert list(symbols_in(nu * api.grad(u, x) + u)) == [nu, u, u]
-        assert contains(api.grad(u, x), {u, g})
-        assert not contains(api.grad(u, x), {g})
+    def test_symbols_are_unique_in_order_and_contains_asks_for_any(self):
+        assert (nu * api.grad(u, x) + u).symbols() == (nu, u)
+        assert api.grad(u, x).contains({u, g})
+        assert not api.grad(u, x).contains({g})
 
 
 class TestConstraintQueries:

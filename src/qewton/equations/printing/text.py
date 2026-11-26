@@ -15,7 +15,7 @@ from qewton.equations.model.constraints import (
     PendingConstraint,
     Relation,
 )
-from qewton.equations.expr.ops import OPS, OpSpec
+from qewton.equations.expr.ops import OPS, Operator
 from qewton.equations.expr.apply import Apply
 from qewton.equations.expr.base import Expr
 from qewton.equations.expr.leaves import Const, Coord, FunctionSymbol, Normal
@@ -146,7 +146,7 @@ _OPERATORS = {
 }
 
 
-def _derivative(op: OpSpec, args: tuple) -> str:
+def _derivative(op: Operator, args: tuple) -> str:
     symbol, separator = _DERIVATIVES[op]
     operand, axes = args
     return f"{symbol}_{axes.name}{separator}{_operand(operand, ATOM)}"
