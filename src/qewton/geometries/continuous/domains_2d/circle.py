@@ -220,7 +220,8 @@ class CircleBoundary(ContinuousBoundaryGeometry[TensorType]):
             return points, normals
         return points
 
-    def normal(self, points, device: Device | str = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         center = self._on(self.geometry.center, self._device_of(points))
         normal = points - self.backend.to(center[None, :], device)
         return (normal / self.geometry.radius).reshape(-1, 2)

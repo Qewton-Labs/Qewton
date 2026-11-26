@@ -21,6 +21,8 @@ import operator
 import types
 import warnings
 
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.devices import Device
 from qewton.config.data_configurations import DataConfiguration, DynamicDataConfiguration
 from qewton.config.dtypes import element_dtype_in
 from qewton.config.variables import Variable
@@ -287,14 +289,19 @@ class Node(ABC, Serializable, Generic[TensorType]):
 
     Notes:
         Subclasses must implement :meth:`forward`. They may override
-        :meth:`setup` to create their underlying algorithm, the properties
+        :meth:`build` to create their underlying algorithm, the properties
         `trainable_parameters`, `hyperparameters` and `memory_consumption`,
-        :meth:`to`, :meth:`reset`, and :meth:`update_data_configs` if their
-        ports depend on each other in a non-default way.
+        :meth:`to` (calling ``super().to``), :meth:`reset`, and
+        :meth:`update_data_configs` if their ports depend on each other in a
+        non-default way.
     """
 
     _node_id_counter = 0
     _tracking_phase: bool = False
+    # Recorded by to(); None for a node that follows the device of its
+    # inputs. A class attribute, so loaded nodes (whose device is not
+    # saved) fall back to it.
+    _device: Device | str | None = None
 
     def __init__(
         self,
@@ -454,6 +461,10 @@ class Node(ABC, Serializable, Generic[TensorType]):
         self._build_in(graph)
         if self.state == NodeState.UNINITIALIZED:
             self.set_state(NodeState.INITIALIZED)
+        # build() creates its tensors on the default device; move them to
+        # the device recorded by an earlier to().
+        if self._device is not None:
+            self.to(self._device)
 
     def require_known_sizes(self) -> None:
         """Make sure no hyperparameter waits to be inferred, so that the node
@@ -623,13 +634,31 @@ class Node(ABC, Serializable, Generic[TensorType]):
         )
 
     def to(self, device):
-        """Move the data stored in this node to `device`.
+        """Move the data stored in this node to `device` and record it, so
+        that a later :meth:`setup` builds the node on it, too.
 
-        Does nothing by default.
+        Subclasses that hold data move it and call ``super().to(device)``.
 
         Args:
             device (Device or str): The target device, e.g. a CPU or GPU.
         """
+        self._device = device
+
+    @property
+    def device(self) -> Device | str | None:
+        """The device recorded by :meth:`to`, or None if the node follows the
+        device of its inputs."""
+        return self._device
+
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        # The device is chosen where the node runs, so it is not saved; a
+        # loaded node falls back to the class default.
+        keys, args = super()._collect_serializable_attributes()
+        if "_device" in keys:
+            idx = keys.index("_device")
+            keys.pop(idx)
+            args.pop(idx)
+        return keys, args
 
     def set_mode(self, new_mode: EvaluationPhase):
         """Set the current evaluation phase.

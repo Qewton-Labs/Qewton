@@ -1,5 +1,7 @@
 from types import EllipsisType
 
+import numpy as np
+
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, BoundaryGeometry
 from qewton.backends.base import TensorType, ComputingBackend
@@ -17,6 +19,10 @@ class ContinuousGeometry(Geometry[TensorType]):
     A continuous geometry can be discretized by creating a mesh.
     """
 
+    #: Number of points of the Monte Carlo volume estimate, see
+    #: :meth:`_estimate_volume`.
+    volume_samples: int = 100_000
+
     def __init__(
         self,
         variable: Variable,
@@ -24,6 +30,30 @@ class ContinuousGeometry(Geometry[TensorType]):
         backend: type[ComputingBackend[TensorType]] = DEFAULT_DL_BACKEND,
     ):
         super().__init__(variable, dim=variable.dim, shape=shape, backend=backend)
+        self._volume_estimate: float | None = None
+
+    def _estimate_volume(self) -> float:
+        """Monte Carlo estimate of the volume, for geometries without a
+        formula (e.g. unions): the share of `volume_samples` uniform points of
+        the bounding box that lie inside, times the volume of the box.
+
+        Seeded and cached, so every call returns the same value. Typically
+        accurate to about 0.5%; :meth:`set_volume` sets an exact value.
+
+        Returns:
+            float: The estimated volume.
+        """
+        estimate = getattr(self, "_volume_estimate", None)
+        if estimate is not None:
+            return estimate
+        bounds = np.asarray(self.backend.to_numpy(self.bounding_box()), dtype=np.float64)
+        lower, upper = bounds[0::2], bounds[1::2]
+        rng = np.random.default_rng(0)
+        points = lower + rng.random((self.volume_samples, len(lower))) * (upper - lower)
+        inside = self.backend.to_numpy(self.contains(self.backend.build_tensor(points)))
+        estimate = float(np.prod(upper - lower)) * float(np.mean(inside))
+        self._volume_estimate = estimate
+        return estimate
 
     def create_boundary(self):
         return ContinuousBoundaryGeometry(self)

@@ -286,7 +286,8 @@ class TriangleBoundary(ContinuousBoundaryGeometry):
             return points, normals
         return points
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         origin = self._on(self.geometry.origin, self._device_of(points))
         corner_1 = self._on(self.geometry.corner_1, self._device_of(points))
         corner_2 = self._on(self.geometry.corner_2, self._device_of(points))

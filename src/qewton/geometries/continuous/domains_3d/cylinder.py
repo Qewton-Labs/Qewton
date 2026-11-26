@@ -428,8 +428,9 @@ class CylinderBoundary(ContinuousBoundaryGeometry[TensorType]):
         points = self.backend.math.concatenate([x, y, z], axis=-1)
         return points
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str | None = None):
         """Compute outward normal vectors at boundary points."""
+        points, device = self._points_and_device(points, device)
         center = self._on(self.geometry.center, self._device_of(points))
         height = self._on(self.geometry.height, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 3)

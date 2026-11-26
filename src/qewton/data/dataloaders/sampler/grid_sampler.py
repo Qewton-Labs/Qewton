@@ -89,7 +89,11 @@ class GridSampler(PointSampler[TensorType]):
             self._sample_grid_and_check_filter(scaled_n)
         )
         if correct_points >= self.batch_size:
-            return self._slice_output(new_points, new_normals)
+            # only the points that fulfill the filter
+            return self._slice_output(
+                new_points[c_idx],
+                new_normals[c_idx] if self.compute_normals else None,  # type: ignore
+            )
         # Finally add some random points
         self.helper_sampler._batch_size.current_value = (  # pylint: disable=W0212
             self.batch_size - correct_points
@@ -117,7 +121,8 @@ class GridSampler(PointSampler[TensorType]):
     def _sample_grid_and_check_filter(self, n_points):
         first_points, first_normals = self._direct_grid_sampling(n_points)
         filter_fn_fulfilled = self._evaluate_filter(first_points)
-        correct_points = self.backend.math.count_nonzero(filter_fn_fulfilled)
+        # A plain int: it becomes a number of points to sample further on.
+        correct_points = int(self.backend.math.count_nonzero(filter_fn_fulfilled))
         return first_points, first_normals, correct_points, filter_fn_fulfilled
 
     def _direct_grid_sampling(self, n_points):

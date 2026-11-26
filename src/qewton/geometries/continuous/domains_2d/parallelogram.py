@@ -210,6 +210,10 @@ class Parallelogram(ContinuousGeometry[TensorType]):
 
 class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
 
+    # Barycentric coordinates are computed in float32: a point on a slanted
+    # edge misses 0 or 1 by about 1e-7, more than the default atol of isclose.
+    bary_tol = 1.0e-5
+
     def __init__(self, geometry: Parallelogram):
         super().__init__(geometry)
         self.geometry: Parallelogram = geometry  # type: ignore
@@ -243,11 +247,15 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         self, bary_coord1: TensorType, bary_coord2: TensorType, isclose_func: Callable
     ):
         between_0_1 = self.backend.math.logical_and(
-            self.backend.math.greater_equal(bary_coord2, 0.0),
-            self.backend.math.less_equal(bary_coord2, 1.0),
+            self.backend.math.greater_equal(bary_coord2, -self.bary_tol),
+            self.backend.math.less_equal(bary_coord2, 1.0 + self.bary_tol),
         )
-        close_to_0 = isclose_func(bary_coord1, self.backend.build_tensor(0.0))
-        close_to_1 = isclose_func(bary_coord1, self.backend.build_tensor(1.0))
+        close_to_0 = isclose_func(
+            bary_coord1, self.backend.build_tensor(0.0), atol=self.bary_tol
+        )
+        close_to_1 = isclose_func(
+            bary_coord1, self.backend.build_tensor(1.0), atol=self.bary_tol
+        )
         return self.backend.math.logical_and(
             self.backend.math.logical_or(close_to_0, close_to_1), between_0_1
         )
@@ -382,7 +390,8 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
             return points, normals
         return points
 
-    def normal(self, points, device: Device | str = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         points = self.backend.build_tensor(points, dtype=Float32).reshape(-1, 2)
         origin, corner_1, corner_2 = self.geometry.corners_on(self._device_of(points))
         dir_1 = corner_1 - origin
@@ -397,7 +406,7 @@ class ParallelogramBoundary(ContinuousBoundaryGeometry[TensorType]):
         for bary, n_dir in zip([bary_x, bary_y], [normal_dir_2, normal_dir_1]):
             for i in range(2):
                 at_boundary = self.backend.math.isclose(
-                    bary, self.backend.build_tensor(i)
+                    bary, self.backend.build_tensor(i), atol=self.bary_tol
                 )
                 normals = self.backend.math.where(
                     at_boundary[:, None], normals + (2 * i - 1) * n_dir, normals

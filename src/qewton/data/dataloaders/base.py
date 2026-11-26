@@ -2,8 +2,11 @@
 Base classes for data loading and node-based data sampling in the graph.
 """
 
+from copy import deepcopy
 from abc import abstractmethod
-from typing import TYPE_CHECKING
+import math
+from typing import TYPE_CHECKING, Any
+import numpy as np
 
 from qewton.graphs.nodes import NodeState
 from qewton.backends import Backend, DEFAULT_DL_BACKEND, TensorType
@@ -83,6 +86,9 @@ class DataNode(Node[TensorType]):
             per batch in testing. Defaults to None, i.e. `batch_size`.
     """
 
+    # A data node creates data, so it always has a device (see Node._device).
+    _device: Device | str = cpu
+
     def __init__(
         self,
         batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
@@ -114,7 +120,6 @@ class DataNode(Node[TensorType]):
         self._phase_batch_size = PhaseBatchSize(self)
         self._batch_progress = 0
         self._is_cached = False
-        self._device = cpu
         if backend is None:
             backend = Backend
         super().__init__(name, state, backend=backend)
@@ -189,20 +194,11 @@ class DataNode(Node[TensorType]):
         """
         return False
 
-    def to(self, device: str | Device):
-        """Move the data node to the specified device.
-
-        Args:
-            device (str, Device): The device to move the data node to
-                (e.g., 'cpu', 'cuda').
-        """
-        self._device = device
-
     def visualize(
         self,
         mode: EvaluationPhase = EvaluationPhase.VALIDATION,
         plot_type: "type[DataPlot] | None" = None,
-        controls: "list[ControlAxis]" = (),
+        controls: "list[ControlAxis]" = [],
         default_control: "type[ControlAxis] | None" = None,
         **plot_kwargs,
     ) -> "Layout":
@@ -254,3 +250,277 @@ class DataNode(Node[TensorType]):
                 **plot_kwargs,
             )
         return auto_layout(plots.plots)
+
+
+class DataLoader(DataNode[TensorType]):
+    """Standard DataLoader module for batching, shuffling, and splitting datasets.
+
+    This node acts as a source in the computation graph, providing batches of
+    data to connected algorithms.
+
+    Args:
+        data_set (DataSet): The source dataset, split into Train/Validation/
+            Test according to `splitting_ratio`.
+        batch_size (int | DiscreteHyperparameter | CategoricalHyperparameter):
+            Number of samples per batch.
+        splitting_ratio (tuple[float, float, float], optional): Proportions
+            for (Train, Validation, Test) splits of `data_set`. Ignored for
+            the Test split when `test_data_set` is given. Defaults to
+            (1.0, 0.0, 0.0).
+        shuffle_data (bool | CategoricalHyperparameter, optional): Whether
+            to shuffle the indices at the start of an epoch.. Defaults to True.
+        shuffle_seed (int | None, optional): Random seed for reproducibility.
+            Defaults to None.
+        backend (type[Backend] | None, optional): The backend used for data
+            types and device transfers.. Defaults to DEFAULT_DL_BACKEND.
+        name (str, optional): Name of this data loader. Defaults to "DataLoader".
+        test_data_set (DataSet | None, optional): A separate dataset used
+            for the Test split instead of the portion of `data_set` that
+            `splitting_ratio` would otherwise reserve for it. Must provide
+            the same variables as `data_set`. Defaults to None.
+        move_data_to_device (bool, optional): If True, `to()` moves the
+            whole datasets to the device once, so batches are sliced there.
+            If False, the datasets stay where they are and every batch is
+            moved on its own: this saves device memory for large datasets,
+            but slices every batch on the CPU. Defaults to True.
+    """
+
+    # TODO: parallelize this, similar to pytorch dataloader
+    # pin memory flag?
+
+    def __init__(
+        self,
+        data_set: DataSet,
+        batch_size: int | DiscreteHyperparameter | CategoricalHyperparameter,
+        splitting_ratio: tuple[float, float, float] = (1.0, 0.0, 0.0),
+        shuffle_data: bool | CategoricalHyperparameter = True,
+        shuffle_seed: int | None = None,
+        backend: type[Backend[TensorType]] = DEFAULT_DL_BACKEND,
+        name: str = "DataLoader",
+        test_data_set: DataSet | None = None,
+        move_data_to_device: bool = True,
+    ):
+        for checked_set in (data_set, test_data_set):
+            self._check_backend(checked_set, backend)
+        self.data_set = data_set
+        self.test_data_set = test_data_set
+        self.move_data_to_device = move_data_to_device
+        self.splitting_ratio = splitting_ratio
+        self.shuffle_data = HyperParameter.from_value(shuffle_data, "shuffle_data")
+        self.shuffle_seed = shuffle_seed
+        self._rng = np.random.default_rng(self.shuffle_seed)
+        self.permutation = []
+        self.test_permutation = []
+        self._permutation_splits = {}
+        self._phase_data_sets = {}
+        if self.data_set.data_set_loaded:
+            self._setup_iteration()
+
+        super().__init__(
+            batch_size=batch_size, name=name, state=NodeState.UNINITIALIZED, backend=backend
+        )
+
+        if self.test_data_set is not None:
+            assert (
+                len(self.test_data_set) >= self.batch_size
+            ), "Batch can not be larger than the test dataset size."
+            assert [c.variable_name for c in self.test_data_set.data_configs] == [
+                c.variable_name for c in self.data_set.data_configs
+            ], "test_data_set must provide the same variables as data_set."
+
+        # Build output ports based on dataset configurations. All outputs
+        # share one batch axes, bound to the batch size.
+        self._output_ports = []
+        copy_memo = {}
+        self.batch_axes = BatchAxes(AxesDim(self._batch_size))
+        for config in self.data_set.data_configs:
+            axes = deepcopy(list(config.axes), memo=copy_memo)
+            assert isinstance(axes[0], BatchAxes), "In DataSets, \
+                the first axes should be the batch axes."
+            assert len(axes[0].shape) == 1, "Multi-dimensional \
+                batch axes not supported for batching."
+            assert (
+                axes[0].shape[0].size >= self.batch_size
+            ), "Batch can not be larger than dataset size."
+            axes[0] = self.batch_axes
+            new_config = DataConfiguration(
+                *axes, dtype=backend.default_dtype if backend else Any
+            )
+            self._output_ports.append(
+                OutputPort(
+                    new_config,
+                    self,
+                    name=config.variable_name,
+                )
+            )
+
+    @staticmethod
+    def _check_backend(data_set: DataSet | None, backend: type[Backend] | None):
+        """Raises a TypeError if the data set holds tensors of another
+        backend than this loader: the loader moves batches to its device,
+        but never converts them, which would copy every batch."""
+        data_backend = getattr(data_set, "backend", None)
+        if data_backend is None or backend is None:
+            return
+        if not hasattr(backend, "default_dtype") or not hasattr(
+            data_backend, "default_dtype"
+        ):
+            return  # abstract backends do not fix a tensor type
+        if issubclass(data_backend.default_dtype, backend.default_dtype):
+            return
+        raise TypeError(
+            f"The data set holds {data_backend.default_dtype.__name__} data "
+            f"({data_backend.__name__}), but this DataLoader uses "
+            f"{backend.__name__}. Create the data set with "
+            f"{backend.default_dtype.__name__} data (e.g. backend="
+            f"{backend.__name__} in from_file), or pass "
+            f"backend={data_backend.__name__} to the DataLoader."
+        )
+
+    def _set_permutation(self):
+        """Resets the data permutation based on shuffling settings."""
+        if self.shuffle_data.value:
+            self.permutation = self._rng.permutation(len(self.data_set))
+            if self.test_data_set is not None:
+                self.test_permutation = self._rng.permutation(len(self.test_data_set))
+        else:
+            self.permutation = np.arange(len(self.data_set))
+            if self.test_data_set is not None:
+                self.test_permutation = np.arange(len(self.test_data_set))
+
+    def _setup_iteration(self):
+        """Calculates index splits for different evaluation phases
+        (Train, Val, Test).
+        """
+        self._batch_progress = 0
+        self._set_permutation()
+        n_samples = len(self.permutation)
+        r_train, r_val, _ = self.splitting_ratio
+
+        train_end = int(r_train * n_samples)
+        val_end = train_end + int(r_val * n_samples)
+
+        if self.test_data_set is not None:
+            test_indices = self.test_permutation
+            test_data_set = self.test_data_set
+        else:
+            test_indices = self.permutation[val_end:n_samples]
+            test_data_set = self.data_set
+
+        self._permutation_splits = {
+            EvaluationPhase.TRAIN: self.permutation[0:train_end],
+            EvaluationPhase.VALIDATION: self.permutation[train_end:val_end],
+            EvaluationPhase.TEST: test_indices,
+            EvaluationPhase.ALWAYS: self.permutation[0:n_samples],
+        }
+        self._phase_data_sets = {
+            EvaluationPhase.TRAIN: self.data_set,
+            EvaluationPhase.VALIDATION: self.data_set,
+            EvaluationPhase.TEST: test_data_set,
+            EvaluationPhase.ALWAYS: self.data_set,
+        }
+
+    def __len__(self):
+        return math.ceil(len(self.data_set) / self.batch_size)
+
+    @property
+    def training_batches(self) -> int:
+        return math.ceil(len(self.data_set) * self.splitting_ratio[0] / self.batch_size)
+
+    @property
+    def input_ports(self) -> list[InputPort]:
+        return []
+
+    @property
+    def output_ports(self) -> list[OutputPort]:
+        return self._output_ports
+
+    @property
+    def hyperparameters(self) -> list[HyperParameter]:
+        return [self._batch_size, self.shuffle_data]
+
+    def set_mode(self, new_mode):
+        if new_mode != self.mode:
+            self._batch_progress = 0  # reset batch
+        self.mode = new_mode
+
+    def build(self) -> None:
+        if not self.data_set.data_set_loaded:
+            self.data_set.setup()
+            self._setup_iteration()
+
+    def forward(self):
+        """Executes the data loading for one batch.
+
+        This method handles split indexing, batch slicing, and moving data to
+        the appropriate device.
+        """
+        split_indices = self._permutation_splits[self.mode]
+        n_split = len(split_indices)
+
+        if n_split == 0:
+            return
+
+        bs = self.batch_size
+        # Reset progress if we've exhausted the current split
+        if self._batch_progress >= n_split:
+            self._batch_progress = 0
+            if self.shuffle_data.value:
+                self._rng.shuffle(split_indices)
+
+        indices = split_indices[self._batch_progress : self._batch_progress + bs]
+        batch_data = self._phase_data_sets[self.mode].get_batch(indices)
+
+        # Move batch to device if backend is specified
+        # (this is always needed in case the data could not be moved from the start
+        # or is created new on the fly)
+        if self._device is not None and issubclass(self.backend, DeepLearningBackend):
+            batch_data = [self.backend.to(b, self._device) for b in batch_data]
+
+        self._batch_progress += bs
+        return tuple(batch_data) if len(batch_data) > 1 else batch_data[0]
+
+    def to(self, device: str | Device):
+        """Move the data loader to `device`. With `move_data_to_device`, its
+        datasets are moved, too, so batches are sliced on the device and not
+        copied there in every step.
+
+        Args:
+            device (str, Device): The target device (e.g., 'cpu', 'cuda').
+
+        Raises:
+            MemoryError: If the datasets do not fit on the device.
+        """
+        super().to(device)
+        if not self.move_data_to_device:
+            return
+        try:
+            self.data_set.to(device)
+            if self.test_data_set is not None:
+                self.test_data_set.to(device)
+        except (RuntimeError, MemoryError) as e:
+            if "out of memory" not in str(e).lower():
+                raise
+            raise MemoryError(
+                f"The data of {self.name} does not fit on {device}. Pass "
+                "move_data_to_device=False to the DataLoader to keep it where "
+                "it is and move every batch on its own."
+            ) from e
+
+    def cache(self, n_batches=-1):
+        return
+
+    def provides_data_in_phase(self, phase: EvaluationPhase) -> bool:
+        if phase == EvaluationPhase.TRAIN:
+            return self.splitting_ratio[0] > 0.0
+        if phase == EvaluationPhase.VALIDATION:
+            return self.splitting_ratio[1] > 0.0
+        if phase == EvaluationPhase.TEST:
+            return self.test_data_set is not None or self.splitting_ratio[2] > 0.0
+        if phase == EvaluationPhase.ALWAYS:
+            return (
+                self.splitting_ratio[0] > 0.0
+                and self.splitting_ratio[1] > 0.0
+                and (self.test_data_set is not None or self.splitting_ratio[2] > 0.0)
+            )
+        return False

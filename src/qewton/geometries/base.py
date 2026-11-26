@@ -183,6 +183,14 @@ class Geometry(Serializable, Generic[TensorType]):
         """The device of `points`, the CPU for data without one."""
         return getattr(points, "device", cpu)
 
+    def _points_and_device(self, points, device: Device | str | None):
+        """The points and the device a computation on them (e.g. `normal`)
+        runs on: `device` if given, with the points moved there, else the
+        device of the points."""
+        if device is None:
+            return points, self._device_of(points)
+        return self.backend.to(points, device), device
+
     @property
     def boundary(self) -> BoundaryGeometry:
         if self.boundary_object is None:
@@ -409,11 +417,11 @@ class Geometry(Serializable, Generic[TensorType]):
 
     def __add__(self, other):
         """Return the union of two geometries."""
-        return NotImplementedError()
+        raise NotImplementedError()
 
     def __or__(self, other):
         """Return the union of two geometries."""
-        raise self + other
+        return self + other
 
     def __sub__(self, other):
         """Return the difference of two geometries."""
@@ -766,13 +774,15 @@ class BoundaryGeometry(Geometry[TensorType]):
         """
         raise NotImplementedError("Boundary of a boundary geometry is not defined.")
 
-    def normal(self, points, device: Device | str = cpu) -> TensorType:
+    def normal(self, points, device: Device | str | None = None) -> TensorType:
         """Compute the outward normal vector at each point.
 
         Args:
             points (TensorType): The boundary points, shape
                 ``(n_points, dim)``.
-            device: The device to compute on.
+            device: The device of the normals; points on another device are
+                moved there first. None (default) uses the device of the
+                points.
 
         Returns:
             TensorType: The normal vectors, shape ``(n_points, dim)``.

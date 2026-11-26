@@ -17,6 +17,7 @@ from qewton.config.variables import Variable
 from qewton.geometries.base import DeviceTransferWarning, Geometry
 from qewton.geometries.continuous.domains_1d.interval import Interval
 from qewton.geometries.continuous.domains_2d.circle import Circle
+from qewton.geometries.continuous.domains_2d.parallelogram import Parallelogram
 from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
 from qewton.geometries.continuous.domains_2d.triangle import Triangle
 from qewton.geometries.continuous.domains_3d.box import Box
@@ -40,6 +41,10 @@ def _square():
     return Rectangle(X, [0.0, 0.0], 1.0, 1.0)
 
 
+def _parallelogram():
+    return Parallelogram(X, [0.0, 0.0], [1.0, 0.2], [0.3, 1.0])
+
+
 def _mesh():
     return _square().create_mesh(0.25)
 
@@ -60,9 +65,14 @@ CONTINUOUS = {
     "cylinder_boundary": lambda: Cylinder(Y, [0.0, 0.0, 0.0], 1.0, 1.0).boundary,
     "sphere": lambda: Sphere(Y, [0.0, 0.0, 0.0], 1.0),
     "sphere_boundary": lambda: Sphere(Y, [0.0, 0.0, 0.0], 1.0).boundary,
+    "parallelogram": _parallelogram,
+    "parallelogram_boundary": lambda: _parallelogram().boundary,
     "union": lambda: _square() + Circle(X, [1.0, 0.5], 0.5),
+    "union_boundary": lambda: (_square() + Circle(X, [1.0, 0.5], 0.5)).boundary,
     "cut": lambda: _square() - Circle(X, [0.5, 0.5], 0.25),
+    "cut_boundary": lambda: (_square() - Circle(X, [0.5, 0.5], 0.25)).boundary,
     "intersection": lambda: _square() & Circle(X, [0.5, 0.5], 0.6),
+    "intersection_boundary": lambda: (_square() & Circle(X, [0.5, 0.5], 0.6)).boundary,
     "product": lambda: Interval(T, 0.0, 2.0) * _square(),
     "product_boundary": lambda: Interval(T, 0.0, 2.0) * _square().boundary,
 }
@@ -229,3 +239,40 @@ def test_moving_a_domain_moves_its_boundary_and_vice_versa():
     assert square.device == device
     square.to(cpu)
     assert boundary.device == cpu
+
+
+BOUNDARIES = [name for name in GEOMETRIES if _is_boundary(GEOMETRIES[name]())]
+
+
+@pytest.mark.parametrize("geometry_device, points_device", PAIRS)
+@pytest.mark.parametrize("name", BOUNDARIES)
+def test_normal_without_device_follows_the_points(name, geometry_device, points_device):
+    geometry = GEOMETRIES[name]().to(geometry_device)
+    points = _as_points(geometry.sample_random_uniform(20, device=points_device))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeviceTransferWarning)
+        normals = geometry.normal(points)
+    assert _on(normals, points_device)
+    assert geometry.device == geometry_device
+
+
+@pytest.mark.parametrize("geometry_device, points_device", PAIRS)
+@pytest.mark.parametrize("name", BOUNDARIES)
+def test_normal_with_device_moves_the_points(name, geometry_device, points_device):
+    geometry = GEOMETRIES[name]().to(geometry_device)
+    points = _as_points(geometry.sample_random_uniform(20, device=points_device))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeviceTransferWarning)
+        for device in DEVICES:
+            assert _on(geometry.normal(points, device=device), device)
+
+
+@pytest.mark.parametrize("device", DEVICES, ids=str)
+@pytest.mark.parametrize("name", BOUNDARIES)
+def test_sampled_normals_are_on_the_sampling_device(name, device):
+    geometry = GEOMETRIES[name]()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeviceTransferWarning)
+        for sample in (geometry.sample_random_uniform, geometry.sample_grid):
+            points, normals = sample(20, device=device, include_normals=True)
+            assert _on(points, device) and _on(normals, device)

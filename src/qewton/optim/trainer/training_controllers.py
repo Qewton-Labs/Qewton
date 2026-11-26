@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
+import copy
 import time
 import os
 
@@ -117,6 +118,24 @@ class TrainerState:
                 if hasattr(loss, "detach"):
                     new_dict[phase_name][key] = loss.detach().cpu().item()  # type: ignore
         return new_dict
+
+    def detached_copy(self) -> TrainerState:
+        """A copy without references to the model, e.g. to send the results
+        of a training run to another process.
+
+        The losses become plain floats, and the current optimization phase is
+        left out: its optimizer holds the model parameters and their
+        optimizer state, which would otherwise be shared with the receiving
+        process (for CUDA tensors, through CUDA IPC).
+
+        Returns:
+            TrainerState: The copy; its history and other entries are
+                shared with this state.
+        """
+        state = copy.copy(self)
+        state.__dict__.pop("current_optimization_phase", None)
+        state.losses = self.detach_data(self.losses)
+        return state
 
     def clear_data_dict(self):
         """Reset stored loss values for all evaluation phases."""

@@ -66,11 +66,8 @@ class CutGeometry(ContinuousGeometry[TensorType]):
 
     def _get_volume(self):
         if not self.contained:
-            # warnings.warn("""Exact volume of this cut is not known, will use the
-            #     estimate: volume = geometry_a.volume.
-            #     If you need the exact volume for sampling,
-            #     use geometry.set_volume()""")
-            return self.geometry_a.volume()
+            # The overlap is not known exactly, so the volume is estimated.
+            return self._estimate_volume()
         volume_a = self.geometry_a.volume()
         volume_b = self.geometry_b.volume()
         return volume_a - volume_b
@@ -141,7 +138,8 @@ class CutBoundaryGeometry(ContinuousBoundaryGeometry):
             return points, normals
         return points
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         a_normals = self.geometry.geometry_a.boundary.normal(points, device=device)
         b_normals = self.geometry.geometry_b.boundary.normal(points, device=device)
         on_a = self.geometry.geometry_a.boundary.contains(points)

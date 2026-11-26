@@ -390,7 +390,8 @@ class BoxBoundary(ContinuousBoundaryGeometry):
             return points, normals
         return points
 
-    def normal(self, points, device: Device = cpu):
+    def normal(self, points, device: Device | str | None = None):
+        points, device = self._points_and_device(points, device)
         origin = self._on(self.geometry.origin, self._device_of(points))
         points = self.backend.build_tensor(points, dtype=Float32)
         points = points.reshape(-1, 3)
