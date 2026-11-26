@@ -48,12 +48,6 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
             shape=(n_points,), variable=geometry.variable, backend=geometry.backend
         )
 
-    def __deepcopy__(self, memo):
-        """Return this object itself instead of a copy."""
-        # Shared, sampler-owned state: copies of a DataConfiguration must
-        # keep referencing the object the sampler updates.
-        return self
-
     @property
     def discretization_points(self) -> TensorType:
         return self._current_points  # type: ignore

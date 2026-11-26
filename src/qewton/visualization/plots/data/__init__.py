@@ -7,6 +7,7 @@ from .base import (
     grid_values,
     n_components,
     split_products,
+    visible_cells,
 )
 from .heatmap import HeatmapPlot
 from .image import ImagePlot

@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from qewton.graphs.nodes import NodeState
-from qewton.backends import Backend, DEFAULT_DL_BACKEND, DeepLearningBackend, TensorType
+from qewton.backends import Backend, DEFAULT_DL_BACKEND, TensorType
 from qewton.config.devices import Device, cpu
 
 from qewton.optim.base import EvaluationPhase
+from qewton.optim.parameters.helpers import HyperParameterState
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
 from qewton.optim.parameters.number_hyperparameter import (
     DiscreteHyperparameter,
@@ -20,10 +21,7 @@ from qewton.optim.parameters.number_hyperparameter import (
 from qewton.optim.parameters.categorical_hyperparameter import (
     CategoricalHyperparameter,
 )
-from qewton.config.axes import BatchAxes, AxesDim
-from qewton.config.data_configurations import DataConfiguration
-from qewton.graphs.nodes import Node, OutputPort, InputPort
-from qewton.data.datasets import DataSet
+from qewton.graphs.nodes import Node
 
 if TYPE_CHECKING:
     # Deferred - qewton.visualization transitively imports qewton.optim,
@@ -35,6 +33,36 @@ if TYPE_CHECKING:
     from qewton.visualization.plots.data import DataPlot
 
 
+class PhaseBatchSize(HyperParameter):
+    """The batch size of a DataNode in its current EvaluationPhase, see
+    :attr:`DataNode.current_batch_size`. A dim bound to it (e.g. the batch
+    axes of the outputs) follows the phase. It is derived from the batch
+    sizes of the node, so it is neither tuned nor set.
+
+    Args:
+        node (DataNode): The node whose batch size this is.
+    """
+
+    def __init__(self, node: "DataNode") -> None:
+        self.node = node
+        super().__init__(
+            parameter_range=(None, None),
+            initial_value=None,
+            state=HyperParameterState.FIXED,
+            name="current_batch_size",
+        )
+
+    @property
+    def value(self) -> int:
+        return self.node.current_batch_size
+
+    def set_value(self, new_value):
+        raise RuntimeError(
+            "The batch size of the current phase follows the phase; set "
+            "batch_size, validation_batch_size or test_batch_size instead."
+        )
+
+
 class DataNode(Node[TensorType]):
     """
     Creates a DataNode which task is to generate/load data for evaluation
@@ -43,12 +71,19 @@ class DataNode(Node[TensorType]):
 
     Args:
         batch_size (int | DiscreteHyperparameter | CategoricalHyperparameter):
-            Number of samples per batch.
+            Number of samples per batch in training, and in every phase
+            without a batch size of its own.
         name (str, optional): Display name of the node. Defaults to "DataNode".
         state (NodeState, optional): Initial state of the node.
             Defaults to NodeState.FIXED.
         backend (type[Backend] | None, optional): Computing backend
             (e.g., TorchBackend). Defaults to DEFAULT_DL_BACKEND.
+        validation_batch_size (int | DiscreteHyperparameter |
+            CategoricalHyperparameter | None, optional): Number of samples
+            per batch in validation. Defaults to None, i.e. `batch_size`.
+        test_batch_size (int | DiscreteHyperparameter |
+            CategoricalHyperparameter | None, optional): Number of samples
+            per batch in testing. Defaults to None, i.e. `batch_size`.
     """
 
     # A data node creates data, so it always has a device (see Node._device).
@@ -60,8 +95,29 @@ class DataNode(Node[TensorType]):
         name: str = "DataNode",
         state: NodeState = NodeState.FIXED,
         backend: type[Backend[TensorType]] | None = DEFAULT_DL_BACKEND,
+        validation_batch_size: (
+            int | DiscreteHyperparameter | CategoricalHyperparameter | None
+        ) = None,
+        test_batch_size: (
+            int | DiscreteHyperparameter | CategoricalHyperparameter | None
+        ) = None,
     ) -> None:
         self._batch_size = HyperParameter.from_value(batch_size, name="batch_size")
+        # A phase without a batch size of its own shares the training
+        # HyperParameter, so it follows changes of it (e.g. while tuning).
+        self._validation_batch_size = (
+            self._batch_size
+            if validation_batch_size is None
+            else HyperParameter.from_value(
+                validation_batch_size, name="validation_batch_size"
+            )
+        )
+        self._test_batch_size = (
+            self._batch_size
+            if test_batch_size is None
+            else HyperParameter.from_value(test_batch_size, name="test_batch_size")
+        )
+        self._phase_batch_size = PhaseBatchSize(self)
         self._batch_progress = 0
         self._is_cached = False
         if backend is None:
@@ -70,7 +126,30 @@ class DataNode(Node[TensorType]):
 
     @property
     def batch_size(self) -> int:
+        """The number of samples per batch in training."""
         return self._batch_size.value
+
+    @property
+    def validation_batch_size(self) -> int:
+        """The number of samples per batch in validation; `batch_size` if
+        none was given."""
+        return self._validation_batch_size.value
+
+    @property
+    def test_batch_size(self) -> int:
+        """The number of samples per batch in testing; `batch_size` if none
+        was given."""
+        return self._test_batch_size.value
+
+    @property
+    def current_batch_size(self) -> int:
+        """The number of samples per batch in the current mode: the
+        validation or test batch size in those phases, else `batch_size`."""
+        if self.mode == EvaluationPhase.VALIDATION:
+            return self.validation_batch_size
+        if self.mode == EvaluationPhase.TEST:
+            return self.test_batch_size
+        return self.batch_size
 
     @abstractmethod
     def __len__(self) -> int:
@@ -86,7 +165,13 @@ class DataNode(Node[TensorType]):
 
     @property
     def hyperparameters(self) -> list[HyperParameter]:
-        return [self._batch_size]
+        parameters = [
+            self._batch_size,
+            self._validation_batch_size,
+            self._test_batch_size,
+        ]
+        # Each shared HyperParameter once; by id, since == builds a condition.
+        return list({id(p): p for p in parameters}.values())
 
     def cache(self, n_batches: int = -1):
         pass
@@ -159,7 +244,10 @@ class DataNode(Node[TensorType]):
         plots = AutoPlots(controls)
         for port, value in zip(self.output_ports, values):
             plots.add(
-                self.backend.to_numpy(value), port.data_configuration, plot_type, **plot_kwargs
+                self.backend.to_numpy(value),
+                port.data_configuration,
+                plot_type,
+                **plot_kwargs,
             )
         return auto_layout(plots.plots)
 

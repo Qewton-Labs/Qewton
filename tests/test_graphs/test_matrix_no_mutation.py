@@ -2,9 +2,9 @@
 
 A model of every kind of `model_kinds` is set up, then used in two graphs
 with different batch sizes (config M4, graphs PL3). Matching in these graphs must leave
-untouched what is shared between them: the static configurations of all
-ports (also inside GraphNodes), the Variables of the model and the
-geometry of the samplers. Combinations that do not hold yet are listed in
+untouched what is shared between them: every object of the static
+configurations of all ports (also inside GraphNodes), the Variables of the
+model and the geometry of the samplers. Combinations that do not hold yet are listed in
 GAPS with their reason.
 """
 
@@ -25,11 +25,23 @@ def _nodes(model):
     return nodes
 
 
+def _state(item) -> tuple:
+    """Every attribute of a declared axes or dim and of its parts: values,
+    or the identity of objects."""
+    attributes = tuple(
+        sorted(
+            (key, value if isinstance(value, (int, float, str, bool, type(None))) else id(value))
+            for key, value in vars(item).items()
+        )
+    )
+    return (id(item), attributes, tuple(_state(part) for part in item.parts))
+
+
 def _static_configurations(model):
-    """For every port: the description of its static configuration and the
-    identity of its axes."""
+    """For every port: the state of every object of its static
+    configuration."""
     return {
-        port: (str(port.data_configuration), [id(a) for a in port.data_configuration.axes])
+        port: (port.data_configuration.dtype, [_state(a) for a in port.data_configuration.axes])
         for node in _nodes(model)
         for port in node.input_ports + node.output_ports
     }

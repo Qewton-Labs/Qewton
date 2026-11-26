@@ -78,18 +78,15 @@ class TestToNumpy:
         assert isinstance(sampled.discretization_points, torch.Tensor)
 
 
-class TestDeepcopyIdentity:
-    def test_deepcopy_returns_the_same_object(self):
-        """SampledGeometry represents live, sampler-owned state (mutated by
-        set_current_discretization() on every forward()) - a deepcopy must
-        not silently disconnect a downstream DataConfiguration from it, so
-        copy.deepcopy() is a no-op identity here, unlike every other
-        Geometry."""
+class TestDeepcopy:
+    def test_a_copy_is_a_geometry_of_its_own(self):
+        """A deep copy copies everything (e.g. a tuner copying a trainer per
+        trial): the copy is sampled independently of the original."""
         sampled = SampledGeometry(_source_geometry(), n_points=3)
-        assert copy.deepcopy(sampled) is sampled
+        assert copy.deepcopy(sampled) is not sampled
 
-    def test_deepcopy_inside_a_larger_structure_still_preserves_identity(self):
+    def test_references_inside_a_copied_structure_stay_together(self):
         sampled = SampledGeometry(_source_geometry(), n_points=3)
         copied_list = copy.deepcopy([sampled, {"geometry": sampled}])
-        assert copied_list[0] is sampled
-        assert copied_list[1]["geometry"] is sampled
+        assert copied_list[0] is not sampled
+        assert copied_list[1]["geometry"] is copied_list[0]

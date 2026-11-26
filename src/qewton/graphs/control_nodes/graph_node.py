@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Callable
 import inspect
-from copy import deepcopy
 
 from qewton.graphs.nodes import InputPort, Node, NodeState, OutputPort, Port
 from qewton.graphs.graphs import Graph
@@ -75,8 +74,7 @@ class GraphNode(Node[TensorType]):
                 if self.configs_defined_in_forward:
                     port_config = in_forward_ports[i].data_configuration
                 else:
-                    # Its own copy: inner ports may share one declared object.
-                    port_config = deepcopy(p.data_configuration)
+                    port_config = p.data_configuration
                 self._input_ports.append(
                     InputPort(
                         data_configuration=port_config,
@@ -100,8 +98,7 @@ class GraphNode(Node[TensorType]):
                 if self.configs_defined_in_forward:
                     port_config = out_forward_ports[i].data_configuration
                 else:
-                    # Its own copy: inner ports may share one declared object.
-                    port_config = deepcopy(p.data_configuration)
+                    port_config = p.data_configuration
                 self._output_ports.append(
                     OutputPort(
                         data_configuration=port_config,
@@ -130,12 +127,12 @@ class GraphNode(Node[TensorType]):
         for edge in self._graph.edges_from_outside:
             if edge.from_port.node is self:
                 edge.from_port.update_static_data_configuration(
-                    deepcopy(edge.to_port.data_configuration)
+                    edge.to_port.data_configuration
                 )
         for edge in self._graph.edges_to_outside:
             if edge.to_port.node is self:
                 edge.to_port.update_static_data_configuration(
-                    deepcopy(edge.from_port.data_configuration)
+                    edge.from_port.data_configuration
                 )
 
     def _without_inner_graph(self) -> None:
@@ -358,7 +355,7 @@ class GraphNode(Node[TensorType]):
             for p in output_ports:
                 outer_output_ports.append(
                     OutputPort(
-                        deepcopy(p.data_configuration),
+                        p.data_configuration,
                         self,  # type: ignore
                         name=p.name,
                     )

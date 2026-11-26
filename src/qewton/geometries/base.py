@@ -317,6 +317,10 @@ class Geometry(Serializable, Generic[TensorType]):
         dis_geo.discretization_of = self
         return dis_geo
 
+    #: Whether this geometry consists of given points (and cells), so that
+    #: nothing discretizes it further.
+    is_discrete = False
+
     def is_discretization_of(
         self, other_geometry: Geometry  # pylint: disable=unused-argument
     ) -> bool:
@@ -554,6 +558,9 @@ class DiscreteGeometry(Geometry[TensorType]):
             discretizes, if known.
         discretization_points (TensorType or None): The discrete points of this
             geometry.
+        point_filter (TensorType or None): Whether each point belongs to the
+            geometry, shape ``(*shape, 1)``, e.g. the points of a
+            rectilinear grid inside a non-box domain; None if all do.
         structure (Structure): How its points are connected.
         topological_dim (int): Dimension of its cells: 0 for points, 1 for
             curves, 2 for surfaces, 3 for volumes. `dim` is the number of
@@ -574,6 +581,8 @@ class DiscreteGeometry(Geometry[TensorType]):
         :meth:`axis_coordinates` for :attr:`Structure.GRID`.
     """
 
+    is_discrete = True
+
     def __init__(
         self,
         shape: tuple[int, ...],
@@ -585,6 +594,7 @@ class DiscreteGeometry(Geometry[TensorType]):
         super().__init__(variable=variable, dim=dim, shape=shape, backend=backend)
         self.discretization_of: Geometry | None = None
         self.discretization_points = discretization_points
+        self.point_filter: TensorType | None = None
 
     @property
     def structure(self) -> Structure:
@@ -617,6 +627,16 @@ class DiscreteGeometry(Geometry[TensorType]):
         if not isinstance(points, np.ndarray):
             points = self.backend.to_numpy(points)
         return np.asarray(points).reshape(-1, points.shape[-1])
+
+    @property
+    def axis_components(self) -> tuple[int, ...]:
+        """The coordinate component varying along each axis of a rectilinear
+        grid, e.g. ``(1, 0)`` for a grid built with ``meshgrid(x, y)``.
+
+        Raises:
+            ValueError: If `structure` is not :attr:`Structure.GRID`.
+        """
+        raise ValueError(f"{type(self).__name__} is not a rectilinear grid.")
 
     def axis_coordinates(self) -> list[np.ndarray]:
         """Return the coordinates along each axis of a rectilinear grid.

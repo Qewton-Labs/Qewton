@@ -44,8 +44,8 @@ def test_save_and_load_variable_tree(tmp_path):
     assert len(loaded_variable.children) == 2
     assert loaded_variable.children[0].dim == 2
     assert loaded_variable.children[1].dim == 3
-    assert loaded_variable.children[0].parent is loaded_variable
-    assert loaded_variable.children[1].parent is loaded_variable
+    x = loaded_variable.children[0]
+    assert x.children[0].parent is x and x.children[0].quantity is x
 
 
 def test_save_and_load_axes_with_ellipsis(tmp_path):
@@ -98,9 +98,9 @@ def test_save_and_load_geometry_axes(tmp_path):
     assert loaded_geometry_axes.geometry.variable.dim == 5
     assert loaded_geometry_axes.geometry.variable.children[0].dim == 2
     assert loaded_geometry_axes.geometry.variable.children[1].dim == 3
+    x = loaded_geometry_axes.geometry.variable.children[0]
     assert (
-        loaded_geometry_axes.geometry.variable.children[0].parent
-        is loaded_geometry_axes.geometry.variable
+        x.children[0].parent is x
     )
 
 
@@ -121,9 +121,8 @@ def test_save_and_load_feature_axes(tmp_path):
     assert loaded_feature_axes.variables.dim == 3
     assert loaded_feature_axes.variables.children[0].dim == 2
     assert loaded_feature_axes.variables.children[1].dim == 1
-    assert (
-        loaded_feature_axes.variables.children[0].parent is loaded_feature_axes.variables
-    )
+    x = loaded_feature_axes.variables.children[0]
+    assert x.children[0].parent is x
 
 
 def test_save_and_load_empty_data_configuration(tmp_path):

@@ -25,6 +25,10 @@ class GridDataSet(ArrayLikeDataSet):
             of shape grid_shape + (len(grid_shape),). If given, a
             GridGeometry is built from these points instead of an
             IndexGridGeometry. Defaults to None.
+        point_filter (TensorType, optional): Whether each grid point belongs
+            to the domain, of shape grid_shape + (1,), e.g. for a
+            rectilinear grid in a domain that is no box; only with
+            point_grid. Defaults to None (every point does).
 
     Raises:
         AssertionError: If the data items do not share the same grid
@@ -39,6 +43,7 @@ class GridDataSet(ArrayLikeDataSet):
         feature_variables: Variable | list[Variable],
         geometry_variable: Variable = None,
         point_grid=None,
+        point_filter=None,
     ):
         data = data if isinstance(data, (list, tuple)) else [data]
         feature_variables = (
@@ -64,13 +69,19 @@ class GridDataSet(ArrayLikeDataSet):
         if geometry_variable is None:
             geometry_variable = Variable("grid", len(grid_shape))
 
+        if point_filter is not None and point_grid is None:
+            raise ValueError("point_filter needs the point_grid it filters.")
+
         # if point_grid is provided, we use it to build the geometry
         if point_grid is not None:
             assert all(
                 p == g for p, g in zip(backend.math.shape(point_grid), grid_shape)
             ), "The point grid shape has to match the data."
             geometry = GridGeometry(
-                geometry_variable, point_grid=point_grid, backend=backend
+                geometry_variable,
+                point_grid=point_grid,
+                point_filter=point_filter,
+                backend=backend,
             )
         else:
             geometry = IndexGridGeometry(geometry_variable, grid_shape, backend=backend)

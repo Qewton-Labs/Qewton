@@ -19,7 +19,7 @@ class ScatterPlot(DataPlot):
 
     Args:
         data, data_config, position, x, y, z, color, color_scale, controls,
-            title, label, opacity: As for
+            title, label, opacity, mask: As for
             :class:`~qewton.visualization.plots.data.base.DataPlot`.
         size: Marker size, or None for the theme's.
         symbol: Marker symbol, or None for the default.
@@ -47,6 +47,7 @@ class ScatterPlot(DataPlot):
         title: str | None = None,
         label: str | None = None,
         opacity: float | None = None,
+        mask: Variable | None = None,
         size: float | None = None,
         symbol: str | None = None,
     ) -> None:
@@ -63,6 +64,7 @@ class ScatterPlot(DataPlot):
             title=title,
             label=label,
             opacity=opacity,
+            mask=mask,
         )
         self.size = size
         self.symbol = symbol
@@ -79,12 +81,19 @@ class ScatterPlot(DataPlot):
         return max(2, self.n_positions)
 
     def build(
-        self, positions: np.ndarray, color: np.ndarray | None, features: np.ndarray
+        self,
+        positions: np.ndarray,
+        color: np.ndarray | None,
+        features: np.ndarray,
+        visible: np.ndarray,
     ) -> Result:
         """See :meth:`~qewton.visualization.plots.data.base.DataPlot.build`;
         one position component is drawn at y = 0."""
         if positions.shape[1] == 1:
             positions = np.concatenate([positions, np.zeros_like(positions)], axis=1)
         return MarkerResult(
-            positions=positions, values=color, size=self.size, symbol=self.symbol
+            positions=positions[visible],
+            values=color[visible] if color is not None else None,
+            size=self.size,
+            symbol=self.symbol,
         )

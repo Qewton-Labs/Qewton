@@ -67,10 +67,11 @@ Status: done, partial (with the gap named), open.
 | P1 | A plot evaluates, in the current states of its controls, to one Result per drawn copy; Results carry no framework types. | G5, G7 | done |
 | P2 | Plot types declare what they draw: channels, numbers of positions, the domains they draw (structure and topological dimension of the geometry). Nothing else repeats this knowledge. | G1, G11 | done |
 | P3 | Positions come from the domain (coordinates of a geometry or the index of a batch) or from the values; every dimension of the data that is not drawn is reduced by a control, else construction fails. | G1, G6, G11 | done |
-| P4 | Data on a product geometry is drawn by naming a factor in a binding or control; the plot splits the axes of the product. | G1, G2 | done |
+| P4 | Data on a product geometry is drawn by naming a factor in a control; the plot splits it off and draws the other factors. Positions may name parts of the drawn geometry and controlled factors, which lie at their current coordinate. | G1, G2 | done |
 | P5 | Data of any backend and device is drawn as given. | G8 | partial: a node's device is not yet its own property (strict xfail) |
 | P6 | Families: data (`DataConfiguration`), tables (named columns), geometries, computation graphs; one Plot interface for all. | G1 | done |
 | P7 | A plot declares how it shows values at the points of its domain (color, arrows, by position), so layouts can tell which plots read well together. | G4, G11 | done |
+| P8 | Points outside the domain are hidden: those a geometry's point filter excludes, and those a mask from the data hides (e.g. a domain given per sample); hidden points are not drawn and do not train the scales. | G1, G4 | done |
 
 ## Controls and selectors (`axes.py`)
 
@@ -80,7 +81,8 @@ Status: done, partial (with the gap named), open.
 | C2 | One control instance passed to several plots links them. | G2, G4 | done |
 | C3 | A Selector chooses which reference fills a channel (Variables of the data or table columns). | G2 | done |
 | C4 | States are labeled by coordinates or categories; animation frames last in proportion to their time step. | G2, G3 | done |
-| C5 | A control steps through a whole one-dimensional geometry, a factor of a product, a batch axis or a table column. | G2 | partial: one axis of a multi-axis grid geometry is not supported |
+| C5 | A control steps through a whole one-dimensional geometry, a factor of a product (e.g. an axis of a rectilinear grid), a batch axis or a table column. | G2 | done |
+| C6 | A control given for several plots that steps through none of them fails with an error naming what the data holds. | G11 | done |
 
 ## Scales (`scales.py`)
 
@@ -91,7 +93,7 @@ Status: done, partial (with the gap named), open.
 | SC3 | Fixed bounds, symmetric and logarithmic scales; log scales show values, not exponents. | G3 | done |
 | SC4 | A Selector gets one color scale per candidate by default, or a shared or given one per candidate. | G2, G3 | done |
 | SC5 | Arrows are scaled to lengths in data units by a VectorScale. | G1, G3 | done |
-| SC6 | Components of one reference (e.g. the coordinates of a geometry) are drawn to one scale; other channels scale independently. | G1, G10 | done |
+| SC6 | Components of one reference or quantity (e.g. the coordinates of a geometry, also split into several axes) are drawn to one scale; other channels scale independently. | G1, G10 | done |
 | SC7 | A raster or surface ends exactly at its domain; markers, lines and arrows get a margin, so no mark is clipped; bars start at zero. | G10 | done |
 | SC8 | A categorical color scale maps each category to one color of the theme's palette, in the order plots are colored, with a colorbar step per category labeled by its name; a categorical channel (e.g. a text column) gets one without being asked. | G3, G10 | done |
 

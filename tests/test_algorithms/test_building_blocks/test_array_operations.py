@@ -4,13 +4,16 @@ import pytest
 import torch
 
 from qewton.algorithms.building_blocks.array_operations import (
+    AsVariable,
     ConcatVariables,
     SplitVariables,
 )
 from qewton.backends import TensorType, TorchBackend
 from qewton.config.axes import FeatureAxes, BatchAxes
 from qewton.config.data_configurations import DataConfiguration
+from qewton.config.errors import DataConfigMismatchError
 from qewton.config.variables import Variable
+from qewton.constraints import MSEConstraint
 from qewton.graphs.graphs import Graph
 from qewton.graphs.nodes import Node
 
@@ -114,3 +117,107 @@ class TestConcatVariables:
         graph.run()
 
         assert torch.allclose(graph.value_of(join.output_ports[0]), torch.cat([x_data, y_data], dim=-1))
+
+
+class TestAsVariable:
+    def test_passes_the_data_on_under_the_new_variable(self):
+        T, U = Variable("t", 1), Variable("u", 1)
+        data = torch.rand(5, 1)
+        source = _source(
+            data, DataConfiguration(BatchAxes(5), FeatureAxes(T)), name="Source"
+        )
+        as_u = AsVariable(U, backend=TorchBackend)
+
+        graph = Graph()
+        graph.add_node(source)
+        graph.add_node(as_u)
+        graph.connect(source.output_ports[0], as_u.input_ports[0])
+        graph.setup()
+        graph.run()
+
+        assert as_u.output_ports[0].name == "u"
+        assert graph.config_of(as_u.output_ports[0]).feature_axes.variables is U
+        assert torch.equal(graph.value_of(as_u.output_ports[0]), data)
+
+    def test_rejects_features_of_another_size(self):
+        X, U = Variable("x", 2), Variable("u", 1)
+        source = _source(
+            torch.rand(5, 2),
+            DataConfiguration(BatchAxes(5), FeatureAxes(X)),
+            name="Source",
+        )
+        as_u = AsVariable(U, backend=TorchBackend)
+
+        graph = Graph()
+        graph.add_node(source)
+        graph.add_node(as_u)
+        with pytest.raises(DataConfigMismatchError):
+            graph.connect(source.output_ports[0], as_u.input_ports[0])
+            graph.setup()
+
+    def _sources(self, T, U):
+        u_data, t_data = torch.rand(5, 1), torch.rand(5, 1)
+        u_source = _source(
+            u_data, DataConfiguration(BatchAxes(5), FeatureAxes(U)), name="USource"
+        )
+        t_source = _source(
+            t_data, DataConfiguration(BatchAxes(5), FeatureAxes(T)), name="TSource"
+        )
+        return u_data, t_data, u_source, t_source
+
+    def test_a_metric_compares_data_of_the_same_variable_only(self):
+        T, U = Variable("t", 1), Variable("u", 1)
+        _, _, u_source, t_source = self._sources(T, U)
+        mse = MSEConstraint()
+
+        graph = Graph()
+        with graph.tracker(0):
+            mse(u_source(), t_source() * 2.0)
+        with pytest.raises(DataConfigMismatchError):
+            graph.setup()
+
+    def test_tracked_as_variable_lets_a_metric_compare_with_a_computed_reference(self):
+        """E.g. the output of a model of u against an exact solution
+        computed from t."""
+        T, U = Variable("t", 1), Variable("u", 1)
+        u_data, t_data, u_source, t_source = self._sources(T, U)
+        mse = MSEConstraint()
+
+        graph = Graph()
+        with graph.tracker(0):
+            mse(u_source(), (t_source() * 2.0).as_variable(U))
+        graph.setup()
+        graph.run()
+
+        expected = ((u_data - 2.0 * t_data) ** 2).sum(-1).mean()
+        assert torch.allclose(graph.value_of(mse.output_ports[0]), expected)
+
+
+class TestSetItem:
+    def _assign(self, value):
+        """Track ``n = zeros_like(x); n[:, :1] = value`` and run it."""
+        from qewton.algorithms.building_blocks import ZerosLike
+
+        X = Variable("x", 2)
+        data = torch.rand(5, 2)
+        source = _source(
+            data, DataConfiguration(BatchAxes(5), FeatureAxes(X)), name="Source"
+        )
+        graph = Graph()
+        with graph.tracker(0):
+            normals = ZerosLike(backend=TorchBackend)(source())
+            normals[:, :1] = value
+        graph.setup()
+        graph.run()
+        return graph.value_of(normals.last_output_port)
+
+    @pytest.mark.parametrize("value", [1.0, 1, -1.5])
+    def test_assigns_a_python_number(self, value):
+        result = self._assign(value)
+        assert torch.all(result[:, :1] == value)
+        assert torch.all(result[:, 1:] == 0.0)
+
+    def test_assigns_a_tensor(self):
+        result = self._assign(torch.full((5, 1), 2.0))
+        assert torch.all(result[:, :1] == 2.0)
+        assert torch.all(result[:, 1:] == 0.0)

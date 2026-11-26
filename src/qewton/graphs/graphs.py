@@ -10,7 +10,8 @@ import inspect
 import numpy as np
 
 from qewton.config.axes import FeatureAxes
-from qewton.config.data_configurations import DataConfiguration, refining
+from qewton.config.data_configurations import DataConfiguration
+from qewton.config.matching import Matching
 from qewton.config.devices import Device
 from qewton.config.errors import DataConfigMismatchError, StructureUnknown
 from qewton.config.variables import Variable
@@ -88,17 +89,17 @@ class Graph(Serializable):
         self.edges_from_outside: list[Edge] = []
         self.edges_to_outside: list[Edge] = []
 
-        # Per place of a node, (path of GraphNodes, node): the configurations
-        # of its ports. The places whose `relate` waits for more structure.
-        # Per place of a port, (path, port): its value in the last run. The
-        # evaluation steps in order; None until planned.
-        self._configs: dict[tuple, dict[Port, DataConfiguration]] = {}
+        # The matching of the configurations, with one place per node at a path
+        # of GraphNodes, (path, node). The places whose `relate` waits for more
+        # structure. Per place of a port, (path, port): its value in the last
+        # run. The evaluation steps in order; None until planned.
+        self._matching = Matching()
         self._waiting: list[tuple] = []
         self._values: dict[tuple, Any] = {}
         self._steps: list | None = None
 
     #: Rebuilt from the structure when needed, never saved.
-    _TRANSIENT = ("_configs", "_waiting", "_values", "_steps")
+    _TRANSIENT = ("_matching", "_waiting", "_values", "_steps")
 
     def _collect_serializable_attributes(self) -> tuple[list, list]:
         keys = [k for k in self.__dict__ if k not in self._TRANSIENT]
@@ -106,7 +107,7 @@ class Graph(Serializable):
 
     def load(self, serializer, data_config: dict) -> None:
         super().load(serializer, data_config)
-        self._configs, self._waiting, self._values, self._steps = {}, [], {}, None
+        self._matching, self._waiting, self._values, self._steps = Matching(), [], {}, None
 
     def _invalidate(self) -> None:
         self._steps = None
@@ -133,7 +134,7 @@ class Graph(Serializable):
         """The path leading to `node`: `within`, or the only one there is."""
         if within is not None:
             return tuple(within)
-        if node in self.nodes or ((), node) in self._configs:
+        if node in self.nodes or self._matching.has_place(((), node)):
             return ()
         paths = self._paths_to(node)
         if len(paths) == 1:
@@ -188,9 +189,9 @@ class Graph(Serializable):
             if "several places" in str(error):
                 raise
             return None
-        if (path, port.node) not in self._configs:
+        if not self._matching.has_place((path, port.node)):
             self._ensure_plan()
-            if (path, port.node) not in self._configs:
+            if not self._matching.has_place((path, port.node)):
                 return None
         return self._config(path, port).resolve()
 
@@ -221,18 +222,15 @@ class Graph(Serializable):
     # region: Matching
 
     def _instantiate(self, path: tuple, node: Node, inside: bool = True) -> None:
-        """Give `node` its configurations at `path`: a copy of its declared
-        ones, matched inside a built GraphNode with its inner graph, related
-        by its `relate`. With `inside` False, only the copy (a node outside of this
-        graph that an edge leads to)."""
+        """Give `node` its configurations at `path`: its declared ones as a
+        place of the matching, matched inside a built GraphNode with its
+        inner graph, related by its `relate`. With `inside` False, only the
+        place (a node outside of this graph that an edge leads to)."""
         from qewton.graphs.control_nodes.graph_node import GraphNode
 
-        if (path, node) in self._configs:
+        if self._matching.has_place((path, node)):
             return
-        configs = node.copy_data_configs()
-        for port, config in configs.items():
-            config.mark_origin(port)
-        self._configs[(path, node)] = configs
+        self._place(path, node, node.input_ports + node.output_ports)
         if not inside:
             return
         # The inner graph of an unbuilt GraphNode is not valid yet; until its
@@ -251,13 +249,21 @@ class Graph(Serializable):
         node = port.node
         if path and node is path[-1]:
             return self._config(path[:-1], port)
-        if (path, node) not in self._configs:
+        if not self._matching.has_place((path, node)):
             self._instantiate(path, node, inside=False)
-        configs = self._configs[(path, node)]
-        if port not in configs:
-            configs[port] = node.copy_data_config_of_port(port, {})
-            configs[port].mark_origin(port)
-        return configs[port]
+        return self._place(path, node, [port])[port]
+
+    def _place(self, path: tuple, node: Node, ports: list[Port]) -> dict:
+        """The configurations of `node` at `path`, with `ports` instantiated
+        from their declarations; the dtype of each is resolved by the node's
+        backend (:meth:`Node.get_dtype`)."""
+        key = (path, node)
+        known = self._matching.configs(key) if self._matching.has_place(key) else {}
+        new = [port for port in ports if port not in known]
+        configs = self._matching.place(key, {p: p.data_configuration for p in new})
+        for port in new:
+            configs[port].set_dtype(node.get_dtype(port.data_configuration.dtype, node.backend))
+        return configs
 
     def _merge_edge(self, path: tuple, edge: Edge) -> None:
         """Merge the configurations of both ends of `edge` at `path`."""
@@ -272,14 +278,16 @@ class Graph(Serializable):
     def _relate(self, path: tuple, node: Node, refine: bool) -> bool:
         """Merge the outputs of `node` at `path` with what its `relate`
         returns; False if it waits for more structure."""
-        configs = self._configs[(path, node)]
+        configs = self._matching.configs((path, node))
+        self._matching.refining = refine
         try:
-            with refining(refine):
-                related = node.relate(*(configs[port] for port in node.input_ports))
+            related = node.relate(*(configs[port].resolve() for port in node.input_ports))
         except StructureUnknown:
             if (path, node) not in self._waiting:
                 self._waiting.append((path, node))
             return False
+        finally:
+            self._matching.refining = True
         if (path, node) in self._waiting:
             self._waiting.remove((path, node))
         if related is None:
@@ -306,7 +314,7 @@ class Graph(Serializable):
     def _merge_defaults(self) -> None:
         """Merge every unconnected input that has a default with the
         configuration of the default."""
-        for (path, node), configs in list(self._configs.items()):
+        for (path, node), configs in list(self._matching.places().items()):
             structure = self._structure(path)
             if node not in structure.nodes:
                 continue
@@ -322,7 +330,7 @@ class Graph(Serializable):
         """Match all configurations from the declarations. With `refine`,
         as at the end of a setup, also defaults of unconnected inputs, and
         `relate`s still waiting refine their unknown inputs."""
-        self._configs, self._waiting = {}, []
+        self._matching, self._waiting = Matching(), []
         for node in self.nodes:
             self._instantiate((), node)
         for edge in self.all_edges():
@@ -1095,6 +1103,7 @@ class Graph(Serializable):
         port: Port | list[Port],
         reference: "Port | Callable | Any" = None,
         error: str | None = "signed",
+        mask: Port | None = None,
         plot_type: type["Plot"] | None = None,
         max_vertex_distance: float | dict[Variable, float] = 0.05,
         device: Device | str | None = None,
@@ -1147,6 +1156,11 @@ class Graph(Serializable):
                 ``"relative"`` (difference divided by the reference, NaN where
                 the reference is close to 0, diverging, symmetric), or None for
                 no error panel. Ignored without `reference`.
+            mask: A port of this graph, run together with `port`, whose
+                value has one component per point of the plotted data,
+                e.g. the domain mask of a data loader. Points where it is 0
+                or NaN are not drawn in any panel and do not train the
+                scales. None (default) draws every point.
             plot_type: Plot type passed to
                 :func:`~qewton.visualization.auto.auto_plot` for every plot.
                 None (default) selects it automatically.
@@ -1199,7 +1213,8 @@ class Graph(Serializable):
             ValueError: If `reference` is given for a list of ports, plain
                 reference data is given without `reference_config`, the
                 Variables or shapes of prediction and reference do not match,
-                `error` is unknown, or auto_plot raises.
+                `mask` has not one value per point of the data, `error` is
+                unknown, or auto_plot raises.
         """
         if default_control is not None:
             plot_kwargs["default_control"] = default_control
@@ -1224,6 +1239,7 @@ class Graph(Serializable):
                 ports[0],
                 reference,
                 error,
+                mask,
                 plot_type,
                 max_vertex_distance,
                 device,
@@ -1241,7 +1257,8 @@ class Graph(Serializable):
         from qewton.visualization.auto import AutoPlots
         from qewton.visualization.layout import auto_layout
 
-        nodes_to_run = self._nodes_needed_for({p.node for p in ports})
+        run_ports = (*ports, mask) if mask is not None else tuple(ports)
+        nodes_to_run = self._nodes_needed_for({p.node for p in run_ports})
         if device is not None:
             for node in nodes_to_run:
                 node.to(device)
@@ -1253,7 +1270,8 @@ class Graph(Serializable):
         # The configurations are read in mesh mode: the dims bound to the
         # number of points of a sampler have the number of mesh points.
         with discretization_mode(samplers, max_vertex_distance, device):
-            self._run_nodes_needed_for(ports, mode=mode)
+            self._run_nodes_needed_for(run_ports, mode=mode)
+            mask_values = self._mask_values(mask)
 
             # Move right before plotting, not before running - the sampler(s)
             # and model can stay on the set device
@@ -1268,10 +1286,53 @@ class Graph(Serializable):
                     data, config = self._narrow_to_variable(
                         data, config, combined_variable
                     )
+                data, config, panel_kwargs = self._with_mask(data, config, value, mask_values)
                 plots.add(
-                    data, config, plot_type, value=value, color_scale=color_scale, **plot_kwargs
+                    data, config, plot_type, color_scale=color_scale, **panel_kwargs,
+                    **plot_kwargs,
                 )
+        plots.check_controls()
         return auto_layout(plots.plots)
+
+    def _mask_values(self, mask: Port | None) -> "tuple[np.ndarray, Variable] | None":
+        """The value of the run port `mask` as numpy, with its Variable;
+        None without a mask."""
+        if mask is None:
+            return None
+        config = mask.get_data_configuration(self)
+        variable = config.feature_axes.variables if config.feature_axes else None
+        if variable is None:
+            raise ValueError(f"mask {mask} has no feature Variable.")
+        return np.asarray(mask.node.backend.to_numpy(self.value_of(mask))), variable
+
+    @staticmethod
+    def _with_mask(
+        data: np.ndarray,
+        config: DataConfiguration,
+        value: "Selector | None",
+        mask: "tuple[np.ndarray, Variable] | None",
+    ) -> tuple[np.ndarray, DataConfiguration, dict]:
+        """`data` and `config` of one panel with the mask as one more
+        feature channel, and the auto_plot arguments drawing the panel's
+        own value hidden by that channel."""
+        if mask is None:
+            return data, config, {"value": value}
+        mask_data, mask_variable = mask
+        if mask_data.shape[:-1] != data.shape[:-1]:
+            raise ValueError(
+                f"mask has shape {mask_data.shape} for data of shape {data.shape} - "
+                "it needs one value per point of the plotted data."
+            )
+        variable = config.feature_axes.variables
+        axes = tuple(
+            FeatureAxes(variable * mask_variable) if isinstance(axes, FeatureAxes) else axes
+            for axes in config.axes
+        )
+        data = np.concatenate([data, mask_data.astype(data.dtype)], axis=-1)
+        value = value if value is not None else variable
+        return data, DataConfiguration(*axes, dtype=config.dtype), {
+            "value": value, "mask": mask_variable
+        }
 
     @staticmethod
     def _shared_value(variables: list[Variable] | None) -> "Selector | None":
@@ -1303,7 +1364,7 @@ class Graph(Serializable):
             raise ValueError(
                 f"reference_config has one GeometryAxes per factor {names}, but "
                 f"they do not make up {domain}: {e} Build each factor from the "
-                "same Variable instance as the sampler's domain."
+                "same Variable as the sampler's domain."
             ) from e
 
     @staticmethod
@@ -1322,6 +1383,7 @@ class Graph(Serializable):
         port: Port,
         reference: "Port | Callable | Any",
         error: str | None,
+        mask: Port | None,
         plot_type,
         max_vertex_distance: float | dict[Variable, float],
         device,
@@ -1372,14 +1434,15 @@ class Graph(Serializable):
             )
 
             if callable(reference) and not isinstance(reference, Port):
-                nodes_to_run = self._nodes_needed_for({port.node})
+                run_ports = (port, mask) if mask is not None else (port,)
+                nodes_to_run = self._nodes_needed_for({p.node for p in run_ports})
                 if device is not None:
                     for node in nodes_to_run:
                         node.to(device)
 
                 samplers = self._samplers_on_path_to((port,))
                 modes.enter_context(discretization_mode(samplers, max_vertex_distance, device))
-                self._run_nodes_needed_for((port,), mode=mode)
+                self._run_nodes_needed_for(run_ports, mode=mode)
 
                 for sampler in samplers:
                     for sampled_geometry in sampler.sampled_geometries:
@@ -1411,15 +1474,16 @@ class Graph(Serializable):
                     ref_config.feature_axes.variables if ref_config.feature_axes else None
                 )
                 self._check_reference_variable(
-                    port, pred_variable, ref_variable, by_identity=False
+                    port, pred_variable, ref_variable
                 )
 
-                nodes_to_run = self._nodes_needed_for({port.node, ref_port.node})
+                run_ports = (port, ref_port, mask) if mask is not None else (port, ref_port)
+                nodes_to_run = self._nodes_needed_for({p.node for p in run_ports})
                 if device is not None:
                     for node in nodes_to_run:
                         node.to(device)
 
-                self._run_nodes_needed_for((port, ref_port), mode=mode)
+                self._run_nodes_needed_for(run_ports, mode=mode)
 
                 pred_data = port.node.backend.to_numpy(self.value_of(port))
                 pred_config = prediction_config or port.get_data_configuration(self)
@@ -1446,13 +1510,14 @@ class Graph(Serializable):
                 )
                 self._check_reference_variable(port, pred_variable, ref_variable)
 
-                nodes_to_run = self._nodes_needed_for({port.node})
+                run_ports = (port, mask) if mask is not None else (port,)
+                nodes_to_run = self._nodes_needed_for({p.node for p in run_ports})
                 if device is not None:
                     for node in nodes_to_run:
                         node.to(device)
 
                 with active_discretization_mode(samplers, ref_geometry):
-                    self._run_nodes_needed_for((port,), mode=mode)
+                    self._run_nodes_needed_for(run_ports, mode=mode)
 
                 for sampler in samplers:
                     for sampled_geometry in sampler.sampled_geometries:
@@ -1500,18 +1565,18 @@ class Graph(Serializable):
                 )
 
             value = self._shared_value(variables)
+            mask_values = self._mask_values(mask)
             panels = AutoPlots(controls)
-            reference_plot = panels.add(
-                ref_data, ref_config, plot_type, value=value, color_scale=color_scale,
-                **plot_kwargs,
-            )
+
+            def add_panel(data, config, **kwargs):
+                data, config, panel_kwargs = self._with_mask(data, config, value, mask_values)
+                return panels.add(data, config, plot_type, **panel_kwargs, **kwargs, **plot_kwargs)
+
+            reference_plot = add_panel(ref_data, ref_config, color_scale=color_scale)
             # The reference's scale (None without color) is shared if asked for.
             if share_scale or color_scale is not None:
                 color_scale = reference_plot.color_scale
-            panels.add(
-                pred_data, pred_config, plot_type, value=value, color_scale=color_scale,
-                **plot_kwargs,
-            )
+            add_panel(pred_data, pred_config, color_scale=color_scale)
             names = ["Reference", "Prediction"]
 
             if error is not None:
@@ -1536,12 +1601,10 @@ class Graph(Serializable):
                 error_kwargs = {} if reference_plot.color_scale is None else {
                     "color_scale": error_scale
                 }
-                panels.add(
-                    error_data, ref_config, plot_type, value=value, **error_kwargs,
-                    **plot_kwargs,
-                )
+                add_panel(error_data, ref_config, **error_kwargs)
                 names.append("Error")
 
+            panels.check_controls()
             layout = auto_layout(panels.plots)
             for plot, name in zip(panels.plots, names):
                 if isinstance(layout, Overlay):
@@ -1568,27 +1631,14 @@ class Graph(Serializable):
         return narrowed_data, DataConfiguration(*new_axes, dtype=config.dtype)
 
     @staticmethod
-    def _check_reference_variable(
-        port: Port, pred_variable, ref_variable, by_identity: bool = True
-    ) -> None:
-        """Checks that `reference`'s Variable matches `port`'s own.
-
-        `by_identity=True` (the default, for plain reference data) requires
-        the exact same Variable instance. `by_identity=False` (the Port-
-        reference case) falls back to structural equality
-        (Variable.__eq__: name, dim, and children)."""
-        if by_identity:
-            matches = ref_variable is pred_variable
-            reason = "the exact same Variable instance as"
-        else:
-            matches = ref_variable is not None and ref_variable == pred_variable
-            reason = "the same Variable (by name/dim/structure) as"
-        if not matches:
+    def _check_reference_variable(port: Port, pred_variable, ref_variable) -> None:
+        """Checks that `reference`'s Variable equals `port`'s own (name, dim
+        and children, see `Variable.__eq__`)."""
+        if ref_variable is None or ref_variable != pred_variable:
             raise ValueError(
-                f"reference's DataConfiguration must be built from {reason} "
-                f"{port}'s own value ({pred_variable!r}) - found "
-                f"{ref_variable!r} instead. Reuse the same Variable "
-                "instance building both configs; never match by name."
+                f"reference's DataConfiguration must describe the same Variable "
+                f"as {port}'s own value ({pred_variable!r}) - found "
+                f"{ref_variable!r} instead."
             )
 
     def collect_trainable_parameters(self):
@@ -1865,6 +1915,21 @@ class TrackingObject:
 
         unsqueeze_node = Unsqueeze(dim)
         return unsqueeze_node(self)
+
+    def as_variable(self, variable):
+        """Track declaring that the features of this value are `variable`,
+        e.g. ``exact_solution(t).as_variable(U)`` to compare it with a model
+        of ``U``. The data is unchanged; see
+        :class:`~qewton.algorithms.building_blocks.array_operations.AsVariable`.
+
+        Args:
+            variable (Variable): The Variable of the features, of the same
+                size as the current ones.
+        """
+        from qewton.algorithms.building_blocks.array_operations import AsVariable
+
+        as_variable_node = AsVariable(variable)
+        return as_variable_node(self)
 
     def track_gradient(self):
         """Track enabling gradient computation with respect to this value."""

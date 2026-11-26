@@ -20,23 +20,27 @@ def _as_numpy(data, backend) -> np.ndarray:
     return np.asarray(backend.to_numpy(data))
 
 
-def factor_cells(factor) -> np.ndarray:
-    """Return the cells of a factor's mesh as an integer array.
+def factor_cells(factor: DiscreteGeometry) -> np.ndarray:
+    """Return the cells of a discrete factor as an integer array.
 
-    A mesh without cells (e.g. the two end points of an interval boundary)
-    contributes each vertex as a 0-simplex.
+    A factor without cells (e.g. a point set, or the two end points of an
+    interval boundary) contributes each point as a 0-simplex.
 
     Args:
-        factor (MeshGeometry): A meshed geometry with a ``mesh`` and a
-            ``backend``.
+        factor: A discrete geometry; its points are indexed row-major over
+            its shape.
 
     Returns:
         np.ndarray: The cells, shape ``(n_cells, simplex_dim + 1)``.
     """
-    cells = _as_numpy(factor.mesh.cells, factor.backend)
-    if cells.ndim < 2 or cells.shape[0] == 0:
-        return np.arange(len(factor.mesh.vertices)).reshape(-1, 1)
-    return cells.astype(np.int64)
+    cells = factor.cells
+    if cells is None or cells.ndim < 2 or cells.shape[0] == 0:
+        return np.arange(_n_points(factor)).reshape(-1, 1)
+    return np.asarray(cells).astype(np.int64)
+
+
+def _n_points(factor: DiscreteGeometry) -> int:
+    return int(np.prod(tuple(factor.shape)))
 
 
 def _staircase_paths(simplex_dims: list[int]) -> np.ndarray:
@@ -59,14 +63,14 @@ def _staircase_paths(simplex_dims: list[int]) -> np.ndarray:
 
 
 def product_cells(factors: list) -> np.ndarray:
-    """Return the simplex cells of the Cartesian product of factor meshes.
+    """Return the simplex cells of the Cartesian product of discrete
+    factors.
 
     Vertices are indexed in product order (first factor slowest), matching
     :func:`product_points`.
 
     Args:
-        factors: Meshed factor geometries, each with a ``mesh`` and a
-            ``backend``.
+        factors: Discrete factor geometries.
 
     Returns:
         np.ndarray: The cells, shape ``(n_cells, sum(simplex_dim_i) + 1)``.
@@ -77,7 +81,7 @@ def product_cells(factors: list) -> np.ndarray:
         keeps the triangulation conforming across neighboring product cells.
     """
     cells = [np.sort(factor_cells(f), axis=1) for f in factors]
-    sizes = [len(f.mesh.vertices) for f in factors]
+    sizes = [_n_points(f) for f in factors]
     strides = np.cumprod([1] + sizes[::-1])[:-1][::-1]
     paths = _staircase_paths([c.shape[1] - 1 for c in cells])
 
@@ -261,14 +265,20 @@ def _factor_points(factor) -> np.ndarray:
 
 
 class ProductDiscreteGeometry(DiscreteGeometry[TensorType]):
-    """Cartesian product of discrete point sets.
+    """Cartesian product of discrete geometries.
 
     Used e.g. for reference data known on a grid of space points for each
-    of a few parameter values. The factors need no mesh, and each factor
-    keeps its own structural shape: factors of shapes ``(3,)`` and
-    ``(33, 33)`` give a product of shape ``(3, 33, 33)``. The point
-    coordinates are ordered as in `variable`, which may name the factors in
-    a different order than `factors`.
+    of a few parameter values, or for the axes of a rectilinear grid. Each
+    factor keeps its own structural shape: factors of shapes ``(3,)`` and
+    ``(33, 33)`` give a product of shape ``(3, 33, 33)``, the first factor
+    varying slowest. The point coordinates are ordered as in `variable`,
+    which may name the factors in a different order than `factors`.
+
+    The connectivity of the whole product follows from the factors: a
+    product of rectilinear grids is a rectilinear grid (``GRID``), a product
+    of point sets a point set (``POINTS``), any other product the simplices
+    of the products of factor cells (``MESH``; points of a factor without
+    cells count as 0-simplices).
 
     Args:
         factors: Discrete geometries (at least two), each with a ``variable``
@@ -336,27 +346,87 @@ class ProductDiscreteGeometry(DiscreteGeometry[TensorType]):
             backend=backend,
         )
         self._factors = list(factors)
+        self._cells: np.ndarray | None = None
 
     @property
     def factors(self) -> list:
         return self._factors
 
     def subproduct(self, factors: list) -> ProductDiscreteGeometry:
-        """See :meth:`~qewton.geometries.base.DiscreteGeometry.subproduct`."""
-        return ProductDiscreteGeometry(factors, backend=self.backend)
+        """See :meth:`~qewton.geometries.base.DiscreteGeometry.subproduct`;
+        its variable is the part of this product's variable made of the
+        factors' variables, else their composition."""
+        return product_of(self.variable, factors, self.backend)
 
     @property
     def structure(self) -> Structure:
-        return Structure.POINTS
+        structures = {f.structure for f in self.factors}
+        if structures == {Structure.GRID}:
+            return Structure.GRID
+        if structures == {Structure.POINTS}:
+            return Structure.POINTS
+        return Structure.MESH
 
     @property
     def topological_dim(self) -> int:
-        return 0
+        return sum(f.topological_dim for f in self.factors)
 
     @property
-    def cells(self) -> None:
-        return None
+    def cells(self) -> np.ndarray | None:
+        if self.structure is Structure.POINTS:
+            return None
+        if self._cells is None:
+            self._cells = product_cells(self.factors)
+        return self._cells
+
+    @property
+    def axis_components(self) -> tuple[int, ...]:
+        """See :attr:`~qewton.geometries.base.DiscreteGeometry.axis_components`."""
+        self._require_grid()
+        components = []
+        for factor in self.factors:
+            offset = self.variable.get_slice(factor.variable).start or 0
+            components += [offset + c for c in factor.axis_components]
+        return tuple(components)
+
+    def axis_coordinates(self) -> list[np.ndarray]:
+        """See :meth:`~qewton.geometries.base.DiscreteGeometry.axis_coordinates`."""
+        self._require_grid()
+        return [c for f in self.factors for c in f.axis_coordinates()]
+
+    def _require_grid(self) -> None:
+        if self.structure is not Structure.GRID:
+            raise ValueError(f"{self.variable.name} is no product of rectilinear grids.")
 
     @property
     def factor_shapes(self) -> list[tuple[int, ...]]:
         return [tuple(_factor_points(f).shape[:-1]) for f in self.factors]
+
+
+def product_of(variable: Variable, factors: list, backend) -> ProductDiscreteGeometry:
+    """The product of some factors of a product with the Variable
+    `variable`.
+
+    Args:
+        variable: The Variable of the whole product.
+        factors: Some of its factors (at least two), in their order.
+        backend: The backend used for computations.
+
+    Returns:
+        ProductDiscreteGeometry: The product of `factors`; its variable is
+            the node of `variable` whose leaves are those of the factors
+            (e.g. ``x`` of ``t * x``), else their composition.
+    """
+    leaves = [leaf for f in factors for leaf in f.variable.leaves]
+    node = _node_with_leaves(variable, leaves)
+    return ProductDiscreteGeometry(factors, variable=node, backend=backend)
+
+
+def _node_with_leaves(variable: Variable, leaves: list) -> Variable | None:
+    if variable.leaves == leaves:
+        return variable
+    for child in variable.children:
+        node = _node_with_leaves(child, leaves)
+        if node is not None:
+            return node
+    return None

@@ -4,22 +4,13 @@ from qewton.config.saving.saving import Serializable
 
 
 class Variable(Serializable):
-    """Order of children is now important."""
+    """A named quantity, e.g. ``u`` with 1 or ``x`` with 2 components.
 
-    def __deepcopy__(self, memo):
-        # Variables are objects with reference identity, not names (the
-        # same principle that makes Scale an object rather than a string
-        # key) - two ports/configs are "the same quantity" exactly when
-        # they share one Variable instance. Every node's dynamic
-        # DataConfiguration is a deepcopy of its static one
-        # (Node.copy_data_config_of_port), so without this, a caller who
-        # deliberately passes the same Variable to two different nodes
-        # would still see two different (deep-copied) objects looking back
-        # from each node's own dynamic config - silently defeating any
-        # identity-based comparison. Exempted from copying instead, the
-        # same way SampledGeometry.__deepcopy__ already exempts itself for
-        # an analogous reason.
-        return self
+    Variables are values: two are equal if their names, dims and children
+    are (``==``), and copies are equal to the original. Composing them
+    (``u * p``) builds a new Variable and leaves its parts unchanged; the
+    order of the children matters.
+    """
 
     def __init__(
         self,
@@ -52,8 +43,6 @@ class Variable(Serializable):
             overall_dim = 0
             c_dim_is_none = False
             for child in children:
-                if child.parent is None:
-                    child.parent = self
                 if isinstance(child.dim, tuple):
                     raise ValueError("Children cannot have multiple axes.")
                 if isinstance(child.dim, int):
@@ -113,6 +102,16 @@ class Variable(Serializable):
         return [q for child in self.children for q in child.quantities]
 
     @property
+    def quantity(self) -> Variable:
+        """The quantity this variable is part of, e.g. ``x`` for its
+        component ``x_3``; the variable itself if it is no component of one
+        (see :attr:`quantities`)."""
+        variable, parent = self, self.parent
+        while parent is not None and parent.quantities == [parent]:
+            variable, parent = parent, parent.parent
+        return variable
+
+    @property
     def leaf_names(self) -> set[str]:
         """The names of every leaf in this Variable's tree."""
         return {leaf.name for leaf in self.leaves}
@@ -152,12 +151,7 @@ class Variable(Serializable):
         return f"Variable({self.name}, dim={self.dim}, children={len(self.children)})"
 
     def __mul__(self, other: Variable) -> "Variable":
-        new_var = Variable(name=f"({self.name}, {other.name})", children=[self, other])
-        if self.parent is None:
-            self.parent = new_var
-        if other.parent is None:
-            other.parent = new_var
-        return new_var
+        return Variable(name=f"({self.name}, {other.name})", children=[self, other])
 
     __add__ = __mul__
 

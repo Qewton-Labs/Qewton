@@ -3,7 +3,6 @@ and their input and output ports."""
 
 from __future__ import annotations
 from abc import ABC
-from copy import deepcopy
 from enum import Enum
 from typing import (
     Any,
@@ -24,6 +23,7 @@ import warnings
 
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.devices import Device
+from qewton.config.data_configurations import DataConfiguration, DynamicDataConfiguration
 from qewton.config.dtypes import element_dtype_in
 from qewton.config.variables import Variable
 from qewton.backends import DEFAULT_DL_BACKEND, Backend, TensorType
@@ -439,37 +439,6 @@ class Node(ABC, Serializable, Generic[TensorType]):
         empty_conf.set_dtype(type_hint)
         return empty_conf, False
 
-    def copy_data_configs(self):
-        """Copy the static data configurations of all ports.
-
-        Returns:
-            dict[Port, DataConfiguration]: A copy of the configuration of each
-                port, with its dtype resolved by :meth:`get_dtype`.
-        """
-        copy_memo = {}
-        dynamic_data_configs = {}
-        for port in self.input_ports + self.output_ports:
-            dynamic_data_configs[port] = self.copy_data_config_of_port(port, copy_memo)
-        return dynamic_data_configs
-
-    def copy_data_config_of_port(self, port: Port, copy_memo):
-        """Copy the static data configuration of a single port.
-
-        Args:
-            port: The port whose configuration is copied.
-            copy_memo (dict): The memo passed to ``deepcopy``, so
-                configurations copied together share their objects.
-
-        Returns:
-            DataConfiguration: The copy, with its dtype resolved by
-                :meth:`get_dtype`.
-        """
-        copied_config = deepcopy(port.data_configuration, copy_memo)
-        copied_config.set_dtype(
-            self.get_dtype(port.data_configuration.dtype, self.backend)
-        )
-        return copied_config
-
     def setup(self, graph=None) -> None:
         """Make the node ready to run: build it (:meth:`build`) unless it is
         built already, i.e. unless its state is other than
@@ -541,7 +510,7 @@ class Node(ABC, Serializable, Generic[TensorType]):
     def output_ports(self) -> list[OutputPort]:
         return self._output_ports
 
-    def relate(self, *inputs: DataConfiguration):
+    def relate(self, *inputs: DynamicDataConfiguration):
         """The configuration of each output, from those of the inputs at one
         place of a graph, for relations the annotations of :meth:`forward`
         can not express: an operation that changes dims by their index
@@ -549,8 +518,11 @@ class Node(ABC, Serializable, Generic[TensorType]):
         :class:`~qewton.config.data_configurations.DataConfiguration`).
 
         The inputs are declared by the annotations and already merged with
-        what is connected; the returned configurations are merged with the
-        annotated ones of the outputs. A shape operation that needs more of
+        what is connected, as known so far (resolved, see
+        :class:`~qewton.config.matching.Matching`); they belong to the
+        matching of the graph, so what shape operations fix goes there. The
+        returned configurations are merged with the annotated ones of the
+        outputs. A shape operation that needs more of
         the inputs' structure than is known raises
         :class:`~qewton.config.errors.StructureUnknown`; the graph calls
         `relate` again once the inputs change.

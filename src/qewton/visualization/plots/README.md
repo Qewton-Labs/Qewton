@@ -24,7 +24,8 @@ scale in every state).
   (structure and topological dimension), the numbers of positions `dims`,
   whether positions must come from the domain, and whether colors are
   mapped through a ColorScale; it implements `build(positions, color,
-  features)`. `supports(domain, n_positions)` answers from these
+  features, visible)`, leaving out the points the mask hides.
+  `supports(domain, n_positions)` answers from these
   declarations. Types: `HeatmapPlot`, `SurfacePlot`, `LinePlot`,
   `ScatterPlot`, `BarPlot`, `VectorPlot`, `ImagePlot`.
 - **`TablePlot`** (`table/`): a table of named columns (a dict or a

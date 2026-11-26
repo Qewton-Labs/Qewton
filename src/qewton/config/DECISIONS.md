@@ -5,14 +5,45 @@ heading names the requirements it serves.
 
 ## Merging
 
+### Declarations never change; matching has its own state (M1, M4)
+
+Declared configurations are never written to. Everything matching finds
+(groups of merged objects, bound ellipses, sizes, relations, origins) lives
+in a `Matching`, one per graph, in tables over the declared objects. A node,
+graph or trainer is then copied with a plain `deepcopy` (a tuner copies the
+trainer per trial), and a new matching is built from the declarations
+whenever the graph changes.
+
+### Configurations of a matching are their own type (M1, M4)
+
+`DynamicDataConfiguration` is a `DataConfiguration` that belongs to a
+matching; merging and the shape operations exist only there. A declaration
+thus has no operation that could change it, and everything that only reads
+configurations takes both.
+
+### Only open objects get a stand-in per place (M1, M4, H1, H2)
+
+At a place, an object that can not become more concrete (a fixed size, a
+dim bound to a HyperParameter, axes with a Variable or a discrete geometry
+and only such dims) is used as it is. Every other object (an unknown dim,
+an ellipsis, axes of unknown kind, features without a Variable, a
+placeholder or continuous geometry, and what contains them) gets a
+stand-in of its own, since it may become something else at every place,
+e.g. features `u` at one place and `v` at another. What is one object in
+the declarations stays one object at a place, and nothing is copied. A dim
+bound to a HyperParameter is the same at every place, so all places agree
+on its size.
+
 ### Merging instead of copying sizes (M1, G1)
 
-Connecting merges axes and dims with union-find instead of copying sizes
-between separate objects. Equal axes are then one object, so consumers
-recognize them by identity (one slider for the batch axes of a prediction
-and its reference) and a size known at one place needs no further
-propagation. `resolve()` replaces merged objects by their representatives
-where configurations are read.
+Connecting merges axes and dims into groups instead of copying sizes
+between separate objects. Equal axes are then one object where
+configurations are read (`resolve()`), so consumers recognize them by
+identity (one slider for the batch axes of a prediction and its reference)
+and a size known at one place needs no further propagation. Of a group of
+axes the most concrete one stands for it (a known kind, then a Variable or
+geometry, a discretization before what it discretizes); of a group of dims
+an operation dim, as its relation may still solve for its operands.
 
 ### Ambiguous alignments wait (M3, G4)
 
@@ -36,9 +67,9 @@ propagation method per node would make every node author handle merging.
 
 While connecting, a shape operation that would have to refine an unknown
 input raises `StructureUnknown` and `relate` is run again once its inputs
-change. Only `Graph.setup`, which matches from scratch, refines unknown
-inputs from known outputs. Refinement thus never meets structure arriving
-later.
+change. Only `Graph.setup`, which matches from scratch, lets the matching
+refine unknown inputs from known outputs (`Matching.refining`). Refinement
+thus never meets structure arriving later.
 
 ### Broadcasting does not merge (N3)
 
@@ -46,12 +77,6 @@ A dim of size 1 broadcast against N is compatible with it but not the same
 dim; merging them would give the size-1 side size N.
 
 ## HyperParameters in configurations
-
-### A bound dim is copied per place (H1, H2)
-
-Merging writes into dims, so a dim shared between places would carry the
-matching of one graph into another. Every place gets its own copy; all
-copies refer to the same HyperParameter, which keeps them equal.
 
 ### Only plain open HyperParameters are inferred (H2)
 
@@ -63,6 +88,13 @@ not a HyperParameter, so it is neither tuned nor inferred.
 
 The same node connected to other data is an error, not a silent change of
 its weights' shape.
+
+### Variables are values (M4)
+
+Two Variables are equal if their names, dims and children are; copies
+(e.g. of a trainer per trial) are equal to the original, and reference
+data needs no particular instance. Composing Variables (`u * p`) leaves the
+parts unchanged.
 
 ## Sizes of data sources
 

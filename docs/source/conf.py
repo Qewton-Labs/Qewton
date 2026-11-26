@@ -106,7 +106,12 @@ except Exception as e:
 project = "Qewton"
 copyright = "2026, Nick Heilenkötter, Tom Freudenberg"
 author = "Nick Heilenkötter, Tom Freudenberg"
-release = "1.0.0"
+from importlib.metadata import PackageNotFoundError, version as _version
+
+try:
+    release = _version("qewton")  # single source of truth: pyproject.toml
+except PackageNotFoundError:  # package not installed, docs built from the source tree
+    release = "unknown"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

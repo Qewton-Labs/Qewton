@@ -11,7 +11,7 @@ from qewton.graphs.control_nodes.graph_node import GraphNode
 from qewton.graphs.graphs import Graph
 from qewton.config.variables import Variable
 from qewton.optim.parameters.hyperparameter_base import HyperParameter
-from qewton.config.data_configurations import DataConfiguration
+from qewton.config.data_configurations import DataConfiguration, DynamicDataConfiguration
 from qewton.config.axes import AxesDim, EllipsisAxes, BatchAxes
 from qewton.config.dtypes import Number
 
@@ -197,10 +197,12 @@ class FCNDeepONet(DeepONet[TensorType]):
 
         return merge_node, branch_net, trunk_net
 
-    def relate(self, branch: DataConfiguration, trunk: DataConfiguration) -> None:
+    def relate(
+        self, branch: DynamicDataConfiguration, trunk: DynamicDataConfiguration
+    ) -> None:
         """The branch network takes a branch sample flattened: all its dims
         but the batch dim have `branch_size` values together."""
-        branch.flatten(1).dim(-1).merge(AxesDim(self.branch_size))
+        branch.flatten(1).merge_dim(-1, AxesDim(self.branch_size))
 
     def build(self) -> None:
         """Rebuild branch, trunk and merge node for the current

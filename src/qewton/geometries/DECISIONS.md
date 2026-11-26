@@ -8,11 +8,16 @@ one axis per factor. The full simplex mesh is triangulated (staircase
 triangulation, factor cell vertices sorted by global index for a conforming
 mesh) only when `mesh` is accessed, since many uses only need the vertices.
 
-## `SampledGeometry` is shared, not copied
-`SampledGeometry.__deepcopy__` returns the object itself. Data configurations
-are deep-copied (e.g. a node's dynamic configuration from its static one),
-and every copy must keep referencing the object that the owning sampler
-updates in each forward pass.
+## A geometry's shape tells its factors
+A discrete product keeps each factor's shape, the first factor slowest, so
+every factor occupies a block of the shape and can be split off by a
+reshape (e.g. `(100, 92)` for 100 times of 92 points). Its structure
+follows from the factors: a product of rectilinear grids is a grid, of
+point sets a point set, anything else the mesh of the products of factor
+cells. A rectilinear `GridGeometry` answers `factors` with its axes, so a
+grid can be sliced without being built as a product; a curvilinear grid is
+no product of point sets and has no factors. A point filter is no product
+either and stays with the grid; its factors have none.
 
 ## Mesh availability is checked via the `mesh` attribute
 Code that needs a mesh (e.g. plotting) checks `getattr(geometry, "mesh", None) is not None`

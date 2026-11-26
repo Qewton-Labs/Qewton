@@ -12,7 +12,7 @@ from unittest import mock
 import pytest
 from declared_nodes import B, F, dc, pass_through, source
 
-from qewton.config.data_configurations import DataConfiguration
+from qewton.config.matching import Matching
 from qewton.graphs.graphs import Graph
 
 ORDERS = ("source_first", "source_last")
@@ -25,9 +25,9 @@ def _merges(length: int, order: str) -> int:
     first = (data.output_ports[0], nodes[0].input_ports[0])
     connections = [first] + connections if order == "source_first" else connections + [first]
     graph = Graph()
-    original = DataConfiguration.merge
+    original = Matching.merge_configurations
     with mock.patch.object(
-        DataConfiguration, "merge", autospec=True, side_effect=original
+        Matching, "merge_configurations", autospec=True, side_effect=original
     ) as merge:
         for from_port, to_port in connections:
             graph.connect(from_port, to_port)

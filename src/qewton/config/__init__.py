@@ -13,6 +13,7 @@ from .axes import (
     DivideDim,
 )
 from .errors import DataConfigMismatchError
+from .matching import Matching
 from .data_configurations import DataConfiguration, GridDataConfiguration
 
 from .variables import Variable

@@ -8,7 +8,7 @@ from qewton.config.axes import BatchAxes, FeatureAxes
 from qewton.config.variables import Variable
 from qewton.algorithms.building_blocks import Add, Multiply, Square
 from qewton.data.datasets import ArrayLikeDataSet
-from qewton.data.dataloaders.base import DataLoader
+from qewton.data.dataloaders.data_loader import DataLoader
 
 
 def test_graph_backward_building():
