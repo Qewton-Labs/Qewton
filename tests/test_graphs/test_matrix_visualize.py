@@ -20,8 +20,8 @@ from qewton.data.dataloaders.sampler.grid_sampler import GridSampler
 from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
 from qewton.geometries.continuous.domains_1d.interval import Interval
 from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
-from qewton.geometries.discrete.mesh import Mesh
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 from qewton.geometries.discrete.point_cloud import PointCloud
 from qewton.graphs.graphs import Graph
 from qewton.visualization import Figure, Overlay, TimeAxis

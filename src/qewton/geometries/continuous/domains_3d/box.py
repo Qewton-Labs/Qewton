@@ -9,8 +9,8 @@ from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Float32, Bool
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
-from qewton.geometries.discrete.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh import Mesh
 
 
 class Box(ContinuousGeometry[TensorType]):

@@ -21,8 +21,8 @@ from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.geometries.continuous.domains_2d.circle import Circle
 from qewton.geometries.continuous.domains_3d.cylinder import Cylinder
-from qewton.geometries.discrete.mesh import Mesh
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 from qewton.graphs.graphs import Graph
 from qewton.graphs.nodes import Node
 

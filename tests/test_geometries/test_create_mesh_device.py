@@ -16,8 +16,8 @@ from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
 from qewton.geometries.continuous.domains_2d.triangle import Triangle
 from qewton.geometries.continuous.domains_3d.box import Box
 from qewton.geometries.continuous.domains_3d.cylinder import Cylinder
-from qewton.geometries.discrete.mesh import Mesh
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 
 devices = [cpu, cuda(0)] if torch.cuda.is_available() else [cpu]
 

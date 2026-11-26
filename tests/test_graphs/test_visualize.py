@@ -679,8 +679,8 @@ class TestVisualizeProductGeometry:
 
     @staticmethod
     def _space_time_reference(T, U, square):
-        from qewton.geometries.discrete.mesh import Mesh
-        from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+        from qewton.geometries.discrete.meshes.mesh import Mesh
+        from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 
         times = np.array([0.0, 0.1, 0.5, 2.0])
         time_mesh = MeshGeometry(
@@ -722,8 +722,8 @@ class TestVisualizeProductGeometry:
 
     def test_data_reference_on_a_space_time_mesh(self, domains, tmp_path):
         from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
-        from qewton.geometries.discrete.mesh import Mesh
-        from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+        from qewton.geometries.discrete.meshes.mesh import Mesh
+        from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
         from qewton.visualization import TimeAxis
 
         T, X, time, square = domains

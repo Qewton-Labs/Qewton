@@ -6,7 +6,7 @@ import numpy as np
 
 from qewton.config.variables import Variable
 from qewton.geometries.base import Geometry, DiscreteGeometry, BoundaryGeometry, Structure
-from qewton.geometries.discrete.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh import Mesh
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu

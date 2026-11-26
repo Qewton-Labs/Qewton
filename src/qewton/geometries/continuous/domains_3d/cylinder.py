@@ -11,7 +11,7 @@ from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Float32
 from qewton.geometries.continuous.domains_2d.circle import Circle
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry, Mesh
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry, Mesh
 
 
 class Cylinder(ContinuousGeometry[TensorType]):

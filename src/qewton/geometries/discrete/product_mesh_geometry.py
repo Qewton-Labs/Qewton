@@ -10,8 +10,8 @@ from qewton.config.devices import Device, cpu
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.geometries.base import Geometry, DiscreteGeometry, Structure
-from qewton.geometries.discrete.mesh import Mesh
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 
 
 def _as_numpy(data, backend) -> np.ndarray:
@@ -128,7 +128,7 @@ class ProductMeshGeometry(DiscreteGeometry[TensorType]):
     Args:
         factors: The meshed factor geometries (at least two), each with a
             ``mesh`` and a ``variable``, e.g.
-            :class:`~qewton.geometries.discrete.mesh_geometry.MeshGeometry`.
+            :class:`~qewton.geometries.discrete.meshes.mesh_geometry.MeshGeometry`.
         variable: The variable of the product. Defaults to the composition of
             the factor variables. Its dimension must equal the summed factor
             dimensions.

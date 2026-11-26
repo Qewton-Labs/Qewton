@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from qewton.geometries.discrete.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh import Mesh
 
 from qewton.backends import TensorType
 from qewton.geometries.base import DiscreteGeometry, Geometry, Structure
@@ -27,7 +27,7 @@ class SampledGeometry(DiscreteGeometry[TensorType]):
         factors (list or None): The meshed factor geometries if the current
             points are the vertices of a product mesh (first factor varying
             slowest), otherwise ``None``.
-        mesh (Mesh or None): A :class:`~qewton.geometries.discrete.mesh.Mesh`
+        mesh (Mesh or None): A :class:`~qewton.geometries.discrete.meshes.mesh.Mesh`
             built from the current points and cells, or ``None`` for a plain
             point cloud without cell connectivity. For a product mesh the cells
             are built on first access.

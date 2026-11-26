@@ -2,7 +2,7 @@ import inspect
 import pytest
 
 from qewton.backends.base import ComputingBackend
-from qewton.geometries.discrete.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh import Mesh
 from qewton.config.variables import Variable
 from qewton.config.devices import cpu, cuda, cuda_available
 
@@ -208,3 +208,68 @@ def test_simple_face_marking_strategy(backend):
     # Every marker should be one of the provided markers (no default marker used)
     print(face_markers, markers)
     assert all(m in face_markers for m in markers)
+
+
+def _edge_list(backend, edges):
+    return [tuple(int(i) for i in e) for e in backend.to_numpy(edges)]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("device", devices)
+def test_edges_of_cells(backend, device):
+    # Two triangles share the edge (1, 2), which must appear only once.
+    m = Mesh(
+        [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+        [[0, 1, 2], [1, 3, 2]],
+        backend=backend,
+        device=device,
+    )
+    assert _edge_list(backend, m.edges) == [(0, 1), (0, 2), (1, 2), (1, 3), (2, 3)]
+    assert m.edges.dtype == m.cells.dtype
+    assert backend.math.allclose(
+        backend.to(m.edges, cpu), backend.to(backend.move_to_same_device(m.edges, m.cells), cpu)
+    )
+    assert m.edges is m.edges  # computed once
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_edges_of_intervals_and_tetrahedra(backend):
+    m1 = Mesh([[0.0], [0.5], [1.0]], [[1, 0], [1, 2]], backend=backend)
+    assert _edge_list(backend, m1.edges) == [(0, 1), (1, 2)]
+
+    m3 = Mesh(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        [[0, 1, 2, 3]],
+        backend=backend,
+    )
+    assert len(_edge_list(backend, m3.edges)) == 6
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_set_edges(backend):
+    # A mesh without cells, e.g. data that only provides its connectivity.
+    m = Mesh([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], [], backend=backend)
+    assert tuple(m.edges.shape) == (0, 2)
+
+    # Both directions and self-loops are reduced to each edge once.
+    m.set_edges([[1, 0], [0, 1], [2, 1], [1, 2], [2, 2]])
+    assert _edge_list(backend, m.edges) == [(0, 1), (1, 2)]
+
+    with pytest.raises(ValueError, match="vertices 0 to 2"):
+        m.set_edges([[0, 3]])
+    with pytest.raises(ValueError, match=r"shape \[E, 2\]"):
+        m.set_edges([[0, 1, 2], [1, 2, 0]])
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_set_edges_discards_hierarchy(backend):
+    m = Mesh(
+        [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+        [[0, 1, 2], [1, 3, 2]],
+        backend=backend,
+    )
+    levels = m.hierarchy(2)
+    assert m.hierarchy(2) is levels
+    m.set_edges([[0, 1], [2, 3]])
+    assert m.hierarchy(2) is not levels
+    assert m.hierarchy(2)[0].edge_count == 2

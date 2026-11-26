@@ -17,8 +17,8 @@ from qewton.data.dataloaders.sampler.random_sampler import RandomUniformSampler
 from qewton.geometries.continuous.domains_1d.interval import Interval
 from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
 from qewton.geometries.continuous.domains_3d.box import Box
-from qewton.geometries.discrete.mesh import Mesh
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 from qewton.graphs.graphs import Graph
 from qewton.optim.base import EvaluationPhase
 from qewton.visualization.figure import Figure

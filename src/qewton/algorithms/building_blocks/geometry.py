@@ -4,7 +4,7 @@ from qewton.config.axes import FeatureAxes, GeometryAxes
 from qewton.config.data_configurations import DataConfiguration
 from qewton.config.variables import Variable
 from qewton.geometries.base import DiscreteGeometry
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 from qewton.graphs.nodes import InputPort, Node, OutputPort
 
 

@@ -3,8 +3,8 @@ import copy
 import numpy as np
 
 from qewton.config.variables import Variable
-from qewton.geometries.discrete.mesh import Mesh
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 from qewton.geometries.discrete.sampled_geometry import SampledGeometry
 
 

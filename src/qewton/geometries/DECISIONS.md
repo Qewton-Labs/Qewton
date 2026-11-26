@@ -58,3 +58,12 @@ device. An already discrete geometry (e.g. a loaded `MeshGeometry`) returns
 itself unchanged instead of a copy. Code that needs the points on a device
 moves the points it hands on, e.g. a `PointSampler` in mesh mode moves the
 mesh vertices to its mesh device.
+
+## A mesh keeps its own coarse hierarchy
+`Mesh.hierarchy(n_levels)` builds the coarse graphs once and keeps them on the
+mesh, so all data on the same `Mesh` object share one hierarchy without a
+separate cache keyed by a fingerprint. The coarse levels are graphs (vertices,
+edges, map to the next level), not simplex meshes, since aggregation produces
+no cells. They are built with NumPy, because greedy aggregation visits the
+vertices one after another, and then moved to the mesh's backend and device.
+They are not saved with the mesh; explicitly set edges are.

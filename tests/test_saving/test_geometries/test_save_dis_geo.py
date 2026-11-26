@@ -4,10 +4,10 @@ import pytest
 from qewton.config.saving.callables import save, load
 from qewton.backends.base import ComputingBackend
 from qewton.geometries.continuous.domains_2d.circle import Circle
-from qewton.geometries.discrete.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh import Mesh
 from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.geometries.discrete.point_cloud import PointCloud
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 from qewton.config.variables import Variable
 
 
@@ -155,3 +155,21 @@ def test_save_and_load_mesh_internal(tmp_path, backend):
     assert backend.math.all(loaded_mesh.faces == mesh.faces)
     assert backend.math.all(loaded_mesh.face_markers == mesh.face_markers)
     assert loaded_mesh.marker_labels == mesh.marker_labels
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_save_and_load_mesh_with_edges_and_hierarchy(tmp_path, backend):
+    mesh = Mesh(
+        vertices=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        cells=[[0, 1, 2], [0, 2, 3]],
+        backend=backend,
+    )
+    mesh.set_edges([[0, 1], [1, 2]])  # not derivable from the cells
+    mesh.hierarchy(2)
+
+    save(mesh, tmp_path / "mesh_save", replace=True)
+    loaded = load(tmp_path / "mesh_save")
+
+    assert backend.math.all(loaded.edges == mesh.edges)
+    assert loaded._hierarchies == {}  # not saved, rebuilt on request
+    assert loaded.hierarchy(2)[1].vertex_count == mesh.hierarchy(2)[1].vertex_count

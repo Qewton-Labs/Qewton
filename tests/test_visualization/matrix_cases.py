@@ -22,7 +22,7 @@ from qewton.geometries.continuous.domains_1d.interval import Interval
 from qewton.geometries.continuous.domains_2d.rectangle import Rectangle
 from qewton.geometries.continuous.domains_3d.box import Box
 from qewton.geometries.discrete.grid_geometry import GridGeometry
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 from qewton.geometries.discrete.point_cloud import PointCloud
 from qewton.visualization import (
     BarPlot,

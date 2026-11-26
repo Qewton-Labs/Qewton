@@ -24,8 +24,8 @@ from qewton.geometries.continuous.domains_3d.cylinder import Cylinder
 from qewton.geometries.continuous.domains_3d.sphere import Sphere
 from qewton.geometries.discrete.grid_geometry import GridGeometry
 from qewton.geometries.discrete.index_grid_geometry import IndexGridGeometry
-from qewton.geometries.discrete.mesh import Mesh
-from qewton.geometries.discrete.mesh_geometry import MeshGeometry
+from qewton.geometries.discrete.meshes.mesh import Mesh
+from qewton.geometries.discrete.meshes.mesh_geometry import MeshGeometry
 from qewton.geometries.discrete.point_cloud import PointCloud
 
 DEVICES = [cpu, cuda(0)] if torch.cuda.is_available() else [cpu]

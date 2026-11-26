@@ -1,12 +1,16 @@
 from __future__ import annotations
 from typing import Generic
+import hashlib
 import math
+
+import numpy as np
 
 from qewton.backends.base import TensorType, ComputingBackend
 from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Int32, Float32
 from qewton.config.saving.saving import Serializable
+from qewton.geometries.discrete.meshes.hierarchy import Level, build_hierarchy
 
 
 class Mesh(Serializable, Generic[TensorType]):
@@ -85,6 +89,22 @@ class Mesh(Serializable, Generic[TensorType]):
         )
 
         self._find_boundary_facets(device)
+        # Built on first use, see `edges` and `hierarchy`.
+        self._edges: TensorType | None = None
+        self._hierarchies: dict[int, list[Level]] = {}
+
+    def _collect_serializable_attributes(self) -> tuple[list, list]:
+        # The hierarchies are not saved, they are rebuilt from vertices and
+        # edges when requested again.
+        keys, values = super()._collect_serializable_attributes()
+        kept = [(k, v) for k, v in zip(keys, values) if k != "_hierarchies"]
+        return [k for k, _ in kept], [v for _, v in kept]
+
+    def load(self, serializer, data_config: dict) -> None:
+        super().load(serializer, data_config)
+        if not hasattr(self, "_edges"):  # saved before edges were added
+            self._edges = None
+        self._hierarchies = {}
 
     def map_cells_to_original(self, cell_indices: TensorType) -> TensorType:
         """Maps the given cell indices to the original mesh.
@@ -242,7 +262,7 @@ class Mesh(Serializable, Generic[TensorType]):
             Mesh: The mesh object containing the mesh from the file.
         """
         try:
-            from qewton.geometries.discrete.load_meshes_helper import (
+            from qewton.geometries.discrete.meshes.load_meshes_helper import (
                 load_file_with_meshio,
             )  # pylint: disable=import-outside-toplevel # type: ignore
         except ImportError as e:
@@ -432,6 +452,11 @@ class Mesh(Serializable, Generic[TensorType]):
             self.parent_cell_mapping = self.backend.to(
                 self.parent_cell_mapping, device=device
             )
+        if self._edges is not None:
+            self._edges = self.backend.to(self._edges, device=device)
+        for levels in self._hierarchies.values():
+            for level in levels:
+                level.to(device)
         return self
 
     def sample_grid_from_vertices(
@@ -484,3 +509,102 @@ class Mesh(Serializable, Generic[TensorType]):
 
         # Convex combination
         return self.backend.math.einsum("ni,nid->nd", w, verts), chosen_cells
+
+    @property
+    def edges(self) -> TensorType:
+        """The undirected edges of the mesh, shape [E, 2], each once with the
+        smaller vertex index first, sorted. Computed from the cells on first
+        access, unless given by :meth:`set_edges`."""
+        if self._edges is None:
+            self._edges = self.compute_edges()
+        return self._edges
+
+    def compute_edges(self) -> TensorType:
+        """Compute the edges of the cells: every pair of vertices that share a
+        cell, see :attr:`edges`.
+
+        Returns:
+            TensorType: The edges, shape [E, 2], on the device of the cells.
+        """
+        corners = self.cells.shape[1] if len(self.cells.shape) == 2 else 0
+        if corners < 2:
+            return self._normalize_edges(self.backend.build_tensor([], dtype=Int32))
+        pairs = [
+            self.backend.math.stack([self.cells[:, i], self.cells[:, j]], axis=1)
+            for i in range(corners)
+            for j in range(i + 1, corners)
+        ]
+        return self._normalize_edges(self.backend.math.concatenate(pairs, axis=0))
+
+    def set_edges(self, edges: list[list[int]] | TensorType) -> None:
+        """Use the given edges instead of those of the cells, e.g. for data that
+        comes with its own connectivity. Coarse levels built before (see
+        :meth:`hierarchy`) are discarded.
+
+        Args:
+            edges (list[list[int]] | TensorType): Vertex index pairs, shape
+                [E, 2]. Each edge may appear in one or both directions;
+                self-loops are dropped.
+
+        Raises:
+            ValueError: If `edges` has no shape [E, 2] or refers to a vertex
+                the mesh does not have.
+        """
+        edges = self.backend.build_tensor(edges, dtype=Int32)
+        if edges.shape[0] > 0 and (len(edges.shape) != 2 or edges.shape[1] != 2):
+            raise ValueError(
+                f"Edges must have shape [E, 2], got {tuple(edges.shape)}. "
+                "Transpose an edge index of shape [2, E] first."
+            )
+        if edges.shape[0] > 0 and (
+            int(self.backend.math.min(edges)) < 0
+            or int(self.backend.math.max(edges)) >= self.vertex_count
+        ):
+            raise ValueError(
+                f"Edges must refer to vertices 0 to {self.vertex_count - 1}, got "
+                f"indices from {int(self.backend.math.min(edges))} to "
+                f"{int(self.backend.math.max(edges))}."
+            )
+        self._edges = self._normalize_edges(edges)
+        self._hierarchies = {}
+
+    def _normalize_edges(self, edges: TensorType) -> TensorType:
+        """`edges` as in :attr:`edges`: each undirected edge once, with the
+        smaller vertex index first, sorted, without self-loops, and on the
+        device of the vertices."""
+        edges = self.backend.math.reshape(edges, (-1, 2))
+        edges = self.backend.move_to_same_device(edges, self.vertices)
+        edges = self.backend.math.sort(edges, axis=1)
+        edges = edges[edges[:, 0] != edges[:, 1]]
+        return self.backend.math.unique(edges, axis=0)
+
+    def hierarchy(self, n_levels: int) -> list[Level]:
+        """The mesh as `n_levels` nested graphs: level 0 are the vertices and
+        :attr:`edges` of the mesh, every further level is a coarsening of the
+        previous one by greedy aggregation, see
+        :func:`~qewton.geometries.discrete.meshes.hierarchy.build_hierarchy`.
+
+        Built on first request and kept, so all data on the same Mesh object
+        share one hierarchy. :meth:`to` moves it along with the mesh.
+
+        Args:
+            n_levels (int): The number of levels, including the mesh itself.
+
+        Returns:
+            list[Level]: The levels, from the mesh to the coarsest graph.
+        """
+        if n_levels not in self._hierarchies:
+            self._hierarchies[n_levels] = build_hierarchy(
+                self.vertices, self.edges, n_levels, self.backend
+            )
+        return self._hierarchies[n_levels]
+
+    @property
+    def mesh_key(self) -> str:
+        h = hashlib.sha1()
+        coords = self.backend.to_numpy(self.vertices)
+        edge_index = self.backend.to_numpy(self.edges)
+
+        h.update(coords.astype(np.float32).tobytes())
+        h.update(edge_index.astype(np.int64).tobytes())
+        return h.hexdigest()[:16]
