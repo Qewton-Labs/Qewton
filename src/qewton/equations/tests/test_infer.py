@@ -128,9 +128,15 @@ class TestConflicts:
         with pytest.raises(ShapeError):
             infer(Eq(curl(q, x), f).on(Omega))
 
-    def test_dot_does_not_guess(self):
-        # dot is ambiguous, so the unknown is defaulted rather than inferred
+    def test_dot_infers_the_other_factor_when_it_is_unique(self):
+        # dot((2, 2), b) = (2,) leaves b no choice but (2,)
         a, b = sym("a", dim=(2, 2)), sym("b")
+        f = sym("f", dim=2)
+        assert infer(Eq(dot(a, b), f).on(Omega)).shapes[b] == (2,)
+
+    def test_dot_of_two_unknowns_does_not_guess(self):
+        # dot(a, b) = (2,) fits a matrix times a vector and a vector times a matrix
+        a, b = sym("a"), sym("b")
         f = sym("f", dim=2)
         with pytest.raises(ShapeError):
             infer(Eq(dot(a, b), f).on(Omega))

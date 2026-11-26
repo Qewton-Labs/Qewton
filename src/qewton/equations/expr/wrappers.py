@@ -6,9 +6,19 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.base import Axes, Expr, SymbolShapes, axes_text
+from qewton.config.data_configurations.base import DataConfiguration
+from qewton.equations.expr.base import Axes, Expr, SymbolConfigs, axes_text
 from qewton.equations.expr.leaves import Coord, FunctionSymbol, as_expr
-from qewton.equations.expr.ops import AxisError, Linearity, Shape, ShapeError, Solver
+from qewton.equations.expr.ops import (
+    AxisError,
+    Linearity,
+    Shape,
+    ShapeError,
+    describe,
+    fixed,
+    known_rank,
+    unify,
+)
 from qewton.equations.expr.traversal import walk
 from qewton.equations.geometry.coordinates import check_coordinate
 from qewton.equations.geometry.sets import SetNode, sliced_axes
@@ -44,15 +54,12 @@ class Restrict(Expr):
     def with_children(self, new: tuple[Expr, ...]) -> Expr:
         return replace(self, expr=new[0])
 
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        return self.expr.shape_with(shapes)
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
+        return self.expr.config(env)
 
     def _free_axes(self) -> Axes:
         # A slice fixes its coordinate; any other set keeps the coordinates.
         return self.expr.free_axes - sliced_axes(self.on)
-
-    def require_shape(self, target: Shape, solver: Solver) -> None:
-        self.expr.require_shape(target, solver)
 
 
 @dataclass(frozen=True)
@@ -75,14 +82,11 @@ class Integral(Expr):
     def with_children(self, new: tuple[Expr, ...]) -> Expr:
         return replace(self, expr=new[0])
 
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        return self.expr.shape_with(shapes)
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
+        return self.expr.config(env)
 
     def _free_axes(self) -> Axes:
         return self.expr.free_axes - self.over.axes
-
-    def require_shape(self, target: Shape, solver: Solver) -> None:
-        self.expr.require_shape(target, solver)
 
 
 @dataclass(frozen=True)
@@ -130,14 +134,12 @@ class Shift(Expr):
     def with_children(self, new: tuple[Expr, ...]) -> Expr:
         return Shift(new[0], self.axis, new[1])
 
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        offset = self.offset.shape_with(shapes)
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
+        offset = self.offset.config(env)
         expected = self.offset_shape
-        if offset is not None and offset != expected:
-            raise ShapeError(
-                f"In {self}: the offset needs shape {expected}, got {offset}."
-            )
-        return self.expr.shape_with(shapes)
+        message = f"In {self}: the offset needs shape {expected}, got {describe(offset)}."
+        unify(offset, fixed(expected), message)
+        return self.expr.config(env)
 
     def _free_axes(self) -> Axes:
         operand = self.expr.free_axes
@@ -154,12 +156,6 @@ class Shift(Expr):
         if self.offset.linearity(unknowns) is not Linearity.NONE:
             return Linearity.NONLINEAR
         return self.expr.linearity(unknowns)
-
-    def require_shape(self, target: Shape, solver: Solver) -> None:
-        self.expr.require_shape(target, solver)
-
-    def require_operand_shapes(self, solver: Solver) -> None:
-        self.offset.require_shape(self.offset_shape, solver)
 
 
 @dataclass(frozen=True)
@@ -190,17 +186,16 @@ class Index(Expr):
     def with_children(self, new: tuple[Expr, ...]) -> Expr:
         return replace(self, expr=new[0])
 
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        operand = self.expr.shape_with(shapes)
-        if operand is None:
-            return None
-        if not operand:
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
+        operand = self.expr.config(env)
+        if known_rank(operand) == 0:
             raise ShapeError(
                 f"Cannot take component {self.index} of the scalar {self.expr}."
             )
-        if self.index >= operand[0]:
+        size = operand.dim(0).size
+        if size is not None and self.index >= size:
             raise ShapeError(
                 f"Component {self.index} is out of range for {self.expr} of shape "
-                f"{operand}."
+                f"{describe(operand)}."
             )
-        return operand[1:]
+        return operand.drop(0)

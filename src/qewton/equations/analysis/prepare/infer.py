@@ -1,20 +1,18 @@
 """Shape inference for function symbols whose output shape is not declared.
 
-A symbol made with `Variable("u")` has no `dim`, so its shape is unknown. Three steps
-fill it in, in this order:
+A symbol made with `Variable("u")` has no `dim`, so its shape is unknown. It gets one
+data configuration of unknown shape, shared by all its occurrences. Building the
+configurations of both sides of a constraint (`Expr.config`) relates them to their
+operands, and merging the two sides makes them one shape, so what is known at one
+place is known at every other: a scalar right side of `-div(q, x) = f` makes `q` a
+vector of length dim(x), and `sin(u)` makes `u` a scalar.
 
-1. Known shapes flow backwards through operators that can be inverted. If the right
-   side of an equation is a scalar, then `-div(q, x)` is a scalar, so `q` is a vector
-   of length `dim(x)`, and so on down to the symbols.
-2. Scalar-only operators (sin, cos, exp, pow) force their arguments to be scalar.
-3. If nothing more follows, the first symbol that is still unknown (in order of
-   appearance) is taken to be a scalar and recorded in `Inference.defaulted`. Then
-   steps 1 and 2 continue, which usually resolves the rest.
-
-Finally every constraint is checked with the inferred shapes, so a conflict raises
-a ShapeError. What a node says about shapes is defined on the node classes
-(`Expr.shape_with`, `require_shape`, `require_operand_shapes`); this module only
-drives the propagation.
+Some relations cannot decide while their operands are open, e.g. which side of a sum
+is the scalar; such a constraint waits. When no waiting constraint can go on, the
+first symbol (in order of appearance) of which nothing is known is taken to be a
+scalar and recorded in `Inference.defaulted`. A symbol known only in part, such as
+`q` in `q[0]`, is never guessed: its shape has to be declared. Finally every
+constraint is checked with the inferred shapes, so a conflict raises a ShapeError.
 """
 
 from __future__ import annotations
@@ -22,14 +20,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from qewton.equations.expr.base import Expr
+from qewton.config.data_configurations.base import DataConfiguration
+from qewton.config.errors import StructureUnknown
+from qewton.equations.expr.base import Expr, SymbolConfigs
 from qewton.equations.expr.leaves import Const, FunctionSymbol
-from qewton.equations.expr.ops import Shape, ShapeError
-from qewton.equations.expr.wrappers import Index
+from qewton.equations.expr.ops import (
+    Shape,
+    ShapeError,
+    describe,
+    fixed,
+    known_rank,
+    known_shape,
+    unify,
+    unknown,
+)
 from qewton.equations.model.constraints import Constraint
 from qewton.equations.model.problem import Problem
-
-Env = dict[FunctionSymbol, Shape]
 
 
 @dataclass(frozen=True)
@@ -45,38 +51,73 @@ class Inference:
 
 
 def infer_shapes(problem: Problem) -> Inference:
-    solver = _Solver({})
+    order = list(dict.fromkeys(s for c in problem.constraints for s in c.symbols()))
+    env: SymbolConfigs = {}
     defaulted: list[FunctionSymbol] = []
-    while True:
-        _propagate(problem, solver)
-        pending = [
-            s
-            for s in _symbols_in_order(problem)
-            if s.shape is None and s not in solver.env
-        ]
-        if not pending:
-            break
-        _reject_indexed(problem, pending[0])
-        solver.env[pending[0]] = ()
-        defaulted.append(pending[0])
+    waiting = list(problem.constraints)
+    while waiting:
+        still = [c for c in waiting if not _relate(c, env)]
+        if len(still) == len(waiting):
+            symbol = _first_unknown(order, env)
+            if symbol is None:
+                raise ShapeError(
+                    f"The shapes in {still[0]} cannot be inferred; declare the output "
+                    "shapes of its functions, e.g. Variable('u', dim=2)."
+                )
+            _default(symbol, env, defaulted)
+        waiting = still
+    # Symbols that no constraint says anything about are scalars too.
+    while (symbol := _first_unknown(order, env)) is not None:
+        _default(symbol, env, defaulted)
+
+    shapes = {s: s.shape if s.shape is not None else _determined(s, env) for s in order}
     for constraint in problem.constraints:
-        _check(constraint, solver.env)
-    shapes = {
-        symbol: symbol.shape if symbol.shape is not None else solver.env[symbol]
-        for symbol in _symbols_in_order(problem)
-    }
+        _check(constraint, shapes)
     return Inference(shapes, tuple(defaulted))
 
 
-def _reject_indexed(problem: Problem, symbol: FunctionSymbol) -> None:
-    """A component does not say how many components there are, so it cannot default."""
-    for constraint in problem.constraints:
-        for node in constraint.nodes():
-            if isinstance(node, Index) and node.expr == symbol:
-                raise ShapeError(
-                    f"The output shape of {symbol.name!r} cannot be inferred from "
-                    f"{node}; declare it, e.g. Variable({symbol.name!r}, dim=2)."
-                )
+def _relate(constraint: Constraint, env: SymbolConfigs) -> bool:
+    """Relate both sides of `constraint`; False while it has to wait."""
+    try:
+        left, right = constraint.lhs.config(env), constraint.rhs.config(env)
+    except StructureUnknown:
+        return False
+    # A scalar constant stands for any shape, e.g. 0 for a zero vector.
+    if not (_scalar_const(constraint.lhs, left) or _scalar_const(constraint.rhs, right)):
+        sides = f"{describe(left)} and {describe(right)}"
+        unify(left, right, f"In {constraint}: the sides have shapes {sides}.")
+    return True
+
+
+def _scalar_const(expr: Expr, config: DataConfiguration) -> bool:
+    return isinstance(expr, Const) and known_rank(config) == 0
+
+
+def _first_unknown(
+    order: list[FunctionSymbol], env: SymbolConfigs
+) -> FunctionSymbol | None:
+    """The first undeclared symbol of which nothing is known yet."""
+    for symbol in order:
+        if symbol.shape is None and env.setdefault(symbol, unknown()).resolve().shape == (
+            ...,
+        ):
+            return symbol
+    return None
+
+
+def _default(symbol: FunctionSymbol, env: SymbolConfigs, defaulted: list) -> None:
+    unify(env[symbol], fixed(()), f"{symbol.name!r} cannot be a scalar.")
+    defaulted.append(symbol)
+
+
+def _determined(symbol: FunctionSymbol, env: SymbolConfigs) -> Shape:
+    shape = known_shape(env[symbol])
+    if shape is None:
+        raise ShapeError(
+            f"The output shape of {symbol.name!r} is only known in part, "
+            f"{describe(env[symbol])}; declare it, e.g. Variable({symbol.name!r}, dim=2)."
+        )
+    return shape
 
 
 def constraint_shape(
@@ -84,7 +125,7 @@ def constraint_shape(
 ) -> Shape:
     """The shape of both sides of `constraint`, when the shape of every function is
     given; a scalar constant side fits any shape."""
-    left, right = (_determined(side, shapes) for side in constraint.sides)
+    left, right = (_shape_of(side, shapes) for side in constraint.sides)
     if left == right:
         return left
     if left == () and isinstance(constraint.lhs, Const):
@@ -94,68 +135,17 @@ def constraint_shape(
     raise ShapeError(f"Cannot determine scalar equation components for {constraint}.")
 
 
-def _determined(expr: Expr, shapes: Mapping[FunctionSymbol, Shape]) -> Shape:
+def _shape_of(expr: Expr, shapes: Mapping[FunctionSymbol, Shape]) -> Shape:
     shape = expr.shape_with(shapes)
     if shape is None:
         raise ShapeError(f"The shape of {expr} is not determined by the given shapes.")
     return shape
 
 
-def _symbols_in_order(problem: Problem) -> list[FunctionSymbol]:
-    found = (s for constraint in problem.constraints for s in constraint.symbols())
-    return list(dict.fromkeys(found))
-
-
-def _propagate(problem: Problem, solver: _Solver) -> None:
-    """Apply steps 1 and 2 until no more shapes follow."""
-    while True:
-        known = len(solver.env)
-        for constraint in problem.constraints:
-            _constrain(constraint.lhs, constraint.rhs, solver)
-            for node in constraint.nodes():
-                node.require_operand_shapes(solver)
-        if len(solver.env) == known:
-            return
-
-
-def _constrain(lhs: Expr, rhs: Expr, solver: _Solver) -> None:
-    """Equal sides have equal shapes, except that a scalar constant fits any shape."""
-    left, right = solver.known(lhs), solver.known(rhs)
-    if left is None and right is not None and not _scalar_const(rhs, right):
-        lhs.require_shape(right, solver)
-    elif right is None and left is not None and not _scalar_const(lhs, left):
-        rhs.require_shape(left, solver)
-
-
-def _scalar_const(expr: Expr, shape: Shape | None) -> bool:
-    return isinstance(expr, Const) and shape == ()
-
-
-@dataclass(frozen=True)
-class _Solver:
-    """The shapes inferred so far, and what the nodes may ask of them."""
-
-    env: Env
-
-    def known(self, expr: Expr) -> Shape | None:
-        return expr.shape_with(self.env)
-
-    def back(self, expr: Expr, target: Shape) -> None:
-        expr.require_shape(target, self)
-
-    def record(self, symbol: FunctionSymbol, shape: Shape) -> None:
-        if self.env.setdefault(symbol, shape) != shape:
-            raise ShapeError(
-                f"{symbol.name!r} is used with shapes {self.env[symbol]} and {shape}."
-            )
-
-
-def _check(constraint: Constraint, env: Env) -> None:
-    left, right = (side.shape_with(env) for side in constraint.sides)
-    if (
-        left == right
-        or _scalar_const(constraint.lhs, left)
-        or _scalar_const(constraint.rhs, right)
-    ):
+def _check(constraint: Constraint, shapes: Mapping[FunctionSymbol, Shape]) -> None:
+    left, right = (side.shape_with(shapes) for side in constraint.sides)
+    if left == right or (left == () and isinstance(constraint.lhs, Const)):
+        return
+    if right == () and isinstance(constraint.rhs, Const):
         return
     raise ShapeError(f"In {constraint}: the sides have shapes {left} and {right}.")

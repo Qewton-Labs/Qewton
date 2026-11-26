@@ -1,10 +1,15 @@
 """Operator registry: operators as data.
 
 Each OpSpec says how many expression arguments an operator takes, whether it takes
-derivative axes after them, how the result shape follows from the argument shapes,
-its derivative order and its linearity. It can also say how a known result shape
-determines the shapes of the arguments (`back_rule`), which shape inference uses.
-Nodes refer to these specs; nothing here depends on the nodes.
+derivative axes after them, its derivative order, its linearity, and how the shape
+of its result relates to the shapes of its arguments (`relate`).
+
+Shapes are related as data configurations (`qewton.config`), the description the
+computation graphs use for the data between nodes. A relation is one function in both
+directions: it reads what is known of the arguments, constrains them, and returns the
+result, all through objects that are merged once two places are known to be the same.
+So a known result shape flows back into the arguments without a second rule, e.g. a
+scalar `div(q, x)` makes `q` a vector of length dim(x).
 
 `OPS` holds every operator: by name (`OPS["grad"]`, e.g. to load saved expressions),
 and, for the built-in ones, as attributes (`OPS.grad`), which is how code refers to
@@ -13,11 +18,13 @@ them; see `OperatorRegistry`.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from enum import Enum
-from collections.abc import Iterator, Mapping
-from typing import Any, Callable, Protocol
 
+from qewton.config.axes import Axes, AxesDim, EllipsisAxes
+from qewton.config.data_configurations.base import DataConfiguration
+from qewton.config.errors import DataConfigMismatchError, StructureUnknown
 from qewton.config.variables import Variable
 
 Shape = tuple[int, ...]
@@ -92,22 +99,55 @@ class OpLinearity(str, Enum):
         return result
 
 
-class Solver(Protocol):
-    """What back rules and the nodes' `require_shape` may ask of shape inference."""
-
-    def known(self, expr: Any) -> Shape | None:
-        """The shape of `expr` if it is already determined, else None."""
-
-    def back(self, expr: Any, target: Shape) -> None:
-        """Record that `expr` has shape `target`."""
-
-    def record(self, symbol: Any, shape: Shape) -> None:
-        """Record that the function `symbol`, whose shape is not declared, has
-        `shape`; raises ShapeError if it already has another one."""
+###
+# Shapes as data configurations: one axes per dim, an ellipsis for a rest not
+# known yet. A known shape is a tuple everywhere else.
+###
+def fixed(shape: Shape) -> DataConfiguration:
+    """A known shape as a configuration; () is a scalar."""
+    return DataConfiguration(*(Axes(size) for size in shape))
 
 
-# (arguments, axes, result shape, solver) -> records the shapes the arguments need
-BackRule = Callable[[tuple[Any, ...], Variable | None, Shape, Solver], None]
+def unknown() -> DataConfiguration:
+    """A shape of which nothing is known yet."""
+    return DataConfiguration(EllipsisAxes())
+
+
+def known_rank(config: DataConfiguration) -> int | None:
+    """The number of dims, or None while it is open."""
+    shape = config.resolve().shape
+    return None if Ellipsis in shape else len(shape)
+
+
+def known_shape(config: DataConfiguration) -> Shape | None:
+    """The shape, or None while the number of dims or a size is open."""
+    shape = config.resolve().shape
+    return None if Ellipsis in shape or None in shape else shape  # type: ignore
+
+
+def describe(config: DataConfiguration) -> str:
+    """The shape for messages: (2, 3), (…, 2) for an open rest, ? for an open size."""
+    parts = [
+        "…" if s is Ellipsis else "?" if s is None else str(s)
+        for s in config.resolve().shape
+    ]
+    return f"({parts[0]},)" if len(parts) == 1 else f"({', '.join(parts)})"
+
+
+def unify(first, second, message: str) -> None:
+    """Merge two configurations, or two dims; raise ShapeError(message) if they
+    contradict."""
+    try:
+        first.merge(second)
+    except DataConfigMismatchError as error:
+        raise ShapeError(message) from error
+
+
+# A relation: the configurations of the expression arguments and the derivative axes
+# (or None) in, the configuration of the result out. It may constrain the arguments;
+# it raises ShapeError on a contradiction, and StructureUnknown while it cannot decide
+# yet, e.g. which side of a sum is the scalar.
+Relation = Callable[[list[DataConfiguration], "Variable | None"], DataConfiguration]
 
 
 @dataclass(frozen=True)
@@ -116,25 +156,19 @@ class OpSpec:
 
     Attributes:
         arity: The number of expression arguments.
-        shape_rule: Maps the argument shapes and the derivative axes (or None) to
-            the result shape. Raises ShapeError on incompatible shapes.
+        relate: How the result shape relates to the argument shapes; see `Relation`.
         takes_axes: Whether a coordinate product follows the expression arguments.
         order: The derivative order along each leaf of the axes argument.
         linearity: How the operator depends on its arguments.
-        scalar_args: Whether every expression argument must be a scalar.
-        back_rule: Infers argument shapes from a known result shape, or None if the
-            result says nothing about the arguments.
         name: The registry key, e.g. "grad". An operator defined as an attribute of
             `OperatorRegistry` takes the attribute's name, so it is not given.
     """
 
     arity: int
-    shape_rule: Callable[[tuple[Shape, ...], Variable | None], Shape]
+    relate: Relation
     takes_axes: bool = False
     order: int = 0
     linearity: OpLinearity = OpLinearity.LINEAR
-    scalar_args: bool = False
-    back_rule: BackRule | None = None
     name: str = ""
 
     def __set_name__(self, owner: type, name: str) -> None:
@@ -143,146 +177,130 @@ class OpSpec:
             raise ValueError(f"The operator {self.name!r} is defined as {name!r}.")
         object.__setattr__(self, "name", name)
 
+    def result_shape(
+        self, shapes: tuple[Shape, ...], axes: Variable | None = None
+    ) -> Shape:
+        """The result shape for known argument shapes, e.g. (2,) for grad(u, x) with a
+        scalar u and a two-dimensional x."""
+        result = known_shape(self.relate([fixed(shape) for shape in shapes], axes))
+        assert result is not None, "known arguments give a known result"
+        return result
+
 
 ###
-# Functions for shape rules of operators.
+# The relations of the built-in operators.
 ###
-def _elementwise(shapes: tuple[Shape, ...], _axes: Variable | None) -> Shape:
-    first, second = shapes
-    if first == second:
-        return first
-    if first == ():
+def _same(configs: list[DataConfiguration], _axes: Variable | None) -> DataConfiguration:
+    return configs[0]
+
+
+def _sum(configs: list[DataConfiguration], _axes: Variable | None) -> DataConfiguration:
+    """Equal shapes, where a scalar fits any shape."""
+    first, second = configs
+    if known_rank(first) == 0:
         return second
-    if second == ():
+    if known_rank(second) == 0:
         return first
-    raise ShapeError(f"Cannot combine shapes {first} and {second} elementwise.")
+    if known_rank(first) is None or known_rank(second) is None:
+        raise StructureUnknown("Which side of the sum is a scalar is not known yet.")
+    message = (
+        f"Cannot combine shapes {describe(first)} and {describe(second)} elementwise."
+    )
+    unify(first, second, message)
+    return first
 
 
-def _same_shape(shapes: tuple[Shape, ...], _axes: Variable | None) -> Shape:
-    return shapes[0]
+def _product(
+    configs: list[DataConfiguration], _axes: Variable | None
+) -> DataConfiguration:
+    """One factor is a scalar; the result has the shape of the other."""
+    first, second = configs
+    ranks = known_rank(first), known_rank(second)
+    if ranks[0] == 0:
+        return second
+    if ranks[1] == 0:
+        return first
+    if None not in ranks:
+        raise ShapeError(
+            f"mul needs one scalar factor, got {describe(first)} and {describe(second)}. "
+            "Use dot or inner for two vectors."
+        )
+    if ranks[0] is None and ranks[1] is None:
+        raise StructureUnknown("Which factor is a scalar is not known yet.")
+    factor, other = (second, first) if ranks[0] is not None else (first, second)
+    unify(factor, fixed(()), f"mul needs one scalar factor, got {describe(factor)}.")
+    return other
 
 
-def _scalar_only(shapes: tuple[Shape, ...], _axes: Variable | None) -> Shape:
-    if any(shape != () for shape in shapes):
-        raise ShapeError(f"Expected scalar arguments, got shapes {shapes}.")
-    return ()
+def _contract(
+    configs: list[DataConfiguration], _axes: Variable | None
+) -> DataConfiguration:
+    """The last axis of the first argument against the first axis of the second."""
+    first, second = configs
+    if 0 in (known_rank(first), known_rank(second)):
+        raise ShapeError(
+            f"dot needs two non-scalar arguments, got {describe(first)} and "
+            f"{describe(second)}."
+        )
+    message = (
+        f"dot contracts the last axis of {describe(first)} with the first axis of "
+        f"{describe(second)}."
+    )
+    unify(first.dim(-1), second.dim(0), message)
+    return DataConfiguration(*first.drop(-1).axes, *second.drop(0).axes)
+
+
+def _inner(configs: list[DataConfiguration], _axes: Variable | None) -> DataConfiguration:
+    first, second = configs
+    message = f"inner needs equal shapes, got {describe(first)} and {describe(second)}."
+    unify(first, second, message)
+    return fixed(())
+
+
+def _scalars(
+    configs: list[DataConfiguration], _axes: Variable | None
+) -> DataConfiguration:
+    for config in configs:
+        unify(config, fixed(()), f"Expected scalar arguments, got {describe(config)}.")
+    return fixed(())
 
 
 def scalar_op(arity: int, name: str = "") -> OpSpec:
     """A nonlinear operator whose arguments and result are all scalars."""
-    return OpSpec(
-        arity, _scalar_only, linearity=OpLinearity.NONLINEAR, scalar_args=True, name=name
-    )
+    return OpSpec(arity, _scalars, linearity=OpLinearity.NONLINEAR, name=name)
 
 
-def _mul(shapes: tuple[Shape, ...], _axes: Variable | None) -> Shape:
-    first, second = shapes
-    if first == ():
-        return second
-    if second == ():
-        return first
-    raise ShapeError(
-        f"mul needs one scalar factor, got {first} and {second}. "
-        "Use dot or inner for two vectors."
-    )
-
-
-def _contract(shapes: tuple[Shape, ...], _axes: Variable | None) -> Shape:
-    first, second = shapes
-    if not first or not second:
-        raise ShapeError(f"dot needs two non-scalar arguments, got {first} and {second}.")
-    if first[-1] != second[0]:
-        raise ShapeError(
-            f"dot contracts the last axis of {first} with the first axis of {second}."
-        )
-    return first[:-1] + second[1:]
-
-
-def _inner(shapes: tuple[Shape, ...], _axes: Variable | None) -> Shape:
-    first, second = shapes
-    if first != second:
-        raise ShapeError(f"inner needs equal shapes, got {first} and {second}.")
-    return ()
-
-
-def _partial(shapes: tuple[Shape, ...], axes: Variable | None) -> Shape:
-    if axes is not None and axes.dim != 1:
+def _partial(
+    configs: list[DataConfiguration], axes: Variable | None
+) -> DataConfiguration:
+    if axes is None or axes.dim != 1:
         raise ShapeError("d needs a single coordinate; use grad for several.")
-    return shapes[0]
+    return configs[0]
 
 
-def _grad(shapes: tuple[Shape, ...], axes: Variable | None) -> Shape:
-    return shapes[0] + (axes.dim,)  # type: ignore
+def _grad(configs: list[DataConfiguration], axes: Variable | None) -> DataConfiguration:
+    """A new last axis of the length of the coordinates."""
+    return DataConfiguration(*configs[0].axes, Axes(axes.dim))  # type: ignore[union-attr]
 
 
-def _div(shapes: tuple[Shape, ...], axes: Variable | None) -> Shape:
-    shape = shapes[0]
-    if axes is None:
-        raise ShapeError("div needs a coordinate axis.")
-    if not shape or shape[-1] != axes.dim:
-        raise ShapeError(
-            f"div needs a last axis of length {axes.dim}, got shape {shape}."
-        )
-    return shape[:-1]
+def _div(configs: list[DataConfiguration], axes: Variable | None) -> DataConfiguration:
+    """The last axis, of the length of the coordinates, is summed away."""
+    (field,) = configs
+    dim = axes.dim  # type: ignore[union-attr]
+    message = f"div needs a last axis of length {dim}, got shape {describe(field)}."
+    if known_rank(field) == 0:
+        raise ShapeError(message)
+    unify(field.dim(-1), AxesDim(dim), message)
+    return field.drop(-1)
 
 
-def _curl(shapes: tuple[Shape, ...], axes: Variable | None) -> Shape:
-    if axes is None:
-        raise ShapeError("curl needs a coordinate axis.")
-    if shapes[0] != (3,) or axes.dim != 3:
-        raise ShapeError("curl needs a 3-vector and three coordinates.")
-    return (3,)
-
-
-###
-# Back rules: a known result shape determines (part of) the argument shapes.
-###
-def _back_same(args: tuple[Any, ...], _axes, target: Shape, solver: Solver) -> None:
-    solver.back(args[0], target)
-
-
-def _back_grad(args: tuple[Any, ...], axes, target: Shape, solver: Solver) -> None:
-    if not target or target[-1] != axes.dim:
-        raise ShapeError(f"a gradient along {axes.dim} ends in {axes.dim}, got {target}.")
-    solver.back(args[0], target[:-1])
-
-
-def _back_div(args: tuple[Any, ...], axes, target: Shape, solver: Solver) -> None:
-    solver.back(args[0], target + (axes.dim,))
-
-
-def _with_other(args: tuple[Any, ...]):
-    first, second = args
-    return (first, second), (second, first)
-
-
-def _back_sum(args: tuple[Any, ...], _axes, target: Shape, solver: Solver) -> None:
-    # With the other side scalar, or a scalar result, the unknown side is the result.
-    # Otherwise it could be a broadcast scalar, so nothing is decided.
-    for arg, other in _with_other(args):
-        shape = solver.known(other)
-        if (
-            shape is not None
-            and solver.known(arg) is None
-            and (shape == () or not target)
-        ):
-            solver.back(arg, target)
-
-
-def _back_product(args: tuple[Any, ...], _axes, target: Shape, solver: Solver) -> None:
-    # One factor is a scalar: the unknown one is the result if the other is scalar,
-    # and a scalar if the other is not.
-    for arg, other in _with_other(args):
-        shape = solver.known(other)
-        if shape is not None and solver.known(arg) is None:
-            solver.back(arg, target if shape == () else ())
-
-
-def _back_inner(args: tuple[Any, ...], _axes, _target: Shape, solver: Solver) -> None:
-    for arg, other in _with_other(args):
-        shape = solver.known(other)
-        if shape is not None and solver.known(arg) is None:
-            solver.back(arg, shape)
+def _curl(configs: list[DataConfiguration], axes: Variable | None) -> DataConfiguration:
+    (field,) = configs
+    message = "curl needs a 3-vector and three coordinates."
+    if axes is None or axes.dim != 3:
+        raise ShapeError(message)
+    unify(field, fixed((3,)), message)
+    return field
 
 
 class OperatorRegistry(Mapping[str, OpSpec]):
@@ -298,21 +316,21 @@ class OperatorRegistry(Mapping[str, OpSpec]):
     after which it is also `OPS["tanh"]` and `OPS.tanh`.
     """
 
-    add = OpSpec(2, _elementwise, back_rule=_back_sum)
-    sub = OpSpec(2, _elementwise, back_rule=_back_sum)
-    neg = OpSpec(1, _same_shape, back_rule=_back_same)
-    mul = OpSpec(2, _mul, linearity=OpLinearity.MULTILINEAR, back_rule=_back_product)
+    add = OpSpec(2, _sum)
+    sub = OpSpec(2, _sum)
+    neg = OpSpec(1, _same)
+    mul = OpSpec(2, _product, linearity=OpLinearity.MULTILINEAR)
     dot = OpSpec(2, _contract, linearity=OpLinearity.MULTILINEAR)
-    inner = OpSpec(2, _inner, linearity=OpLinearity.MULTILINEAR, back_rule=_back_inner)
+    inner = OpSpec(2, _inner, linearity=OpLinearity.MULTILINEAR)
     pow = scalar_op(2)
     exp = scalar_op(1)
     sin = scalar_op(1)
     cos = scalar_op(1)
-    d = OpSpec(1, _partial, takes_axes=True, order=1, back_rule=_back_same)
-    grad = OpSpec(1, _grad, takes_axes=True, order=1, back_rule=_back_grad)
-    div = OpSpec(1, _div, takes_axes=True, order=1, back_rule=_back_div)
+    d = OpSpec(1, _partial, takes_axes=True, order=1)
+    grad = OpSpec(1, _grad, takes_axes=True, order=1)
+    div = OpSpec(1, _div, takes_axes=True, order=1)
     curl = OpSpec(1, _curl, takes_axes=True, order=1)
-    lap = OpSpec(1, _same_shape, takes_axes=True, order=2, back_rule=_back_same)
+    lap = OpSpec(1, _same, takes_axes=True, order=2)
 
     def __init__(self) -> None:
         self._specs: dict[str, OpSpec] = {

@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.base import Axes, Expr, SymbolShapes
-from qewton.equations.expr.ops import Linearity, Shape, ShapeError, Solver
+from qewton.config.data_configurations.base import DataConfiguration
+from qewton.equations.expr.base import Axes, Expr, SymbolConfigs
+from qewton.equations.expr.ops import Linearity, Shape, ShapeError, fixed, unknown
 from qewton.equations.geometry.coordinates import (
     check_coordinate,
     check_coordinate_product,
@@ -92,20 +93,17 @@ class FunctionSymbol(Expr):
     def coordinates(self) -> tuple[Variable, ...]:
         return coordinate_factors(self.inputs) if self.inputs is not None else ()
 
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
         if self.variable.dim is None:
-            return shapes.get(self)
-        return _dim_shape(self.variable.dim)
+            # One configuration for every occurrence, so they share what is learned.
+            return env.setdefault(self, unknown())
+        return fixed(_dim_shape(self.variable.dim))
 
     def _free_axes(self) -> Axes:
         return frozenset(self.coordinates())
 
     def linearity(self, unknowns: frozenset[FunctionSymbol]) -> Linearity:
         return Linearity.LINEAR if self in unknowns else Linearity.NONE
-
-    def require_shape(self, target: Shape, solver: Solver) -> None:
-        if self.shape is None:
-            solver.record(self, target)
 
 
 @dataclass(frozen=True)
@@ -129,8 +127,8 @@ class Coord(Expr):
     def coordinates(self) -> tuple[Variable, ...]:
         return (self.variable.whole,)
 
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        return ()
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
+        return fixed(())
 
     def _free_axes(self) -> Axes:
         return frozenset(self.coordinates())
@@ -152,8 +150,8 @@ class Const(Expr):
         object.__setattr__(self, "value", _freeze(self.value))
         _value_shape(self.value)  # raises for ragged nesting
 
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        return _value_shape(self.value)
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
+        return fixed(_value_shape(self.value))
 
 
 @dataclass(frozen=True)
@@ -171,15 +169,15 @@ class Normal(Expr):
     def sets(self) -> tuple[SetNode, ...]:
         return (self.of,)
 
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
         axes = self.of.axes
         if len(axes) != 1:
             raise ShapeError(f"A normal needs a single coordinate, got {len(axes)}.")
         (axis,) = axes
         dim = axis.dim
         if isinstance(dim, tuple):
-            return dim
-        return (dim,) if dim is not None else ()
+            return fixed(dim)
+        return fixed((dim,) if dim is not None else ())
 
     def _free_axes(self) -> Axes:
         return set_free_axes(self.of)

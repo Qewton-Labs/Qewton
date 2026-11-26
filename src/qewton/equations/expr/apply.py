@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.base import Axes, Expr, SymbolShapes, axes_text
-from qewton.equations.expr.ops import AxisError, Linearity, OpSpec, Shape, ShapeError
-from qewton.equations.expr.ops import Solver
+from qewton.config.data_configurations.base import DataConfiguration
+from qewton.equations.expr.base import Axes, Expr, SymbolConfigs, axes_text
+from qewton.equations.expr.ops import AxisError, Linearity, OpSpec, ShapeError
 from qewton.equations.geometry.coordinates import (
     check_coordinate_product,
     coordinate_factors,
@@ -65,12 +65,10 @@ class Apply(Expr):
         rest = () if self.axes is None else (self.axes,)
         return Apply(self.op, tuple(new) + rest)
 
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        operand_shapes = tuple(arg.shape_with(shapes) for arg in self.operands)
-        if any(shape is None for shape in operand_shapes):
-            return None
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
+        configs = [arg.config(env) for arg in self.operands]
         try:
-            return self.op.shape_rule(operand_shapes, self.axes)  # type: ignore[arg-type]
+            return self.op.relate(configs, self.axes)
         except ShapeError as error:
             raise ShapeError(f"In {self}: {error}") from error
 
@@ -88,17 +86,3 @@ class Apply(Expr):
     def linearity(self, unknowns) -> Linearity:
         parts = [arg.linearity(unknowns) for arg in self.operands]
         return self.op.linearity.of_result(parts)
-
-    def require_shape(self, target: Shape, solver: Solver) -> None:
-        rule = self.op.back_rule
-        if rule is None:
-            return
-        try:
-            rule(self.operands, self.axes, target, solver)
-        except ShapeError as error:
-            raise ShapeError(f"In {self}: {error}") from error
-
-    def require_operand_shapes(self, solver: Solver) -> None:
-        if self.op.scalar_args:
-            for arg in self.operands:
-                arg.require_shape((), solver)

@@ -26,7 +26,7 @@ class TestRegistry:
 
     def test_names_are_unique(self):
         with pytest.raises(ValueError, match="already registered"):
-            OPS.register(OpSpec(2, OPS.add.shape_rule, name="add"))
+            OPS.register(OpSpec(2, OPS.add.relate, name="add"))
 
     def test_an_operator_needs_a_name_that_is_free(self):
         registry = OperatorRegistry()
@@ -43,13 +43,11 @@ class TestRegistry:
         assert "tanh" in registry and "tanh" not in OPS
 
     def test_a_built_in_operator_takes_its_attribute_name(self):
-        unnamed = OpSpec(2, OPS.add.shape_rule)
+        unnamed = OpSpec(2, OPS.add.relate)
         unnamed.__set_name__(OperatorRegistry, "plus")
         assert unnamed.name == "plus"
         with pytest.raises(ValueError, match="is defined as"):
-            OpSpec(2, OPS.add.shape_rule, name="add").__set_name__(
-                OperatorRegistry, "plus"
-            )
+            OpSpec(2, OPS.add.relate, name="add").__set_name__(OperatorRegistry, "plus")
 
     def test_orders_count_derivatives(self):
         assert OPS.add.order == 0
@@ -64,71 +62,71 @@ class TestRegistry:
 
 class TestShapeRules:
     def test_elementwise_broadcasts_scalars(self):
-        assert OPS.add.shape_rule(((2,), ()), None) == (2,)
-        assert OPS.add.shape_rule(((), (2,)), None) == (2,)
+        assert OPS.add.result_shape(((2,), ()), None) == (2,)
+        assert OPS.add.result_shape(((), (2,)), None) == (2,)
 
     def test_elementwise_rejects_different_shapes(self):
         with pytest.raises(ShapeError):
-            OPS.add.shape_rule(((2,), (3,)), None)
+            OPS.add.result_shape(((2,), (3,)), None)
 
     def test_mul_needs_one_scalar(self):
-        assert OPS.mul.shape_rule(((), (2,)), None) == (2,)
+        assert OPS.mul.result_shape(((), (2,)), None) == (2,)
         with pytest.raises(ShapeError):
-            OPS.mul.shape_rule(((2,), (2,)), None)
+            OPS.mul.result_shape(((2,), (2,)), None)
 
     def test_dot_of_vectors_is_a_scalar(self):
-        assert OPS.dot.shape_rule(((2,), (2,)), None) == ()
+        assert OPS.dot.result_shape(((2,), (2,)), None) == ()
         with pytest.raises(ShapeError):
-            OPS.dot.shape_rule(((2,), (3,)), None)
+            OPS.dot.result_shape(((2,), (3,)), None)
 
     def test_dot_contracts_matrices_with_vectors_and_matrices(self):
-        assert OPS.dot.shape_rule(((2, 2), (2,)), None) == (2,)
-        assert OPS.dot.shape_rule(((2,), (2, 2)), None) == (2,)
-        assert OPS.dot.shape_rule(((2, 2), (2, 2)), None) == (2, 2)
+        assert OPS.dot.result_shape(((2, 2), (2,)), None) == (2,)
+        assert OPS.dot.result_shape(((2,), (2, 2)), None) == (2,)
+        assert OPS.dot.result_shape(((2, 2), (2, 2)), None) == (2, 2)
         with pytest.raises(ShapeError):
-            OPS.dot.shape_rule(((2, 3), (2,)), None)
+            OPS.dot.result_shape(((2, 3), (2,)), None)
 
     def test_dot_needs_non_scalars(self):
         with pytest.raises(ShapeError):
-            OPS.dot.shape_rule(((), (2,)), None)
+            OPS.dot.result_shape(((), (2,)), None)
 
     def test_inner_contracts_equal_shapes(self):
-        assert OPS.inner.shape_rule(((2, 2), (2, 2)), None) == ()
+        assert OPS.inner.result_shape(((2, 2), (2, 2)), None) == ()
         with pytest.raises(ShapeError):
-            OPS.inner.shape_rule(((2,), (3,)), None)
+            OPS.inner.result_shape(((2,), (3,)), None)
 
     def test_scalar_functions_need_scalars(self):
-        assert OPS.sin.shape_rule(((),), None) == ()
-        assert OPS.pow.shape_rule(((), ()), None) == ()
+        assert OPS.sin.result_shape(((),), None) == ()
+        assert OPS.pow.result_shape(((), ()), None) == ()
         with pytest.raises(ShapeError):
-            OPS.sin.shape_rule(((2,),), None)
+            OPS.sin.result_shape(((2,),), None)
 
     def test_partial_needs_a_single_coordinate(self):
-        assert OPS.d.shape_rule(((),), t) == ()
-        assert OPS.d.shape_rule(((2,),), t) == (2,)
+        assert OPS.d.result_shape(((),), t) == ()
+        assert OPS.d.result_shape(((2,),), t) == (2,)
         with pytest.raises(ShapeError):
-            OPS.d.shape_rule(((),), x)
+            OPS.d.result_shape(((),), x)
 
     def test_gradient_appends_the_total_dimension(self):
-        assert OPS.grad.shape_rule(((),), x) == (2,)
-        assert OPS.grad.shape_rule(((2,),), x) == (2, 2)
-        assert OPS.grad.shape_rule(((),), x * t) == (3,)
+        assert OPS.grad.result_shape(((),), x) == (2,)
+        assert OPS.grad.result_shape(((2,),), x) == (2, 2)
+        assert OPS.grad.result_shape(((),), x * t) == (3,)
 
     def test_divergence_contracts_the_last_axis(self):
-        assert OPS.div.shape_rule(((2,),), x) == ()
-        assert OPS.div.shape_rule(((2, 2),), x) == (2,)
+        assert OPS.div.result_shape(((2,),), x) == ()
+        assert OPS.div.result_shape(((2, 2),), x) == (2,)
         with pytest.raises(ShapeError):
-            OPS.div.shape_rule(((),), x)
+            OPS.div.result_shape(((),), x)
         with pytest.raises(ShapeError):
-            OPS.div.shape_rule(((3,),), x)
+            OPS.div.result_shape(((3,),), x)
 
     def test_curl_of_a_3d_vector(self):
-        assert OPS.curl.shape_rule(((3,),), y3) == (3,)
+        assert OPS.curl.result_shape(((3,),), y3) == (3,)
         with pytest.raises(ShapeError):
-            OPS.curl.shape_rule(((2,),), x)
+            OPS.curl.result_shape(((2,),), x)
 
     def test_laplacian_keeps_the_shape(self):
-        assert OPS.lap.shape_rule(((2,),), x) == (2,)
+        assert OPS.lap.result_shape(((2,),), x) == (2,)
 
 
 class TestApply:

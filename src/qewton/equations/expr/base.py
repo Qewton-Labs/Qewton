@@ -3,25 +3,37 @@
 A node class says in its own methods what it is made of and what follows from that:
 
 - structure: `children`, `with_children`, `sets`, `coordinates`;
-- its output shape: `_shape(shapes)`, read through `shape` and `shape_with`;
+- its output shape: `_config(env)`, read through `shape`, `shape_with` and `config`;
 - the coordinates it varies with: `_free_axes()`, read through `free_axes`;
-- how it depends on given unknowns: `linearity(unknowns)`;
-- what a known result shape says about its operands, for shape inference:
-  `require_shape` and `require_operand_shapes`.
+- how it depends on given unknowns: `linearity(unknowns)`.
 
-The base class has a default for everything except `_shape`, so a new node class is
+The base class has a default for everything except `_config`, so a new node class is
 complete when it defines its own; nothing is registered anywhere else. Building an
 operator node checks its shape and axes at once (`_check`).
+
+`_config` describes the shape as a data configuration (see `ops.py`), which relates
+it to the shapes of the sub-expressions in both directions: shape inference
+(`analysis/prepare/infer.py`) learns undeclared shapes from that alone.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from functools import cached_property
 from typing import TYPE_CHECKING
 
 from qewton.config.variables import Variable
-from qewton.equations.expr.ops import OPS, Linearity, OpLinearity, OpSpec, Shape, Solver
+from qewton.config.data_configurations.base import DataConfiguration
+from qewton.config.errors import StructureUnknown
+from qewton.equations.expr.ops import (
+    OPS,
+    Linearity,
+    OpLinearity,
+    OpSpec,
+    Shape,
+    fixed,
+    known_shape,
+)
 from qewton.equations.geometry.sets import SetNode
 from qewton.equations.printable import Printable
 
@@ -30,6 +42,8 @@ if TYPE_CHECKING:
 
 Axes = frozenset[Variable]
 SymbolShapes = Mapping["FunctionSymbol", Shape]
+# One configuration per symbol whose shape is not declared, shared by its occurrences.
+SymbolConfigs = MutableMapping["FunctionSymbol", DataConfiguration]
 
 
 def axes_text(axes: Axes) -> str:
@@ -74,27 +88,39 @@ class Expr(Printable):
     # endregion
 
     # region Shape
-    def _shape(self, shapes: SymbolShapes) -> Shape | None:
-        """The output shape of this node; every node class defines it.
+    def _config(self, env: SymbolConfigs) -> DataConfiguration:
+        """The output shape of this node as a data configuration, related to the
+        configurations of its sub-expressions; every node class defines it.
 
-        `shapes` gives the shapes of symbols whose shape is not declared. Returns
-        None while the shape of a symbol in the node is unknown, and raises
-        ShapeError where known shapes do not fit together.
+        `env` holds a configuration for each symbol whose shape is not declared.
+        Raises ShapeError where the shapes contradict, and StructureUnknown while an
+        operator cannot decide yet (see `ops.Relation`).
         """
         raise NotImplementedError(f"{type(self).__name__} does not define its shape.")
+
+    def config(self, env: SymbolConfigs) -> DataConfiguration:
+        """The output shape as a data configuration; see `_config`."""
+        known = self.shape
+        return fixed(known) if known is not None else self._config(env)
 
     @cached_property
     def shape(self) -> Shape | None:
         """The output shape from the declared shapes alone: () for a scalar, (n,) for
         a vector, None while the shape of a symbol in it is not declared."""
-        return self._shape({})
+        if any(child.shape is None for child in self.children()):
+            return None
+        return known_shape(self._config({}))
 
     def shape_with(self, shapes: SymbolShapes) -> Shape | None:
         """The output shape when the undeclared symbols have the given `shapes`."""
         known = self.shape
         if known is not None or not shapes:
             return known
-        return self._shape(shapes)
+        env = {symbol: fixed(shape) for symbol, shape in shapes.items()}
+        try:
+            return known_shape(self._config(env))
+        except StructureUnknown:
+            return None
 
     # endregion
 
@@ -121,21 +147,6 @@ class Expr(Printable):
         children, which fits restrictions, integrals and components."""
         parts = [child.linearity(unknowns) for child in self.children()]
         return OpLinearity.LINEAR.of_result(parts)
-
-    # endregion
-
-    # region Shape inference
-    def require_shape(self, target: Shape, solver: Solver) -> None:
-        """Record what this node having shape `target` says about the symbols in it.
-
-        By default nothing: the result does not determine the operands.
-        """
-
-    def require_operand_shapes(self, solver: Solver) -> None:
-        """Record the shapes this node needs of its operands, whatever its result.
-
-        By default none.
-        """
 
     # endregion
 

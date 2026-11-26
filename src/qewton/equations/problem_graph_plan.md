@@ -237,15 +237,17 @@ As built (`analysis/prepare/signatures.py`) the signature is richer and `signatu
 ```python
 @dataclass(frozen=True)
 class OpSpec:
-    name: str
     arity: int                          # number of expression arguments
-    shape_rule: Callable[[tuple[Shape, ...], Variable | None], Shape]  # argument shapes and derivative axes in, shape out; raises ShapeError
+    relate: Relation                    # argument shapes (data configurations) and derivative axes in, result out; works both ways
     takes_axes: bool = False            # a coordinate product follows the expression arguments
     order: int = 0                      # derivative order along each leaf of the axes argument
-    linearity: Literal["linear", "multilinear", "nonlinear"] = "linear"
+    linearity: OpLinearity = OpLinearity.LINEAR
+    name: str = ""                      # taken from the attribute name in OperatorRegistry
 
-OPS: dict[str, OpSpec] = {}
-def register(spec: OpSpec) -> OpSpec: ...
+class OperatorRegistry(Mapping[str, OpSpec]):   # OPS: built-in operators as attributes, all by name
+    grad = OpSpec(1, _grad, takes_axes=True, order=1)
+    ...
+OPS = OperatorRegistry()
 ```
 
 The initial registry:
@@ -391,7 +393,7 @@ Not a separate pass. It was meant to find the functions that depend on time, so 
 - **Lower bound check.** If a derivative along axis a is applied directly to s (or to `Restrict(s, …)`), then a must be among s's declared inputs, or the problem is an error. Nested cases such as grad(u·v) give no requirement.
 - **Data values.** A supplied value must agree with the declared inputs. A constant (`inputs=None`) cannot get a spatial array, and a numeric value with spatial inputs needs a geometry through `Task.values`. This is checked when the Task is built.
 - **Conflicts and unused inputs.** A declared output shape must agree with the inferred one. Declared inputs that no constraint needs are a warning.
-- **Shapes.** `expr.shape` computes them bottom-up with `OpSpec.shape_rule` (M2, `Expr._shape` per node class; None while a symbol's shape is undeclared). `infer_shapes(problem)` (`infer.py`) fills in symbols declared with `dim=None`: known shapes flow backwards through invertible operators (neg, d, lap, grad, div, and add, sub, mul, inner when the other operand is known), scalar-only operators force scalar arguments, and a scalar constant never decides a shape. When nothing more follows, the first undetermined symbol in order of appearance defaults to scalar and is reported in `Inference.defaulted` (a warning), then propagation continues. A final pass re-checks every constraint, so conflicts raise `ShapeError`. `dot` is not inverted, because it is ambiguous.
+- **Shapes.** Shapes are related as data configurations (`qewton.config`), the same description the computation graphs use for data between nodes. Each node class gives its shape as a configuration (`Expr._config`), and each operator relates argument and result shapes with one function (`OpSpec.relate`) that works in both directions, since merged configurations share what is learned. `expr.shape` is the tuple from declared shapes alone (None while a symbol's shape is undeclared). `infer_shapes(problem)` (`infer.py`) gives each undeclared symbol one configuration of unknown shape and merges the two sides of every constraint, so known shapes reach the symbols through every operator, `dot` included where the answer is unique. A relation that cannot decide yet (which side of a sum is the scalar) makes its constraint wait. When nothing can go on, the first symbol in order of appearance of which nothing is known defaults to scalar and is reported in `Inference.defaulted` (a warning); a symbol known only in part (as in `q[0]`) has to be declared. A final pass re-checks every constraint, so conflicts raise `ShapeError`.
 - The declared inputs and the inferred shapes are printed first in the report, the way a type checker shows types.
 
 ### 6.4 structure
