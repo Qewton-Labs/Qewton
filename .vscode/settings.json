@@ -25,6 +25,7 @@
         "lowrank",
         "maxs",
         "meshio",
+        "neighbours",
         "optims",
         "PCANN",
         "PINN",

@@ -64,6 +64,4 @@ mesh vertices to its mesh device.
 mesh, so all data on the same `Mesh` object share one hierarchy without a
 separate cache keyed by a fingerprint. The coarse levels are graphs (vertices,
 edges, map to the next level), not simplex meshes, since aggregation produces
-no cells. They are built with NumPy, because greedy aggregation visits the
-vertices one after another, and then moved to the mesh's backend and device.
-They are not saved with the mesh; explicitly set edges are.
+no cells. They are not saved with the mesh; explicitly set edges are.

@@ -25,7 +25,9 @@ class Result:
         label: Legend entry, or None for no entry.
         color_index: Index of the categorical color of every element (one
             per drawn copy of the figure) if no color channel is bound;
-            the renderer's theme gives the color.
+            the renderer's theme gives the color. None for the theme's
+            line color, of marks that are no data (e.g. the edges of a
+            graph).
         color_scale: Maps `values` to colors if a color channel is bound,
             else None.
         color_title: Title of the colorbar.
@@ -38,7 +40,7 @@ class Result:
     """
 
     label: str | None = None
-    color_index: int = 0
+    color_index: int | None = 0
     color_scale: ColorScale | None = None
     color_title: str | None = None
     opacity: float = 1.0

@@ -187,6 +187,8 @@ class NumpyMathBackend(MathBackend[np.ndarray]):
     bitwise_invert = np.invert
     left_shift = np.left_shift
     right_shift = np.right_shift
+    bitwise_left_shift = np.left_shift
+    bitwise_right_shift = np.right_shift
     heaviside = np.heaviside
     bartlett = np.bartlett
     hamming = np.hamming

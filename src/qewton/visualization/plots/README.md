@@ -36,6 +36,12 @@ scale in every state).
   `ParallelCoordinatesPlot`.
 - **`GeometryPlot`** (`geometry/`): a geometry without data: points,
   curves, surfaces with edges, volumes by their boundary.
+- **`HierarchyPlot`** (`geometry/`): the levels of a mesh hierarchy
+  (`Mesh.hierarchy`), one at a time: the edges and vertices of a level over
+  the vertices of the level before, colored by their aggregate (a graph
+  coloring, so neighbouring aggregates differ). Its one control chooses
+  the level: a slider by default, a FacetAxis for every level side by
+  side.
 - **`GraphPlot`** (`graph/`): a computation graph as a node-link diagram,
   laid out by `GraphLayout`.
 

@@ -39,7 +39,7 @@ from .plots.data import (
     SurfacePlot,
     VectorPlot,
 )
-from .plots.geometry import GeometryPlot
+from .plots.geometry import GeometryPlot, HierarchyPlot
 from .plots.graph import GraphPlot
 from .plots.table import TablePlot, TableScatter, TableHeatMap, ParallelCoordinatesPlot
 from .layout import Layout, Overlay, Row, Column, auto_layout

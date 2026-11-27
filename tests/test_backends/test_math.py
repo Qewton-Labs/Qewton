@@ -1262,3 +1262,41 @@ def test_flatten(backend):
     in_1 = backend.build_tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])  # (2,2,2)
     out = backend.build_tensor([[1, 2, 3, 4], [5, 6, 7, 8]])  # (2,4)
     assert backend.math.all(backend.math.flatten(in_1, start_dim=1) == out)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_bincount(backend):
+    x = backend.build_tensor([0, 2, 2, 3], dtype=Int64)
+    counts = backend.math.bincount(x, minlength=6)
+    assert backend.to_numpy(counts).tolist() == [1, 0, 2, 1, 0, 0]
+    weights = backend.build_tensor([0.5, 1.0, 2.0, 4.0])
+    sums = backend.math.bincount(x, weights=weights)
+    assert backend.to_numpy(sums).tolist() == [0.5, 0.0, 3.0, 4.0]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_unique_with_counts(backend):
+    x = backend.build_tensor([3, 1, 3, 2, 3], dtype=Int64)
+    values, counts = backend.math.unique(x, return_counts=True)
+    assert backend.to_numpy(values).tolist() == [1, 2, 3]
+    assert backend.to_numpy(counts).tolist() == [1, 1, 3]
+    values, first, counts = backend.math.unique(x, return_index=True, return_counts=True)
+    assert backend.to_numpy(first).tolist() == [1, 3, 0]
+    assert backend.to_numpy(counts).tolist() == [1, 1, 3]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_bitwise(backend):
+    x = backend.build_tensor([12, 7], dtype=Int64)
+    y = backend.build_tensor([10, 1], dtype=Int64)
+    math_ = backend.math
+    assert backend.to_numpy(math_.bitwise_and(x, y)).tolist() == [8, 1]
+    assert backend.to_numpy(math_.bitwise_or(x, y)).tolist() == [14, 7]
+    assert backend.to_numpy(math_.bitwise_xor(x, y)).tolist() == [6, 6]
+    assert backend.to_numpy(math_.bitwise_not(x)).tolist() == [-13, -8]
+    assert backend.to_numpy(math_.bitwise_invert(x)).tolist() == [-13, -8]
+    for shift in (math_.left_shift, math_.bitwise_left_shift):
+        assert backend.to_numpy(shift(x, 2)).tolist() == [48, 28]
+    for shift in (math_.right_shift, math_.bitwise_right_shift):
+        assert backend.to_numpy(shift(x, 2)).tolist() == [3, 1]
+    assert backend.to_numpy(math_.bitwise_and(x, 5)).tolist() == [4, 5]

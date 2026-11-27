@@ -1,28 +1,22 @@
-"""Nested coarse graphs of a mesh, for multiscale (multigrid-like) models.
+"""Nested coarse graphs of a mesh, for multigrid-like models.
 
-The coarse levels are built by greedy aggregation, as in algebraic multigrid:
-
-1. Walk over the vertices. If a vertex *and all its neighbours* are not yet
-   assigned, they form a new aggregate (one vertex of the coarser level).
-2. Every vertex left over joins the neighbouring aggregate it touches most often.
-
+Every coarse level is built by greedy aggregation of the previous one, as in
+algebraic multigrid, see :mod:`~qewton.geometries.discrete.meshes.aggregation`.
 A coarse vertex lies at the mean of its aggregate, and two coarse vertices are
 connected if any edge runs between their aggregates. On a 2D triangle mesh an
-aggregate holds about 7-9 vertices, e.g. 1089 -> ~140 -> ~20 -> ~3 vertices.
+aggregate holds about 8-10 vertices, e.g. 1089 -> ~110 -> ~15 -> ~3 vertices.
 
-Only the connectivity of the graph is used, never Euclidean distances. Since no
-mesh edge crosses a hole or a slit of the domain, no aggregate or coarse edge
-does either.
+Since no aggregate crosses a hole or a slit of the domain, no coarse edge does
+either.
 """
 
 from __future__ import annotations
 from typing import Generic
 
-import numpy as np
-
 from qewton.backends.base import TensorType, ComputingBackend
-from qewton.config.dtypes import Float32, Int32
+from qewton.config.dtypes import Float32, Int32, Int64
 from qewton.config.saving.saving import Serializable
+from qewton.geometries.discrete.meshes.aggregation import greedy_aggregation
 
 
 class Level(Serializable, Generic[TensorType]):
@@ -95,6 +89,7 @@ def build_hierarchy(
     edges: TensorType,
     n_levels: int,
     backend: type[ComputingBackend[TensorType]],
+    random_order: bool = True,
 ) -> list[Level]:
     """Build `n_levels` nested graphs by repeated greedy aggregation.
 
@@ -108,114 +103,80 @@ def build_hierarchy(
             one or both directions; self-loops are ignored.
         n_levels (int): The number of levels, including the given graph.
         backend (type[ComputingBackend[TensorType]]): The backend of the tensors.
+        random_order (bool): Whether the aggregation visits the vertices in a
+            fixed pseudo-random order (fast), or else by increasing index (as
+            in the multiscale prototype), see
+            :func:`~qewton.geometries.discrete.meshes.aggregation.greedy_aggregation`.
 
     Returns:
         list[Level]: The levels, from the given graph to the coarsest.
     """
     if n_levels < 1:
         raise ValueError(f"A hierarchy needs at least one level, got {n_levels}.")
-
-    def tensor(data: np.ndarray, dtype) -> TensorType:
-        return backend.move_to_same_device(backend.build_tensor(data, dtype=dtype), vertices)
-
-    positions = np.asarray(backend.to_numpy(vertices), dtype=np.float64)
-    graph_edges = unique_edges(np.asarray(backend.to_numpy(edges)).reshape(-1, 2))
+    b_math = backend.math
+    edges = backend.move_to_same_device(backend.cast_dtype(edges, Int64), vertices)
+    positions, graph_edges = vertices, unique_edges(edges, backend)
     levels = []
     for i in range(n_levels):
-        n = positions.shape[0]
+        n = int(positions.shape[0])
         coarsest = i == n_levels - 1
-        cluster = None if coarsest else greedy_aggregation(graph_edges, n)
-        cluster_size = None if cluster is None else np.bincount(cluster)
+        cluster = None if coarsest else greedy_aggregation(graph_edges, n, backend, random_order)
+        degree = b_math.bincount(b_math.reshape(graph_edges, (-1,)), minlength=n)
         levels.append(
             Level(
-                vertices=vertices if i == 0 else tensor(positions, Float32),
-                edges=tensor(graph_edges, Int32),
-                degree=tensor(np.bincount(graph_edges.ravel(), minlength=n), Int32),
-                cluster=None if cluster is None else tensor(cluster, Int32),
-                cluster_size=None if cluster_size is None else tensor(cluster_size, Int32),
+                vertices=positions,
+                edges=backend.cast_dtype(graph_edges, Int32),
+                degree=backend.cast_dtype(degree, Int32),
+                cluster=None if cluster is None else backend.cast_dtype(cluster, Int32),
+                cluster_size=(
+                    None
+                    if cluster is None
+                    else backend.cast_dtype(b_math.bincount(cluster), Int32)
+                ),
                 backend=backend,
             )
         )
-        if coarsest:
-            break
-        positions, graph_edges = coarsen(positions, graph_edges, cluster)
+        if not coarsest:
+            positions, graph_edges = coarsen(positions, graph_edges, cluster, backend)
     return levels
 
 
-def unique_edges(edges: np.ndarray) -> np.ndarray:
+def unique_edges(edges: TensorType, backend: type[ComputingBackend]) -> TensorType:
     """The undirected edges of `edges` [E, 2], each once with the smaller vertex
     index first, sorted, and without self-loops."""
-    edges = np.sort(edges.astype(np.int64), axis=1)
+    b_math = backend.math
+    edges = b_math.sort(b_math.reshape(edges, (-1, 2)), axis=1)
     edges = edges[edges[:, 0] != edges[:, 1]]
-    return np.unique(edges, axis=0).reshape(-1, 2)
-
-
-def neighbours(edges: np.ndarray, vertex_count: int) -> tuple[np.ndarray, np.ndarray]:
-    """The adjacency of an undirected graph in compressed form: the neighbours
-    of vertex v are `nbrs[ptr[v]:ptr[v + 1]]`.
-
-    Args:
-        edges (np.ndarray): The undirected edges, shape [E, 2], each once.
-        vertex_count (int): The number of vertices.
-
-    Returns:
-        tuple[np.ndarray, np.ndarray]: nbrs [2E] and ptr [vertex_count + 1].
-    """
-    senders = np.concatenate([edges[:, 0], edges[:, 1]])
-    receivers = np.concatenate([edges[:, 1], edges[:, 0]])
-    order = np.argsort(senders, kind="stable")
-    ptr = np.searchsorted(senders[order], np.arange(vertex_count + 1))
-    return receivers[order], ptr
-
-
-def greedy_aggregation(edges: np.ndarray, vertex_count: int) -> np.ndarray:
-    """Assign every vertex to an aggregate, see the module docstring.
-
-    Args:
-        edges (np.ndarray): The undirected edges, shape [E, 2], each once.
-        vertex_count (int): The number of vertices.
-
-    Returns:
-        np.ndarray: The aggregate of each vertex, shape [vertex_count], with
-            the aggregates numbered 0, 1, ... in the order they were formed.
-    """
-    nbrs, ptr = neighbours(edges, vertex_count)
-    cluster = np.full(vertex_count, -1, dtype=np.int64)
-    count = 0
-    # Phase 1: a vertex whose neighbourhood is still free forms a new aggregate
-    # with it. An isolated vertex forms an aggregate of its own.
-    for v in range(vertex_count):
-        nb = nbrs[ptr[v] : ptr[v + 1]]
-        if cluster[v] < 0 and np.all(cluster[nb] < 0):
-            cluster[v] = count
-            cluster[nb] = count
-            count += 1
-    # Phase 2: a vertex left over had an assigned neighbour when phase 1
-    # reached it, so it always has an aggregate to join.
-    phase1 = cluster.copy()
-    for v in np.flatnonzero(cluster < 0):
-        candidates = phase1[nbrs[ptr[v] : ptr[v + 1]]]
-        cluster[v] = np.bincount(candidates[candidates >= 0]).argmax()
-    return cluster
+    return b_math.reshape(b_math.unique(edges, axis=0), (-1, 2))
 
 
 def coarsen(
-    positions: np.ndarray, edges: np.ndarray, cluster: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+    positions: TensorType,
+    edges: TensorType,
+    cluster: TensorType,
+    backend: type[ComputingBackend],
+) -> tuple[TensorType, TensorType]:
     """The coarse graph of an aggregation.
 
     Args:
-        positions (np.ndarray): The vertex positions, shape [N, d].
-        edges (np.ndarray): The undirected edges, shape [E, 2], each once.
-        cluster (np.ndarray): The aggregate of each vertex, shape [N].
+        positions (TensorType): The vertex positions, shape [N, d].
+        edges (TensorType): The undirected edges, shape [E, 2], each once.
+        cluster (TensorType): The aggregate of each vertex, shape [N].
+        backend (type[ComputingBackend]): The backend of the tensors.
 
     Returns:
-        tuple[np.ndarray, np.ndarray]: The positions of the coarse vertices
+        tuple[TensorType, TensorType]: The positions of the coarse vertices
             (the mean of their aggregate), shape [N_coarse, d], and the coarse
             edges, shape [E_coarse, 2], each once.
     """
-    n_coarse = int(cluster.max()) + 1
-    coarse_positions = np.zeros((n_coarse, positions.shape[1]))
-    np.add.at(coarse_positions, cluster, positions)
-    coarse_positions /= np.bincount(cluster, minlength=n_coarse)[:, None]
-    return coarse_positions, unique_edges(cluster[edges])
+    b_math = backend.math
+    size = b_math.bincount(cluster)
+    sums = b_math.stack(
+        [
+            b_math.bincount(cluster, weights=positions[:, k], minlength=size.shape[0])
+            for k in range(positions.shape[1])
+        ],
+        axis=1,
+    )
+    coarse_positions = backend.cast_dtype(sums / size[:, None], Float32)
+    return coarse_positions, unique_edges(cluster[edges], backend)

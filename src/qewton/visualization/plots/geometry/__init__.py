@@ -13,6 +13,7 @@ from qewton.visualization.plots.result import (
 )
 from qewton.visualization.references import component_titles, title_of
 from qewton.visualization.scales import Scale
+from qewton.visualization.plots.geometry.hierarchy import HierarchyPlot
 
 
 class GeometryPlot(Plot):

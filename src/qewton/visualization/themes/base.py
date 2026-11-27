@@ -236,15 +236,19 @@ class Theme:
             return stops if steps is None else _bands(_sampled(stops, steps))
         return cmap
 
-    def get_color(self, index: int) -> str:
+    def get_color(self, index: int | None) -> str:
         """Get a categorical color by index, cycling through the palette.
 
         Args:
-            index: Position in the palette, taken modulo its length.
+            index: Position in the palette, taken modulo its length; None for
+                the line color, of marks that are no data (e.g. the edges of
+                a graph).
 
         Returns:
             The color.
         """
+        if index is None:
+            return self.line_color
         palette = self.primary_color_palette
         return palette[index % len(palette)]
 

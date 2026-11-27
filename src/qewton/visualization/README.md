@@ -49,6 +49,7 @@ to references: Variables or Axes of the configuration.
 | `ImagePlot` | RGB(A) colors on a 2D grid |
 | `TableScatter`, `TableHeatMap`, `ParallelCoordinatesPlot` | rows of a table (columns by name) |
 | `GeometryPlot` | a geometry without data |
+| `HierarchyPlot` | the levels of a mesh hierarchy, one at a time (a slider over the levels) |
 | `GraphPlot` | a computation graph |
 
 See [plots/README.md](plots/README.md).

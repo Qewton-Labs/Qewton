@@ -145,6 +145,8 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         if return_index or return_inverse:
             uniques, inverse = out[:2]
             rest = out[2:]
+        elif return_counts:
+            uniques, rest = out[0], out[1:]
         else:
             uniques = out
             rest = ()
@@ -183,8 +185,7 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
             result.append(inverse)
 
         if return_counts:
-            counts = rest[-1] if (return_index or return_inverse) else rest[0]
-            result.append(counts)
+            result.append(rest[-1])
 
         return result[0] if len(result) == 1 else tuple(result)
 
@@ -382,6 +383,14 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
         return torch.tensordot(x1, x2, dims=axes)
 
     einsum = torch.einsum
+
+    @staticmethod
+    def bincount(
+        x: Any, weights: Any = None, minlength: int = 0, sparse: bool = False
+    ) -> torch.Tensor:
+        if sparse:
+            raise NotImplementedError("Sparse bincount is not supported by TorchBackend.")
+        return torch.bincount(x, weights=weights, minlength=minlength)
 
     @staticmethod
     def cumsum(x: Any, axis: Any = None, dtype: Any = None) -> torch.Tensor:
@@ -689,3 +698,14 @@ class TorchMathBackend(MathBackend[torch.Tensor]):
     logical_and = torch.logical_and
     logical_or = torch.logical_or
     logical_xor = torch.logical_xor
+
+    # Bitwise methods:
+    bitwise_and = torch.bitwise_and
+    bitwise_or = torch.bitwise_or
+    bitwise_xor = torch.bitwise_xor
+    bitwise_not = torch.bitwise_not
+    bitwise_invert = torch.bitwise_not
+    left_shift = torch.bitwise_left_shift
+    bitwise_left_shift = torch.bitwise_left_shift
+    right_shift = torch.bitwise_right_shift
+    bitwise_right_shift = torch.bitwise_right_shift

@@ -10,7 +10,11 @@ from qewton.backends import DEFAULT_DL_BACKEND
 from qewton.config.devices import Device, cpu
 from qewton.config.dtypes import Int32, Float32
 from qewton.config.saving.saving import Serializable
-from qewton.geometries.discrete.meshes.hierarchy import Level, build_hierarchy
+from qewton.geometries.discrete.meshes.hierarchy import (
+    Level,
+    build_hierarchy,
+    unique_edges,
+)
 
 
 class Mesh(Serializable, Generic[TensorType]):
@@ -91,7 +95,7 @@ class Mesh(Serializable, Generic[TensorType]):
         self._find_boundary_facets(device)
         # Built on first use, see `edges` and `hierarchy`.
         self._edges: TensorType | None = None
-        self._hierarchies: dict[int, list[Level]] = {}
+        self._hierarchies: dict[tuple[int, bool], list[Level]] = {}
 
     def _collect_serializable_attributes(self) -> tuple[list, list]:
         # The hierarchies are not saved, they are rebuilt from vertices and
@@ -572,13 +576,10 @@ class Mesh(Serializable, Generic[TensorType]):
         """`edges` as in :attr:`edges`: each undirected edge once, with the
         smaller vertex index first, sorted, without self-loops, and on the
         device of the vertices."""
-        edges = self.backend.math.reshape(edges, (-1, 2))
         edges = self.backend.move_to_same_device(edges, self.vertices)
-        edges = self.backend.math.sort(edges, axis=1)
-        edges = edges[edges[:, 0] != edges[:, 1]]
-        return self.backend.math.unique(edges, axis=0)
+        return unique_edges(edges, self.backend)
 
-    def hierarchy(self, n_levels: int) -> list[Level]:
+    def hierarchy(self, n_levels: int, random_order: bool = True) -> list[Level]:
         """The mesh as `n_levels` nested graphs: level 0 are the vertices and
         :attr:`edges` of the mesh, every further level is a coarsening of the
         previous one by greedy aggregation, see
@@ -589,15 +590,19 @@ class Mesh(Serializable, Generic[TensorType]):
 
         Args:
             n_levels (int): The number of levels, including the mesh itself.
+            random_order (bool): Whether the aggregation visits the vertices
+                in a fixed pseudo-random order (fast), or else by increasing
+                index (deterministic).
 
         Returns:
             list[Level]: The levels, from the mesh to the coarsest graph.
         """
-        if n_levels not in self._hierarchies:
-            self._hierarchies[n_levels] = build_hierarchy(
-                self.vertices, self.edges, n_levels, self.backend
+        key = (n_levels, random_order)
+        if key not in self._hierarchies:
+            self._hierarchies[key] = build_hierarchy(
+                self.vertices, self.edges, n_levels, self.backend, random_order
             )
-        return self._hierarchies[n_levels]
+        return self._hierarchies[key]
 
     @property
     def mesh_key(self) -> str:

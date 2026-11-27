@@ -173,7 +173,9 @@ new figure.
 
 What is drawn (plots, results, layout) is separate from how it looks: the
 renderer owns the theme, the framework's figure and the artists. Results
-carry an index into the categorical palette rather than a color.
+carry an index into the categorical palette rather than a color, or None
+for the theme's line color of marks that are no data (e.g. the edges of a
+mesh hierarchy).
 
 ### Renderers by available packages (R5)
 

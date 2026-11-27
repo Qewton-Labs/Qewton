@@ -30,5 +30,5 @@ from .data import (
     drawable_geometry,
 )
 from .table import TablePlot, ParallelCoordinatesPlot, TableHeatMap, TableScatter
-from .geometry import GeometryPlot
+from .geometry import GeometryPlot, HierarchyPlot
 from .graph import GraphPlot

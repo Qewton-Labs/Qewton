@@ -6,7 +6,6 @@ import pytest
 from qewton.backends.base import ComputingBackend
 from qewton.config.devices import cpu, cuda, cuda_available
 from qewton.geometries.discrete.meshes import Mesh, Level, build_hierarchy
-from qewton.geometries.discrete.meshes.hierarchy import greedy_aggregation
 
 
 def all_subclasses(cls):
@@ -39,9 +38,10 @@ def edge_set(backend, edges) -> set:
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_levels_are_consistent(backend):
+@pytest.mark.parametrize("random_order", [True, False])
+def test_levels_are_consistent(backend, random_order):
     mesh = unit_square(16, backend)
-    levels = mesh.hierarchy(4)
+    levels = mesh.hierarchy(4, random_order)
 
     assert len(levels) == 4
     assert all(isinstance(level, Level) for level in levels)
@@ -85,33 +85,22 @@ def test_levels_are_consistent(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_hierarchy_is_cached_per_depth(backend):
+def test_hierarchy_is_cached_per_depth_and_order(backend):
     mesh = unit_square(4, backend)
-    assert mesh.hierarchy(3) is mesh.hierarchy(3)
+    assert mesh.hierarchy(3) is mesh.hierarchy(3, random_order=True)
+    assert mesh.hierarchy(3, random_order=False) is mesh.hierarchy(3, random_order=False)
+    assert mesh.hierarchy(3, random_order=False) is not mesh.hierarchy(3)
     assert len(mesh.hierarchy(2)) == 2
     assert mesh.hierarchy(1)[0].cluster is None
 
 
-def test_aggregation_of_a_path():
-    # 0 - 1 - 2 - 3 - 4 - 5 - 6: vertex 0 takes 1; vertex 2 is blocked by 1,
-    # so vertex 3 takes 2 and 4; vertex 5 is blocked by 4, so vertex 6 takes 5.
-    edges = np.array([[i, i + 1] for i in range(6)])
-    assert greedy_aggregation(edges, 7).tolist() == [0, 0, 1, 1, 1, 2, 2]
-
-
-def test_aggregation_leftovers_join_a_neighbour():
-    # Vertex 0 takes 1 and 3. Vertices 2 and 4 are blocked, and no aggregate
-    # forms around them, so they join the aggregate of their neighbours.
-    edges = np.array([[0, 1], [1, 2], [2, 3], [3, 4], [0, 3]])
-    assert greedy_aggregation(edges, 5).tolist() == [0, 0, 0, 0, 0]
-
-
-def test_aggregation_keeps_components_apart():
-    # Two triangles without an edge between them (e.g. across a slit), and an
-    # isolated vertex.
-    edges = np.array([[0, 1], [1, 2], [0, 2], [3, 4], [4, 5], [3, 5]])
-    cluster = greedy_aggregation(edges, 7)
-    assert cluster.tolist() == [0, 0, 0, 1, 1, 1, 2]
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_index_order_follows_the_numbering(backend):
+    # In index order, the first aggregate is vertex 0 with its neighbours.
+    mesh = unit_square(8, backend)
+    cluster = backend.to_numpy(mesh.hierarchy(2, random_order=False)[0].cluster)
+    first = {0} | {int(v) for e in backend.to_numpy(mesh.edges) if 0 in e for v in e}
+    assert set(np.flatnonzero(cluster == 0).tolist()) >= first
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -122,7 +111,8 @@ def test_build_hierarchy_from_graph(backend):
     edges = backend.build_tensor([[0, 1], [1, 0], [1, 2], [2, 3], [3, 3]])
     levels = build_hierarchy(vertices, edges, 2, backend)
     assert levels[0].edge_count == 3
-    assert levels[1].vertex_count == 2
+    assert backend.to_numpy(levels[0].degree).tolist() == [1, 2, 2, 1]
+    assert 1 <= levels[1].vertex_count < 4
 
     with pytest.raises(ValueError, match="at least one level"):
         build_hierarchy(vertices, edges, 0, backend)
@@ -130,9 +120,10 @@ def test_build_hierarchy_from_graph(backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("device", devices)
-def test_hierarchy_on_device(backend, device):
+@pytest.mark.parametrize("random_order", [True, False])
+def test_hierarchy_on_device(backend, device, random_order):
     mesh = unit_square(4, backend)
-    levels = mesh.hierarchy(3)
+    levels = mesh.hierarchy(3, random_order)
     mesh.to(device)
     for level in levels:
         for tensor in (level.vertices, level.edges, level.degree):
@@ -141,6 +132,6 @@ def test_hierarchy_on_device(backend, device):
                 backend.to(tensor, cpu),
             )
 
-    built_on_device = unit_square(4, backend, device=device).hierarchy(3)
+    built_on_device = unit_square(4, backend, device=device).hierarchy(3, random_order)
     for a, b in zip(levels, built_on_device):
         assert edge_set(backend, a.edges) == edge_set(backend, b.edges)
