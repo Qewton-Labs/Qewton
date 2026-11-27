@@ -1,26 +1,30 @@
+from typing import Any
+
+from qewton.config.variables import Variable
 from qewton.geometries.discrete.meshes.mesh import Mesh
+from qewton.data.datasets.base import DataSet
 
 
-class MeshData():
+class MeshDataset(DataSet):
+    def __init__(
+        self,
+        meshes: list[Mesh],
+        data: list[list[Any]],
+        feature_variables: list[Variable],
+        geometry_variable: Variable | None = None,
+    ):
+        self.meshes = meshes
+        self.data = data
+        self.feature_variables = feature_variables
+        self.geometry_variable = geometry_variable
 
-    def __init__(self, mesh: Mesh, node_features, edge_features=None, edges=None):
-        self.mesh : Mesh = mesh
-        self.node_features = node_features
-        self.edge_features = edge_features
-        self.edges = edges
+        # checking data
+        if len(meshes) == 0:
+            raise ValueError("There are no meshes.")
 
-    @property
-    def mesh_key(self):
-        
+        if len(data) != len(feature_variables):
+            raise ValueError("Data and feature variables differ in length.")
 
-
-class MeshDataset(Dataset):
-
-    def __init__(self, mesh_data_list):
-        self.mesh_data_list = mesh_data_list
-
-        # Batching mesh data
-        
-        # Compute hierarchical structure for batching meshes
-
-
+        for i in range(len(feature_variables)):
+            if len(meshes) != len(data[i]):
+                raise ValueError("Variable doesn't have data for all meshes.")
