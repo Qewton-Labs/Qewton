@@ -145,6 +145,33 @@ class TuningAnalyzer:
         scores = sum(self.normalized_score(m) * w for m, w in weights.items())
         return scores / sum(weights.values())
 
+    def with_combined_score(
+        self,
+        weights: dict | None = None,
+        name="combined_score",
+        objective=str(ConstraintObjective.MAXIMIZE),
+    ) -> TuningAnalyzer:
+        """
+        Returns a new TuningAnalyzer with a combined score added
+        to the dataframe to compute a (weighted) average of multiple metrics.
+        Will only be added if there is more than one metric and a metric
+        of the given name is not present yet. The score is registered in the
+        metadata, so it survives filter() and is treated like any other metric.
+
+        Args:
+            weights (dict, optional): A dictionary mapping metric names to their weights.
+                If None, all metrics are weighted equally.
+            name (str): The name of the added metric
+            objective (str): The objective direction of the added metric,
+                "minimize" or "maximize". Defaults to "maximize", since the
+                combined score is in [0,1] where 1 = best.
+        """
+        df, metrics = self._add_combined_score(weights, name, objective)
+        meta = dict(self.meta)
+        meta[TuneResultCollector.objective_names_key] = list(metrics)
+        meta[TuneResultCollector.objective_values_key] = list(metrics.values())
+        return TuningAnalyzer.from_df(df, meta)
+
     #################################################################################
     # Ranking
     def best_run(self, metric: str | None = None) -> pd.Series:
@@ -438,7 +465,7 @@ class TuningAnalyzer:
             table,
             x=_choice(self.hp_names),
             y=_choice(self.hp_names, 1),
-            color=_choice(objectives),
+            color=_choice(list(objectives)),
             color_scale=color_scale,
             log_columns=log_axes or [],
             jitter=jitter,
@@ -484,7 +511,7 @@ class TuningAnalyzer:
             table,
             x=_choice(axis_keys),
             y=_choice(axis_keys, 1),
-            color=_choice(objectives),
+            color=_choice(list(objectives)),
             bins_x=bins_x,
             bins_y=bins_y,
             color_scale=color_scale,
@@ -494,18 +521,39 @@ class TuningAnalyzer:
         )
         return Figure(plot)
 
-    def _add_combined_score(self) -> tuple[pd.DataFrame, list[str]]:
-        """Adds a combined score to the plotting data to compute the average
-        of multiple metrics. Will only be added if there is more the one
-        metric
+    def _add_combined_score(
+        self,
+        weights: dict | None = None,
+        name="combined_score",
+        objective=str(ConstraintObjective.MAXIMIZE),
+    ) -> tuple[pd.DataFrame, dict[str, str]]:
         """
-        table_data = self.df.copy()
-        keys = list(self.metrics.keys())
-        if len(self.metrics) > 1:
-            combined_objective = self.combined_score()
-            table_data["combined_score"] = combined_objective
-            keys.append("combined_score")
-        return table_data, keys
+        Returns a copy of the dataframe with a combined score added
+        to compute the (weighted) average of multiple metrics.
+        Will only be added if there is more than one metric and a metric
+        of the given name is not present yet, e.g. added before via
+        :meth:`with_combined_score`.
+
+        Args:
+            weights (dict, optional): A dictionary mapping metric names to their weights.
+                If None, all metrics are weighted equally.
+            name (str): The name of the added metric
+            objective (str): The objective direction of the added metric,
+                "minimize" or "maximize". Defaults to "maximize", since the
+                combined score is in [0,1] where 1 = best.
+
+        Returns:
+            tuple[pd.DataFrame, dict[str, str]]: A copy of the dataframe with the
+                combined score added as a new column, and the metric dictionary
+                extended by it (name -> objective). If there is only one metric,
+                the inputs are returned unchanged.
+        """
+        df = self.df.copy()
+        metrics = self.metrics.copy()
+        if name not in df.columns and len(self.metrics) > 1:
+            df[name] = self.combined_score(weights)
+            metrics[name] = objective
+        return df, metrics
 
 
 def _choice(columns: list[str], init_state: int = 0) -> str | Selector:
