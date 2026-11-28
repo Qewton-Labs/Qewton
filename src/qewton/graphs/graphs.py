@@ -987,12 +987,13 @@ class Graph(Serializable):
             outputs = tuple((path, port) for port in node.output_ports)
             self._steps.append((node, sources, outputs, owner or node))
 
-    def _execute(self, mode, owners=None) -> None:
-        """Evaluate the listed steps, only those of `owners` if given."""
+    def _execute(self, mode, owners=None, on_node_done=None) -> None:
+        """Evaluate the listed steps, only those of `owners` if given; call
+        `on_node_done` with each owning node after its last step."""
         values = self._values
-        for node, sources, outputs, owner in self._steps:
-            if owners is not None and owner not in owners:
-                continue
+        steps = [step for step in self._steps if owners is None or step[3] in owners]
+        last_step = {id(step[3]): index for index, step in enumerate(steps)}
+        for index, (node, sources, outputs, owner) in enumerate(steps):
             node.set_mode(mode)
             result = node(
                 *[
@@ -1004,6 +1005,8 @@ class Graph(Serializable):
                 values[outputs[0]] = result
             elif outputs:
                 values.update(zip(outputs, result))
+            if on_node_done is not None and last_step[id(owner)] == index:
+                on_node_done(owner)
 
     def evaluate(
         self,
@@ -1031,7 +1034,12 @@ class Graph(Serializable):
 
     # endregion
 
-    def run(self, mode: EvaluationPhase = EvaluationPhase.ALWAYS):
+    def run(
+        self,
+        mode: EvaluationPhase = EvaluationPhase.ALWAYS,
+        discretization: "float | dict[Variable, float] | None" = None,
+        on_node_done: "Callable[[Node], None] | None" = None,
+    ):
         """Run all nodes in execution order.
 
         Each input receives the value of its incoming edge, or its default
@@ -1040,9 +1048,30 @@ class Graph(Serializable):
 
         Args:
             mode: The evaluation phase every node is set to.
+            discretization: If given, every
+                :class:`~qewton.data.dataloaders.sampler.point_sampler.PointSampler`
+                of the graph is switched to mesh mode for this run (see
+                :func:`~qewton.data.dataloaders.sampler.point_sampler.discretization_mode`):
+                it outputs the vertices of a mesh of its geometry with this
+                maximal vertex distance (one value, or one per geometry
+                Variable) instead of sampled points. The values can then be
+                drawn with ``visualize(port, run=False)`` at the same
+                discretization. None (default) samples as usual.
+            on_node_done: Called with each node of this graph once it has
+                run, in execution order, e.g. to report progress.
         """
         self._ensure_plan()
-        self._execute(mode)
+        if discretization is None:
+            self._execute(mode, on_node_done=on_node_done)
+            return
+        from qewton.data.dataloaders.sampler.point_sampler import (
+            PointSampler,
+            discretization_mode,
+        )
+
+        samplers = [node for node in self.sorted_nodes if isinstance(node, PointSampler)]
+        with discretization_mode(samplers, discretization):
+            self._execute(mode, on_node_done=on_node_done)
 
     def _build_path_to_node(self, node: Node) -> set[Node]:
         """Unordered set of all nodes `node` depends on inside this graph,
@@ -1155,6 +1184,7 @@ class Graph(Serializable):
         prediction_config: DataConfiguration | None = None,
         reference_config: DataConfiguration | None = None,
         mode: EvaluationPhase = EvaluationPhase.VALIDATION,
+        run: bool = True,
         **plot_kwargs,
     ) -> "Layout":
         """Evaluate the graph for `port` and build plots of the result.
@@ -1239,6 +1269,12 @@ class Graph(Serializable):
                 `reference` in this graph. Required for plain reference data.
             mode: The evaluation phase every run node is set to; selects which
                 split a data loader provides.
+            run: Whether to run the nodes needed for `port` first. False
+                draws the values of the last run instead, which must have
+                been ``run(discretization=max_vertex_distance)`` at the same
+                `max_vertex_distance` (the configurations are read in mesh
+                mode, so data and configuration agree). Not supported with
+                `reference`.
             **plot_kwargs: Passed to
                 :func:`~qewton.visualization.auto.auto_plot` for every plot.
 
@@ -1262,6 +1298,10 @@ class Graph(Serializable):
         ports = port if isinstance(port, list) else [port]
 
         if reference is not None:
+            if not run:
+                raise ValueError(
+                    "reference needs a run of its own; visualize with run=True."
+                )
             if len(ports) != 1:
                 raise ValueError(
                     "reference is only supported for a single port, not a list."
@@ -1310,7 +1350,10 @@ class Graph(Serializable):
         # The configurations are read in mesh mode: the dims bound to the
         # number of points of a sampler have the number of mesh points.
         with discretization_mode(samplers, max_vertex_distance, device):
-            self._run_nodes_needed_for(run_ports, mode=mode)
+            # Without running, the values are those of an earlier run in mesh
+            # mode; switching to mesh mode sized the configurations for them.
+            if run:
+                self._run_nodes_needed_for(run_ports, mode=mode)
             mask_values = self._mask_values(mask)
 
             # Move right before plotting, not before running - the sampler(s)

@@ -306,7 +306,9 @@ class PointSampler(DataNode[TensorType]):
         In mesh mode, the forward pass outputs the vertices of a mesh of
         the geometry (see
         :meth:`visualization_geometry`)
-        and stores the cells in `sampled_geometry`.
+        and stores the cells in `sampled_geometry`. The number of points
+        (and every size bound to it) is that of the mesh from now on, so
+        the data configurations fit the mesh before anything runs.
 
         Args:
             max_vertex_distance: The mesh resolution, one value or one per
@@ -317,6 +319,10 @@ class PointSampler(DataNode[TensorType]):
         self.mesh_mode = True
         self.current_mesh_max_vertex_distance = max_vertex_distance
         self.current_mesh_device = device if device is not None else self._device
+        # Only the number of points is needed here, so the mesh is counted
+        # where it is built by default; the forward pass builds (and caches)
+        # it on the mesh mode's device.
+        self._provide(self._vertices(self.visualization_geometry(max_vertex_distance)))
 
     def unset_mesh_mode(self):
         """Leave mesh mode and return to normal sampling."""
@@ -450,17 +456,7 @@ class PointSampler(DataNode[TensorType]):
             return points
 
         if self.mesh_mode:
-            geometry = self.visualization_geometry(
-                self.current_mesh_max_vertex_distance, self.current_mesh_device
-            )
-            points = (
-                geometry.discretization_points
-                if isinstance(geometry, ProductMeshGeometry)
-                else geometry.mesh.vertices
-            )
-            # An already discrete source (e.g. a loaded MeshGeometry) keeps
-            # its data where it is; only the points handed on are moved.
-            points = self.backend.to(points, self.current_mesh_device)
+            geometry, points = self._mesh_points()
 
             # for plotting: store the current points and cells
             self._store_discretization(geometry, points)
@@ -496,6 +492,25 @@ class PointSampler(DataNode[TensorType]):
         if self.compute_normals:
             return points, normals
         return points
+
+    def _mesh_points(self) -> tuple[Geometry, TensorType]:
+        """The mesh of mesh mode and its points, on the mesh mode's device."""
+        geometry = self.visualization_geometry(
+            self.current_mesh_max_vertex_distance, self.current_mesh_device
+        )
+        # An already discrete source (e.g. a loaded MeshGeometry) keeps
+        # its data where it is; only the points handed on are moved.
+        points = self.backend.to(self._vertices(geometry), self.current_mesh_device)
+        return geometry, points
+
+    @staticmethod
+    def _vertices(geometry: Geometry) -> TensorType:
+        """The points of a mesh of mesh mode."""
+        return (
+            geometry.discretization_points
+            if isinstance(geometry, ProductMeshGeometry)
+            else geometry.mesh.vertices
+        )
 
     def _store_discretization(self, geometry: Geometry, points: TensorType):
         self._provide(points)
